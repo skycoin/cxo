@@ -1,13 +1,24 @@
 package schema
 
-//
-//type dynamicHref struct {
-//	Schema StructSchema
-//}
+import (
+	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher"
+)
 
-//
-//func HrefDynamic(value interface{}) *HRef{
-//	schema := ExtractSchema(value)
-//	data:= encoder.Serialize(value)
-//	return createHref(&dynamicHref{Schema:schema}, cipher.SumSHA256(data))
-//}
+type HDynamic struct {
+	Href
+	Schema []byte //the schema of object
+}
+
+func HrefDynamic(key cipher.SHA256, value interface{}) HDynamic {
+	schema := ExtractSchema(value)
+	result := HDynamic{Schema:encoder.Serialize(schema)}
+	result.Hash = key
+	return result
+}
+
+func (h *HDynamic) GetSchema() StructSchema{
+	var result StructSchema
+	encoder.DeserializeRaw(h.Schema, &result)
+	return result
+}

@@ -2,22 +2,21 @@ package schema
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/cxo/encoder"
 )
-
-//type HRef struct {
-//	context interface{}
-//}
-
-type HrefTyped struct {
-	Href
-	Type []byte //the schema of object
-}
 
 type Href struct {
 	Hash cipher.SHA256
 }
 
+func (h Href) ToObject(s *Store, o interface{}) {
+	data, _ := s.Get(h.Hash)
+	encoder.DeserializeRaw(data, o)
+}
 
+//type HRef struct {
+//	context interface{}
+//}
 ////For implementing Functors and Applicatives
 //type IHRef interface {
 //	Map(Morphism) HRef

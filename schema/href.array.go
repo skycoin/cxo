@@ -2,13 +2,28 @@ package schema
 
 import (
 	"reflect"
-	"github.com/skycoin/cxo/encoder"
 )
 
 type HArray []Href
 
 func NewHArray() HArray {
 	return HArray{}
+}
+
+func (h HArray) Append(key Href) HArray {
+	return append(h, key)
+}
+
+func (h HArray) ToObjects(s *Store, o interface{}) interface{} {
+	resultType := reflect.TypeOf(o)
+	slice := reflect.MakeSlice(reflect.SliceOf(resultType), 0, 0)
+	for i := 0; i < len(h); i++ {
+		ptr := reflect.New(resultType).Interface()
+		h[i].ToObject(s, ptr)
+		sv := reflect.ValueOf(ptr).Elem()
+		slice = reflect.Append(slice, sv)
+	}
+	return slice.Interface()
 }
 
 //func HrefArrayEmpty(store *Store) HRef {
@@ -48,19 +63,4 @@ func NewHArray() HArray {
 //	return result
 //}
 
-func (h HArray) Append(key Href) HArray {
-	return append(h, key)
-}
 
-func (h HArray) ToObjects(s *Store, o interface{}) interface{} {
-	resultType := reflect.TypeOf(o)
-	slice := reflect.MakeSlice(reflect.SliceOf(resultType), 0, 0)
-	for i := 0; i < len(h); i++ {
-		data, _ := s.Get(h[i].Hash)
-		ptr := reflect.New(resultType).Interface()
-		sv := reflect.ValueOf(ptr).Elem()
-		encoder.DeserializeRaw(data, ptr)
-		slice = reflect.Append(slice, sv)
-	}
-	return slice.Interface()
-}
