@@ -18,7 +18,7 @@ func CreateBbs() *Bbs {
 func (bbs *Bbs) AddBoard(name string) (cipher.SHA256, error) {
 	b := Board{Name:name, Threads:schema.NewHArray()}
 	key, _ := bbs.Store.Save(b)
-	href := schema.HrefStatic{key}
+	href := schema.Href{key}
 	bbs.Boards = bbs.Boards.Append(href)
 	bbs.Store.Save(bbs.Boards)
 	return key, nil
@@ -48,7 +48,7 @@ func (bbs *Bbs) AddThread(boardKey cipher.SHA256, name string) {
 
 	var board Board
 	bbs.Store.Load(boardKey, &board)
-	board.Threads = board.Threads.Append(schema.HrefStatic{Hash:key})
+	board.Threads = board.Threads.Append(schema.Href{Hash:key})
 	bbs.updateBoard(boardKey, board)
 }
 
@@ -58,7 +58,7 @@ func (bbs *Bbs) GetThreads(board Board) []Thread {
 //
 func (bbs *Bbs) updateBoard(key cipher.SHA256, board Board) {
 	newBoardKey, _ := bbs.Store.Save(board)
-	boards := []schema.HrefStatic{{Hash:newBoardKey}}
+	boards := []schema.Href{{Hash:newBoardKey}}
 	for i := 0; i < len(bbs.Boards); i++ {
 		if bbs.Boards[i].Hash != key{
 			boards = append(boards, bbs.Boards[i])

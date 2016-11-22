@@ -21,34 +21,6 @@ func NewStore() *Store {
 	return &db
 }
 
-func (db *Store) BuildHrefStatic(value interface{}) (HrefStatic, error) {
-	key, error := db.Save(value)
-	if (error != nil) {
-		fmt.Println(error)
-		return HrefStatic{}, error
-	}
-
-	return HrefStatic{Hash:key}, nil
-}
-
-func (db *Store) BuildHref(value interface{}) (Href, error) {
-	key, error := db.Save(value)
-	if (error != nil) {
-		fmt.Println(error)
-		return Href{}, error
-	}
-	result := Href{}
-	dataSchema := ExtractSchema(value)
-	result.Type = encoder.Serialize(dataSchema)
-	result.Hash = key
-	return result, nil
-}
-
-func (db *Store) GetKey(value interface{}) cipher.SHA256 {
-	data := encoder.Serialize(value)
-	return cipher.SumSHA256(data)
-}
-
 func (db *Store) Save(value interface{}) (cipher.SHA256, error) {
 	data := encoder.Serialize(value)
 	key := cipher.SumSHA256(data)

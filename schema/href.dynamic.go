@@ -1,9 +1,9 @@
 package schema
 
-
-type dynamicHref struct {
-	Schema StructSchema
-}
+//
+//type dynamicHref struct {
+//	Schema StructSchema
+//}
 
 //
 //func HrefDynamic(value interface{}) *HRef{

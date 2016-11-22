@@ -4,20 +4,20 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-type HRef struct {
-	context interface{}
-}
+//type HRef struct {
+//	context interface{}
+//}
 
-type Href struct {
-	HrefStatic
+type HrefTyped struct {
+	Href
 	Type []byte //the schema of object
 }
 
-type HrefStatic struct {
+type Href struct {
 	Hash cipher.SHA256
 }
-//
-//
+
+
 ////For implementing Functors and Applicatives
 //type IHRef interface {
 //	Map(Morphism) HRef

@@ -5,7 +5,7 @@ import (
 	"github.com/skycoin/cxo/encoder"
 )
 
-type HArray []HrefStatic
+type HArray []Href
 
 func NewHArray() HArray {
 	return HArray{}
@@ -48,7 +48,7 @@ func NewHArray() HArray {
 //	return result
 //}
 
-func (h HArray) Append(key HrefStatic) HArray {
+func (h HArray) Append(key Href) HArray {
 	return append(h, key)
 }
 

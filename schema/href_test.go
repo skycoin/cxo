@@ -15,7 +15,7 @@ type TestHref1 struct{
 
 type TestHref2 struct{
 	Field1 uint32
-	Field2 HrefStatic `hrefType:"TestHref1"`
+	Field2 Href `hrefType:"TestHref1"`
 }
 
 func Test_Href_1(T *testing.T) {
