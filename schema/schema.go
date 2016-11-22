@@ -1,4 +1,4 @@
-package encoder
+package schema
 
 import (
 	"reflect"
