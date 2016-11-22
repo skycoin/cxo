@@ -21,18 +21,7 @@ func NewStore() *Store {
 	return &db
 }
 
-//func (db *Store) NewDataCallback(newDataCallback func(cipher.SHA256, interface{}) error) error {
-//	db.mu.Lock()
-//	defer db.mu.Unlock()
-//
-//	if newDataCallback != nil {
-//		db.newDataCallback = newDataCallback
-//	}
-//	return nil
-//}
-
-
-func (db *Store) BuildHref(value interface{}) (HrefStatic, error) {
+func (db *Store) BuildHrefStatic(value interface{}) (HrefStatic, error) {
 	key, error := db.Save(value)
 	if (error != nil) {
 		fmt.Println(error)
@@ -41,12 +30,19 @@ func (db *Store) BuildHref(value interface{}) (HrefStatic, error) {
 
 	return HrefStatic{Hash:key}, nil
 }
-//
-//func (db *Store) LoadHref(value interface{}) (cipher.SHA256, error) {
-//	structHash := cipher.SumSHA256(encoder.Serialize(data))
-//
-//	return HrefStatic{Hash:structHash}
-//}
+
+func (db *Store) BuildHref(value interface{}) (Href, error) {
+	key, error := db.Save(value)
+	if (error != nil) {
+		fmt.Println(error)
+		return Href{}, error
+	}
+	result := Href{}
+	dataSchema := ExtractSchema(value)
+	result.Type = encoder.Serialize(dataSchema)
+	result.Hash = key
+	return result, nil
+}
 
 func (db *Store) GetKey(value interface{}) cipher.SHA256 {
 	data := encoder.Serialize(value)
@@ -76,12 +72,22 @@ func (db *Store) Load(key cipher.SHA256, data interface{}) error {
 	return nil
 }
 
+func (db *Store) Get(key cipher.SHA256) ([]byte, bool) {
+	value, ok := db.data[key]
+	return value, ok
+}
+
 func (db *Store) has(key cipher.SHA256) bool {
 	_, ok := db.data[key]
 	return ok
 }
 
-func (db *Store) Get(key cipher.SHA256) ([]byte, bool) {
-	value, ok := db.data[key]
-	return value, ok
-}
+//func (db *Store) NewDataCallback(newDataCallback func(cipher.SHA256, interface{}) error) error {
+//	db.mu.Lock()
+//	defer db.mu.Unlock()
+//
+//	if newDataCallback != nil {
+//		db.newDataCallback = newDataCallback
+//	}
+//	return nil
+//}

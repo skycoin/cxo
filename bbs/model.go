@@ -6,7 +6,8 @@ import (
 
 type Board struct {
 	Name    string
-	Threads schema.HrefStatic `href:"[]Thread"`
+	Threads schema.HArray `type:"Thread"`
+	//Threads schema.HrefStatic `href:"[]Thread"`
 }
 
 type Thread struct {
@@ -17,6 +18,10 @@ type Thread struct {
 type Post struct {
 	Poster []byte
 	Text   string
+}
+
+func (b *Board) AddThread(thread *Thread) Board {
+	return Board{Name:b.Name,}
 }
 
 

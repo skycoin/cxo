@@ -2,78 +2,55 @@ package bbs
 
 import (
 	"github.com/skycoin/cxo/schema"
-	"fmt"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type Bbs struct {
-	Boards schema.HrefStatic `boards:"[]Boards"`
-	Store  *schema.Store
+	Boards schema.HArray `type:"Board"`
+	Store  *schema.Store `enc:"-"`
 }
 
 func CreateBbs() *Bbs {
-	return &Bbs{Store:schema.NewStore(), Boards:schema.HrefStatic{}}
+	store := schema.NewStore()
+	return &Bbs{Store:store, Boards:schema.NewHArray()}
 }
 
-func (bbs *Bbs) AddBoard(name string) (Board, error) {
-	boards := []Board{}
-	bbs.Store.Load(bbs.Boards.Hash, &boards)
-
-	b := Board{Name:name, Threads:schema.HrefStatic{}}
-	boards = append(boards, b)
-	bbs.Store.Save(b)
-
-	bbs.updateBoard(boards)
-	return b, nil
+func (bbs *Bbs) AddBoard(name string) (cipher.SHA256, error) {
+	b := Board{Name:name, Threads:schema.NewHArray()}
+	key, _ := bbs.Store.Save(b)
+	href := schema.HrefStatic{key}
+	bbs.Boards = bbs.Boards.Append(href)
+	bbs.Store.Save(bbs.Boards)
+	return key, nil
 }
 
 func (bbs *Bbs) AllBoars() []Board {
-	var res []Board
-	bbs.Store.Load(bbs.Boards.Hash, &res)
-	return res
+	var boards []Board
+	boards = bbs.Boards.ToObjects(bbs.Store, Board{}).([]Board)
+	return boards
 }
 
-func (bbs *Bbs) AddThread(board Board, name string) {
-	var threads []Thread = []Thread{}
-	e := bbs.Store.Load(board.Threads.Hash, &threads)
-	fmt.Println("Current threads", threads)
-	if (e != nil) {
-		fmt.Println(e)
-	}
+func (bbs *Bbs) AddThread(boardKey cipher.SHA256, name string) {
 	newThread := Thread{Name:name}
+	key, _:= bbs.Store.Save(newThread)
 
-	threadKey, _ := bbs.Store.Save(newThread)
-	fmt.Println("threadKey", threadKey)
-
-	threads = append(threads, newThread)
-
-	bbs.updateThreads(board, threads)
+	var board Board
+	bbs.Store.Load(boardKey, &board)
+	board.Threads = board.Threads.Append(schema.HrefStatic{Hash:key})
+	bbs.updateBoard(boardKey, board)
 }
 
 func (bbs *Bbs) GetThreads(board Board) []Thread {
-	var threads []Thread = []Thread{}
-
-	e := bbs.Store.Load(board.Threads.Hash, &threads)
-	if (e != nil) {
-		fmt.Println(e)
-	}
-
-	return threads
+	return board.Threads.ToObjects(bbs.Store, Thread{}).([]Thread)
 }
-
-func (bbs *Bbs) updateBoard(boards []Board) {
-	bbs.Boards, _ = bbs.Store.BuildHref(boards)
-}
-
-func (bbs *Bbs) updateThreads(board Board, threads []Thread) {
-	boards := []Board{}
-	bbs.Store.Load(bbs.Boards.Hash, &boards)
-
-	for i := 0; i < len(boards); i++ {
-		//TODO: Refactor. Names could be equal. Need better way to compare objects(May be calculate and compare hash)
-		if (boards[i].Name == board.Name) {
-			boards[i].Threads, _ = bbs.Store.BuildHref(threads)
-			bbs.updateBoard(boards)
-			break
+//
+func (bbs *Bbs) updateBoard(key cipher.SHA256, board Board) {
+	newBoardKey, _ := bbs.Store.Save(board)
+	boards := []schema.HrefStatic{{Hash:newBoardKey}}
+	for i := 0; i < len(bbs.Boards); i++ {
+		if bbs.Boards[i].Hash != key{
+			boards = append(boards, bbs.Boards[i])
 		}
 	}
+	bbs.Boards = boards
 }

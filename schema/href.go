@@ -2,28 +2,41 @@ package schema
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/encoder"
 )
 
-//type Href struct {
-//	Type []byte        //the schema of object
-//	Hash cipher.SHA256 //the hash of serialization of object
-//}
+type HRef struct {
+	context interface{}
+}
+
+type Href struct {
+	HrefStatic
+	Type []byte //the schema of object
+}
 
 type HrefStatic struct {
 	Hash cipher.SHA256
 }
-
-type DataMap map[cipher.SHA256][]byte
-
-//func CreateHref(data interface{}) Href {
-//	schema := ExtractSchema(data)
-//	structHash := cipher.SumSHA256(encoder.Serialize(data))
-//	return Href{Type:encoder.Serialize(schema), Hash:structHash}
+//
+//
+////For implementing Functors and Applicatives
+//type IHRef interface {
+//	Map(Morphism) HRef
+//	Value() interface{}
+//}
+//
+//type Morphism func(*Store, interface{}) interface{}
+//
+////FMap is a Haskel fmap implementation
+//func (h HRef) Map(m Morphism) HRef {
+//	return h.context.(IHRef).Map(m)
+//}
+//
+////Value extracts from a functor
+//func (h HRef) Value() interface{} {
+//	return h.context.(IHRef).Value()
 //}
 
-func CreateHref(data interface{}) HrefStatic {
-	structHash := cipher.SumSHA256(encoder.Serialize(data))
-	return HrefStatic{Hash:structHash}
-}
-
+//var HrefToBinary Morphism = func(source *Store, item interface{}) interface{} {
+//	obj, _ := source.Get(item.(HrefStatic).Hash)
+//	return obj
+//}
