@@ -64,30 +64,3 @@ func (h HArray) ToObjects(s *Store, o interface{}) interface{} {
 	}
 	return slice.Interface()
 }
-//
-//func (h HArray) ToObjects2(s *Store, o interface{}) {
-//	resultList := reflect.ValueOf(o).Elem()
-//
-//	sl := reflect.Indirect(reflect.ValueOf(o))
-//	typeOfT := sl.Type().Elem()
-//	fmt.Println("typeOfT", typeOfT)
-//
-//	for i := 0; i < len(h); i++ {
-//		data, _ := s.Get(h[i].Hash)
-//		ptr := reflect.New(typeOfT).Interface()
-//		sv := reflect.ValueOf(ptr).Elem()
-//		encoder.DeserializeRaw(data, ptr)
-//		resultList = reflect.Append(resultList, sv)
-//	}
-//
-//	fmt.Println("sl", resultList)
-//	//
-//	//for i := 0; i < len(h); i++ {
-//	//	data, _ := s.Get(h[i].Hash)
-//	//	fmt.Println(data)
-//	//
-//	//	encoder.DeserializeRaw(data, o)
-//	//	fmt.Println("item.Interface()", o)
-//	//	resultList = reflect.Append(resultList, reflect.ValueOf(o).Elem())
-//	//}
-//}

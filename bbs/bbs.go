@@ -7,7 +7,7 @@ import (
 
 type Bbs struct {
 	Boards schema.HArray `type:"Board"`
-	Store  *schema.Store `enc:"-"`
+	Store  *schema.Store
 }
 
 func CreateBbs() *Bbs {
@@ -23,6 +23,18 @@ func (bbs *Bbs) AddBoard(name string) (cipher.SHA256, error) {
 	bbs.Store.Save(bbs.Boards)
 	return key, nil
 }
+
+//TODO: Just for test - need refactoring
+func (bbs *Bbs) GetBoard(name string) cipher.SHA256 {
+	allObjects := bbs.AllBoars()
+	for i := 0; i < len(allObjects); i++ {
+		if (allObjects[i].Name == name){
+			return bbs.Boards[i].Hash
+		}
+	}
+	return cipher.SHA256{}
+}
+
 
 func (bbs *Bbs) AllBoars() []Board {
 	var boards []Board

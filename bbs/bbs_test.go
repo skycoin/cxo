@@ -11,7 +11,12 @@ func Test_Bbs_1(T *testing.T) {
 	bbs.AddBoard("Another Board")
 
 	bbs.AddThread(board, "Thread 1")
+
+	board = bbs.GetBoard("Test Board")
 	bbs.AddThread(board, "Thread 2")
+
+
+	board = bbs.GetBoard("Test Board")
 	bbs.AddThread(board, "Thread 3")
 
 	boards := bbs.AllBoars()
@@ -21,8 +26,12 @@ func Test_Bbs_1(T *testing.T) {
 	}
 
 	threads := bbs.GetThreads(boards[0])
-	fmt.Println(threads)
-	//if (threads[0].Name != "Thread 1"){
-	//	T.Fatal("Thread name is not equal")
-	//}
+	fmt.Println("All threads", threads)
+	if (threads[0].Name != "Thread 1"){
+		T.Fatal("Thread name is not equal")
+	}
+
+	if (threads[2].Name != "Thread 3"){
+		T.Fatal("Thread name is not equal")
+	}
 }
