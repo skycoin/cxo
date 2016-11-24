@@ -1,10 +1,9 @@
-package schema
+package encoder
 
 import (
 	"testing"
 	"bytes"
 	"fmt"
-	"github.com/skycoin/cxo/encoder"
 )
 
 type TestSchemaStruct struct {
@@ -18,7 +17,7 @@ type TestSchemaStruct1 struct {
 
 type TestSchemaStruct2 struct {
 	Field1 int32
-	Field2 Href `href:"TestSchemaStruct1"`
+	Field2 []byte
 }
 
 func Test_Schema_1(T *testing.T) {
@@ -36,12 +35,16 @@ func Test_Schema_1(T *testing.T) {
 }
 
 func Test_Encode_With_Schema_1(T *testing.T) {
-	var t TestSchemaStruct
+	var t TestSchemaStruct2
 	t.Field1 = 255
 	t.Field2 = []byte("TEST1")
-	schema := ExtractSchema(t)
-	res := encoder.Serialize(t)
-	schemeData := encoder.Serialize(schema)
+	//schema := ExtractSchema(t)
+	res := Serialize(t)
+	//schemeData := encoder.Serialize(schema)
 	fmt.Println(res)
-	fmt.Println(schemeData)
+	//fmt.Println(schemeData)
+
+	var tt TestSchemaStruct
+	DeserializeRaw(res, &tt)
+	fmt.Println(tt)
 }

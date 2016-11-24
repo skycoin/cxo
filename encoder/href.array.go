@@ -1,4 +1,4 @@
-package schema
+package encoder
 
 import (
 	"reflect"
@@ -6,8 +6,8 @@ import (
 
 type HArray []Href
 
-func NewHArray() HArray {
-	return HArray{}
+func NewHArray(hrefList ...Href) HArray {
+	return hrefList[:]
 }
 
 func (h HArray) Append(key Href) HArray {
@@ -25,6 +25,21 @@ func (h HArray) ToObjects(s *Store, o interface{}) interface{} {
 	}
 	return slice.Interface()
 }
+
+
+
+func (h HArray) Expand(source *Store, info *HrefInfo) {
+	for i := 0; i < len(h); i++ {
+		h[i].Expand(source, info)
+	}
+}
+
+//
+//func (h *Href) Expand() HashMap {
+//	hashMap := &HashMap{}
+//	hashMap[]
+//	return *hashMap
+//}
 
 //func HrefArrayEmpty(store *Store) HRef {
 //		return HRef{context: HArray{Store:store}}

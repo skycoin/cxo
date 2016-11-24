@@ -1,17 +1,19 @@
 package bbs
 
-import (
-	"github.com/skycoin/cxo/schema"
-)
+import "github.com/skycoin/cxo/encoder"
+
+type BoardContainer struct {
+	Boards encoder.HArray `type:"Board"`
+}
 
 type Board struct {
 	Name    string
-	Threads schema.HArray `type:"Thread"`
+	Threads encoder.HArray `type:"Thread"`
 }
 
 type Thread struct {
 	Name  string
-	Posts schema.HArray `type:"Post"`
+	Posts encoder.HArray `type:"Post"`
 }
 
 type Post struct {

@@ -163,12 +163,92 @@ func DeserializeRaw(in []byte, data interface{}) error {
 
 	//check if can deserialize
 	d2 := &decoder{buf: make([]byte, len(in))}
+
 	copy(d2.buf, in)
 	if d2.dchk(v) != 0 {
 		return errors.New("Deserialization failed")
 	}
 
 	return d1.value(v)
+}
+
+//func field
+
+func DeserializeField(in []byte, sch StructSchema, name string, field interface{}) error {
+	d := &decoder{buf: make([]byte, len(in))}
+	copy(d.buf, in)
+	fv := reflect.ValueOf(field).Elem()
+	d2 := &decoder{buf: make([]byte, len(in))}
+	copy(d2.buf, in)
+	s := 0
+
+	for i := 0; i < len(sch.StructFields); i++ {
+		f := sch.StructFields[i]
+		if (string(f.FieldName) == name) {
+			fd := &decoder{buf: make([]byte, len(in) - s)}
+			copy(fd.buf, d.buf[s:])
+			fd.value(fv)
+
+			return nil
+		}
+
+		switch string(f.FieldType) {
+		case "encoder.Href": //TODO: refactor. Size of Href types should be calculatable
+			s += 32
+			fd := &decoder{buf: make([]byte, len(in) - s)}
+			copy(fd.buf, d.buf[s:])
+			s += int(fd.uint32()) + 4
+		case "encoder.HArray": //TODO: refactor. Size of Href types should be calculatable
+			fd := &decoder{buf: make([]byte, len(in) - s)}
+			copy(fd.buf, d.buf[s:])
+
+			length := int(fd.uint32())
+			if length < 0 || length > len(fd.buf) {
+				return fmt.Errorf("Invalid length: %d", length)
+			}
+			s += 4
+			for i := 0; i < length; i++ {
+				s += 32
+				di := &decoder{buf: make([]byte, len(in) - s)}
+				copy(di.buf, d.buf[s:])
+				ss := di.uint32()
+				s += int(ss) + 4
+			}
+		case "slice":
+			s += 0 //TODO: implement
+		case "struct":
+			s += 0 //TODO: implement
+		case "bool":
+			s += d.adv(1)
+		case "string":
+			length := int(le_Uint32(d.buf[0:4]))
+			s += d.adv(4) //must succeed
+			s += d.cmp(0, d.adv(length))
+		case "int8":
+			s += d.adv(1)
+		case "int16":
+			s += d.adv(2)
+		case "int32":
+			s += d.adv(4)
+		case "int64":
+			s += d.adv(8)
+		case "uint8":
+			s += d.adv(1)
+		case "uint16":
+			s += d.adv(2)
+		case "uint32":
+			s += d.adv(4)
+		case "uint64":
+			s += d.adv(8)
+		case "float32":
+			s += d.adv(4)
+		case "float64":
+			s += d.adv(8)
+		default:
+			log.Panicf("Decode error: kind %s not handled", string(f.FieldType))
+		}
+	}
+	return nil
 }
 
 //takes reader and number of bytes to read
@@ -180,7 +260,6 @@ func Deserialize(r io.Reader, dsize int, data interface{}) error {
 
 	var v reflect.Value
 	switch d := reflect.ValueOf(data); d.Kind() {
-	//case reflect.
 
 	case reflect.Ptr:
 		v = d.Elem()
@@ -448,7 +527,9 @@ func datasizeWrite(v reflect.Value) (int, error) {
 	Internals
 */
 
-func le_Uint16(b []byte) uint16 { return uint16(b[0]) | uint16(b[1])<<8 }
+func le_Uint16(b []byte) uint16 {
+	return uint16(b[0]) | uint16(b[1]) << 8
+}
 
 func le_PutUint16(b []byte, v uint16) {
 	b[0] = byte(v)
@@ -456,7 +537,7 @@ func le_PutUint16(b []byte, v uint16) {
 }
 
 func le_Uint32(b []byte) uint32 {
-	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
+	return uint32(b[0]) | uint32(b[1]) << 8 | uint32(b[2]) << 16 | uint32(b[3]) << 24
 }
 
 func le_PutUint32(b []byte, v uint32) {
@@ -467,8 +548,8 @@ func le_PutUint32(b []byte, v uint32) {
 }
 
 func le_Uint64(b []byte) uint64 {
-	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 |
-		uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56
+	return uint64(b[0]) | uint64(b[1]) << 8 | uint64(b[2]) << 16 | uint64(b[3]) << 24 |
+		uint64(b[4]) << 32 | uint64(b[5]) << 40 | uint64(b[6]) << 48 | uint64(b[7]) << 56
 }
 
 func le_PutUint64(b []byte, v uint64) {
@@ -586,21 +667,37 @@ func (e encoder) bytes(x []byte) {
 
 } //write this
 
-func (d *decoder) int8() int8 { return int8(d.uint8()) }
+func (d *decoder) int8() int8 {
+	return int8(d.uint8())
+}
 
-func (e *encoder) int8(x int8) { e.uint8(uint8(x)) }
+func (e *encoder) int8(x int8) {
+	e.uint8(uint8(x))
+}
 
-func (d *decoder) int16() int16 { return int16(d.uint16()) }
+func (d *decoder) int16() int16 {
+	return int16(d.uint16())
+}
 
-func (e *encoder) int16(x int16) { e.uint16(uint16(x)) }
+func (e *encoder) int16(x int16) {
+	e.uint16(uint16(x))
+}
 
-func (d *decoder) int32() int32 { return int32(d.uint32()) }
+func (d *decoder) int32() int32 {
+	return int32(d.uint32())
+}
 
-func (e *encoder) int32(x int32) { e.uint32(uint32(x)) }
+func (e *encoder) int32(x int32) {
+	e.uint32(uint32(x))
+}
 
-func (d *decoder) int64() int64 { return int64(d.uint64()) }
+func (d *decoder) int64() int64 {
+	return int64(d.uint64())
+}
 
-func (e *encoder) int64(x int64) { e.uint64(uint64(x)) }
+func (e *encoder) int64(x int64) {
+	e.uint64(uint64(x))
+}
 
 func (d *decoder) value(v reflect.Value) error {
 	kind := v.Kind()
