@@ -174,7 +174,7 @@ func DeserializeRaw(in []byte, data interface{}) error {
 
 //func field
 
-func DeserializeField(in []byte, sch StructSchema, name string, field interface{}) error {
+func DeserializeField(in []byte, fields []ReflectionField, name string, field interface{}) error {
 	d := &decoder{buf: make([]byte, len(in))}
 	copy(d.buf, in)
 	fv := reflect.ValueOf(field).Elem()
@@ -182,9 +182,9 @@ func DeserializeField(in []byte, sch StructSchema, name string, field interface{
 	copy(d2.buf, in)
 	s := 0
 
-	for i := 0; i < len(sch.StructFields); i++ {
-		f := sch.StructFields[i]
-		if (string(f.FieldName) == name) {
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		if (f.Name == name) {
 			fd := &decoder{buf: make([]byte, len(in) - s)}
 			copy(fd.buf, d.buf[s:])
 			fd.value(fv)
@@ -192,13 +192,13 @@ func DeserializeField(in []byte, sch StructSchema, name string, field interface{
 			return nil
 		}
 
-		switch string(f.FieldType) {
-		case "encoder.Href": //TODO: refactor. Size of Href types should be calculatable
+		switch f.Type {
+		case "schema.Href": //TODO: refactor. Size of Href types should be calculatable
 			s += 32
 			fd := &decoder{buf: make([]byte, len(in) - s)}
 			copy(fd.buf, d.buf[s:])
 			s += int(fd.uint32()) + 4
-		case "encoder.HArray": //TODO: refactor. Size of Href types should be calculatable
+		case "schema.HArray": //TODO: refactor. Size of Href types should be calculatable
 			fd := &decoder{buf: make([]byte, len(in) - s)}
 			copy(fd.buf, d.buf[s:])
 
@@ -245,7 +245,7 @@ func DeserializeField(in []byte, sch StructSchema, name string, field interface{
 		case "float64":
 			s += d.adv(8)
 		default:
-			log.Panicf("Decode error: kind %s not handled", string(f.FieldType))
+			log.Panicf("Decode error: kind %s not handled", f.Type)
 		}
 	}
 	return nil

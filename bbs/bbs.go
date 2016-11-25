@@ -2,24 +2,24 @@ package bbs
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/cxo/schema"
 )
 
 type Bbs struct {
 	//TODO implement thread lock for Content
-	Content encoder.Href `type:"BoardContainer"`
-	Store   *encoder.Store
+	Content schema.Href `type:"BoardContainer"`
+	Store   *schema.Store
 }
 
 func CreateBbs() *Bbs {
-	store := encoder.NewStore()
-	container := BoardContainer{Boards:encoder.NewHArray()}
+	store := schema.NewStore()
+	container := BoardContainer{Boards:schema.NewHArray()}
 	content, _ := store.Save(container)
 	return &Bbs{Store:store, Content:content}
 }
 
 func (bbs *Bbs) AddBoard(name string) (cipher.SHA256, error) {
-	b := Board{Name:name, Threads:encoder.NewHArray()}
+	b := Board{Name:name, Threads:schema.NewHArray()}
 	href, _ := bbs.Store.Save(b)
 
 	var container BoardContainer
@@ -71,7 +71,7 @@ func (bbs *Bbs) continer() BoardContainer{
 
 func (bbs *Bbs) updateBoard(key cipher.SHA256, board Board) {
 	newBoard, _ := bbs.Store.Save(board)
-	boards := []encoder.Href{newBoard}
+	boards := []schema.Href{newBoard}
 	container:= bbs.continer()
 	for i := 0; i < len(container.Boards); i++ {
 		if container.Boards[i].Hash != key {

@@ -1,8 +1,8 @@
-package encoder
+package schema
 
 import (
-	"fmt"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/cxo/encoder"
 )
 
 type Ref struct {
@@ -10,8 +10,8 @@ type Ref struct {
 }
 
 type HrefInfo struct {
-	has []Href
-	no  []Href
+	has []cipher.SHA256
+	no  []cipher.SHA256
 }
 
 ////For implementing Functors and Applicatives
@@ -32,40 +32,39 @@ type Href struct {
 
 func NewHref(key cipher.SHA256, value interface{}) Href {
 	schema := ExtractSchema(value)
-	result := Href{Type:Serialize(schema)}
+	result := Href{Type:encoder.Serialize(schema)}
 	result.Hash = key
 	return result
 }
 
 func (h Href) ToObject(s *Store, o interface{}) {
 	data, _ := s.Get(h.Hash)
-	DeserializeRaw(data, o)
+	encoder.DeserializeRaw(data, o)
 }
 
 func (h Href) Expand(source *Store, info *HrefInfo) {
 	if (source.has(h.Hash)) {
-		info.has = append(info.has, h)
+		info.has = append(info.has, h.Hash)
 		data, _ := source.Get(h.Hash)
 
 		schema := StructSchema{}
-		DeserializeRaw(h.Type, &schema)
+		encoder.DeserializeRaw(h.Type, &schema)
 
 		for i := 0; i < len(schema.StructFields); i++ {
 			f := schema.StructFields[i]
-			switch string(f.FieldType) {
-			case "encoder.Href":
+			switch string(f.Type) {
+			case "schema.Href":
 				href := Href{}
-				DeserializeField(data, schema, string(f.FieldName), &href)
+				encoder.DeserializeField(data, schema.StructFields, string(f.Name), &href)
 				href.Expand(source, info)
-			case "encoder.HArray":
+			case "schema.HArray":
 				harray := HArray{}
-				DeserializeField(data, schema, string(f.FieldName), &harray)
+				encoder.DeserializeField(data, schema.StructFields, string(f.Name), &harray)
 				harray.Expand(source, info)
 			}
 		}
 	} else {
-		fmt.Println("Source doesn't have a Key")
-		info.no = append(info.no, h)
+		info.no = append(info.no, h.Hash)
 	}
 }
 

@@ -3,7 +3,7 @@ package bbs
 import (
 	"testing"
 	"fmt"
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/cxo/schema"
 )
 
 func Test_Bbs_1(T *testing.T) {
@@ -12,7 +12,7 @@ func Test_Bbs_1(T *testing.T) {
 	bbs.AddBoard("Another Board")
 
 	var b Board
-	encoder.Href{Hash:board}.ToObject(bbs.Store, &b)
+	schema.Href{Hash:board}.ToObject(bbs.Store, &b)
 	fmt.Println("b", b)
 
 	bbs.AddThread(board, "Thread 1")

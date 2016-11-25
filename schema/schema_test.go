@@ -1,9 +1,10 @@
-package encoder
+package schema
 
 import (
 	"testing"
 	"bytes"
 	"fmt"
+	"github.com/skycoin/cxo/encoder"
 )
 
 type TestSchemaStruct struct {
@@ -29,7 +30,7 @@ func Test_Schema_1(T *testing.T) {
 		T.Fatal("Struct name is not equal")
 	}
 
-	if bytes.Compare(schema.StructFields[0].FieldName, []byte("Field1")) != 0 {
+	if schema.StructFields[0].Name != "Field1" {
 		T.Fatal("Field name is not equal")
 	}
 }
@@ -39,12 +40,12 @@ func Test_Encode_With_Schema_1(T *testing.T) {
 	t.Field1 = 255
 	t.Field2 = []byte("TEST1")
 	//schema := ExtractSchema(t)
-	res := Serialize(t)
+	res := encoder.Serialize(t)
 	//schemeData := encoder.Serialize(schema)
 	fmt.Println(res)
 	//fmt.Println(schemeData)
 
 	var tt TestSchemaStruct
-	DeserializeRaw(res, &tt)
+	encoder.DeserializeRaw(res, &tt)
 	fmt.Println(tt)
 }

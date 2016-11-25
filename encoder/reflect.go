@@ -12,6 +12,7 @@ import (
 type ReflectionField struct {
 	Name string
 	Type string
+	Tag  string
 }
 
 type Sha254Elements struct {
@@ -81,4 +82,8 @@ func writeLines(lines []string, path string) error {
 		fmt.Fprintln(w, line)
 	}
 	return w.Flush()
+}
+
+func (s *ReflectionField) String() string {
+	return fmt.Sprintln(s.Name, s.Type, s.Tag)
 }

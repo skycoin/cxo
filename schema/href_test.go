@@ -1,9 +1,10 @@
-package encoder
+package schema
 
 import (
 	"testing"
 	"fmt"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/cxo/encoder"
 )
 
 type TestHrefStruct struct {
@@ -86,23 +87,23 @@ func Test_Href_Array(T *testing.T) {
 
 func Test_Get_Property_Value_Href(T *testing.T) {
 	t1 := TestHref1{Field1:77}
-	data1 := Serialize(t1)
+	data1 := encoder.Serialize(t1)
 	var t TestHref2
 	t.Field1 = 32
 	t.Field2 = Href{Hash:cipher.SumSHA256(data1)}
 
 	schema := ExtractSchema(t)
-	data := Serialize(t)
+	data := encoder.Serialize(t)
 
 	//schemeData := encoder.Serialize(schema)
 	fmt.Println("data", data)
 
 	var f uint32
-	DeserializeField(data, schema, "Field1", &f)
+	encoder.DeserializeField(data, schema.StructFields, "Field1", &f)
 	fmt.Println(f)
 
 	var f2 Href
-	DeserializeField(data, schema, "Field2", &f2)
+	encoder.DeserializeField(data, schema.StructFields, "Field2", &f2)
 	fmt.Println("f2.Hash", f2.Hash)
 
 	if (f2.Hash != t.Field2.Hash) {
@@ -136,21 +137,21 @@ func Test_Get_Property_Value_Href(T *testing.T) {
 
 func Test_Get_Property_Value_Href_Array(T *testing.T) {
 	t1 := TestHref1{Field1:55}
-	data1 := Serialize(t1)
+	data1 := encoder.Serialize(t1)
 	t2 := TestHref1{Field1:55}
-	data2 := Serialize(t2)
+	data2 := encoder.Serialize(t2)
 
 	var t TestHrefArray
 	t.Field1 = 32
-	t.Field2 = HArray{Href{Hash:cipher.SumSHA256(data1)},Href{Hash:cipher.SumSHA256(data2)}}
+	t.Field2 = HArray{Href{Hash:cipher.SumSHA256(data1)}, Href{Hash:cipher.SumSHA256(data2)}}
 	t.Field3 = 77
 	t.Field4 = 99
 	schema := ExtractSchema(t)
-	data := Serialize(t)
+	data := encoder.Serialize(t)
 	fmt.Println("data", data)
 
 	var f2 HArray
-	DeserializeField(data, schema, "Field2", &f2)
+	encoder.DeserializeField(data, schema.StructFields, "Field2", &f2)
 
 	fmt.Println(f2)
 	if (f2[1].Hash != t.Field2[1].Hash) {
@@ -180,22 +181,22 @@ func Test_Get_Property_Value_Href_All(T *testing.T) {
 	h, _ := store.Save(a)
 	sch := ExtractSchema(a)
 
-	res, _:= store.Get(h.Hash)
+	res, _ := store.Get(h.Hash)
 
 	var f2 HArray
-	DeserializeField(res, sch, "Field2", &f2)
+	encoder.DeserializeField(res, sch.StructFields, "Field2", &f2)
 	if (f2[1].Hash != a.Field2[1].Hash) {
 		T.Fatal("Hash is not equal")
 	}
 
 	var f4 uint32
-	DeserializeField(res, sch, "Field4", &f4)
+	encoder.DeserializeField(res, sch.StructFields, "Field4", &f4)
 	if (f4 != a.Field4) {
 		T.Fatal("Fields are not equal")
 	}
 }
 
-func Test_Get_Get(T *testing.T) {
+func Test_Get_Property_Value_Href_All_One_Missing(T *testing.T) {
 	store := NewStore()
 
 	t1 := TestHrefStruct{Field1:1, Field2:[]byte("TEST1")}
@@ -208,22 +209,19 @@ func Test_Get_Get(T *testing.T) {
 	h3, _ := store.Save(t3)
 
 	t4 := TestHrefStruct{Field1:8, Field2:[]byte("TEST5")}
-	d4 := Serialize(t4)
+	d4 := encoder.Serialize(t4)
 	h4 := cipher.SumSHA256(d4)
 	s4 := ExtractSchema(t4)
-	fmt.Println("Missing hash: ", h4)
-
-	a := TestHrefAll{Field1:h1, Field2:HArray{h2, h3, Href{Hash:h4, Type:Serialize(s4)}}, Field4: 88}
+	a := TestHrefAll{Field1:h1, Field2:HArray{h2, h3, Href{Hash:h4, Type:encoder.Serialize(s4)}}, Field4: 88}
 	root, _ := store.Save(a)
 
-	info := &HrefInfo{}
-	root.Expand(store, info)
+	info := HrefInfo{}
+	root.Expand(store, &info)
 
-	fmt.Println(info)
-	if (len(info.has) != 4){
+	if (len(info.has) != 4) {
 		T.Fatal("Count of objects in DB are not equal")
 	}
-	if (len(info.no) != 1){
+	if (len(info.no) != 1) {
 		T.Fatal("Count of missing in DB are not equal")
 	}
 

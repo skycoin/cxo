@@ -1,10 +1,11 @@
-package encoder
+package schema
 
 import (
 	"fmt"
 	"github.com/skycoin/skycoin/src/cipher"
 	"sync"
 	"errors"
+	"github.com/skycoin/cxo/encoder"
 )
 
 type Store struct {
@@ -21,7 +22,7 @@ func NewStore() *Store {
 }
 
 func (db *Store) saveObj(value interface{}) (cipher.SHA256, error) {
-	data := Serialize(value)
+	data := encoder.Serialize(value)
 	key := cipher.SumSHA256(data)
 
 	if db.has(key) {
@@ -47,7 +48,7 @@ func (db *Store) Load(key cipher.SHA256, data interface{}) error {
 	if !ok {
 		return errors.New("Object does not exist")
 	}
-	DeserializeRaw(value, data)
+	encoder.DeserializeRaw(value, data)
 	return nil
 }
 
