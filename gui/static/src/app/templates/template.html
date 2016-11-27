@@ -1,0 +1,215 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <h2>Skyhash</h2>
+        </div>
+    </div>
+    <ul class="nav nav-tabs" role="tablist">
+        <li role="presentation" class="active"><a href="#nodes" aria-controls="nodes" role="tab" data-toggle="tab">Nodes</a></li>
+        <li role="presentation"><a href="#routes" aria-controls="routes" role="tab" data-toggle="tab">Routes</a></li>
+        <li role="presentation"><a href="#setting" aria-controls="setting" role="tab" data-toggle="tab">Setting</a></li>
+        <li role="presentation"><a href="#graph" aria-controls="graph" role="tab" data-toggle="tab">Graph</a></li>
+        <li role="presentation"><a href="#network" aria-controls="network" role="tab" data-toggle="tab">Network</a></li>
+    </ul>
+    <!-- Tab panes -->
+    <div class="tab-content">
+        <div role="tabpanel" class="tab-pane fade in active" id="nodes">
+            <div class="container-fluid content">
+                <div class="content-body">
+                    <div class="row">
+                        <div class="col-sm-8">
+                            <p>
+                                Node List
+                                <button type="button" name="button" class="btn btn-success pull-right" (click)="addNewNode()">New node</button>
+                                <button type="button" name="button" class="btn btn-primary pull-right reloadNodeList" (click)="loadNodeList()"><i class="fa fa-refresh" aria-hidden="true"></i></button>
+                            </p>
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Public Key</th>
+                                        <th>IP</th>
+                                        <th>Port</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="#node of nodes" (click)="showNodeInfo(node)" [attr.pubKey]="node.pubKey" class="clickable">
+                                        <td>{{node.pubKey}}</td>
+                                        <td>{{node.ip}}</td>
+                                        <td>{{node.port}}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div role="tabpanel" class="tab-pane fade" id="routes">
+            <div class="container-fluid content">
+                Routes
+            </div>
+        </div>
+        <div role="tabpanel" class="tab-pane fade" id="setting">
+            <div class="container-fluid content">
+                <div class="content-body">
+                    Setting
+                </div>
+            </div>
+        </div>
+        <div role="tabpanel" class="tab-pane fade" id="graph">
+            <div class="container-fluid content">
+                <div class="content-body">
+                    Graph
+                </div>
+            </div>
+        </div>
+        <div role="tabpanel" class="tab-pane fade" id="network">
+            <div class="container-fluid content">
+                <div class="content-body">
+                    Network
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Nav tabs -->
+
+<!-- Modal -->
+<div class="modal fade" id="modal-node-info" role="dialog" *ngIf="selectedNode">
+    <div class="modal-dialog">
+
+        <!-- Modal content-->
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title">Node Info</h4>
+            </div>
+            <div class="modal-body">
+
+                <div class="container-fluid">
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li role="presentation" class="active"><a href="#subscribers" aria-controls="subscribers" role="tab" data-toggle="tab">Subscribers ({{subscribers.length}})</a></li>
+                        <li role="presentation"><a href="#subscriptions" aria-controls="subscriptions" role="tab" data-toggle="tab">Subscriptions ({{subscriptions.length}})</a></li>
+                        <li role="presentation"><a href="#node_settings" aria-controls="node_settings" role="tab" data-toggle="tab">Stats and Settings</a></li>
+                    </ul>
+                    <!-- Tab panes -->
+                    <div class="tab-content">
+                        <div role="tabpanel" class="tab-pane fade in active" id="subscribers">
+                            <div class="container-fluid content">
+                                <div class="row">
+                                    <div class="col-sm-8">
+                                        <p>
+                                            Subscriber List
+                                            <button type="button" name="button" class="btn btn-primary pull-right" (click)="loadSubscriberList(selectedNode)"><i class="fa fa-refresh" aria-hidden="true"></i></button>
+                                        </p>
+                                        <table class="table table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>Public Key</th>
+                                                    <th>IP</th>
+                                                    <th>Port</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr *ngFor="#subscriber of subscribers" [attr.pubKey]="subscriber.pubKey" class="clickable">
+                                                    <td>{{subscriber.pubKey}}</td>
+                                                    <td>{{subscriber.ip}}</td>
+                                                    <td>{{subscriber.port}}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div role="tabpanel" class="tab-pane fade" id="subscriptions">
+                            <div class="container-fluid content">
+                                <div class="content-body">
+                                    <div class="row">
+                                        <div class="col-sm-8">
+                                            <p>
+                                                Subscription List
+                                                <button type="button" name="button" class="btn btn-primary pull-right" (click)="loadSubscriptionList(selectedNode)"><i class="fa fa-refresh" aria-hidden="true"></i></button>
+                                            </p>
+                                            <table class="table table-striped">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Public Key</th>
+                                                        <th>IP</th>
+                                                        <th>Port</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr *ngFor="#subscription of subscriptions" [attr.pubKey]="subscription.pubKey" class="clickable">
+                                                        <td>{{subscription.pubKey}}</td>
+                                                        <td>{{subscription.ip}}</td>
+                                                        <td>{{subscription.port}}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div role="tabpanel" class="tab-pane fade" id="node_settings">
+                            <div class="container-fluid content">
+                                <div class="content-body">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Public Key</th>
+                                                <th>IP</th>
+                                                <th>Port</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>{{selectedNode.pubKey}}</td>
+                                                <td>{{selectedNode.ip}}</td>
+                                                <td>{{selectedNode.port}}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modal-new-node" role="dialog">
+    <div class="modal-dialog">
+
+        <!-- Modal content-->
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title">New Node</h4>
+            </div>
+            <div class="modal-body">
+                <p>Input the secret key of the node you want to create; leave blank to assign random key to new node.</p>
+                <div class="container-fluid">
+                    <div class="input-group">
+                        <span class="input-group-addon" id="secKey">SecKey</span>
+                        <input #box (keyup)="onKey(box.value)" type="text" class="form-control" placeholder="Secret key" aria-describedby="secKey">
+                    </div>
+                    <div class="alert alert-danger hide alert-dismissable" role="alert" id="new-node-error"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-info" (click)="createNewNode()">Create</button>
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+
+    </div>
+</div>
