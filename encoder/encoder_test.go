@@ -2,10 +2,8 @@ package encoder
 
 import (
 	"bytes"
-	"fmt"
 	"reflect"
 	"testing"
-	//"fmt"
 	"crypto/rand"
 	"encoding/hex"
 	"log"
@@ -553,21 +551,4 @@ func TestByteArray(t *testing.T) {
 		t.Errorf("incorrect serialization length for fixed sized arrays: %d byte fixed sized array serialized to %d bytes \n", len(d), len(buff2))
 	}
 
-}
-
-func TestReflectData(T *testing.T) {
-	var t TestStruct
-	t.X = 345535
-	t.Y = 23432435443
-	t.Z = 255
-	t.K = []byte("TEST6")
-	t.W = true
-	t.T = "hello"
-	t.U = cipher.PubKey{1, 2, 3, 0, 5, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-
-	b3, err := FieldData(t)
-	if err != nil {
-
-	}
-	fmt.Println(b3)
 }

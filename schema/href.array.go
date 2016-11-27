@@ -4,22 +4,28 @@ import (
 	"reflect"
 )
 
-type HArray []Href
-
-func NewHArray(hrefList ...Href) HArray {
-	return hrefList[:]
+type HArray struct {
+	Items  []HKey
+	Schema HKey
 }
 
-func (h HArray) Append(key Href) HArray {
-	return append(h, key)
+func newArray(schemaKey HKey, hrefList ...HKey) HArray {
+	return HArray{Schema: schemaKey, Items:hrefList[:]}
+}
+
+func (h HArray) Append(key HKey) HArray {
+	h.Items = append(h.Items, key)
+	return h
 }
 
 func (h HArray) ToObjects(s *Store, o interface{}) interface{} {
 	resultType := reflect.TypeOf(o)
 	slice := reflect.MakeSlice(reflect.SliceOf(resultType), 0, 0)
-	for i := 0; i < len(h); i++ {
+	for i := 0; i < len(h.Items); i++ {
 		ptr := reflect.New(resultType).Interface()
-		h[i].ToObject(s, ptr)
+		schema, _ := s.Get(h.Schema)
+		href := Href{Hash:h.Items[i],Type:schema}
+		href.ToObject(s, ptr)
 		sv := reflect.ValueOf(ptr).Elem()
 		slice = reflect.Append(slice, sv)
 	}
@@ -29,53 +35,11 @@ func (h HArray) ToObjects(s *Store, o interface{}) interface{} {
 
 
 func (h HArray) Expand(source *Store, info *HrefInfo) {
-	for i := 0; i < len(h); i++ {
-		h[i].Expand(source, info)
+	Href{Hash:h.Schema}.Expand(source, info)
+	for i := 0; i < len(h.Items); i++ {
+		schema, _ := source.Get(h.Schema)
+		href := Href{Hash:h.Items[i],Type:schema}
+		//fmt.Println("Item expand for href: ", href)
+		href.Expand(source, info)
 	}
 }
-
-//
-//func (h *Href) Expand() HashMap {
-//	hashMap := &HashMap{}
-//	hashMap[]
-//	return *hashMap
-//}
-
-//func HrefArrayEmpty(store *Store) HRef {
-//		return HRef{context: HArray{Store:store}}
-//}
-//
-//func HrefArray(store *Store, slice []interface{}) HRef {
-//	if slice == nil {
-//		return HRef{context: HArray{Store:store}}
-//	}
-//	var lst HArray =  HArray{Store:store, Items:slice}
-//	return HRef{context: lst}
-//}
-
-//func (h HArray) Value() []HrefStatic {
-//	return h.Items
-//}
-//
-////Map is a Map implementation for a list
-//func (h HArray) Map(f Morphism) HRef {
-//	result := HArray{Store:h.Store}
-//	itemsValue := reflect.ValueOf(h.Items)
-//	newItems := []interface{}{}
-//	for i := 0; i < itemsValue.Len(); i++ {
-//		newItems = append(newItems, f(h.Store, itemsValue.Index(i).Interface()))
-//	}
-//	result.Items = newItems
-//	return HRef{context: result}
-//}
-
-//func (h HArray) ToBinary(s *Store) [][]byte {
-//	var result [][]byte = [][]byte{}
-//	itemsValue := reflect.ValueOf(h)
-//	for i := 0; i < itemsValue.Len(); i++ {
-//		result = append(result, HrefToBinary(s, itemsValue.Index(i).Interface()).([]byte))
-//	}
-//	return result
-//}
-
-

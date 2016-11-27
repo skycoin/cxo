@@ -30,7 +30,7 @@ func Test_Schema_1(T *testing.T) {
 		T.Fatal("Struct name is not equal")
 	}
 
-	if schema.StructFields[0].Name != "Field1" {
+	if string(schema.StructFields[0].Name) != "Field1" {
 		T.Fatal("Field name is not equal")
 	}
 }

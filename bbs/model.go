@@ -5,20 +5,24 @@ import (
 )
 
 type BoardContainer struct {
-	Boards schema.HArray `type:"Board"`
+	Boards schema.HArray
 }
 
 type Board struct {
 	Name    string
-	Threads schema.HArray `type:"Thread"`
+	Threads schema.HArray
 }
 
 type Thread struct {
 	Name  string
-	Posts schema.HArray `type:"Post"`
+	Posts schema.HArray
 }
 
 type Post struct {
-	Poster []byte
+	Poster schema.Href
 	Text   string
 }
+
+//type Poster struct {
+//	Content []byte
+//}

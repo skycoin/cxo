@@ -2,37 +2,42 @@ package schema
 
 import (
 	"fmt"
-	"github.com/skycoin/skycoin/src/cipher"
 	"sync"
 	"errors"
 	"github.com/skycoin/cxo/encoder"
 )
 
 type Store struct {
-	data            map[cipher.SHA256][]byte
+	data            map[HKey][]byte
 	mu              *sync.RWMutex
-	newDataCallback func(cipher.SHA256, interface{}) error
+	//newDataCallback func(cipher.SHA256, interface{}) error
 }
 
 func NewStore() *Store {
 	db := Store{}
-	db.data = make(map[cipher.SHA256][]byte)
+	db.data = make(map[HKey][]byte)
 	db.mu = &sync.RWMutex{}
 	return &db
 }
 
-func (db *Store) saveObj(value interface{}) (cipher.SHA256, error) {
+func (db *Store) saveObj(value interface{}) (HKey, error) {
 	data := encoder.Serialize(value)
-	key := cipher.SumSHA256(data)
+	key := CreateKey(data)
 
-	if db.has(key) {
-		return cipher.SHA256{}, fmt.Errorf("key already present: %v", key)
+	if db.Has(key) {
+		return key, fmt.Errorf("key already present: %v", key)
 	}
 	db.mu.Lock()
 	db.data[key] = data
 	db.mu.Unlock()
 	//db.newDataCallback(key, value)
 	return key, nil
+}
+
+func (db *Store) Add(key HKey, data []byte) {
+	db.mu.Lock()
+	db.data[key] = data
+	db.mu.Unlock()
 }
 
 func (db *Store) Save(value interface{}) (Href, error) {
@@ -43,7 +48,8 @@ func (db *Store) Save(value interface{}) (Href, error) {
 	return NewHref(key, value), nil
 }
 
-func (db *Store) Load(key cipher.SHA256, data interface{}) error {
+
+func (db *Store) Load(key HKey, data interface{}) error {
 	value, ok := db.data[key]
 	if !ok {
 		return errors.New("Object does not exist")
@@ -52,14 +58,20 @@ func (db *Store) Load(key cipher.SHA256, data interface{}) error {
 	return nil
 }
 
-func (db *Store) Get(key cipher.SHA256) ([]byte, bool) {
+func (db *Store) Get(key HKey) ([]byte, bool) {
 	value, ok := db.data[key]
 	return value, ok
 }
 
-func (db *Store) has(key cipher.SHA256) bool {
+func (db *Store) Has(key HKey) bool {
 	_, ok := db.data[key]
 	return ok
+}
+
+func (db *Store) CreateArray(objType interface{}, items ...HKey) HArray{
+	schema := ExtractSchema(objType)
+	key, _ := db.saveObj(schema)
+	return newArray(key, items...)
 }
 
 //func (db *Store) NewDataCallback(newDataCallback func(cipher.SHA256, interface{}) error) error {

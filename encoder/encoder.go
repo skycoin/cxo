@@ -184,7 +184,7 @@ func DeserializeField(in []byte, fields []ReflectionField, name string, field in
 
 	for i := 0; i < len(fields); i++ {
 		f := fields[i]
-		if (f.Name == name) {
+		if (string(f.Name) == name) {
 			fd := &decoder{buf: make([]byte, len(in) - s)}
 			copy(fd.buf, d.buf[s:])
 			fd.value(fv)
@@ -192,7 +192,7 @@ func DeserializeField(in []byte, fields []ReflectionField, name string, field in
 			return nil
 		}
 
-		switch f.Type {
+		switch string(f.Type) {
 		case "schema.Href": //TODO: refactor. Size of Href types should be calculatable
 			s += 32
 			fd := &decoder{buf: make([]byte, len(in) - s)}
@@ -206,14 +206,12 @@ func DeserializeField(in []byte, fields []ReflectionField, name string, field in
 			if length < 0 || length > len(fd.buf) {
 				return fmt.Errorf("Invalid length: %d", length)
 			}
-			s += 4
-			for i := 0; i < length; i++ {
-				s += 32
-				di := &decoder{buf: make([]byte, len(in) - s)}
-				copy(di.buf, d.buf[s:])
-				ss := di.uint32()
-				s += int(ss) + 4
-			}
+			s += 4 + 32 * length + 32
+
+			//sd := &decoder{buf: make([]byte, len(in) - s)}
+			//copy(sd.buf, d.buf[s:])
+			//s += 4 + int(sd.uint32())
+
 		case "slice":
 			s += 0 //TODO: implement
 		case "struct":
