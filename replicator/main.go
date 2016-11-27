@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"time"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/nodeManager"
 )
@@ -130,8 +131,6 @@ func main() {
 		// for this simple example, we use a colored piece of text
 		// as data
 
-		//lime := ansi.ColorCode("red+b:white")
-		//reset := ansi.ColorCode("reset")
 		colored :=
 			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
 			"@@@@@ THIS IS A PIECE OF DATA @@@\n" +

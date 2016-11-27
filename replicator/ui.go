@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/util"
-
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/gui"
 )
