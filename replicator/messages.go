@@ -1,4 +1,4 @@
-package main
+package replicator
 
 import "github.com/skycoin/skycoin/src/cipher"
 

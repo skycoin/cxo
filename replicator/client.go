@@ -1,4 +1,4 @@
-package main
+package replicator
 
 import (
 	"flag"
@@ -11,61 +11,34 @@ import (
 	"github.com/skycoin/cxo/nodeManager"
 )
 
-// command line option flags
-var (
+
+type replicator struct {
+	db          *DataBase
+	imTheVertex bool
 	subscribeTo string
-)
+	config      *Config
+	manager     *nodeManager.Manager
+}
 
-// DB holds all the data I have
-var DB *DataBase
+func Client() *replicator {
 
-func main() {
-	/*
-		router := gui.NewRouter()
+	client := &replicator{db:NewDB()}
+	//1. Create Hash Database
+	//2. Create schema provider
+	//3. Integrate Hash Database to schema provider(schema store)
+	//4. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
+	//schema := schema.NewStore()
 
-		h1 := func(ctx *gui.Context) error {
-			fmt.Println("h1")
-			return nil
-		}
-		h2 := func(ctx *gui.Context) error {
-			fmt.Println("h2")
-			return nil
-		}
-		h3 := func(ctx *gui.Context) error {
-			fmt.Println("h3")
-			return nil
-		}
-
-		router.GET("/manager/nodes/:node_id", h1)
-		router.GET("/manager/nodes/:node_id/subscriptions/:subscription_id", h1)
-		router.GET("/manager/nodes/:node_id/subscriptions/:subscripion_id/altro", h1)
-		router.GET("/manager/nodes/:node_id/subscriptfions/:suiption_id", h2)
-		router.GET("/manager", h3)
-		router.GET("/manager/manager", h3)
-		router.GET("/", h3)
-		router.POST("/", h2)
-
-		handler, err := router.TestHandle("POST", "/")
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if handler != nil {
-			handler(&gui.Context{})
-		}
-		return*/
-
-	flag.StringVar(&subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
-	cfg := defaultConfig()
-	cfg.Parse()
+	flag.StringVar(&client.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
+	client.config = defaultConfig()
+	client.config.Parse()
 
 	nodeManager.Debugging = false
 
-	// delcare the map that will hold all the data
-	DB = NewDB()
-
 	managerConfig := nodeManager.NewManagerConfig()
 	manager, err := nodeManager.NewManager(managerConfig)
+	client.manager = manager
+
 	if err != nil {
 		fmt.Println("error while configuring node manager", "error", err)
 	}
@@ -73,11 +46,11 @@ func main() {
 	newNode := manager.NewNode()
 	err = manager.AddNode(newNode)
 	if err != nil {
-		return
+		panic("Can't create node")
 	}
 
 	// this callback will be executed each time DB.Add(data) is called
-	DB.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
+	client.db.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
 		newDataIHave := AnnounceMessage{
 			HashOfNewAvailableData: key,
 		}
@@ -95,22 +68,22 @@ func main() {
 
 	err = newNode.Start()
 	if err != nil {
-		return
+		panic("Can't create node")
 	}
 
-	ImTheVertex := subscribeTo == ""
+	client.imTheVertex = client.subscribeTo == ""
 
 	// for the demo, there is one vertex that after a specified period of time
 	// announces to its subscribers that it has new data.
 
 	// if this node is not a vertex, just subscribe to the specified node
 	// and wait for incoming AnnounceMessage
-	if !ImTheVertex {
+	if !client.imTheVertex {
 
-		ip, portString, err := net.SplitHostPort(subscribeTo)
+		ip, portString, err := net.SplitHostPort(client.subscribeTo)
 		if err != nil {
 			fmt.Println("err: ", err)
-			return
+			panic("Can't create node")
 		}
 
 		port, err := strconv.ParseUint(portString, 10, 16)
@@ -122,7 +95,7 @@ func main() {
 		err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
 		if err != nil {
 			fmt.Println("err: ", err)
-			return
+			panic("Can't create node")
 		}
 
 	} else {
@@ -133,17 +106,17 @@ func main() {
 
 		colored :=
 			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
-			"@@@@@ THIS IS A PIECE OF DATA @@@\n" +
-			"@@@@@ SENT TO SUBSCRIBERS @@@@@@@\n" +
-			"@@@@@ FROM A CENTRAL NODE @@@@@@@\n" +
-			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+				"@@@@@ THIS IS A PIECE OF DATA @@@\n" +
+				"@@@@@ SENT TO SUBSCRIBERS @@@@@@@\n" +
+				"@@@@@ FROM A CENTRAL NODE @@@@@@@\n" +
+				"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
 
 		theData := []byte(colored)
 		// hash the question
 		hashOfTheData := cipher.SumSHA256(theData)
 		if err != nil {
 			fmt.Println("err while signing data: ", err)
-			return
+			panic("Can't create node")
 		}
 
 		go func() {
@@ -153,16 +126,20 @@ func main() {
 
 			// when adding the data, a callback is called, which announces the new data to
 			// all subscribers
-			err = DB.Add(hashOfTheData, theData)
+			err = client.db.Add(hashOfTheData, theData)
 
 			if err != nil {
 				fmt.Println("error while adding data to db", err)
 			}
 		}()
 	}
+	return client
+}
 
-	if ImTheVertex {
-		RunAPI(cfg, manager)
+func (r *replicator) Run() {
+
+	if r.imTheVertex {
+		RunAPI(r.config, r.manager)
 	} else {
 		time.Sleep(time.Minute * 120)
 	}

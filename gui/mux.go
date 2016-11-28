@@ -37,7 +37,7 @@ type Router struct {
 
 func (r *Router) Serve(address string) error {
 	for routeName := range r.routes {
-		fmt.Println(routeName)
+		fmt.Println("routeName:", routeName)
 	}
 	server := http.Server{
 		Addr:    address,
@@ -210,6 +210,7 @@ func (r *Router) findRoute(method string, route string) (Handle, params, error) 
 
 	var this interface{}
 	partsLength := len(urlPartsClean)
+
 Loop:
 	for partIndex, part := range urlPartsClean {
 		t, ok := current[part]

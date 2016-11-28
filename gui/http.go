@@ -44,6 +44,7 @@ func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager) err
 
 	// register API handlers
 	RegisterNodeManagerHandlers(router, shm)
+	//RegisterSchemaHandlers(router, shm)
 
 	RegisterStaticFolders(router, appLoc)
 
