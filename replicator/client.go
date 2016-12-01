@@ -12,6 +12,7 @@ import (
 	"github.com/skycoin/cxo/schema"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/bbs"
+	"math/rand"
 )
 
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
@@ -33,8 +34,11 @@ func Client() *replicator {
 	DB = data.NewDB()
 	//2. Create schema provider. Integrate Hash Database to schema provider(schema store)
 
-	boards := bbs.CreateBbs(DB)
+	//boards := bbs.CreateBbs(DB)
+	boards:= prepareTestData(DB)
 	client.dataProvider = boards.Container
+
+
 
 	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
 	flag.StringVar(&client.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
@@ -151,4 +155,50 @@ func (r *replicator) Run() {
 	} else {
 		time.Sleep(time.Minute * 120)
 	}
+}
+
+
+func prepareTestData(d *data.DataBase) *bbs.Bbs {
+	bSystem := bbs.CreateBbs(d)
+	boards := []bbs.Board{}
+	for b := 0; b < 3; b++ {
+		threads := []bbs.Thread{}
+		for t := 0; t < 10; t++ {
+			posts := []bbs.Post{}
+			for p := 0; p < 10; p++ {
+				posts = append(posts, bbs.Post{Text: "Post_" + generateString(15)})
+			}
+			threads = append(threads, bSystem.CreateThread("Thread_" + generateString(15), posts...))
+		}
+		boards = append(boards, bSystem.CreateBoard("Board_" + generateString(15), threads...))
+	}
+	bSystem.AddBoards(boards)
+	return bSystem
+}
+
+const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const (
+	letterIdxBits = 6                    // 6 bits to represent a letter index
+	letterIdxMask = 1 << letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+	letterIdxMax = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+)
+
+var src = rand.NewSource(time.Now().UnixNano())
+
+func generateString(n int) string {
+	b := make([]byte, n)
+	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
+	for i, cache, remain := n - 1, src.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = src.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			b[i] = letterBytes[idx]
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+
+	return string(b)
 }

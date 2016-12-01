@@ -3,11 +3,11 @@ package bbs
 import (
 	"github.com/skycoin/cxo/schema"
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type Bbs struct {
 	//TODO implement thread lock for Content
-	//Content schema.Href
 	Container *schema.Container
 }
 
@@ -19,7 +19,7 @@ func CreateBbs(dataSource data.IDataSource) *Bbs {
 	return &Bbs{Container:c}
 }
 
-func (bbs *Bbs) AddBoard(name string) (schema.HKey, error) {
+func (bbs *Bbs) AddBoard(name string) (cipher.SHA256, error) {
 
 	b := Board{Name:name, Threads:bbs.Container.CreateArray(Thread{})}
 	href, _ := bbs.Container.Save(b)
@@ -48,7 +48,7 @@ func (bbs *Bbs) AddBoards(boards []Board)  {
 }
 
 //TODO: Just for test - need refactoring
-func (bbs *Bbs) GetBoard(name string) schema.HKey {
+func (bbs *Bbs) GetBoard(name string) cipher.SHA256 {
 	allObjects := bbs.AllBoars()
 	boards := bbs.getBoards()
 	for i := 0; i < len(allObjects); i++ {
@@ -56,7 +56,7 @@ func (bbs *Bbs) GetBoard(name string) schema.HKey {
 			return boards.Items[i]
 		}
 	}
-	return schema.HKey{}
+	return cipher.SHA256{}
 }
 
 func (bbs *Bbs) AllBoars() []Board {
@@ -65,7 +65,7 @@ func (bbs *Bbs) AllBoars() []Board {
 	return boards
 }
 
-func (bbs *Bbs) AddThread(boardKey schema.HKey, name string) {
+func (bbs *Bbs) AddThread(boardKey cipher.SHA256, name string) {
 	newThread := Thread{Name:name}
 	href, _ := bbs.Container.Save(newThread)
 	var board Board
@@ -95,7 +95,7 @@ func (bbs *Bbs) getBoards() schema.HArray {
 	return bs
 }
 
-func (bbs *Bbs) updateBoard(key schema.HKey, board Board) {
+func (bbs *Bbs) updateBoard(key cipher.SHA256, board Board) {
 	container := bbs.getBoards()
 	h, _ := bbs.Container.Save(board)
 	for i := 0; i < len(container.Items); i++ {
@@ -108,7 +108,7 @@ func (bbs *Bbs) updateBoard(key schema.HKey, board Board) {
 	//bbs.Content, _ = bbs.Container.Save(container)
 
 	//newBoard, _ := bbs.Container.Save(board)
-	////boards := []schema.HKey{newBoard.Hash}
+	////boards := []cipher.SHA256{newBoard.Hash}
 	//boards := bbs.getBoards()
 	//boards.Items = append(boards.Items, newBoard.Hash)
 	//fmt.Println("boards: ", boards)

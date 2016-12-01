@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type TestHrefStruct struct {
@@ -63,7 +64,7 @@ func Test_Href_Array(T *testing.T) {
 	h2, _ := store.Save(t2)
 	sh := ExtractSchema(t1)
 	fmt.Println(sh)
-	h := newArray(HKey{}, h1.Hash, h2.Hash)
+	h := newArray(cipher.SHA256{}, h1.Hash, h2.Hash)
 
 	fmt.Println("Hashes", h)
 }
@@ -146,7 +147,7 @@ func Test_Get_Property_Value_Href_Array(T *testing.T) {
 
 	var t TestHrefArray
 	t.Field1 = 32
-	t.Field2 = newArray(HKey{}, CreateKey(data1), CreateKey(data2))
+	t.Field2 = newArray(cipher.SHA256{}, CreateKey(data1), CreateKey(data2))
 	t.Field3 = 77
 	t.Field4 = 99
 	schema := ExtractSchema(t)
@@ -180,7 +181,7 @@ func Test_Get_Property_Value_Href_All(T *testing.T) {
 	//th1 := TestHref2{Field1:7, Field2:Href{Hash:key4}}
 	//keyTh1, _ := store.Save(th1)
 
-	a := TestHrefAll{Field1:h1, Field2:newArray(HKey{}, h2.Hash, h3.Hash), Field4: 88}
+	a := TestHrefAll{Field1:h1, Field2:newArray(cipher.SHA256{}, h2.Hash, h3.Hash), Field4: 88}
 	h, _ := store.Save(a)
 	sch := ExtractSchema(a)
 
@@ -214,7 +215,7 @@ func Test_Get_Property_Value_Href_All_One_Missing(T *testing.T) {
 	t4 := TestHrefStruct{Field1:8, Field2:[]byte("TEST5")}
 	d4 := encoder.Serialize(t4)
 	h4 := CreateKey(d4)
-	a := TestHrefAll{Field1:h1, Field2: newArray(HKey{}, h2.Hash, h3.Hash, h4), Field4: 88}
+	a := TestHrefAll{Field1:h1, Field2: newArray(cipher.SHA256{}, h2.Hash, h3.Hash, h4), Field4: 88}
 	root, _ := store.Save(a)
 
 	info := HrefInfo{}

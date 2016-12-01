@@ -1,6 +1,9 @@
 package gui
 
-import "github.com/skycoin/cxo/schema"
+import (
+	"github.com/skycoin/cxo/schema"
+	"fmt"
+)
 
 type schemaApi struct {
 	sm *schema.Container
@@ -23,14 +26,14 @@ func (api *schemaApi) List(ctx *Context) error {
 	if (err != nil) {
 		return ctx.ErrNotFound(err.Error(), "schema", objectName)
 	}
-
-
-	return ctx.JSON(200, schemaKey)
+	list := api.sm.GetAllBySchema(schemaKey)
+	return ctx.JSON(200, list)
 }
 
 func (api *schemaApi) Schema(ctx *Context) error {
 	objectName := *ctx.Param("object")
 	schema, err := api.sm.GetSchema(objectName)
+	fmt.Println("Schema", schema)
 	if (err != nil) {
 		return ctx.ErrNotFound(err.Error(), "schema", objectName)
 	}

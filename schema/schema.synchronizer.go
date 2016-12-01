@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type synchronizer struct {
@@ -41,9 +42,8 @@ func (s *synchronizer) Sync(source *Container, ref Href) (<- chan SyncInfo, <- c
 	}()
 	return ch, done
 }
-//
 
-func synchData(d, s *Container, key HKey) bool {
+func synchData(d, s *Container, key cipher.SHA256) bool {
 	if (!d.Has(key)) {
 		obj, ok := s.Get(key)
 		if (!ok) {

@@ -12,11 +12,11 @@ import (
 type Container struct {
 	ds    data.IDataSource
 	Root  Href
-	types map[string]HKey
+	types map[string]cipher.SHA256
 }
 
 func NewContainer(ds data.IDataSource) *Container {
-	return &Container{ds:ds, types:map[string]HKey{}}
+	return &Container{ds:ds, types:map[string]cipher.SHA256{}}
 }
 
 func (c *Container) Register(value interface{}) {
@@ -47,15 +47,15 @@ func (c *Container) GetSchema(name string) (*Schema, error) {
 	return nil, errors.New("Schema does not exist")
 }
 
-func (c *Container) GetSchemaKey(name string) (HKey, error) {
+func (c *Container) GetSchemaKey(name string) (cipher.SHA256, error) {
 	key, ok := c.types[name]
 	if !ok {
-		return HKey{}, errors.New("Schema does not exist")
+		return cipher.SHA256{}, errors.New("Schema does not exist")
 	}
 	return key, nil
 }
 
-func (c *Container) saveObj(value interface{}) (HKey, error) {
+func (c *Container) saveObj(value interface{}) (cipher.SHA256, error) {
 	data := encoder.Serialize(value)
 	key := CreateKey(data)
 
@@ -79,7 +79,7 @@ func (c *Container) Save(value interface{}) (Href, error) {
 	return c.CreateRef(key, value), nil
 }
 
-func (c *Container) Load(key HKey, data interface{}) error {
+func (c *Container) Load(key cipher.SHA256, data interface{}) error {
 	value, ok := c.Get(key)
 	if !ok {
 		return errors.New("Object does not exist")
@@ -88,28 +88,57 @@ func (c *Container) Load(key HKey, data interface{}) error {
 	return nil
 }
 
-func (c *Container) Add(key HKey, data []byte) error {
+func (c *Container) Add(key cipher.SHA256, data []byte) error {
 	return c.ds.Add(cipher.SHA256(key), data)
 }
 
-func (c *Container) Get(key HKey) ([]byte, bool) {
+func (c *Container) Get(key cipher.SHA256) ([]byte, bool) {
 	return c.ds.Get(cipher.SHA256(key))
 }
 
-func (c *Container) Has(key HKey) bool {
+func (c *Container) Has(key cipher.SHA256) bool {
 	return c.ds.Has(cipher.SHA256(key))
 }
 
-func (c *Container) CreateRef(key HKey, value interface{}) Href {
+func (c *Container) CreateRef(key cipher.SHA256, value interface{}) Href {
 	schema := ExtractSchema(value)
 	schemaKey, _ := c.saveObj(schema)
 	result := Href{Hash:key, Type:schemaKey}
 	return result
 }
 
-func (c *Container) CreateArray(objType interface{}, items ...HKey) HArray {
+func (c *Container) CreateArray(objType interface{}, items ...cipher.SHA256) HArray {
 	schema := ExtractSchema(objType)
 	schemaKey, _ := c.saveObj(schema)
 	result := HArray{Type: schemaKey, Items:items[:]}
 	return result
 }
+
+func (c *Container) GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256 {
+	q := HrefQuery{}
+	c.Root.ExpandBySchema(c, schemaKey, &q)
+	return q.Items
+
+	//return c.ds.Where(func(k cipher.SHA256, data []byte) bool {
+	//	h := Href{}
+	//	d, _:= c.Get(k)
+	//	fmt.Println("Data Length", len(d))
+	//	if (len(data) == 88) {
+	//		err := encoder.DeserializeRaw(data, &h)
+	//		if (err != nil) {
+	//			fmt.Println("Error")
+	//		}
+	//		return h.Type == key
+	//	}
+	//	return false
+	//
+	//})
+}
+////
+//type condition func(Href) bool{
+//
+//}
+//
+//func (c *Container) Where(x condition) []Href{
+//	c.Root.ExpandBy(c, x)
+//}

@@ -13,10 +13,13 @@ type DataBase struct {
 	newDataCallback func(cipher.SHA256, interface{}) error
 }
 
+type queryCondition func(key cipher.SHA256, data []byte) bool
+
 type IDataSource interface {
 	Add(ds cipher.SHA256, value []byte) error
 	Has(ds cipher.SHA256) bool
 	Get(ds cipher.SHA256) ([]byte, bool)
+	Where(queryCondition) []cipher.SHA256
 }
 
 func NewDB() *DataBase {
@@ -58,4 +61,15 @@ func (db *DataBase) Has(key cipher.SHA256) bool {
 func (db *DataBase) Get(key cipher.SHA256) ([]byte, bool) {
 	value, ok := db.data[key]
 	return value, ok
+}
+
+func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
+	result := []cipher.SHA256{}
+
+	for key := range db.data {
+		if (q(key, db.data[key])) {
+			result = append(result, key)
+		}
+	}
+	return result
 }
