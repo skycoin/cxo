@@ -7,14 +7,14 @@ import (
 )
 
 type Schema struct {
-	StructName   []byte
+	StructName   string
 	StructFields []encoder.ReflectionField
 }
 
 func ExtractSchema(data interface{}) Schema {
 	st := reflect.TypeOf(data)
 	sv := reflect.ValueOf(data)
-	result := Schema{StructName:[]byte(st.Name()), StructFields:[]encoder.ReflectionField{}}
+	result := Schema{StructName:st.Name(), StructFields:[]encoder.ReflectionField{}}
 	for i := 0; i < st.NumField(); i++ {
 		result.StructFields = append(result.StructFields, getField(st.Field(i), sv.Field(i)))
 	}
@@ -31,7 +31,21 @@ func (s *Schema) String() string {
 }
 
 func getField(field reflect.StructField, fieldValue reflect.Value) encoder.ReflectionField {
-	return encoder.ReflectionField{Name:[]byte(field.Name), Type:[]byte(fieldValue.Type().String()), Tag:[]byte(string(field.Tag))}
+	fieldType := ""
+	var fieldTag reflect.StructTag
+
+	fieldType = fieldValue.Kind().String()
+	switch fieldValue.Kind() {
+	case reflect.Struct:
+		switch field.Type {
+		case reflect.TypeOf(Href{}):
+			fieldTag = `href:"object"`
+		case reflect.TypeOf(HArray{}):
+			fieldTag = `href:"array"`
+		}
+	}
+
+	return encoder.ReflectionField{Name:field.Name, Type:fieldType, Tag:string(fieldTag)}
 }
 
 

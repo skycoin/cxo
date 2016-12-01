@@ -4,6 +4,7 @@ import (
 	"testing"
 	"fmt"
 	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/cxo/data"
 )
 
 type TestHrefStruct struct {
@@ -33,6 +34,7 @@ type TestHrefArray struct {
 }
 
 type TestHrefAll struct {
+	Field bool
 	Field1 Href     `type:"TestHrefStruct"`
 	Field2 HArray   `type:"TestHrefStruct"`
 	//Field3 HDynamic `type:"TestHrefStruct"`
@@ -52,7 +54,7 @@ func Test_Href_1(T *testing.T) {
 }
 
 func Test_Href_Array(T *testing.T) {
-	store := NewStore()
+	store := NewContainer(data.NewDB())
 
 	t1 := TestHref1{Field1:25}
 	h1, _ := store.Save(t1)
@@ -161,7 +163,7 @@ func Test_Get_Property_Value_Href_Array(T *testing.T) {
 }
 
 func Test_Get_Property_Value_Href_All(T *testing.T) {
-	store := NewStore()
+	store := NewContainer(data.NewDB())
 
 	t1 := TestHrefStruct{Field1:1, Field2:[]byte("TEST1")}
 	h1, _ := store.Save(t1)
@@ -198,7 +200,7 @@ func Test_Get_Property_Value_Href_All(T *testing.T) {
 }
 
 func Test_Get_Property_Value_Href_All_One_Missing(T *testing.T) {
-	store := NewStore()
+	store := NewContainer(data.NewDB())
 
 	t1 := TestHrefStruct{Field1:1, Field2:[]byte("TEST1")}
 	h1, _ := store.Save(t1)

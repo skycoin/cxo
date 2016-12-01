@@ -3,6 +3,7 @@ package schema
 import (
 	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
+	"reflect"
 )
 
 var EMPTY_KEY HKey = HKey{}
@@ -25,44 +26,61 @@ type HrefInfo struct {
 
 type Href struct {
 	Hash HKey
-	Type []byte //the schema of object
+	Type HKey //the schema of object
 }
 
-func NewHref(key HKey, value interface{}) Href {
-	schema := ExtractSchema(value)
-	result := Href{Type:encoder.Serialize(schema)}
-	result.Hash = key
-	return result
-}
-
-func (h Href) ToObject(s *Store, o interface{}) {
+func (h Href) ToObject(s *Container, o interface{}) {
 	data, _ := s.Get(h.Hash)
 	encoder.DeserializeRaw(data, o)
 }
 
-func (h Href) Expand(source *Store, info *HrefInfo) {
+func (h Href) Expand(source *Container, info *HrefInfo) {
 	if (source.Has(h.Hash)) {
 		info.Has = append(info.Has, h.Hash)
 		data, _ := source.Get(h.Hash)
+		if (h.Type == EMPTY_KEY) {
+			return
+		}
 		schema := Schema{}
-		encoder.DeserializeRaw(h.Type, &schema)
-		for i := 0; i < len(schema.StructFields); i++ {
-			f := schema.StructFields[i]
+		schemaData, _ := source.Get(h.Type)
+		if (len(schemaData) == 0) {
+			return
+		}
+		//fmt.Println(h.Type, schemaData)
+		encoder.DeserializeRaw(schemaData, &schema)
 
-			switch string(f.Type) {
-			case "schema.Href":
-				href := Href{}
-				encoder.DeserializeField(data, schema.StructFields, string(f.Name), &href)
-				href.Expand(source, info)
-			case "schema.HArray":
-				harray := HArray{}
-				encoder.DeserializeField(data, schema.StructFields, string(f.Name), &harray)
-				harray.Expand(source, info)
+		if (schema.StructName == "HArray") {
+			var arr HArray
+			encoder.DeserializeRaw(data, &arr)
+			arr.Expand(source, info)
+		} else {
+
+			for i := 0; i < len(schema.StructFields); i++ {
+				f := schema.StructFields[i]
+				//fmt.Println("Href tag: ", reflect.StructTag(f.Tag).Get("href"))
+				//fmt.Println("schemaData", schemaData, h.Type)
+				if (string(f.Type) == "struct") {
+					switch reflect.StructTag(f.Tag).Get("href") {
+					case "object":
+						href := Href{}
+						encoder.DeserializeField(data, schema.StructFields, string(f.Name), &href)
+						href.Expand(source, info)
+					case "array":
+						harray := HArray{}
+						encoder.DeserializeField(data, schema.StructFields, string(f.Name), &harray)
+						harray.Expand(source, info)
+					}
+				} else {
+					//fmt.Println("type", string(f.Type), schema)
+				}
 			}
 		}
 	} else {
 		if (h.Hash != EMPTY_KEY) {
 			info.No = append(info.No, h.Hash)
+		}
+		if (h.Type != EMPTY_KEY) {
+			info.No = append(info.No, h.Type)
 		}
 	}
 }

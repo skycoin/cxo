@@ -1,4 +1,4 @@
-package replicator
+package data
 
 import (
 	"fmt"
@@ -11,6 +11,12 @@ type DataBase struct {
 	data            map[cipher.SHA256][]byte
 	mu              *sync.RWMutex
 	newDataCallback func(cipher.SHA256, interface{}) error
+}
+
+type IDataSource interface {
+	Add(ds cipher.SHA256, value []byte) error
+	Has(ds cipher.SHA256) bool
+	Get(ds cipher.SHA256) ([]byte, bool)
 }
 
 func NewDB() *DataBase {
@@ -31,7 +37,6 @@ func (db *DataBase) NewDataCallback(newDataCallback func(cipher.SHA256, interfac
 }
 
 func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
-
 	if db.Has(key) {
 		return fmt.Errorf("key already present: %v", key)
 	}
@@ -39,7 +44,9 @@ func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
 	db.data[key] = value
 	db.mu.Unlock()
 
-	db.newDataCallback(key, value)
+	if (db.newDataCallback != nil) {
+		db.newDataCallback(key, value)
+	}
 	return nil
 }
 

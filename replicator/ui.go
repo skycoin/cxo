@@ -12,6 +12,7 @@ import (
 	"github.com/skycoin/skycoin/src/util"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/gui"
+	"github.com/skycoin/cxo/schema"
 )
 
 const (
@@ -149,7 +150,7 @@ func (c *Config) scheme() string {
 	return "http"
 }
 
-func RunAPI(c *Config, manager *nodeManager.Manager) {
+func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider *schema.Container) {
 	c.WebInterface.GUIDirectory = util.ResolveResourceDirectory(
 		c.WebInterface.GUIDirectory)
 
@@ -184,7 +185,7 @@ func RunAPI(c *Config, manager *nodeManager.Manager) {
 			// err = gui.LaunchWebInterfaceHTTPS(host, c.GUIDirectory, d, c.WebInterfaceCert, c.WebInterfaceKey)
 			//
 		} else {
-			err = gui.LaunchWebInterfaceAPI(c.host(), c.WebInterface.GUIDirectory, manager)
+			err = gui.LaunchWebInterfaceAPI(c.host(), c.WebInterface.GUIDirectory, manager, schemaProvider)
 		}
 
 		if err != nil {

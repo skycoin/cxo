@@ -3,9 +3,9 @@ package encoder
 import "fmt"
 
 type ReflectionField struct {
-	Name []byte
-	Type []byte
-	Tag  []byte
+	Name string
+	Type string
+	Tag  string
 }
 
 func (s *ReflectionField) String() string {

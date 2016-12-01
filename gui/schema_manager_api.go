@@ -1,33 +1,38 @@
 package gui
 
-import (
-	"github.com/skycoin/cxo/nodeManager"
-)
+import "github.com/skycoin/cxo/schema"
 
 type schemaApi struct {
-
+	sm *schema.Container
 }
 
 //RegisterNodeManagerHandlers - create routes for NodeManager
-func RegisterSchemaHandlers(router *Router, shm *nodeManager.Manager) {
+func RegisterSchemaHandlers(router *Router, schemaProvider *schema.Container) {
 	// enclose shm into SkyhashManager to be able to add methods
 	//lshm := SkyhashManager{Manager: shm}
 
-	sch := &schemaApi{}
+	sch := &schemaApi{sm:schemaProvider}
 
 	router.GET("/object1/:object/list", sch.List)
 	router.GET("/object1/:object/schema", sch.Schema)
-	//router.POST("/manager", lshm._StartManager)
-	//router.DELETE("/manager", lshm._StopManager)
-
 }
 
 func (api *schemaApi) List(ctx *Context) error {
 	objectName := *ctx.Param("object")
+	schemaKey, err := api.sm.GetSchemaKey(objectName)
+	if (err != nil) {
+		return ctx.ErrNotFound(err.Error(), "schema", objectName)
+	}
 
-	return ctx.Text(200, objectName)
+
+	return ctx.JSON(200, schemaKey)
 }
 
 func (api *schemaApi) Schema(ctx *Context) error {
-	return ctx.Text(200, "Object schema!")
+	objectName := *ctx.Param("object")
+	schema, err := api.sm.GetSchema(objectName)
+	if (err != nil) {
+		return ctx.ErrNotFound(err.Error(), "schema", objectName)
+	}
+	return ctx.JSON(200, schema)
 }

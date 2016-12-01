@@ -2,7 +2,6 @@ package schema
 
 import (
 	"testing"
-	"bytes"
 	"fmt"
 	"github.com/skycoin/cxo/encoder"
 )
@@ -26,11 +25,11 @@ func Test_Schema_1(T *testing.T) {
 	t.Field1 = 255
 	t.Field2 = []byte("TEST1")
 	schema := ExtractSchema(t)
-	if bytes.Compare(schema.StructName, []byte("TestSchemaStruct")) != 0 {
+	if schema.StructName != "TestSchemaStruct" {
 		T.Fatal("Struct name is not equal")
 	}
 
-	if string(schema.StructFields[0].Name) != "Field1" {
+	if schema.StructFields[0].Name != "Field1" {
 		T.Fatal("Field name is not equal")
 	}
 }

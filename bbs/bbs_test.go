@@ -6,6 +6,7 @@ import (
 	"time"
 	"math/rand"
 	"fmt"
+	"github.com/skycoin/cxo/data"
 )
 
 type TestObject1 struct {
@@ -24,13 +25,12 @@ type TestRoot struct {
 }
 
 func Test_Bbs_1(T *testing.T) {
-	bbs := CreateBbs()
+	bbs := CreateBbs(data.NewDB())
 	board, _ := bbs.AddBoard("Test Board")
 	bbs.AddBoard("Another Board")
 
 	var b Board
-	schema.Href{Hash:board}.ToObject(bbs.Store, &b)
-	fmt.Println("b", b)
+	schema.Href{Hash:board}.ToObject(bbs.Container, &b)
 
 	bbs.AddThread(board, "Thread 1")
 
@@ -41,13 +41,11 @@ func Test_Bbs_1(T *testing.T) {
 	bbs.AddThread(board, "Thread 3")
 
 	boards := bbs.AllBoars()
-	fmt.Println("bbs.AllBoars()", boards)
 	if (boards[0].Name != "Test Board") {
 		T.Fatal("Board name is not equal")
 	}
-
+	//
 	threads := bbs.GetThreads(boards[0])
-	fmt.Println("All threads", threads)
 	if (threads[0].Name != "Thread 1") {
 		T.Fatal("Thread name is not equal")
 	}
@@ -61,18 +59,20 @@ func Test_Bbs_Syncronization(T *testing.T) {
 	//1: Create Bbs1 and Fill the date
 	bbs1 := prepareTestData()
 	info := schema.HrefInfo{}
-	bbs1.Content.Expand(bbs1.Store, &info)
+
+	bbs1.Container.Root.Expand(bbs1.Container, &info)
+	fmt.Println(len(info.Has))
 	if (len(info.Has) != 368) {
 		T.Fatal("Number of objects in system is not equal")
 	}
 
 	//2: Crate empty Bbs2
-	bbs2 := CreateBbs()
+	bbs2 := CreateBbs(data.NewDB())
 	//3: Synchronize data
-	syncronizer := schema.Synchronizer(bbs2.Store)
+	syncronizer := schema.Synchronizer(bbs2.Container)
 
-	bbs2.Content = bbs1.Content
-	progress, done := syncronizer.Sync(bbs1.Store, bbs1.Content)
+	bbs2.Container.Root = bbs1.Container.Root
+	progress, done := syncronizer.Sync(bbs1.Container, bbs1.Container.Root)
 
 	for {
 		select {
@@ -84,7 +84,7 @@ func Test_Bbs_Syncronization(T *testing.T) {
 			}
 		case <-done:
 			info = schema.HrefInfo{}
-			bbs2.Content.Expand(bbs2.Store, &info)
+			bbs2.Container.Root.Expand(bbs2.Container, &info)
 			fmt.Println("Have:", len(info.Has), "haven't: ", len(info.No))
 			fmt.Println("Done!")
 
@@ -105,7 +105,7 @@ func Test_Bbs_Syncronization(T *testing.T) {
 }
 
 func prepareTestData() *Bbs {
-	bbs := CreateBbs()
+	bbs := CreateBbs(data.NewDB())
 	boards := []Board{}
 	for b := 0; b < 3; b++ {
 		threads := []Thread{}

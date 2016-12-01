@@ -9,26 +9,34 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/cxo/schema"
+	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/bbs"
 )
 
+//TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
+var DB *data.DataBase
 
 type replicator struct {
-	db          *DataBase
-	imTheVertex bool
-	subscribeTo string
-	config      *Config
-	manager     *nodeManager.Manager
+	//db          *DataBase
+	imTheVertex  bool
+	subscribeTo  string
+	config       *Config
+	manager      *nodeManager.Manager
+	dataProvider *schema.Container
 }
 
 func Client() *replicator {
 
-	client := &replicator{db:NewDB()}
+	client := &replicator{}
 	//1. Create Hash Database
-	//2. Create schema provider
-	//3. Integrate Hash Database to schema provider(schema store)
-	//4. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
-	//schema := schema.NewStore()
+	DB = data.NewDB()
+	//2. Create schema provider. Integrate Hash Database to schema provider(schema store)
 
+	boards := bbs.CreateBbs(DB)
+	client.dataProvider = boards.Container
+
+	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
 	flag.StringVar(&client.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
 	client.config = defaultConfig()
 	client.config.Parse()
@@ -50,7 +58,7 @@ func Client() *replicator {
 	}
 
 	// this callback will be executed each time DB.Add(data) is called
-	client.db.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
+	DB.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
 		newDataIHave := AnnounceMessage{
 			HashOfNewAvailableData: key,
 		}
@@ -126,7 +134,7 @@ func Client() *replicator {
 
 			// when adding the data, a callback is called, which announces the new data to
 			// all subscribers
-			err = client.db.Add(hashOfTheData, theData)
+			err = DB.Add(hashOfTheData, theData)
 
 			if err != nil {
 				fmt.Println("error while adding data to db", err)
@@ -139,7 +147,7 @@ func Client() *replicator {
 func (r *replicator) Run() {
 
 	if r.imTheVertex {
-		RunAPI(r.config, r.manager)
+		RunAPI(r.config, r.manager, r.dataProvider)
 	} else {
 		time.Sleep(time.Minute * 120)
 	}

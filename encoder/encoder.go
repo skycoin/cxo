@@ -173,15 +173,69 @@ func DeserializeRaw(in []byte, data interface{}) error {
 }
 
 //func field
+//TODO: replace fieldType on reflect.Kind
+func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag, s int) (int, error) {
+	switch fieldType {
+	case "slice":
+		fd := &decoder{buf: make([]byte, len(in) - s)}
+		copy(fd.buf, d.buf[s:])
+		length := int(fd.uint32())
+		if length < 0 || length > len(fd.buf) {
+			return 0, fmt.Errorf("Invalid length: %d", length)
+		}
+		s += length //TODO: implement
+	case "struct":
+		switch tag.Get("href") {
+		case "object":
+			s += 64
+		case "array":
+			fd := &decoder{buf: make([]byte, len(in) - s)}
+			copy(fd.buf, d.buf[s:])
+
+			length := int(fd.uint32())
+			if length < 0 || length > len(fd.buf) {
+				return 0, fmt.Errorf("Invalid length: %d", length)
+			}
+			s += 32 * length + 36
+
+		}
+	case "bool":
+		s += d.adv(1)
+	case "string":
+		length := int(le_Uint32(d.buf[0:4]))
+		s += d.adv(4) //must succeed
+		s += d.cmp(0, d.adv(length))
+	case "int8":
+		s += d.adv(1)
+	case "int16":
+		s += d.adv(2)
+	case "int32":
+		s += d.adv(4)
+	case "int64":
+		s += d.adv(8)
+	case "uint8":
+		s += d.adv(1)
+	case "uint16":
+		s += d.adv(2)
+	case "uint32":
+		s += d.adv(4)
+	case "uint64":
+		s += d.adv(8)
+	case "float32":
+		s += d.adv(4)
+	case "float64":
+		s += d.adv(8)
+	default:
+		log.Panicf("Decode error: kind %s not handled", fieldType)
+	}
+	return s, nil
+}
 
 func DeserializeField(in []byte, fields []ReflectionField, name string, field interface{}) error {
 	d := &decoder{buf: make([]byte, len(in))}
 	copy(d.buf, in)
 	fv := reflect.ValueOf(field).Elem()
-	d2 := &decoder{buf: make([]byte, len(in))}
-	copy(d2.buf, in)
 	s := 0
-
 	for i := 0; i < len(fields); i++ {
 		f := fields[i]
 		if (string(f.Name) == name) {
@@ -191,60 +245,11 @@ func DeserializeField(in []byte, fields []ReflectionField, name string, field in
 
 			return nil
 		}
-
-		switch string(f.Type) {
-		case "schema.Href": //TODO: refactor. Size of Href types should be calculatable
-			s += 32
-			fd := &decoder{buf: make([]byte, len(in) - s)}
-			copy(fd.buf, d.buf[s:])
-			s += int(fd.uint32()) + 4
-		case "schema.HArray": //TODO: refactor. Size of Href types should be calculatable
-			fd := &decoder{buf: make([]byte, len(in) - s)}
-			copy(fd.buf, d.buf[s:])
-
-			length := int(fd.uint32())
-			if length < 0 || length > len(fd.buf) {
-				return fmt.Errorf("Invalid length: %d", length)
-			}
-			s += 4 + 32 * length + 32
-
-			//sd := &decoder{buf: make([]byte, len(in) - s)}
-			//copy(sd.buf, d.buf[s:])
-			//s += 4 + int(sd.uint32())
-
-		case "slice":
-			s += 0 //TODO: implement
-		case "struct":
-			s += 0 //TODO: implement
-		case "bool":
-			s += d.adv(1)
-		case "string":
-			length := int(le_Uint32(d.buf[0:4]))
-			s += d.adv(4) //must succeed
-			s += d.cmp(0, d.adv(length))
-		case "int8":
-			s += d.adv(1)
-		case "int16":
-			s += d.adv(2)
-		case "int32":
-			s += d.adv(4)
-		case "int64":
-			s += d.adv(8)
-		case "uint8":
-			s += d.adv(1)
-		case "uint16":
-			s += d.adv(2)
-		case "uint32":
-			s += d.adv(4)
-		case "uint64":
-			s += d.adv(8)
-		case "float32":
-			s += d.adv(4)
-		case "float64":
-			s += d.adv(8)
-		default:
-			log.Panicf("Decode error: kind %s not handled", f.Type)
+		res, err := getFieldSize(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
+		if (err != nil) {
+			return err
 		}
+		s = res
 	}
 	return nil
 }

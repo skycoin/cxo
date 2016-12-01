@@ -3,10 +3,10 @@ package bbs
 import (
 	"github.com/skycoin/cxo/schema"
 )
-
-type BoardContainer struct {
-	Boards schema.HArray
-}
+//
+//type BoardContainer struct {
+//	Boards schema.HArray
+//}
 
 type Board struct {
 	Name    string
