@@ -2,11 +2,11 @@ package schema
 
 import (
 	"github.com/skycoin/cxo/data"
-	"github.com/sqdron/squad/encoder"
 	"fmt"
 	"errors"
 	"github.com/skycoin/skycoin/src/cipher"
 	"strings"
+	"github.com/skycoin/cxo/encoder"
 )
 
 type Container struct {
@@ -53,6 +53,11 @@ func (c *Container) GetSchemaKey(name string) (cipher.SHA256, error) {
 		return cipher.SHA256{}, errors.New("Schema does not exist")
 	}
 	return key, nil
+}
+
+func (c *Container) LoadFields(key cipher.SHA256, schema *Schema) (map[string]string) {
+	data, _ := c.ds.Get(key)
+	return encoder.ParseFields(data, schema.StructFields)
 }
 
 func (c *Container) saveObj(value interface{}) (cipher.SHA256, error) {
@@ -120,25 +125,6 @@ func (c *Container) GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	return q.Items
 
 	//return c.ds.Where(func(k cipher.SHA256, data []byte) bool {
-	//	h := Href{}
-	//	d, _:= c.Get(k)
-	//	fmt.Println("Data Length", len(d))
-	//	if (len(data) == 88) {
-	//		err := encoder.DeserializeRaw(data, &h)
-	//		if (err != nil) {
-	//			fmt.Println("Error")
-	//		}
-	//		return h.Type == key
-	//	}
 	//	return false
-	//
 	//})
 }
-////
-//type condition func(Href) bool{
-//
-//}
-//
-//func (c *Container) Where(x condition) []Href{
-//	c.Root.ExpandBy(c, x)
-//}

@@ -22,6 +22,7 @@ import (
 	"log"
 	"math"
 	"reflect"
+	"strconv"
 )
 
 /*
@@ -197,14 +198,13 @@ func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag
 				return 0, fmt.Errorf("Invalid length: %d", length)
 			}
 			s += 32 * length + 36
-
 		}
 	case "bool":
 		s += d.adv(1)
 	case "string":
+
 		length := int(le_Uint32(d.buf[0:4]))
-		s += d.adv(4) //must succeed
-		s += d.cmp(0, d.adv(length))
+		s += 4 + length
 	case "int8":
 		s += d.adv(1)
 	case "int16":
@@ -231,6 +231,52 @@ func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag
 	return s, nil
 }
 
+//TODO: replace fieldType on reflect.Kind
+func getFieldValue(in []byte, d *decoder, fieldType string, tag reflect.StructTag, s int) string {
+	fd := &decoder{buf: make([]byte, len(in) - s)}
+	copy(fd.buf, d.buf[s:])
+	fmt.Println("Field type", fieldType)
+	switch fieldType {
+	case "slice":
+		copy(fd.buf, d.buf[s:])
+		length := int(fd.uint32())
+
+		if length < 0 || length > len(fd.buf) {
+			return ""
+		}
+		s += length //TODO: implement
+		return ""
+	case "struct":
+		return fieldType
+	case "bool":
+		return strconv.FormatBool(fd.bool())
+	case "string":
+		length := int(le_Uint32(d.buf[0:4]))
+		return string(d.buf[4:4 + length])
+	case "int8":
+		return string(fd.int8())
+	case "int16":
+		return string(fd.int16())
+	case "int32":
+		//ff:= &decoder{buf: make([]byte, 4)}
+		//
+		return string(fd.int32())
+	case "int64":
+		return string(fd.int64())
+	case "uint8":
+		return string(fd.uint8())
+	case "uint16":
+		return string(fd.uint16())
+	case "uint32":
+		return string(fd.uint32())
+	case "uint64":
+		return string(fd.uint64())
+	default:
+		log.Panicf("Decode error: kind %s not handled", fieldType)
+	}
+	return ""
+}
+
 func DeserializeField(in []byte, fields []ReflectionField, name string, field interface{}) error {
 	d := &decoder{buf: make([]byte, len(in))}
 	copy(d.buf, in)
@@ -252,6 +298,23 @@ func DeserializeField(in []byte, fields []ReflectionField, name string, field in
 		s = res
 	}
 	return nil
+}
+
+func ParseFields(in []byte, fields []ReflectionField) map[string]string {
+	result := map[string]string{}
+	d := &decoder{buf: make([]byte, len(in))}
+	copy(d.buf, in)
+	s := 0
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		fmt.Println("Fields", f)
+		resShift, _ := getFieldSize(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
+		fmt.Println("shift", resShift)
+		result[f.Name] = getFieldValue(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
+		fmt.Println("value", result[f.Name])
+		s = resShift
+	}
+	return result
 }
 
 //takes reader and number of bytes to read

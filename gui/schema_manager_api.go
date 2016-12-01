@@ -26,8 +26,17 @@ func (api *schemaApi) List(ctx *Context) error {
 	if (err != nil) {
 		return ctx.ErrNotFound(err.Error(), "schema", objectName)
 	}
-	list := api.sm.GetAllBySchema(schemaKey)
-	return ctx.JSON(200, list)
+
+	keys := api.sm.GetAllBySchema(schemaKey)
+	schema, err := api.sm.GetSchema(objectName)
+
+	res := []map[string]string{}
+
+	for i := 0; i < len(keys); i++ {
+		res = append(res, api.sm.LoadFields(keys[i], schema))
+	}
+
+	return ctx.JSON(200, res)
 }
 
 func (api *schemaApi) Schema(ctx *Context) error {

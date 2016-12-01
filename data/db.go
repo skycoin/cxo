@@ -63,6 +63,7 @@ func (db *DataBase) Get(key cipher.SHA256) ([]byte, bool) {
 	return value, ok
 }
 
+
 func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
 	result := []cipher.SHA256{}
 
