@@ -177,14 +177,9 @@ func DeserializeRaw(in []byte, data interface{}) error {
 //TODO: replace fieldType on reflect.Kind
 func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag, s int) (int, error) {
 	switch fieldType {
-	case "slice":
-		fd := &decoder{buf: make([]byte, len(in) - s)}
-		copy(fd.buf, d.buf[s:])
-		length := int(fd.uint32())
-		if length < 0 || length > len(fd.buf) {
-			return 0, fmt.Errorf("Invalid length: %d", length)
-		}
-		s += length //TODO: implement
+	case "slice", "string":
+		length := int(le_Uint32(d.buf[s:s + 4]))
+		s += 4 + length
 	case "struct":
 		switch tag.Get("href") {
 		case "object":
@@ -199,32 +194,14 @@ func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag
 			}
 			s += 32 * length + 36
 		}
-	case "bool":
-		s += d.adv(1)
-	case "string":
-
-		length := int(le_Uint32(d.buf[0:4]))
-		s += 4 + length
-	case "int8":
-		s += d.adv(1)
-	case "int16":
-		s += d.adv(2)
-	case "int32":
-		s += d.adv(4)
-	case "int64":
-		s += d.adv(8)
-	case "uint8":
-		s += d.adv(1)
-	case "uint16":
-		s += d.adv(2)
-	case "uint32":
-		s += d.adv(4)
-	case "uint64":
-		s += d.adv(8)
-	case "float32":
-		s += d.adv(4)
-	case "float64":
-		s += d.adv(8)
+	case "bool","int8", "uint8":
+		s += 1
+	case "int16","uint16":
+		s += 2
+	case "int32", "uint32":
+		s += 4
+	case "int64", "uint64", "float64":
+		s += 8
 	default:
 		log.Panicf("Decode error: kind %s not handled", fieldType)
 	}
@@ -235,42 +212,30 @@ func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag
 func getFieldValue(in []byte, d *decoder, fieldType string, tag reflect.StructTag, s int) string {
 	fd := &decoder{buf: make([]byte, len(in) - s)}
 	copy(fd.buf, d.buf[s:])
-	fmt.Println("Field type", fieldType)
 	switch fieldType {
-	case "slice":
-		copy(fd.buf, d.buf[s:])
-		length := int(fd.uint32())
-
-		if length < 0 || length > len(fd.buf) {
-			return ""
-		}
-		s += length //TODO: implement
-		return ""
+	case "slice", "string":
+		length := int(le_Uint32(fd.buf[0:4]))
+		return string(fd.buf[4:4 + length])
 	case "struct":
 		return fieldType
 	case "bool":
 		return strconv.FormatBool(fd.bool())
-	case "string":
-		length := int(le_Uint32(d.buf[0:4]))
-		return string(d.buf[4:4 + length])
 	case "int8":
-		return string(fd.int8())
+		return strconv.Itoa(int(fd.int8()))
 	case "int16":
-		return string(fd.int16())
+		return strconv.Itoa(int(fd.int16()))
 	case "int32":
-		//ff:= &decoder{buf: make([]byte, 4)}
-		//
-		return string(fd.int32())
+		return strconv.Itoa(int(fd.int32()))
 	case "int64":
-		return string(fd.int64())
+		return strconv.Itoa(int(fd.int64()))
 	case "uint8":
-		return string(fd.uint8())
+		return strconv.Itoa(int(fd.uint8()))
 	case "uint16":
-		return string(fd.uint16())
+		return strconv.Itoa(int(fd.uint16()))
 	case "uint32":
-		return string(fd.uint32())
+		return strconv.Itoa(int(fd.uint32()))
 	case "uint64":
-		return string(fd.uint64())
+		return strconv.Itoa(int(fd.uint64()))
 	default:
 		log.Panicf("Decode error: kind %s not handled", fieldType)
 	}
@@ -307,11 +272,8 @@ func ParseFields(in []byte, fields []ReflectionField) map[string]string {
 	s := 0
 	for i := 0; i < len(fields); i++ {
 		f := fields[i]
-		fmt.Println("Fields", f)
 		resShift, _ := getFieldSize(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
-		fmt.Println("shift", resShift)
 		result[f.Name] = getFieldValue(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
-		fmt.Println("value", result[f.Name])
 		s = resShift
 	}
 	return result

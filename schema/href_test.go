@@ -12,6 +12,8 @@ type TestHrefStruct struct {
 	Field string
 	Field1 int32
 	Field2 []byte
+	Field3 bool
+	Field4 bool
 }
 
 type TestHref1 struct {
@@ -234,7 +236,7 @@ func Test_Get_Property_Value_Href_All_One_Missing(T *testing.T) {
 func Test_Get_Fields_By_Schema(T *testing.T) {
 	store := NewContainer(data.NewDB())
 
-	t1 := TestHrefStruct{Field:"text",Field1:1, Field2:[]byte("TEST1")}
+	t1 := TestHrefStruct{Field:"text",Field1:33, Field2:[]byte("TEST1"), Field3:true,Field4:false}
 	h1, _ := store.Save(t1)
 
 	data, _ := store.Get(h1.Hash)
@@ -247,4 +249,19 @@ func Test_Get_Fields_By_Schema(T *testing.T) {
 		T.Fatal("Count of objects in DB are not equal")
 	}
 
+	if (fields["Field1"] != "33") {
+		T.Fatal("Count of objects in DB are not equal")
+	}
+
+	if (fields["Field2"] != "TEST1") {
+		T.Fatal("Count of objects in DB are not equal")
+	}
+
+	if (fields["Field3"] != "true") {
+		T.Fatal("Count of objects in DB are not equal")
+	}
+
+	if (fields["Field4"] != "false") {
+		T.Fatal("Count of objects in DB are not equal")
+	}
 }
