@@ -106,11 +106,11 @@ func Test_Get_Property_Value_Href(T *testing.T) {
 	fmt.Println("data", data)
 
 	var f uint32
-	encoder.DeserializeField(data, schema.StructFields, "Field1", &f)
+	encoder.DeserializeField(data, schema.Fields, "Field1", &f)
 	fmt.Println(f)
 
 	var f2 Href
-	encoder.DeserializeField(data, schema.StructFields, "Field2", &f2)
+	encoder.DeserializeField(data, schema.Fields, "Field2", &f2)
 	fmt.Println("f2.Hash", f2.Hash)
 
 	if (f2.Hash != t.Field2.Hash) {
@@ -158,7 +158,7 @@ func Test_Get_Property_Value_Href_Array(T *testing.T) {
 	fmt.Println("data", data)
 
 	var f2 HArray
-	encoder.DeserializeField(data, schema.StructFields, "Field2", &f2)
+	encoder.DeserializeField(data, schema.Fields, "Field2", &f2)
 
 	fmt.Println(f2)
 	if (f2.Items[1] != t.Field2.Items[1]) {
@@ -191,13 +191,13 @@ func Test_Get_Property_Value_Href_All(T *testing.T) {
 	res, _ := store.Get(h.Hash)
 
 	var f2 HArray
-	encoder.DeserializeField(res, sch.StructFields, "Field2", &f2)
+	encoder.DeserializeField(res, sch.Fields, "Field2", &f2)
 	if (f2.Items[1] != a.Field2.Items[1]) {
 		T.Fatal("Hash is not equal")
 	}
 
 	var f4 uint32
-	encoder.DeserializeField(res, sch.StructFields, "Field4", &f4)
+	encoder.DeserializeField(res, sch.Fields, "Field4", &f4)
 	if (f4 != a.Field4) {
 		T.Fatal("Fields are not equal")
 	}
@@ -242,7 +242,7 @@ func Test_Get_Fields_By_Schema(T *testing.T) {
 	data, _ := store.Get(h1.Hash)
 
 	schema := ExtractSchema(TestHrefStruct{})
-	fields := encoder.ParseFields(data, schema.StructFields)
+	fields := encoder.ParseFields(data, schema.Fields)
 
 	fmt.Println(fields)
 	if (fields["Field"] != "text") {

@@ -57,14 +57,14 @@ func (h Href) ExpandBySchema(source *Container, schemaKey cipher.SHA256, query *
 	if (h.Type == EMPTY_KEY) {
 		return
 	}
-	if (schema.StructName == "HArray") {
+	if (schema.Name == "HArray") {
 		var arr HArray
 		encoder.DeserializeRaw(data, &arr)
 		arr.ExpandBySchema(source, schemaKey, query)
 	} else {
 
-		for i := 0; i < len(schema.StructFields); i++ {
-			f := schema.StructFields[i]
+		for i := 0; i < len(schema.Fields); i++ {
+			f := schema.Fields[i]
 			fmt.Println("schema.StructFields[i]", f)
 			//fmt.Println("Href tag: ", reflect.StructTag(f.Tag).Get("href"))
 			//fmt.Println("schemaData", schemaData, h.Type)
@@ -72,11 +72,11 @@ func (h Href) ExpandBySchema(source *Container, schemaKey cipher.SHA256, query *
 				switch reflect.StructTag(f.Tag).Get("href") {
 				case "object":
 					href := Href{}
-					encoder.DeserializeField(data, schema.StructFields, string(f.Name), &href)
+					encoder.DeserializeField(data, schema.Fields, string(f.Name), &href)
 					href.ExpandBySchema(source, schemaKey, query)
 				case "array":
 					harray := HArray{}
-					encoder.DeserializeField(data, schema.StructFields, string(f.Name), &harray)
+					encoder.DeserializeField(data, schema.Fields, string(f.Name), &harray)
 					harray.ExpandBySchema(source, schemaKey, query)
 				}
 			}
@@ -100,25 +100,25 @@ func (h Href) Expand(source *Container, info *HrefInfo) {
 		//fmt.Println(h.Type, schemaData)
 		encoder.DeserializeRaw(schemaData, &schema)
 
-		if (schema.StructName == "HArray") {
+		if (schema.Name == "HArray") {
 			var arr HArray
 			encoder.DeserializeRaw(data, &arr)
 			arr.Expand(source, info)
 		} else {
 
-			for i := 0; i < len(schema.StructFields); i++ {
-				f := schema.StructFields[i]
+			for i := 0; i < len(schema.Fields); i++ {
+				f := schema.Fields[i]
 				//fmt.Println("Href tag: ", reflect.StructTag(f.Tag).Get("href"))
 				//fmt.Println("schemaData", schemaData, h.Type)
 				if (string(f.Type) == "struct") {
 					switch reflect.StructTag(f.Tag).Get("href") {
 					case "object":
 						href := Href{}
-						encoder.DeserializeField(data, schema.StructFields, string(f.Name), &href)
+						encoder.DeserializeField(data, schema.Fields, string(f.Name), &href)
 						href.Expand(source, info)
 					case "array":
 						harray := HArray{}
-						encoder.DeserializeField(data, schema.StructFields, string(f.Name), &harray)
+						encoder.DeserializeField(data, schema.Fields, string(f.Name), &harray)
 						harray.Expand(source, info)
 					}
 				} else {

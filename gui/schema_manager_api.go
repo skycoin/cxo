@@ -16,8 +16,10 @@ func RegisterSchemaHandlers(router *Router, schemaProvider *schema.Container) {
 
 	sch := &schemaApi{sm:schemaProvider}
 
-	router.GET("/object1/:object/list", sch.List)
+	router.GET("/object1/_schema", sch.SchemaList)
+	router.GET("/object1/_stat", sch.Statistic)
 	router.GET("/object1/:object/schema", sch.Schema)
+	router.GET("/object1/:object/list", sch.List)
 }
 
 func (api *schemaApi) List(ctx *Context) error {
@@ -39,6 +41,14 @@ func (api *schemaApi) List(ctx *Context) error {
 	return ctx.JSON(200, res)
 }
 
+func (api *schemaApi) SchemaList(ctx *Context) error {
+	result, err := api.sm.GetSchemaList()
+	if (err != nil) {
+		return ctx.ErrNotFound(err.Error())
+	}
+	return ctx.JSON(200, result)
+}
+
 func (api *schemaApi) Schema(ctx *Context) error {
 	objectName := *ctx.Param("object")
 	schema, err := api.sm.GetSchema(objectName)
@@ -47,4 +57,9 @@ func (api *schemaApi) Schema(ctx *Context) error {
 		return ctx.ErrNotFound(err.Error(), "schema", objectName)
 	}
 	return ctx.JSON(200, schema)
+}
+
+func (api *schemaApi) Statistic(ctx *Context) error {
+	stat := api.sm.GetStatistic()
+	return ctx.JSON(200, stat)
 }

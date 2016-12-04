@@ -3,7 +3,6 @@ package data
 import (
 	"fmt"
 	"sync"
-
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
@@ -13,6 +12,11 @@ type DataBase struct {
 	newDataCallback func(cipher.SHA256, interface{}) error
 }
 
+type Statistic struct {
+	Total  int        `json:"total"`
+	Memory int        `json:"memory"`
+}
+
 type queryCondition func(key cipher.SHA256, data []byte) bool
 
 type IDataSource interface {
@@ -20,6 +24,7 @@ type IDataSource interface {
 	Has(ds cipher.SHA256) bool
 	Get(ds cipher.SHA256) ([]byte, bool)
 	Where(queryCondition) []cipher.SHA256
+	Statistic() *Statistic
 }
 
 func NewDB() *DataBase {
@@ -63,7 +68,6 @@ func (db *DataBase) Get(key cipher.SHA256) ([]byte, bool) {
 	return value, ok
 }
 
-
 func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
 	result := []cipher.SHA256{}
 
@@ -73,4 +77,12 @@ func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
 		}
 	}
 	return result
+}
+
+func (db *DataBase) Statistic() *Statistic {
+	res := &Statistic{Total:len(db.data)}
+	for i := 0; i < res.Total; i++ {
+		res.Memory += len(db.data)
+	}
+	return res
 }

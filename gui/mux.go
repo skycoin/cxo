@@ -49,6 +49,16 @@ func (r *Router) Serve(address string) error {
 }
 
 func (r *Router) ServeHTTP(ww http.ResponseWriter, rr *http.Request) {
+	if origin := rr.Header.Get("Origin"); origin != "" {
+		ww.Header().Set("Access-Control-Allow-Origin", origin)
+		ww.Header().Set("Access-Control-Allow-Methods", "POST")
+		ww.Header().Set("Access-Control-Allow-Headers",
+			"Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+	}
+
+	if rr.Method == "OPTIONS" {
+		return
+	}
 	h, parameters, err := r.findRoute(rr.Method, rr.URL.Path)
 	if err != nil {
 		http.Error(ww, "not found", http.StatusNotFound)

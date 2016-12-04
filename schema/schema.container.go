@@ -15,6 +15,8 @@ type Container struct {
 	types map[string]cipher.SHA256
 }
 
+
+
 func NewContainer(ds data.IDataSource) *Container {
 	return &Container{ds:ds, types:map[string]cipher.SHA256{}}
 }
@@ -22,7 +24,7 @@ func NewContainer(ds data.IDataSource) *Container {
 func (c *Container) Register(value interface{}) {
 	schema := ExtractSchema(value)
 	key, _ := c.saveObj(schema)
-	c.types[strings.ToLower(string(schema.StructName))] = key
+	c.types[strings.ToLower(string(schema.Name))] = key
 }
 
 func (c *Container) SaveRoot(value interface{}) Href {
@@ -32,6 +34,23 @@ func (c *Container) SaveRoot(value interface{}) Href {
 	c.Root = Href{Hash:key, Type:smKey}
 
 	return c.Root
+}
+
+func (c *Container) GetSchemaList() ([]Schema, error) {
+	result := []Schema{}
+	for schemaName := range c.types {
+		schema := &Schema{}
+		fmt.Println("schemaName", schemaName)
+		key, _ := c.types[schemaName]
+		err := c.Load(key, schema)
+		if (err != nil) {
+			return result, nil
+		}
+		fmt.Println(schema)
+		result = append(result, *schema)
+
+	}
+	return result, nil
 }
 
 func (c *Container) GetSchema(name string) (*Schema, error) {
@@ -57,7 +76,7 @@ func (c *Container) GetSchemaKey(name string) (cipher.SHA256, error) {
 
 func (c *Container) LoadFields(key cipher.SHA256, schema *Schema) (map[string]string) {
 	data, _ := c.ds.Get(key)
-	return encoder.ParseFields(data, schema.StructFields)
+	return encoder.ParseFields(data, schema.Fields)
 }
 
 func (c *Container) saveObj(value interface{}) (cipher.SHA256, error) {
@@ -123,8 +142,8 @@ func (c *Container) GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	q := HrefQuery{}
 	c.Root.ExpandBySchema(c, schemaKey, &q)
 	return q.Items
+}
 
-	//return c.ds.Where(func(k cipher.SHA256, data []byte) bool {
-	//	return false
-	//})
+func (c *Container) GetStatistic() *data.Statistic {
+	return c.ds.Statistic()
 }
