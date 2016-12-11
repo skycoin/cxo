@@ -1,8 +1,8 @@
 package main
 
-import "github.com/skycoin/cxo/replicator"
+import "github.com/skycoin/cxo/client"
 
 func main() {
-	client := replicator.Client()
+	client := client.Client()
 	client.Run()
 }

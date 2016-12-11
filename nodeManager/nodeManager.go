@@ -18,7 +18,9 @@ const defaultMaxNodes = 1000
 const defaultMaxConnections = 1000
 const defaultMaxMessageLength = 1024 * 256
 const defaultIP = "127.0.0.1"
-const defaultPort uint16 = 0
+const defaultPort uint16 = 0 // 0 tells the kernel to assign a free port
+const defaultHandshakeTimeout = time.Duration(time.Second * 5)
+const defaultReadDeadline = time.Duration(time.Minute * 5)
 
 // ManagerConfig is the configuration struct of a node manager
 type ManagerConfig struct {
@@ -85,7 +87,6 @@ func NewManager(config ManagerConfig) (*Manager, error) {
 	}
 
 	// REGISTER HANDSHAKE MESSAGES
-	// TODO: register standard messages in the node manager, not for every node.
 	// register messages that this node can receive from downstream
 	newManager.registerDownstreamMessage(hsm1{})
 	newManager.registerDownstreamMessage(hsm3{})
@@ -104,47 +105,10 @@ func (nm *Manager) registerUpstreamMessage(msg interface{}) {
 	registerMessage("UpstreamMessage", nm.mu, nm.upstreamCallbacks, msg)
 }
 
-func (nm *Manager) debugInit() error {
-	newNode := nm.NewNode()
-	err := nm.AddNode(newNode)
-	if err != nil {
-		return err
-	}
-
-	// register standard messages
-	debug("registering message")
-	// TODO: register only those used by each
-
-	// register messages that this node can receive from downstream
-	newNode.RegisterDownstreamMessage(hsm1{})
-	newNode.RegisterDownstreamMessage(hsm3{})
-
-	// register messages that this node can receive from upstream
-	newNode.RegisterUpstreamMessage(hsm2{})
-	newNode.RegisterUpstreamMessage(hsm4{})
-
-	err = newNode.Start()
-	if err != nil {
-		return err
-	}
-
-	time.Sleep(time.Second * 1)
-	debug("connecting to node")
-
-	subscribeToPubKey := newNode.PubKey()
-	err = newNode.Subscribe("127.0.0.1", uint16(45455), &subscribeToPubKey)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // Nodes returns all the nodes registered in the NodeManager
 func (nm *Manager) Nodes() []*Node {
 	nodeList := []*Node{}
-	for pubKey, node := range nm.nodes {
-		fmt.Printf("\nid %v, node %v\n", pubKey.Hex(), node.PubKey().Hex())
+	for _, node := range nm.nodes {
 		nodeList = append(nodeList, node)
 	}
 	return nodeList
@@ -161,5 +125,50 @@ func (nm *Manager) NodeByID(pubKey cipher.PubKey) (*Node, error) {
 
 func (nm *Manager) Shutdown() error {
 	// TODO: Shutdown gracefully every component (starting from the level most at the bottom)
+	return nil
+}
+
+func (nm *Manager) TerminateNodeByID(pubKey *cipher.PubKey, reason error) error {
+	if pubKey == nil {
+		return ErrPubKeyIsNil
+	}
+
+	elem, err := nm.NodeByID(*pubKey)
+	if err != nil {
+		return err
+	}
+
+	return nm.TerminateNode(elem, reason)
+}
+
+func (nm *Manager) TerminateNode(node *Node, reason error) error {
+	fmt.Println("terminating node; reason:", reason)
+
+	// close and cleanup all resources used by the node
+	err := node.close()
+	if err != nil {
+		return err
+	}
+
+	// remove node from pool
+	err = nm.removeNodeByID(node.pubKey)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (nm *Manager) removeNodeByID(pubKey *cipher.PubKey) error {
+	if pubKey == nil {
+		return ErrPubKeyIsNil
+	}
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+
+	if _, exists := nm.nodes[*pubKey]; !exists {
+		return fmt.Errorf("node does not exist: %v", pubKey.Hex())
+	}
+
+	delete(nm.nodes, *pubKey)
 	return nil
 }

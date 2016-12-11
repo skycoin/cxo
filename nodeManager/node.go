@@ -54,11 +54,11 @@ func (nm *Manager) NewNode() *Node {
 		mu:     nm.mu,
 		upstream: upstream{
 			subscriptions: make(map[cipher.PubKey]*Subscription),
-			callbacks:     nm.upstreamCallbacks,
+			callbacks:     nm.upstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool of upstream callbacks
 		},
 		downstream: downstream{
 			subscribers: make(map[cipher.PubKey]*Subscriber),
-			callbacks:   nm.downstreamCallbacks,
+			callbacks:   nm.downstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool of downstream callbacks
 		},
 	}
 }
@@ -76,11 +76,11 @@ func (nm *Manager) NewNodeFromSecKey(secKey cipher.SecKey) (*Node, error) {
 		mu:     nm.mu,
 		upstream: upstream{
 			subscriptions: make(map[cipher.PubKey]*Subscription),
-			callbacks:     nm.upstreamCallbacks,
+			callbacks:     nm.upstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool upstream callbacks
 		},
 		downstream: downstream{
 			subscribers: make(map[cipher.PubKey]*Subscriber),
-			callbacks:   nm.downstreamCallbacks,
+			callbacks:   nm.downstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool downstream callbacks
 		},
 	}
 
@@ -96,7 +96,7 @@ func (nm *Manager) NewNodeFromSecKey(secKey cipher.SecKey) (*Node, error) {
 func (node *Node) validate() error {
 
 	if node.pubKey == nil {
-		return errors.New("pubKey is nil")
+		return ErrPubKeyIsNil
 	}
 	if node.secKey == nil {
 		return errors.New("secKey is nil")
@@ -107,7 +107,7 @@ func (node *Node) validate() error {
 	}
 
 	if *node.pubKey == (cipher.PubKey{}) {
-		return errors.New("pubKey is nil")
+		return ErrPubKeyIsNil
 	}
 	if *node.secKey == (cipher.SecKey{}) {
 		return errors.New("secKey is nil")
@@ -158,12 +158,27 @@ func (node *Node) Start() error {
 	return nil
 }
 
-// Stop stops the node; does not remove from manager
-func (node *Node) Stop() error {
+func (node *Node) close() error {
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
 	node.quitting = true
+
+	// terminate all subscribers
+	for _, subscriber := range node.downstream.subscribers {
+		err := node.TerminateSubscriber(subscriber, errors.New("closing node"))
+		if err != nil {
+			// TODO:
+		}
+	}
+
+	// terminate all subscriptions
+	for _, subscription := range node.upstream.subscriptions {
+		err := node.TerminateSubscription(subscription, errors.New("closing node"))
+		if err != nil {
+			// TODO:
+		}
+	}
 
 	return nil
 }
@@ -205,7 +220,6 @@ func (n *Node) BroadcastToSubscribers(message interface{}) error {
 	// comunicate to all subscribers that I have new data
 	subs := n.Subscribers()
 	for _, subscriber := range subs {
-		fmt.Println("broadcasting message to", subscriber.PubKey().Hex())
 		subscriber.Send(message)
 	}
 	return nil
@@ -231,6 +245,9 @@ func (n *Node) Subscriptions() []*Subscription {
 
 // SubscriberByID returns a Subscriber node by its pubKey
 func (n *Node) SubscriberByID(pubKey *cipher.PubKey) (*Subscriber, error) {
+	if pubKey == nil {
+		return &Subscriber{}, ErrPubKeyIsNil
+	}
 	subscriber, ok := n.downstream.subscribers[*pubKey]
 	if !ok {
 		return &Subscriber{}, errors.New("Subscriber not found")
@@ -240,6 +257,9 @@ func (n *Node) SubscriberByID(pubKey *cipher.PubKey) (*Subscriber, error) {
 
 // SubscriptionByID returns a Subscription node by its pubKey
 func (n *Node) SubscriptionByID(pubKey *cipher.PubKey) (*Subscription, error) {
+	if pubKey == nil {
+		return &Subscription{}, ErrPubKeyIsNil
+	}
 	subscription, ok := n.upstream.subscriptions[*pubKey]
 	if !ok {
 		return &Subscription{}, errors.New("Subscription not found")

@@ -1,24 +1,26 @@
-import {NgModule, ApplicationRef} from '@angular/core';
-import {BrowserModule} from '@angular/platform-browser';
-import {FormsModule} from '@angular/forms';
-import {HttpModule} from '@angular/http';
-import {RouterModule, PreloadAllModules} from '@angular/router';
-import {removeNgStyles, createNewHosts, createInputTransfer} from '@angularclass/hmr';
+import { NgModule, ApplicationRef } from '@angular/core';
+import { BrowserModule } from '@angular/platform-browser';
+import { FormsModule } from '@angular/forms';
+import { HttpModule } from '@angular/http';
+import { RouterModule, PreloadAllModules } from '@angular/router';
+import { removeNgStyles, createNewHosts, createInputTransfer } from '@angularclass/hmr';
 
 /*
  * Platform and Environment providers/directives/pipes
  */
-import {ENV_PROVIDERS} from './environment';
-import {ROUTES} from './app.routes';
+import { ENV_PROVIDERS } from './environment';
+import { ROUTES } from './app.routes';
 // App is our top level component
-import {AppComponent} from './app.component';
-import {APP_RESOLVER_PROVIDERS} from './app.resolver';
-import {AppState, InternalStateType} from './app.service';
-import {DashboardComponent} from './dashboard';
-import {NoContentComponent} from './no-content';
-import {APP_SERVICE_PROVIDERS} from "./shared/services/index";
-import {CollectionComponent} from "./collection";
-import {SchemaComponent} from "./schema";
+import { AppComponent } from './app.component';
+import { APP_RESOLVER_PROVIDERS } from './app.resolver';
+import { AppState, InternalStateType } from './app.service';
+import { DashboardComponent } from './dashboard';
+import { NoContentComponent } from './no-content';
+import { APP_SERVICE_PROVIDERS } from './shared/services/index';
+import { CollectionComponent } from './collection';
+import { SchemaComponent } from './schema/schema.component';
+import { SchemaDetailsComponent } from './schema/details.component';
+import { SubscriptionComponent } from './subscription/subscription.component';
 
 // Application wide providers
 const APP_PROVIDERS = [
@@ -42,7 +44,9 @@ type StoreType = {
         AppComponent,
         DashboardComponent,
         SchemaComponent,
+        SchemaDetailsComponent,
         CollectionComponent,
+        SubscriptionComponent,
         NoContentComponent
     ],
     imports: [ // import Angular's modules

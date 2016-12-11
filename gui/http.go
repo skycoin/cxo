@@ -14,7 +14,7 @@ import (
 	"github.com/skycoin/skycoin/src/util"
 	//http,json helpers
 	"github.com/skycoin/cxo/nodeManager"
-	"github.com/skycoin/cxo/schema"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 var (
@@ -29,7 +29,7 @@ const (
 
 // Begins listening on http://$host, for enabling remote web access
 // Does NOT use HTTPS
-func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, schemaProvider *schema.Container) error {
+func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, schemaProvider skyobject.ISkyObjects) error {
 	logger.Info("Starting web interface on http://%s", host)
 	logger.Warning("HTTPS not in use!")
 	logger.Info("Web resources directory: %s", staticDir)

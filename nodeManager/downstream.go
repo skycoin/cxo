@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"reflect"
+	"sync"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
@@ -22,25 +23,18 @@ type Subscriber struct {
 
 	pubKey *cipher.PubKey
 
-	hs struct {
-		success bool
+	isQuitting bool
+	mu         *sync.RWMutex
 
-		local struct {
-			asked          uuid.UUID
-			receivedAnswer cipher.Sig
-		}
-
-		remote struct {
-			asked      uuid.UUID
-			sentAnswer cipher.Sig
-		}
-		counter uint32
-	}
+	hs *handshakeStatus
 }
 
 func newSubscriber() *Subscriber {
+	hsStatus := newHandshakeStatus()
 	return &Subscriber{
 		writerQueue: make(chan []byte),
+		hs:          hsStatus,
+		mu:          &sync.RWMutex{},
 	}
 }
 
@@ -111,7 +105,7 @@ func (node *Node) acceptSubscribersFrom(listener net.Listener) {
 }
 
 // someone subscribes to me
-func (node *Node) onSubscriberConnect(conn net.Conn) error {
+func (node *Node) onSubscriberConnect(conn net.Conn) {
 	// TODO: set deadline
 
 	// send pubKey, validate my identity
@@ -126,54 +120,61 @@ func (node *Node) onSubscriberConnect(conn net.Conn) error {
 	incomingSubscriber.reader = bufio.NewReader(conn)
 	incomingSubscriber.writer = bufio.NewWriter(conn)
 
-	defer func() {
-		// TODO:
-		// wat for read and write to be done
-		// close conncetion
-		// remove this subscriber from node.subscribers
-		incomingSubscriber.writer.Flush()
-		incomingSubscriber.conn.Close()
-	}()
-
 	go func(node *Node) {
+		select {
+		case handshakeError := <-incomingSubscriber.hs.waitForSuccess:
+			{
+				if handshakeError == nil {
+					fmt.Printf(
+						"\nNew subscriber from %v, has pubKey %v\n",
+						incomingSubscriber.conn.RemoteAddr(),
+						incomingSubscriber.pubKey.Hex(),
+					)
+					debug("adding subscriber to pool")
+					err := node.registerSubscriber(incomingSubscriber)
+					if err != nil {
+						node.TerminateSubscriber(incomingSubscriber, err)
+					}
+				} else {
+					node.TerminateSubscriber(incomingSubscriber, handshakeError)
+				}
+			}
+		case <-time.After(defaultHandshakeTimeout):
+			{
+				node.TerminateSubscriber(incomingSubscriber, ErrHandshakeTimeout)
+			}
+		}
+	}(node)
+
+	// TODO: decide what needs to be done here in case this function just exits
+	//defer
+
+	go func(incomingSubscriber *Subscriber) {
 		// the write loop
 		debug("server: started write loop")
 		for {
 
 			// TODO: if handshake is not done yet, do not send messages other than handshake messages
 
-			if node.quitting {
+			if incomingSubscriber.isQuitting {
 				return
 			}
 
 			transmission, ok := <-incomingSubscriber.writerQueue
 			if !ok {
-				debug("server: breaking write loop")
-				break
+				return
 			}
 
 			n, err := incomingSubscriber.conn.Write(transmission)
 			if err != nil {
-				debugf("server: error while writing: %v", err)
+				// TODO: really terminate?
+				node.TerminateSubscriber(incomingSubscriber, err)
+				return
 			}
 			debugf("server: written %v", n)
-			time.Sleep(time.Millisecond * 10)
+			//time.Sleep(time.Millisecond * 10)
 		}
-	}(node)
-
-	go func(node *Node) {
-		time.Sleep(time.Second * 5)
-		if !incomingSubscriber.hs.success {
-			println("handshake timeout")
-			closeConn(incomingSubscriber.conn)
-			return
-		}
-		err := node.registerSubscriber(incomingSubscriber)
-		if err != nil {
-			closeConn(incomingSubscriber.conn)
-			println(err)
-		}
-	}(node)
+	}(incomingSubscriber)
 
 	// the read loop
 	debug("server: started read loop")
@@ -181,21 +182,19 @@ func (node *Node) onSubscriberConnect(conn net.Conn) error {
 
 		// TODO: if handshake is not done yet, do not receive messages other than handshake messages
 
-		if node.quitting {
-			break
-		}
-
-		// If the node does not comunicate for timeout, close the connection.
-		// Expecting a ping every once in a while
-		timeout := 5 * time.Minute
-		err := incomingSubscriber.conn.SetReadDeadline(time.Now().Add(timeout))
-		if err != nil {
-			return fmt.Errorf("SetReadDeadline failed: %v", err)
+		if incomingSubscriber.isQuitting {
+			return
 		}
 
 		message, err := node.readDownstreamMessage(incomingSubscriber.reader)
 		if err != nil {
-			return closeConn(incomingSubscriber.conn)
+			if err == io.EOF {
+				node.TerminateSubscriber(incomingSubscriber, err)
+				return
+			}
+			time.Sleep(time.Millisecond * 50)
+			continue
+			debug("readDownstreamMessagereadDownstreamMessage error:", err.Error())
 		}
 		cc := DownstreamContext{
 			Remote: incomingSubscriber,
@@ -205,13 +204,11 @@ func (node *Node) onSubscriberConnect(conn net.Conn) error {
 		go func() {
 			err := message.HandleFromDownstream(&cc)
 			if err != nil {
-				// TODO: if the error is HandshakeFailed, exit
 				fmt.Println(err)
 			}
 		}()
 	}
 
-	return nil
 }
 
 func (node *Node) registerSubscriber(incomingSubscriber *Subscriber) error {
@@ -315,4 +312,57 @@ type SubscriberJSON struct {
 	IP     string `json:"ip"`
 	PubKey string `json:"pubKey"`
 	Port   int    `json:"port"`
+}
+
+// TerminateSubscriberByID is a shortcut to TerminateSubscriber
+func (node *Node) TerminateSubscriberByID(pubKey *cipher.PubKey, reason error) error {
+	if pubKey == nil {
+		return ErrPubKeyIsNil
+	}
+
+	elem, err := node.SubscriberByID(pubKey)
+	if err != nil {
+		return err
+	}
+
+	return node.TerminateSubscriber(elem, reason)
+}
+
+func (node *Node) TerminateSubscriber(subscriber *Subscriber, reason error) error {
+	fmt.Println("terminating subscriber; reason:", reason)
+
+	// close and cleanup all resources used by the node
+	err := subscriber.close()
+	if err != nil {
+		return err
+	}
+
+	// remove node from pool
+	err = node.removeSubscriberByID(*subscriber.pubKey)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Subscriber) close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.isQuitting = true
+	closeConn(s.conn)
+
+	return nil
+}
+
+func (node *Node) removeSubscriberByID(pubKey cipher.PubKey) error {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	if _, exists := node.downstream.subscribers[pubKey]; !exists {
+		return fmt.Errorf("subscriber does not exist: %v", pubKey.Hex())
+	}
+
+	delete(node.downstream.subscribers, pubKey)
+	return nil
 }

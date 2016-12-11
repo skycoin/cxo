@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/sqdron/squad/encoder"
 )
 
 type DataBase struct {
@@ -20,11 +21,15 @@ type Statistic struct {
 type queryCondition func(key cipher.SHA256, data []byte) bool
 
 type IDataSource interface {
+	Save(value interface{}) cipher.SHA256
+	Update(value []byte) cipher.SHA256
 	Add(ds cipher.SHA256, value []byte) error
 	Has(ds cipher.SHA256) bool
 	Get(ds cipher.SHA256) ([]byte, bool)
 	Where(queryCondition) []cipher.SHA256
 	Statistic() *Statistic
+
+	GetData() map[cipher.SHA256][]byte
 }
 
 func NewDB() *DataBase {
@@ -42,6 +47,23 @@ func (db *DataBase) NewDataCallback(newDataCallback func(cipher.SHA256, interfac
 		db.newDataCallback = newDataCallback
 	}
 	return nil
+}
+
+func createKey(data []byte) cipher.SHA256 {
+	return cipher.SumSHA256(data)
+}
+
+func (db *DataBase) Save(value interface{}) cipher.SHA256 {
+	data := encoder.Serialize(value)
+	return db.Update(data)
+}
+
+func (db *DataBase) Update(data []byte) cipher.SHA256 {
+	key := createKey(data)
+	db.mu.Lock()
+	db.data[key] = data
+	db.mu.Unlock()
+	return key
 }
 
 func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
@@ -72,6 +94,7 @@ func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
 	result := []cipher.SHA256{}
 
 	for key := range db.data {
+
 		if (q(key, db.data[key])) {
 			result = append(result, key)
 		}
@@ -85,4 +108,8 @@ func (db *DataBase) Statistic() *Statistic {
 		res.Memory += len(db.data)
 	}
 	return res
+}
+
+func (db *DataBase) GetData() map[cipher.SHA256][]byte {
+	return db.data
 }

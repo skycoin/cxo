@@ -23,7 +23,15 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"github.com/skycoin/skycoin/src/cipher"
 )
+
+type StructField struct {
+	Name string `json:"name"`
+	Kind uint32`json:"kind"`
+	Type string`json:"type"`
+	Tag  string`json:"tag"`
+}
 
 /*
 Todo:
@@ -173,68 +181,59 @@ func DeserializeRaw(in []byte, data interface{}) error {
 	return d1.value(v)
 }
 
-//func field
+
 //TODO: replace fieldType on reflect.Kind
-func getFieldSize(in []byte, d *decoder, fieldType string, tag reflect.StructTag, s int) (int, error) {
+func getFieldSize(in []byte, d *decoder, fieldType reflect.Kind, s int) (int, error) {
 	switch fieldType {
-	case "slice", "string":
+	case reflect.Slice, reflect.String:
 		length := int(le_Uint32(d.buf[s:s + 4]))
 		s += 4 + length
-	case "struct":
-		switch tag.Get("href") {
-		case "object":
-			s += 64
-		case "array":
-			fd := &decoder{buf: make([]byte, len(in) - s)}
-			copy(fd.buf, d.buf[s:])
-
-			length := int(fd.uint32())
-			if length < 0 || length > len(fd.buf) {
-				return 0, fmt.Errorf("Invalid length: %d", length)
-			}
-			s += 32 * length + 36
-		}
-	case "bool","int8", "uint8":
+	case reflect.Struct, reflect.Array:
+		s += 32
+	case reflect.Bool, reflect.Int8, reflect.Uint8:
 		s += 1
-	case "int16","uint16":
+	case reflect.Int16, reflect.Uint16:
 		s += 2
-	case "int32", "uint32":
+	case reflect.Int32, reflect.Uint32:
 		s += 4
-	case "int64", "uint64", "float64":
+	case reflect.Int64, reflect.Uint64, reflect.Float64:
 		s += 8
 	default:
+		fmt.Println(fieldType)
 		log.Panicf("Decode error: kind %s not handled", fieldType)
 	}
 	return s, nil
 }
 
 //TODO: replace fieldType on reflect.Kind
-func getFieldValue(in []byte, d *decoder, fieldType string, tag reflect.StructTag, s int) string {
+func getFieldValue(in []byte, d *decoder, fieldType reflect.Kind, s int) string {
 	fd := &decoder{buf: make([]byte, len(in) - s)}
 	copy(fd.buf, d.buf[s:])
 	switch fieldType {
-	case "slice", "string":
+	case reflect.Slice, reflect.String:
 		length := int(le_Uint32(fd.buf[0:4]))
 		return string(fd.buf[4:4 + length])
-	case "struct":
-		return fieldType
-	case "bool":
+	case reflect.Struct, reflect.Array:
+		s := cipher.SHA256{}
+		s.Set(fd.buf[0:32])
+		return s.Hex()
+	case reflect.Bool:
 		return strconv.FormatBool(fd.bool())
-	case "int8":
+	case reflect.Int8:
 		return strconv.Itoa(int(fd.int8()))
-	case "int16":
+	case reflect.Int16:
 		return strconv.Itoa(int(fd.int16()))
-	case "int32":
+	case reflect.Int32:
 		return strconv.Itoa(int(fd.int32()))
-	case "int64":
+	case reflect.Int64:
 		return strconv.Itoa(int(fd.int64()))
-	case "uint8":
+	case reflect.Uint8:
 		return strconv.Itoa(int(fd.uint8()))
-	case "uint16":
+	case reflect.Uint16:
 		return strconv.Itoa(int(fd.uint16()))
-	case "uint32":
+	case reflect.Uint32:
 		return strconv.Itoa(int(fd.uint32()))
-	case "uint64":
+	case reflect.Uint64:
 		return strconv.Itoa(int(fd.uint64()))
 	default:
 		log.Panicf("Decode error: kind %s not handled", fieldType)
@@ -242,21 +241,20 @@ func getFieldValue(in []byte, d *decoder, fieldType string, tag reflect.StructTa
 	return ""
 }
 
-func DeserializeField(in []byte, fields []ReflectionField, name string, field interface{}) error {
+func DeserializeField(in []byte, fields []StructField, fieldName string, field interface{}) error {
+
 	d := &decoder{buf: make([]byte, len(in))}
 	copy(d.buf, in)
 	fv := reflect.ValueOf(field).Elem()
 	s := 0
-	for i := 0; i < len(fields); i++ {
-		f := fields[i]
-		if (string(f.Name) == name) {
+	for _, f := range fields {
+		if (f.Name == fieldName) {
 			fd := &decoder{buf: make([]byte, len(in) - s)}
 			copy(fd.buf, d.buf[s:])
 			fd.value(fv)
-
 			return nil
 		}
-		res, err := getFieldSize(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
+		res, err := getFieldSize(in, d, reflect.Kind(f.Kind), s)
 		if (err != nil) {
 			return err
 		}
@@ -265,15 +263,14 @@ func DeserializeField(in []byte, fields []ReflectionField, name string, field in
 	return nil
 }
 
-func ParseFields(in []byte, fields []ReflectionField) map[string]string {
+func ParseFields(in []byte, fields []StructField) map[string]string {
 	result := map[string]string{}
 	d := &decoder{buf: make([]byte, len(in))}
 	copy(d.buf, in)
 	s := 0
-	for i := 0; i < len(fields); i++ {
-		f := fields[i]
-		resShift, _ := getFieldSize(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
-		result[f.Name] = getFieldValue(in, d, string(f.Type), reflect.StructTag(f.Tag), s)
+	for _, f := range fields {
+		resShift, _ := getFieldSize(in, d, reflect.Kind(f.Kind), s)
+		result[f.Name] = getFieldValue(in, d, reflect.Kind(f.Kind), s)
 		s = resShift
 	}
 	return result
@@ -496,7 +493,7 @@ func datasizeWrite(v reflect.Value) (int, error) {
 	t := v.Type()
 	switch t.Kind() {
 	case reflect.Interface:
-		fmt.Println(v.Elem())
+		//fmt.Println(v.Elem())
 		return datasizeWrite(v.Elem())
 	case reflect.Array:
 		size := 0
@@ -1104,4 +1101,8 @@ func intDestSize(ptrType interface{}) int {
 		return 8
 	}
 	return 0
+}
+
+func (s *StructField) String() string {
+	return fmt.Sprintln(s.Name, s.Type, s.Tag)
 }

@@ -1,10 +1,14 @@
 package gui
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 )
+
+var ErrorInvalidRequest = errors.New("request not valid")
+var ErrorInternal = errors.New("internal server error")
+var ErrorNotFound = errors.New("not found")
+var ErrorParamNotFound = errors.New("param not found")
 
 type JSONResponse struct {
 	Code   string                  `json:"code,omitempty"`
@@ -12,10 +16,6 @@ type JSONResponse struct {
 	Detail string                  `json:"detail,omitempty"`
 	Meta   *map[string]interface{} `json:"meta,omitempty"`
 }
-
-var ErrorInvalidRequest = errors.New("request not valid")
-var ErrorInternal = errors.New("internal server error")
-var ErrorNotFound = errors.New("not found")
 
 func (ctx *Context) ErrInvalidRequest(message string, keyvals ...interface{}) error {
 	errorResponse := JSONResponse{
@@ -27,7 +27,7 @@ func (ctx *Context) ErrInvalidRequest(message string, keyvals ...interface{}) er
 		meta := keyVals(keyvals...)
 		errorResponse.Meta = &meta
 	}
-	return ctx.writeErrorJSON(400, errorResponse)
+	return ctx.JSON(400, errorResponse)
 }
 func (ctx *Context) ErrInternal(message string, keyvals ...interface{}) error {
 	errorResponse := JSONResponse{
@@ -39,7 +39,7 @@ func (ctx *Context) ErrInternal(message string, keyvals ...interface{}) error {
 		meta := keyVals(keyvals...)
 		errorResponse.Meta = &meta
 	}
-	return ctx.writeErrorJSON(500, errorResponse)
+	return ctx.JSON(500, errorResponse)
 }
 func (ctx *Context) ErrNotFound(message string, keyvals ...interface{}) error {
 	errorResponse := JSONResponse{
@@ -51,18 +51,7 @@ func (ctx *Context) ErrNotFound(message string, keyvals ...interface{}) error {
 		meta := keyVals(keyvals...)
 		errorResponse.Meta = &meta
 	}
-	return ctx.writeErrorJSON(404, errorResponse)
-}
-
-func (ctx *Context) writeErrorJSON(code int, v interface{}) error {
-	js, err := json.Marshal(v)
-	if err != nil {
-		ctx.ErrInternal(ErrorInternal.Error())
-		return err
-	}
-
-	ctx.Response.Header().Set("Content-Type", "application/json")
-	return ctx.write(code, js)
+	return ctx.JSON(404, errorResponse)
 }
 
 func keyVals(keyvals ...interface{}) map[string]interface{} {
@@ -72,13 +61,13 @@ func keyVals(keyvals ...interface{}) map[string]interface{} {
 	meta := make(map[string]interface{}, (len(keyvals)+1)/2)
 	for i := 0; i < len(keyvals); i += 2 {
 		k := keyvals[i]
-		fmt.Println("i", i)
-		fmt.Println("k", k)
+		//fmt.Println("i", i)
+		//fmt.Println("k", k)
 		var v interface{} = "MISSING"
 		if i+1 < len(keyvals) {
 			v = keyvals[i+1]
 		}
-		fmt.Println("v", v)
+		//fmt.Println("v", v)
 		meta[fmt.Sprint(k)] = v
 	}
 	return meta

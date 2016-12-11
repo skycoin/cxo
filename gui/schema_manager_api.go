@@ -1,65 +1,77 @@
 package gui
 
 import (
-	"github.com/skycoin/cxo/schema"
+	"github.com/skycoin/cxo/skyobject"
 	"fmt"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type schemaApi struct {
-	sm *schema.Container
+	sm skyobject.ISkyObjects
+}
+
+type objectLink struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 //RegisterNodeManagerHandlers - create routes for NodeManager
-func RegisterSchemaHandlers(router *Router, schemaProvider *schema.Container) {
+func RegisterSchemaHandlers(router *Router, schemaProvider skyobject.ISkyObjects) {
 	// enclose shm into SkyhashManager to be able to add methods
 	//lshm := SkyhashManager{Manager: shm}
 
 	sch := &schemaApi{sm:schemaProvider}
 
-	router.GET("/object1/_schema", sch.SchemaList)
 	router.GET("/object1/_stat", sch.Statistic)
-	router.GET("/object1/:object/schema", sch.Schema)
-	router.GET("/object1/:object/list", sch.List)
+	router.GET("/object1/_schemas", sch.Schemas)
+	router.GET("/object1/:schema/schema", sch.Schema)
+	router.GET("/object1/:schema/list", sch.ObjectsBySchema)
+	router.GET("/object1/:schema/list/:id", sch.Object)
+	router.GET("/object1/data/:id", sch.Object)
 }
 
-func (api *schemaApi) List(ctx *Context) error {
-	objectName := *ctx.Param("object")
-	schemaKey, err := api.sm.GetSchemaKey(objectName)
-	if (err != nil) {
-		return ctx.ErrNotFound(err.Error(), "schema", objectName)
-	}
-
+func (api *schemaApi) ObjectsBySchema(ctx *Context) error {
+	schemaName := *ctx.Param("schema")
+	schemaKey, _ := api.sm.GetSchemaKey(schemaName)
+	fmt.Println(schemaKey)
 	keys := api.sm.GetAllBySchema(schemaKey)
-	schema, err := api.sm.GetSchema(objectName)
-
-	res := []map[string]string{}
-
-	for i := 0; i < len(keys); i++ {
-		res = append(res, api.sm.LoadFields(keys[i], schema))
+	res := []objectLink{}
+	for _, k := range keys {
+		ref := skyobject.HashLink{Ref:k}
+		ref.SetData(k[:])
+		res = append(res, objectLink{ID:k.Hex(), Name:ref.String(api.sm)})
 	}
-
 	return ctx.JSON(200, res)
 }
 
-func (api *schemaApi) SchemaList(ctx *Context) error {
-	result, err := api.sm.GetSchemaList()
+func (api *schemaApi) Object(ctx *Context) error {
+	id, err := cipher.SHA256FromHex(*ctx.Param("id"))
 	if (err != nil) {
 		return ctx.ErrNotFound(err.Error())
 	}
-	return ctx.JSON(200, result)
+	fmt.Println("id", id)
+
+	item := api.sm.LoadFields(id)
+	////item["ID"] = *ctx.Param("id")
+	//
+	return ctx.JSON(200, item)
+	//fmt.Println("Getting object")
+	//return ctx.JSON(200, "")
+}
+
+func (api *schemaApi) Schemas(ctx *Context) error {
+	return ctx.JSON(200, api.sm.GetSchemas())
 }
 
 func (api *schemaApi) Schema(ctx *Context) error {
-	objectName := *ctx.Param("object")
-	schema, err := api.sm.GetSchema(objectName)
+	objectName := *ctx.Param("schema")
+	schema := api.sm.GetSchema(objectName)
 	fmt.Println("Schema", schema)
-	if (err != nil) {
-		return ctx.ErrNotFound(err.Error(), "schema", objectName)
-	}
 	return ctx.JSON(200, schema)
 }
 
 func (api *schemaApi) Statistic(ctx *Context) error {
-	stat := api.sm.GetStatistic()
+	stat := api.sm.Statistic()
 	return ctx.JSON(200, stat)
+	//return ctx.JSON(200, "")
 }

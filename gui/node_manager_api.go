@@ -1,17 +1,19 @@
 package gui
 
-import
-//"encoding/json"
-
-//"strconv"
-
-(
+import (
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
+	"strconv"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/nodeManager"
 )
+
+type SkyhashManager struct {
+	*nodeManager.Manager
+}
 
 //RegisterNodeManagerHandlers - create routes for NodeManager
 func RegisterNodeManagerHandlers(router *Router, shm *nodeManager.Manager) {
@@ -26,18 +28,18 @@ func RegisterNodeManagerHandlers(router *Router, shm *nodeManager.Manager) {
 	router.POST("/manager/nodes", lshm._AddNode)
 
 	router.GET("/manager/nodes/:node_id", lshm._GetNodeByID)
-	router.DELETE("/manager/nodes/:node_id", lshm._StopNodeByID)
+	router.DELETE("/manager/nodes/:node_id", lshm._TerminateNodeByID)
 
 	router.GET("/manager/nodes/:node_id/subscriptions", lshm._ListSubscriptions)
 	router.POST("/manager/nodes/:node_id/subscriptions", lshm._AddSubscription)
 
 	router.GET("/manager/nodes/:node_id/subscriptions/:subscription_id", lshm._GetSubscriptionByID)
-	router.DELETE("/manager/nodes/:node_id/subscriptions/:subscription_id", lshm._RemoveSubscriptionByID)
+	router.DELETE("/manager/nodes/:node_id/subscriptions/:subscription_id", lshm._TerminateSubscriptionByID)
 
 	router.GET("/manager/nodes/:node_id/subscribers", lshm._ListSubscribers)
 
 	router.GET("/manager/nodes/:node_id/subscribers/:subscriber_id", lshm._GetSubscriberByID)
-	router.DELETE("/manager/nodes/:node_id/subscribers/:subscriber_id", lshm._RemoveSubscriberByID)
+	router.DELETE("/manager/nodes/:node_id/subscribers/:subscriber_id", lshm._TerminateSubscriberByID)
 
 }
 
@@ -62,7 +64,7 @@ func (self *SkyhashManager) _ListNodes(ctx *Context) error {
 
 func (self *SkyhashManager) _AddNode(ctx *Context) error {
 
-	// decode configuration of the new transport to be created
+	// decode configuration of the new node to be created
 	var newNodeConfig struct {
 		SecKey string `json:"secKey"`
 	}
@@ -127,8 +129,23 @@ func (self *SkyhashManager) _GetNodeByID(ctx *Context) error {
 	return ctx.JSON(200, node.JSON())
 }
 
-func (self *SkyhashManager) _StopNodeByID(ctx *Context) error {
-	return ctx.ErrInternal("NOT IMPLEMENTED, YET")
+func (self *SkyhashManager) _TerminateNodeByID(ctx *Context) error {
+	nodePubKey, err := ctx.PubKeyFromParam("node_id")
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	err = self.TerminateNodeByID(nodePubKey, errors.New("terminate from GUI"))
+	if err != nil {
+		return ctx.ErrInternal(err.Error())
+	}
+
+	response := JSONResponse{
+		Code:   "terminated",
+		Status: 200,
+		Detail: "The node has been terminated",
+	}
+	return ctx.JSON(200, response)
 }
 
 func (self *SkyhashManager) _ListSubscriptions(ctx *Context) error {
@@ -141,6 +158,7 @@ func (self *SkyhashManager) _ListSubscriptions(ctx *Context) error {
 	if err != nil {
 		return ctx.ErrNotFound(err.Error(), "pubKey", nodePubKey.Hex())
 	}
+
 	listOfSubscriptions := node.Subscriptions()
 
 	OutputSubscriptions := []nodeManager.SubscriptionJSON{}
@@ -153,7 +171,61 @@ func (self *SkyhashManager) _ListSubscriptions(ctx *Context) error {
 }
 
 func (self *SkyhashManager) _AddSubscription(ctx *Context) error {
-	return ctx.ErrInternal("NOT IMPLEMENTED, YET")
+	// parse node id from URL parameter
+	nodePubKey, err := ctx.PubKeyFromParam("node_id")
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	// get node by ID
+	node, err := self.NodeByID(*nodePubKey)
+	if err != nil {
+		return ctx.ErrNotFound(err.Error(), "pubKey", nodePubKey.Hex())
+	}
+
+	// declare configuration struct of new subscription
+	var newSubscriptionConfig struct {
+		IP     string `json:"ip"`
+		PubKey string `json:"pubKey"`
+	}
+
+	// decode configuration of the new subscription to be established
+	err = json.NewDecoder(ctx.Request.Body).Decode(&newSubscriptionConfig)
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	// parse IP and port
+	ip, portString, err := net.SplitHostPort(newSubscriptionConfig.IP)
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	// transform portString to UINT
+	port, err := strconv.ParseUint(portString, 10, 16)
+
+	// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
+	// for any PubKey it communicates us it has.
+	// For a specific match, you have to provide a specific pubKey.
+	pubKeyOfNodeToSubscribeTo := cipher.PubKey{}
+
+	if newSubscriptionConfig.PubKey != "" {
+		pubKeyOfNodeToSubscribeTo, err = cipher.PubKeyFromHex(newSubscriptionConfig.PubKey)
+		if err != nil {
+			return ctx.ErrInvalidRequest(err.Error(), "secKey", newSubscriptionConfig.PubKey)
+		}
+	}
+	err = node.Subscribe(ip, uint16(port), &pubKeyOfNodeToSubscribeTo)
+	if err != nil {
+		return ctx.ErrInternal(err.Error())
+	}
+
+	response := JSONResponse{
+		Code:   "created",
+		Status: 201,
+		Detail: "The subscription has been initiated",
+	}
+	return ctx.JSON(201, response)
 }
 
 func (self *SkyhashManager) _GetSubscriptionByID(ctx *Context) error {
@@ -180,8 +252,33 @@ func (self *SkyhashManager) _GetSubscriptionByID(ctx *Context) error {
 	return ctx.JSON(200, subscription.JSON())
 }
 
-func (self *SkyhashManager) _RemoveSubscriptionByID(ctx *Context) error {
-	return ctx.ErrInternal("NOT IMPLEMENTED, YET")
+func (self *SkyhashManager) _TerminateSubscriptionByID(ctx *Context) error {
+	nodePubKey, err := ctx.PubKeyFromParam("node_id")
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	node, err := self.NodeByID(*nodePubKey)
+	if err != nil {
+		return ctx.ErrNotFound(err.Error(), "pubKey", nodePubKey.Hex())
+	}
+
+	subscriptionPubKey, err := ctx.PubKeyFromParam("subscription_id")
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	err = node.TerminateSubscriptionByID(subscriptionPubKey, nil)
+	if err != nil {
+		return ctx.ErrInternal(err.Error())
+	}
+
+	response := JSONResponse{
+		Code:   "terminated",
+		Status: 200,
+		Detail: "The subscription has been terminated",
+	}
+	return ctx.JSON(200, response)
 }
 
 func (self *SkyhashManager) _ListSubscribers(ctx *Context) error {
@@ -229,6 +326,31 @@ func (self *SkyhashManager) _GetSubscriberByID(ctx *Context) error {
 	return ctx.JSON(200, subscriber.JSON())
 }
 
-func (self *SkyhashManager) _RemoveSubscriberByID(ctx *Context) error {
-	return ctx.ErrInternal("NOT IMPLEMENTED, YET")
+func (self *SkyhashManager) _TerminateSubscriberByID(ctx *Context) error {
+	nodePubKey, err := ctx.PubKeyFromParam("node_id")
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	node, err := self.NodeByID(*nodePubKey)
+	if err != nil {
+		return ctx.ErrNotFound(err.Error(), "pubKey", nodePubKey.Hex())
+	}
+
+	subscriberPubKey, err := ctx.PubKeyFromParam("subscriber_id")
+	if err != nil {
+		return ctx.ErrInvalidRequest(err.Error())
+	}
+
+	err = node.TerminateSubscriberByID(subscriberPubKey, nil)
+	if err != nil {
+		return ctx.ErrInternal(err.Error())
+	}
+
+	response := JSONResponse{
+		Code:   "terminated",
+		Status: 200,
+		Detail: "The subscriber has been terminated",
+	}
+	return ctx.JSON(200, response)
 }

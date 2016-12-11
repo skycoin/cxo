@@ -32,18 +32,15 @@ type UpstreamContext struct {
 }
 
 // Wraps encoder.DeserializeRawToValue and traps panics as an error
-func deserializeBody(body []byte, v reflect.Value) (n int, e error) {
-	n, e = encoder.DeserializeRawToValue(body, v)
-	return
+func deserializeBody(body []byte, v reflect.Value) (int, error) {
+	return encoder.DeserializeRawToValue(body, v)
 }
 
 func encodeMessageToBody(msg interface{}) []byte {
-	// t := reflect.ValueOf(msg).Elem().Type()
+	messageBytes := encoder.Serialize(msg)
 
-	bMsg := encoder.Serialize(msg)
-
-	m := make([]byte, 0, len(bMsg))
-	m = append(m, bMsg...) // message bytes
+	m := make([]byte, 0, len(messageBytes))
+	m = append(m, messageBytes...) // message bytes
 	return m
 }
 
@@ -117,10 +114,11 @@ func validateTypePrefix(name []byte) error {
 		if b == 0x00 {
 			hasEmpty = true
 		} else if hasEmpty {
-			return errors.New("No non-null bytes allowed after a nul byte")
+			return errors.New("No non-null bytes allowed after a null byte")
 		}
 	}
 
+	// validate all bytes
 	for _, b := range name {
 		if !((b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') ||
 			(b >= 'a' && b <= 'z') || b == 0x00) {

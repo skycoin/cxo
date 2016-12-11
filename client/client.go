@@ -1,4 +1,4 @@
-package replicator
+package client
 
 import (
 	"flag"
@@ -9,10 +9,10 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/nodeManager"
-	"github.com/skycoin/cxo/schema"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/bbs"
 	"math/rand"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
@@ -24,7 +24,7 @@ type replicator struct {
 	subscribeTo  string
 	config       *Config
 	manager      *nodeManager.Manager
-	dataProvider *schema.Container
+	dataProvider skyobject.ISkyObjects
 }
 
 func Client() *replicator {
@@ -33,12 +33,6 @@ func Client() *replicator {
 	//1. Create Hash Database
 	DB = data.NewDB()
 	//2. Create schema provider. Integrate Hash Database to schema provider(schema store)
-
-	//boards := bbs.CreateBbs(DB)
-	boards:= prepareTestData(DB)
-	client.dataProvider = boards.Container
-
-
 
 	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
 	flag.StringVar(&client.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
@@ -145,11 +139,13 @@ func Client() *replicator {
 			}
 		}()
 	}
+	boards := prepareTestData(DB)
+	fmt.Println("boards.Container", boards.Container)
+	client.dataProvider = boards.Container
 	return client
 }
 
 func (r *replicator) Run() {
-
 	if r.imTheVertex {
 		RunAPI(r.config, r.manager, r.dataProvider)
 	} else {
@@ -157,22 +153,20 @@ func (r *replicator) Run() {
 	}
 }
 
-
-func prepareTestData(d *data.DataBase) *bbs.Bbs {
-	bSystem := bbs.CreateBbs(d)
+func prepareTestData(ds data.IDataSource) *bbs.Bbs {
+	bSystem := bbs.CreateBbs(ds)
 	boards := []bbs.Board{}
-	for b := 0; b < 3; b++ {
+	for b := 0; b < 2; b++ {
 		threads := []bbs.Thread{}
-		for t := 0; t < 10; t++ {
+		for t := 0; t < 20; t++ {
 			posts := []bbs.Post{}
-			for p := 0; p < 10; p++ {
-				posts = append(posts, bbs.Post{Text: "Post_" + generateString(15)})
+			for p := 0; p < 20; p++ {
+				posts = append(posts, bSystem.CreatePost("Post_" + generateString(15), "Some text"))
 			}
 			threads = append(threads, bSystem.CreateThread("Thread_" + generateString(15), posts...))
 		}
-		boards = append(boards, bSystem.CreateBoard("Board_" + generateString(15), threads...))
+		boards = append(boards, bSystem.AddBoard("Board_" + generateString(15), threads...))
 	}
-	bSystem.AddBoards(boards)
 	return bSystem
 }
 

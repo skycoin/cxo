@@ -21,22 +21,7 @@ func debug(a ...interface{}) (n int, err error) {
 	return 0, nil
 }
 
-func readBody(reader io.Reader, length int) ([]byte, error) {
-	messageBytes := make([]byte, length)
-
-	readN, err := reader.Read(messageBytes)
-	debug("messageBytes", messageBytes)
-	if err != nil {
-		return []byte{}, err
-	}
-	if readN == 0 {
-		return []byte{}, fmt.Errorf("read 0 bytes")
-	}
-	debug("read", readN)
-
-	return messageBytes, nil
-}
-
+// readHeader reads the header from the conn
 func readHeader(reader io.Reader) (string, uint64, error) {
 
 	typePrefix := make([]byte, typePrefixLength)
@@ -44,13 +29,13 @@ func readHeader(reader io.Reader) (string, uint64, error) {
 	lengthPrefix := make([]byte, lengthPrefixLength)
 
 	readN, err := reader.Read(typePrefix)
-	debug("typePrefix", typePrefix)
 	if err != nil {
-		return "", 0, fmt.Errorf("error reading")
+		return "", 0, err
 	}
 	if readN == 0 {
 		return "", 0, fmt.Errorf("read 0 bytes")
 	}
+	debug("typePrefix", typePrefix)
 	debug("read", readN)
 
 	err = validateTypePrefix(typePrefix)
@@ -59,17 +44,34 @@ func readHeader(reader io.Reader) (string, uint64, error) {
 	}
 
 	readN, err = reader.Read(lengthPrefix)
-	debug("lengthPrefix", lengthPrefix)
 	if err != nil {
 		return "", 0, fmt.Errorf("error reading")
 	}
 	if readN == 0 {
 		return "", 0, fmt.Errorf("read 0 bytes")
 	}
+	debug("lengthPrefix", lengthPrefix)
 	debug("read", readN)
 
 	lp, _ := binary.Uvarint(lengthPrefix)
 	return string(typePrefix), lp, nil
+}
+
+// readBody reads the body from the conn
+func readBody(reader io.Reader, length int) ([]byte, error) {
+	messageBytes := make([]byte, length)
+
+	readN, err := reader.Read(messageBytes)
+	if err != nil {
+		return []byte{}, err
+	}
+	if readN == 0 {
+		return []byte{}, fmt.Errorf("read 0 bytes")
+	}
+	debug("messageBytes", messageBytes)
+	debug("read", readN)
+
+	return messageBytes, nil
 }
 
 // transmission is an array of bytes: [type_prefix][length_prefix][body]

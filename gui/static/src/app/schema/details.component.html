@@ -1,0 +1,8 @@
+<h1>Details: </h1>
+<div>
+    <div *ngFor="let field of schema.fields">
+        {{displayField(field, item)}}
+
+        <a *ngIf="isLink(field)" [routerLink]=" ['/', schema.name, 'list', getLinkId(field, item)] "> link</a>
+    </div>
+</div>

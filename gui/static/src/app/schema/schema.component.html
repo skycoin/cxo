@@ -1,6 +1,8 @@
-<h1>Schema: {{schema.StructName}}</h1>
+<h1>Schema: {{schema.name}}</h1>
 <div>
     <div *ngFor="let item of this.items">
-            <span>{{displayItem(schema, item)}}</span>
+        <a [routerLink]=" ['./', item['id']] ">
+            <span>{{item['name']}}</span>
+        </a>
     </div>
 </div>

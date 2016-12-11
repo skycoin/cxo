@@ -16,20 +16,28 @@ export class Schema {
 
 export class SchemaField {
     name: string;
+    type: string;
+    tag: string;
 }
 
 @Injectable()
 export class SkyObjectService {
-    api: string = Constants.API_PATH;
+    api: string = Constants.API_PATH + 'object1/';
     headers: Headers = new Headers();
 
     constructor(private http: Http) {
         this.headers.append('Content-Type', 'application/x-www-form-urlencoded');
     }
 
+    getStatistic() {
+        let self = this;
+        return this.http.get(this.api + '_stat', {headers: self.headers})
+            .map(res => res.json());
+    }
+
     getSchemaList() {
         let self = this;
-        return this.http.get(this.api + '_schema', {headers: self.headers})
+        return this.http.get(this.api + '_schemas', {headers: self.headers})
             .map(res => res.json())
             .map((items: Array<Schema>) => {
                 return items;
@@ -42,15 +50,16 @@ export class SkyObjectService {
             .map(res => res.json());
     }
 
-    getStatistic() {
-        let self = this;
-        return this.http.get(this.api + '_stat', {headers: self.headers})
-            .map(res => res.json());
-    }
 
     getObjectList(schema: string) {
         let self = this;
         return this.http.get(this.api + schema + '/list', {headers: self.headers})
+            .map(res => res.json());
+    }
+
+    getObject(schema: string, id: string) {
+        let self = this;
+        return this.http.get(this.api + schema + '/list/' + id, {headers: self.headers})
             .map(res => res.json());
     }
 }

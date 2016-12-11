@@ -1,0 +1,19 @@
+<h1>Subscription</h1>
+<div>
+    <h2>Nodes: </h2>
+    <div *ngFor="let item of this.items">
+        <span>{{item.ip}}</span>
+        <span>{{item.port}}</span>
+        <span>{{item.pubKey}}</span>
+    </div>
+    <!--<form (ngSubmit)="submitState(localState.value)" autocomplete="off">-->
+
+    <!--<input-->
+    <!--[value]="localState.value"-->
+    <!--(input)="localState.value = $event.target.value"-->
+    <!--placeholder="Submit Local State to App State"-->
+    <!--autofocus>-->
+
+    <!--<button >Submit Value</button>-->
+    <!--</form>-->
+</div>

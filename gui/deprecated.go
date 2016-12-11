@@ -1,14 +1,6 @@
 package gui
 
-import (
-	"net/http"
-
-	"github.com/skycoin/cxo/nodeManager"
-)
-
-type SkyhashManager struct {
-	*nodeManager.Manager
-}
+import "net/http"
 
 // GET returns StatusMethodNotAllowed if the method is not GET
 func GET(handler func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {

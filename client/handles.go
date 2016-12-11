@@ -1,4 +1,4 @@
-package replicator
+package client
 
 import (
 	"github.com/skycoin/cxo/nodeManager"

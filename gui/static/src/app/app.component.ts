@@ -1,11 +1,11 @@
 /*
  * Angular 2 decorators and services
  */
-import {Component, ViewEncapsulation} from '@angular/core';
+import { Component, ViewEncapsulation } from '@angular/core';
 
-import {AppState} from './app.service';
-import {SkyWireService} from "./shared/services/skywire.service";
-import {SkyObjectService} from "./shared/services/skyobject.service";
+import { AppState } from './app.service';
+import { SkyWireService } from './shared/services/skywire.service';
+import { SkyObjectService } from './shared/services/skyobject.service';
 
 /*
  * App Component
@@ -30,6 +30,12 @@ import {SkyObjectService} from "./shared/services/skyobject.service";
           <span>
             <a [routerLink]=" ['./dashboard'] ">
               Dashboard
+            </a>
+          </span>
+          |
+          <span>
+            <a [routerLink]=" ['./subscription'] ">
+              Subscriptions
             </a>
           </span>
           |

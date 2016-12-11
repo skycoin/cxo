@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -23,28 +24,20 @@ type Subscription struct {
 
 	writerQueue chan []byte
 
-	pubKey          *cipher.PubKey
-	pubKeyMustMatch bool
+	pubKey *cipher.PubKey
 
-	hs struct {
-		success bool
+	isQuitting bool
+	mu         *sync.RWMutex
 
-		local struct {
-			asked          uuid.UUID
-			receivedAnswer cipher.Sig
-		}
-
-		remote struct {
-			asked      uuid.UUID
-			sentAnswer cipher.Sig
-		}
-		counter uint32
-	}
+	hs *handshakeStatus
 }
 
 func newSubscription() *Subscription {
+	hsStatus := newHandshakeStatus()
 	return &Subscription{
 		writerQueue: make(chan []byte),
+		hs:          hsStatus,
+		mu:          &sync.RWMutex{},
 	}
 }
 
@@ -89,17 +82,17 @@ func (s *Subscription) Port() int {
 
 // I sub to someone;
 // if the pubKey is blank, any key will be accepted from that IP
-func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error {
+func (node *Node) Subscribe(ip string, port uint16, desiredPubKey *cipher.PubKey) error {
 	// validate address, port
-	// validate pubKey; if is null, then no need to assert the identity of the node we are connecting to
+	// validate desiredPubKey; if is null, then no need to assert the identity of the node we are connecting to
 	// try to connect to the node
-	// on connect, verify his identity through pubKey
+	// on connect, verify his identity through desiredPubKey
 	// then let him verify my identity
 	// if all succeeded, add to node.upstream.pool
 
 	var err error
 
-	if *pubKey == (cipher.PubKey{}) {
+	if *desiredPubKey == (cipher.PubKey{}) {
 		fmt.Println("PubKey not specified; the pubKey of node I'm subscribing to will not be matched.")
 	}
 
@@ -109,21 +102,33 @@ func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error
 	}
 
 	outgoingSubscription := newSubscription()
-	outgoingSubscription.pubKey = pubKey
+	outgoingSubscription.pubKey = desiredPubKey
 	outgoingSubscription.reader = bufio.NewReader(outgoingSubscription.conn)
 	outgoingSubscription.writer = bufio.NewWriter(outgoingSubscription.conn)
 
 	go func(node *Node) {
-		time.Sleep(time.Second * 5)
-		if !outgoingSubscription.hs.success {
-			println("handshake timeout")
-			closeConn(outgoingSubscription.conn)
-		}
-		debug("adding subscription to pool")
-		err := node.registerSubscription(outgoingSubscription)
-		if err != nil {
-			closeConn(outgoingSubscription.conn)
-			println(err)
+		select {
+		case handshakeError := <-outgoingSubscription.hs.waitForSuccess:
+			{
+				if handshakeError == nil {
+					fmt.Printf(
+						"\nConnected to %v, has pubKey %v\n",
+						outgoingSubscription.conn.RemoteAddr(),
+						outgoingSubscription.pubKey.Hex(),
+					)
+					debug("adding subscription to pool")
+					err := node.registerSubscription(outgoingSubscription)
+					if err != nil {
+						node.TerminateSubscription(outgoingSubscription, err)
+					}
+				} else {
+					node.TerminateSubscription(outgoingSubscription, handshakeError)
+				}
+			}
+		case <-time.After(defaultHandshakeTimeout):
+			{
+				node.TerminateSubscription(outgoingSubscription, ErrHandshakeTimeout)
+			}
 		}
 	}(node)
 
@@ -132,16 +137,22 @@ func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error
 	if err != nil {
 		return fmt.Errorf("Error connectting plain text: %v", err.Error())
 	}
-	fmt.Printf("\nTrying to connect to %v, pubKey %v\n", outgoingSubscription.conn.RemoteAddr(), pubKey.Hex())
 
-	go func(node *Node) {
+	desiredPubKeyIsAny := *desiredPubKey == (cipher.PubKey{})
+	if desiredPubKeyIsAny {
+		fmt.Printf("\nTrying to connect to %v, ANY pubKey\n", outgoingSubscription.conn.RemoteAddr())
+	} else {
+		fmt.Printf("\nTrying to connect to %v, MUST have pubKey %v\n", outgoingSubscription.conn.RemoteAddr(), desiredPubKey.Hex())
+	}
+
+	go func(outgoingSubscription *Subscription) {
 		// the write loop
 		debug("client: started write loop")
 		for {
 
 			// TODO: do not send messages other than handshake messages
 
-			if node.quitting {
+			if outgoingSubscription.isQuitting {
 				return
 			}
 
@@ -158,9 +169,9 @@ func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error
 				}
 			}
 			debugf("client: written %v", n)
-			time.Sleep(time.Millisecond * 10)
+			//time.Sleep(time.Millisecond * 10)
 		}
-	}(node)
+	}(outgoingSubscription)
 
 	go func(node *Node) {
 		// the read loop
@@ -169,22 +180,18 @@ func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error
 
 			// TODO: do not receive messages other than handshake messages
 
-			if node.quitting {
-				closeConn(outgoingSubscription.conn)
-				return
-			}
-			// If the node does not comunicate for timeout, close the connection.
-			// Expecting a ping every once in a while
-			timeout := 5 * time.Minute
-			err = outgoingSubscription.conn.SetReadDeadline(time.Now().Add(timeout))
-			if err != nil {
-				fmt.Errorf("SetReadDeadline failed: %v", err)
+			if outgoingSubscription.isQuitting {
 				return
 			}
 
 			message, err := node.readUpstreamMessage(outgoingSubscription.conn)
 			if err != nil {
-				return
+				if err == io.EOF {
+					node.TerminateSubscription(outgoingSubscription, err)
+					return
+				}
+				debug("readUpstreamMessage error:", err.Error())
+				continue
 			}
 			cc := UpstreamContext{
 				Remote: outgoingSubscription,
@@ -194,13 +201,16 @@ func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error
 			go func() {
 				err := message.HandleFromUpstream(&cc)
 				if err != nil {
-					// TODO: if the error is HandshakeFailed, exit
 					fmt.Println(err)
 				}
 			}()
 		}
 	}(node)
 
+	return node.initHandshakeWith(outgoingSubscription)
+}
+
+func (node *Node) initHandshakeWith(outgoingSubscription *Subscription) error {
 	// initiate handshake
 	question := uuid.NewV4()
 	outgoingSubscription.hs.local.asked = question
@@ -210,12 +220,7 @@ func (node *Node) Subscribe(ip string, port uint16, pubKey *cipher.PubKey) error
 		PubKey:   *node.pubKey,
 		Question: question,
 	}
-	err = outgoingSubscription.Send(message)
-	if err != nil {
-		debugf("client: error on hsm1 outgoingSubscription.SendBack: %v", err)
-	}
-
-	return nil
+	return outgoingSubscription.Send(message)
 }
 
 func (node *Node) registerSubscription(outgoingSubscription *Subscription) error {
@@ -231,26 +236,6 @@ func (node *Node) registerSubscription(outgoingSubscription *Subscription) error
 	}
 
 	node.upstream.subscriptions[*outgoingSubscription.pubKey] = outgoingSubscription
-
-	return nil
-}
-
-func (node *Node) UnSubscribeFromPubKey(pubKey *cipher.PubKey) error {
-	// check if subscribed to pubKey
-	sub, isSubscribed := node.upstream.subscriptions[*pubKey]
-	if !isSubscribed {
-		return fmt.Errorf("trying to unsubscribe, but not subscribed to %v", pubKey.Hex())
-	}
-
-	// close connection
-	closeConn(sub.conn)
-	// TODO: add a more gentle way of terminating the connection
-
-	node.mu.Lock()
-	defer node.mu.Unlock()
-
-	// remove subscription from the pool
-	delete(node.upstream.subscriptions, *sub.pubKey)
 
 	return nil
 }
@@ -339,4 +324,56 @@ type SubscriptionJSON struct {
 	PubKey string `json:"pubKey"`
 	IP     string `json:"ip"`
 	Port   int    `json:"port"`
+}
+
+func (node *Node) TerminateSubscriptionByID(pubKey *cipher.PubKey, reason error) error {
+	if pubKey == nil {
+		return ErrPubKeyIsNil
+	}
+
+	elem, err := node.SubscriptionByID(pubKey)
+	if err != nil {
+		return err
+	}
+
+	return node.TerminateSubscription(elem, reason)
+}
+
+func (node *Node) TerminateSubscription(subscription *Subscription, reason error) error {
+	fmt.Println("terminating subscription; reason:", reason)
+
+	// close and cleanup all resources used by the node
+	err := subscription.close()
+	if err != nil {
+		return err
+	}
+
+	// remove node from pool
+	err = node.removeSubscriptionByID(*subscription.pubKey)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Subscription) close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.isQuitting = true
+	closeConn(s.conn)
+
+	return nil
+}
+
+func (node *Node) removeSubscriptionByID(pubKey cipher.PubKey) error {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	if _, exists := node.upstream.subscriptions[pubKey]; !exists {
+		return fmt.Errorf("subscription does not exist: %v", pubKey.Hex())
+	}
+
+	delete(node.upstream.subscriptions, pubKey)
+	return nil
 }

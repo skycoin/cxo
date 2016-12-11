@@ -17,10 +17,26 @@ type Context struct {
 	parameters params
 }
 
-type params map[string]string
+type Router struct {
+	mu       *sync.RWMutex
+	branches muxBranches
+	routes   map[string]bool
+}
 
 type Handle func(ctx *Context) error
 
+type params map[string]string
+
+type branch struct {
+	this     Handle
+	name     *string
+	hs       muxBranches
+	isFolder bool
+}
+
+type muxBranches map[string]branch
+
+// NewRouter creates and returns pointer to a new router object
 func NewRouter() *Router {
 	return &Router{
 		mu:       &sync.RWMutex{},
@@ -29,25 +45,19 @@ func NewRouter() *Router {
 	}
 }
 
-type Router struct {
-	mu       *sync.RWMutex
-	branches muxBranches
-	routes   map[string]bool
-}
-
+// Serve starts the server
 func (r *Router) Serve(address string) error {
-	for routeName := range r.routes {
-		fmt.Println("routeName:", routeName)
-	}
 	server := http.Server{
 		Addr:    address,
 		Handler: r,
 	}
+
 	fmt.Println("Listening and serving on", address)
 
 	return server.ListenAndServe()
 }
 
+// TODO: make this non-accessible
 func (r *Router) ServeHTTP(ww http.ResponseWriter, rr *http.Request) {
 	if origin := rr.Header.Get("Origin"); origin != "" {
 		ww.Header().Set("Access-Control-Allow-Origin", origin)
@@ -59,29 +69,36 @@ func (r *Router) ServeHTTP(ww http.ResponseWriter, rr *http.Request) {
 	if rr.Method == "OPTIONS" {
 		return
 	}
+	// create new context
+	newContext := Context{
+		Request:  rr,
+		Response: ww,
+	}
+
+	// find the handler
 	h, parameters, err := r.findRoute(rr.Method, rr.URL.Path)
 	if err != nil {
-		http.Error(ww, "not found", http.StatusNotFound)
+		newContext.ErrNotFound(ErrorNotFound.Error())
 		return
 	}
-	logger.Debug("parameters: %#v", parameters)
-
-	logger.Infof("%s", rr.URL.Path)
-
-	newContext := Context{
-		Request:    rr,
-		Response:   ww,
-		parameters: parameters,
+	if len(parameters) > 0 {
+		logger.Debug("parameters: %#v", parameters)
 	}
+
+	logger.Infof("%v %s", rr.Method, rr.URL.Path)
+
+	// set parameters in context
+	newContext.parameters = parameters
+
+	// serve handler
 	err = h(&newContext)
 
 	if err != nil {
 		logger.Errorf("Error: %v", err)
 	}
-
-	// TODO use error
 }
 
+// StaticFile creates a route for a static file
 func (r *Router) StaticFile(route string, path string) {
 	handler := func(ctx *Context) error {
 		logger.Debug("Serving static file: %s", path)
@@ -89,7 +106,7 @@ func (r *Router) StaticFile(route string, path string) {
 		return nil
 	}
 
-	if err := r.add("GET", route, handler, false); err != nil {
+	if err := r.addRoute("GET", route, handler, false); err != nil {
 		panic(err)
 	}
 	fmt.Printf("\n%#v\n", r.branches)
@@ -106,6 +123,7 @@ func (r *Router) StaticFile(route string, path string) {
 	}
 }
 
+// Folder creates a route for a folder
 func (r *Router) Folder(route string, dir string) {
 
 	handler := func(ctx *Context) error {
@@ -115,7 +133,7 @@ func (r *Router) Folder(route string, dir string) {
 		return nil
 	}
 
-	if err := r.add("GET", route, handler, true); err != nil {
+	if err := r.addRoute("GET", route, handler, true); err != nil {
 		panic(err)
 	}
 	//fmt.Printf("\n%#v\n", r.branches)
@@ -132,8 +150,9 @@ func (r *Router) Folder(route string, dir string) {
 	}
 }
 
+// GET: handle GET method requests for this route with this Handle
 func (r *Router) GET(route string, handler Handle) {
-	if err := r.add("GET", route, handler, false); err != nil {
+	if err := r.addRoute("GET", route, handler, false); err != nil {
 		panic(err)
 	}
 	//fmt.Printf("\n%#v\n", r.branches)
@@ -150,8 +169,9 @@ func (r *Router) GET(route string, handler Handle) {
 	}
 }
 
+// POST: handle POST method requests for this route with this Handle
 func (r *Router) POST(route string, handler Handle) {
-	if err := r.add("POST", route, handler, false); err != nil {
+	if err := r.addRoute("POST", route, handler, false); err != nil {
 		panic(err)
 	}
 	//fmt.Printf("\n%#v\n", r.branches)
@@ -167,8 +187,10 @@ func (r *Router) POST(route string, handler Handle) {
 		panic("found different: " + route)
 	}
 }
+
+// DELETE: handle DELETE method requests for this route with this Handle
 func (r *Router) DELETE(route string, handler Handle) {
-	if err := r.add("DELETE", route, handler, false); err != nil {
+	if err := r.addRoute("DELETE", route, handler, false); err != nil {
 		panic(err)
 	}
 	//fmt.Printf("\n%#v\n", r.branches)
@@ -185,98 +207,16 @@ func (r *Router) DELETE(route string, handler Handle) {
 	}
 }
 
+// TestHandle returns the handle for the specified combination of method and route
 func (r *Router) TestHandle(method string, route string) (Handle, params, error) {
 	return r.findRoute(method, route)
 }
 
-func (r *Router) findRoute(method string, route string) (Handle, params, error) {
-	u, err := url.ParseRequestURI(route)
-	if err != nil {
-		return nil, params{}, err
-	}
-	urlParts := strings.Split(u.Path, "/")
-
-	if r.branches == nil {
-		r.branches = make(muxBranches)
-	}
-
-	urlPartsClean := []string{}
-	for _, v := range urlParts {
-		if v == "" {
-			continue
-		}
-		urlPartsClean = append(urlPartsClean, v)
-	}
-
-	urlPartsClean = append([]string{method}, urlPartsClean...)
-
-	if len(urlPartsClean) == 1 {
-		fmt.Println("is home")
-	}
-
-	var current muxBranches
-	current = r.branches
-	var parameters params = make(params)
-
-	var this interface{}
-	partsLength := len(urlPartsClean)
-
-Loop:
-	for partIndex, part := range urlPartsClean {
-		t, ok := current[part]
-		if ok {
-			println(part)
-			this = t.this
-			if t.isFolder {
-				return this.(Handle), parameters, nil
-				break Loop
-			}
-		} else {
-			t, ok = current[":::"]
-			//println(":::")
-			if ok {
-				parameters[*t.name] = part
-				this = t.this
-				if t.isFolder {
-					return this.(Handle), parameters, nil
-					break Loop
-				}
-			} else {
-				this = nil
-				break Loop
-			}
-		}
-
-		if partsLength == (partIndex + 1) {
-			if t.this == nil {
-				this = nil
-				break Loop
-			}
-		}
-		current = t.hs
-		this = t.this
-		if t.isFolder {
-			return this.(Handle), parameters, nil
-			break Loop
-		}
-		//fmt.Printf("\nv: %#v\n", this.(Handle))
-	}
-
-	//fmt.Printf("this: %#v", this)
-	if this != nil {
-		h, ok := this.(Handle)
-		if !ok {
-			return nil, params{}, errors.New("assert error")
-		}
-		return h, parameters, nil
-	}
-
-	return nil, params{}, errors.New("not found")
-}
-
-func (r *Router) add(method string, route string, handler Handle, isFolder bool) error {
+func (r *Router) addRoute(method string, route string, handler Handle, isFolder bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	fmt.Println("Route:", method, route)
 
 	u, err := url.ParseRequestURI(route)
 	if err != nil {
@@ -299,7 +239,7 @@ func (r *Router) add(method string, route string, handler Handle, isFolder bool)
 
 		if strings.HasPrefix(v, ":") {
 			if len(v) == 1 {
-				return errors.New("invalid url parameter name")
+				return errors.New("url parameter name must be at least character long")
 			}
 			v = ":"
 		}
@@ -361,11 +301,82 @@ func (r *Router) add(method string, route string, handler Handle, isFolder bool)
 	return nil
 }
 
-type branch struct {
-	this     Handle
-	name     *string
-	hs       muxBranches
-	isFolder bool
-}
+func (r *Router) findRoute(method string, route string) (Handle, params, error) {
+	u, err := url.ParseRequestURI(route)
+	if err != nil {
+		return nil, params{}, err
+	}
+	urlParts := strings.Split(u.Path, "/")
 
-type muxBranches map[string]branch
+	if r.branches == nil {
+		r.branches = make(muxBranches)
+	}
+
+	urlPartsClean := []string{}
+	for _, v := range urlParts {
+		if v == "" {
+			continue
+		}
+		urlPartsClean = append(urlPartsClean, v)
+	}
+
+	urlPartsClean = append([]string{method}, urlPartsClean...)
+
+	var current muxBranches
+	current = r.branches
+	var parameters params = make(params)
+
+	var this interface{}
+	partsLength := len(urlPartsClean)
+Loop:
+	for partIndex, part := range urlPartsClean {
+		t, ok := current[part]
+		if ok {
+			//println(part)
+			this = t.this
+			if t.isFolder {
+				return this.(Handle), parameters, nil
+				break Loop
+			}
+		} else {
+			t, ok = current[":::"]
+			//println(":::")
+			if ok {
+				parameters[*t.name] = part
+				this = t.this
+				if t.isFolder {
+					return this.(Handle), parameters, nil
+					break Loop
+				}
+			} else {
+				this = nil
+				break Loop
+			}
+		}
+
+		if partsLength == (partIndex + 1) {
+			if t.this == nil {
+				this = nil
+				break Loop
+			}
+		}
+		current = t.hs
+		this = t.this
+		if t.isFolder {
+			return this.(Handle), parameters, nil
+			break Loop
+		}
+		//fmt.Printf("\nv: %#v\n", this.(Handle))
+	}
+
+	//fmt.Printf("this: %#v", this)
+	if this != nil {
+		h, ok := this.(Handle)
+		if !ok {
+			return nil, params{}, errors.New("assert error")
+		}
+		return h, parameters, nil
+	}
+
+	return nil, params{}, ErrorNotFound
+}

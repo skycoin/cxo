@@ -1,4 +1,4 @@
-package replicator
+package client
 
 import (
 	"flag"
@@ -12,7 +12,7 @@ import (
 	"github.com/skycoin/skycoin/src/util"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/gui"
-	"github.com/skycoin/cxo/schema"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 const (
@@ -150,7 +150,7 @@ func (c *Config) scheme() string {
 	return "http"
 }
 
-func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider *schema.Container) {
+func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider skyobject.ISkyObjects) {
 	c.WebInterface.GUIDirectory = util.ResolveResourceDirectory(
 		c.WebInterface.GUIDirectory)
 
@@ -185,6 +185,7 @@ func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider *schema.Cont
 			// err = gui.LaunchWebInterfaceHTTPS(host, c.GUIDirectory, d, c.WebInterfaceCert, c.WebInterfaceKey)
 			//
 		} else {
+			fmt.Println(schemaProvider)
 			err = gui.LaunchWebInterfaceAPI(c.host(), c.WebInterface.GUIDirectory, manager, schemaProvider)
 		}
 

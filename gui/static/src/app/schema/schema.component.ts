@@ -29,7 +29,11 @@ export class SchemaComponent {
     displayItem(schema: Schema, item: any): string {
         let result: string = '';
         for (let i = 0; i < schema.fields.length; i++) {
-            result += item[schema.fields[i].name] + ' ';
+            if (schema.fields[i].tag !== '') {
+                result += schema.fields[i].tag + ' ';
+            } else {
+                result += item[schema.fields[i].name] + ';  ';
+            }
         }
         return result;
     }
