@@ -52,7 +52,7 @@ type skyObjects struct {
 
 func SkyObjects(ds data.IDataSource) *skyObjects {
 	result := &skyObjects{ds:ds, types:[]skyTypes{}}
-	result.RegisterSchema(HashLink{}, HashSlice{})
+	result.RegisterSchema(HashLink{}, HashSlice{}, HashRoot{})
 	return result
 }
 
@@ -88,7 +88,7 @@ func (s *skyObjects) Publish(hr IHashObject) (cipher.SHA256) {
 }
 
 func (s *skyObjects) Save(hr IHashObject) Href {
-	return hr.Save(s)
+	return hr.save(s)
 }
 
 func (s *skyObjects) RegisterSchema(types ...interface{}) {

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"github.com/skycoin/cxo/data"
 	"fmt"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type TestHref1 struct {
@@ -25,7 +26,7 @@ type TestHref3 struct {
 	Field4 HashSlice
 }
 
-var referenceTypesCount = 2
+var referenceTypesCount = 3
 
 func Test_Href_1(T *testing.T) {
 	db := data.NewDB()
@@ -36,9 +37,6 @@ func Test_Href_1(T *testing.T) {
 		T.Fatal("Wrong objects count")
 	}
 
-	//container.RegisterSchema(TestHref1{})
-	//container.RegisterSchema(TestHref2{})
-	//
 	var t1 TestHref1
 	t1.Field1 = 255
 	t1.Field2 = false
@@ -116,5 +114,26 @@ func Test_Href_2(T *testing.T) {
 	ha := NewLink(ta)
 
 	rr := container.Save(&ha)
-	rr.References(container)
+	refs := rr.References(container)
+	fmt.Println(refs.String())
+}
+
+func Test_Href_Root(T *testing.T) {
+	db := data.NewDB()
+	container := SkyObjects(db)
+
+	var t1 TestHref1
+	t1.Field1 = 255
+	t1.Field2 = false
+	h1 := NewLink(t1)
+	container.Save(&h1)
+
+	_, secKey := cipher.GenerateKeyPair()
+
+	rh := newRoot(Href(h1), &secKey)
+	r := container.Save(&rh)
+	refs := r.References(container)
+
+	fmt.Println(refs.String())
+	fmt.Println("Statistic", container.Statistic())
 }

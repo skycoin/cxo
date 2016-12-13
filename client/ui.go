@@ -11,15 +11,12 @@ import (
 
 	"github.com/skycoin/skycoin/src/util"
 	"github.com/skycoin/cxo/nodeManager"
-	"github.com/skycoin/cxo/gui"
 	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/gui"
 )
 
 const (
 	logModuleName = "skyhash.main"
-
-	// logFormat is same as src/util/logging.go#defaultLogFormat
-	// logFormat     = "[%{module}:%{level}] %{message}"
 )
 
 var (
@@ -150,7 +147,7 @@ func (c *Config) scheme() string {
 	return "http"
 }
 
-func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider skyobject.ISkyObjects) {
+func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider skyobject.ISkyObjects, messanger *gui.Messenger) {
 	c.WebInterface.GUIDirectory = util.ResolveResourceDirectory(
 		c.WebInterface.GUIDirectory)
 
@@ -167,26 +164,9 @@ func RunAPI(c *Config, manager *nodeManager.Manager, schemaProvider skyobject.IS
 	if c.WebInterface.Enable == true {
 		var err error
 		if c.WebInterface.HTTPS == true {
-			// TODO
-
 			log.Panic("HTTPS support is not implemented yet")
-
-			//
-			// errs := util.CreateCertIfNotExists(host, c.WebInterfaceCert,
-			//                                   c.WebInterfaceKey, "Skywired")
-			// if len(errs) != 0 {
-			// 	for _, err := range errs {
-			// 		logger.Error(err.Error())
-			// 	}
-			// 	logger.Error("gui.CreateCertIfNotExists failure")
-			// 	os.Exit(1)
-			// }
-			//
-			// err = gui.LaunchWebInterfaceHTTPS(host, c.GUIDirectory, d, c.WebInterfaceCert, c.WebInterfaceKey)
-			//
 		} else {
-			fmt.Println(schemaProvider)
-			err = gui.LaunchWebInterfaceAPI(c.host(), c.WebInterface.GUIDirectory, manager, schemaProvider)
+			err = gui.LaunchWebInterfaceAPI(c.host(), c.WebInterface.GUIDirectory, manager, schemaProvider, messanger)
 		}
 
 		if err != nil {

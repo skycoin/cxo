@@ -19,7 +19,7 @@ func Test_Bbs_1(T *testing.T) {
 	bbs.AddBoard("Test Board", th1)
 	st := db.Statistic()
 	fmt.Println(st)
-	if (st.Total != 15) {
+	if (st.Total != 16) {
 		T.Fatal("Invalid number of objects", st.Total)
 	}
 }
@@ -98,8 +98,8 @@ func Test_Bbs_Syncronization(T *testing.T) {
 
 	fmt.Println(bbs1.Container.Statistic())
 	refs:= bbs1.board.References(bbs1.Container)
-	fmt.Println(len(refs))
-	if (len(refs) != 532) {
+	fmt.Println(refs.String())
+	if (len(refs) != 129) {
 		T.Fatal("Number of objects in system is not equal", len(refs))
 	}
 
@@ -121,10 +121,10 @@ func Test_Bbs_Syncronization(T *testing.T) {
 			}
 		case <-done:
 			refs2 := bbs1.board.References(bbs1.Container)
-			fmt.Println("Have:", len(refs2))
+			fmt.Println("Have:", refs2.String())
 			fmt.Println("Done!")
 
-			if (len(refs2) != 532) {
+			if (len(refs2) != 129) {
 				T.Fatal("Number of objects in system is not equal")
 			}
 			return

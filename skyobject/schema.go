@@ -6,13 +6,6 @@ import (
 	"strings"
 	"github.com/skycoin/cxo/encoder"
 )
-//
-//type SchemaField struct {
-//	Name string        `json:"name"`
-//	Type string        `json:"type"`
-//	Kind uint32        `json:"kind"`
-//	Tag  string        `json:"tag"`
-//}
 
 type Schema struct {
 	Name   string        `json:"name"`

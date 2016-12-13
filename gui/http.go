@@ -29,7 +29,7 @@ const (
 
 // Begins listening on http://$host, for enabling remote web access
 // Does NOT use HTTPS
-func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, schemaProvider skyobject.ISkyObjects) error {
+func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, schemaProvider skyobject.ISkyObjects, messanger *Messenger) error {
 	logger.Info("Starting web interface on http://%s", host)
 	logger.Warning("HTTPS not in use!")
 	logger.Info("Web resources directory: %s", staticDir)
@@ -45,7 +45,7 @@ func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, sch
 
 	// register API handlers
 	RegisterNodeManagerHandlers(router, shm)
-	RegisterSchemaHandlers(router, schemaProvider)
+	RegisterSchemaHandlers(router, schemaProvider, messanger)
 
 	RegisterStaticFolders(router, appLoc)
 

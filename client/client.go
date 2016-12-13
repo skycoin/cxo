@@ -3,16 +3,12 @@ package client
 import (
 	"flag"
 	"fmt"
-	"net"
-	"strconv"
 	"time"
-
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/bbs"
-	"math/rand"
 	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/bbs"
+	"github.com/skycoin/cxo/gui"
 )
 
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
@@ -24,6 +20,7 @@ type replicator struct {
 	subscribeTo  string
 	config       *Config
 	manager      *nodeManager.Manager
+	messanger    *gui.Messenger
 	dataProvider skyobject.ISkyObjects
 }
 
@@ -55,15 +52,16 @@ func Client() *replicator {
 		panic("Can't create node")
 	}
 
-	// this callback will be executed each time DB.Add(data) is called
-	DB.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
-		newDataIHave := AnnounceMessage{
-			HashOfNewAvailableData: key,
-		}
-		fmt.Println("broadcasting new data to all connected nodes")
+	//// this callback will be executed each time DB.Add(data) is called
+	//DB.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
+	//	newDataIHave := AnnounceMessage{
+	//		Hash: key,
+	//	}
+	//	fmt.Println("broadcasting new data to all connected nodes")
+	//
+	//	return newNode.BroadcastToSubscribers(newDataIHave)
+	//})
 
-		return newNode.BroadcastToSubscribers(newDataIHave)
-	})
 
 	// register messages that this node can receive from downstream
 	newNode.RegisterDownstreamMessage(RequestMessage{})
@@ -77,122 +75,83 @@ func Client() *replicator {
 		panic("Can't create node")
 	}
 
+	client.messanger = NodeMessanger(newNode)
 	client.imTheVertex = client.subscribeTo == ""
-
-	// for the demo, there is one vertex that after a specified period of time
-	// announces to its subscribers that it has new data.
-
-	// if this node is not a vertex, just subscribe to the specified node
-	// and wait for incoming AnnounceMessage
-	if !client.imTheVertex {
-
-		ip, portString, err := net.SplitHostPort(client.subscribeTo)
-		if err != nil {
-			fmt.Println("err: ", err)
-			panic("Can't create node")
-		}
-
-		port, err := strconv.ParseUint(portString, 10, 16)
-
-		// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
-		// for any PubKey it communicates us it has.
-		// For a specific match, you have to provide a specific pubKey.
-		pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
-		err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
-		if err != nil {
-			fmt.Println("err: ", err)
-			panic("Can't create node")
-		}
-
-	} else {
-		// If I'm the vertex, I pubblish data
-
-		// for this simple example, we use a colored piece of text
-		// as data
-
-		colored :=
-			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
-				"@@@@@ THIS IS A PIECE OF DATA @@@\n" +
-				"@@@@@ SENT TO SUBSCRIBERS @@@@@@@\n" +
-				"@@@@@ FROM A CENTRAL NODE @@@@@@@\n" +
-				"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
-
-		theData := []byte(colored)
-		// hash the question
-		hashOfTheData := cipher.SumSHA256(theData)
-		if err != nil {
-			fmt.Println("err while signing data: ", err)
-			panic("Can't create node")
-		}
-
-		go func() {
-			// give time for nodes to subscribe to this node before broadcasting
-			// that it has new data
-			time.Sleep(time.Second * 40)
-
-			// when adding the data, a callback is called, which announces the new data to
-			// all subscribers
-			err = DB.Add(hashOfTheData, theData)
-
-			if err != nil {
-				fmt.Println("error while adding data to db", err)
-			}
-		}()
-	}
-	boards := prepareTestData(DB)
-	fmt.Println("boards.Container", boards.Container)
-	client.dataProvider = boards.Container
+	//
+	// //for the demo, there is one vertex that after a specified period of time
+	// //announces to its subscribers that it has new data.
+	// //
+	// //if this node is not a vertex, just subscribe to the specified node
+	// //and wait for incoming AnnounceMessage
+	//if !client.imTheVertex {
+	//
+	//	ip, portString, err := net.SplitHostPort(client.subscribeTo)
+	//	if err != nil {
+	//		fmt.Println("err: ", err)
+	//		panic("Can't create node")
+	//	}
+	//
+	//	port, err := strconv.ParseUint(portString, 10, 16)
+	//
+	//	// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
+	//	// for any PubKey it communicates us it has.
+	//	// For a specific match, you have to provide a specific pubKey.
+	//	pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
+	//	err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
+	//	if err != nil {
+	//		fmt.Println("err: ", err)
+	//		panic("Can't create node")
+	//	}
+	//
+	//} else {
+	//	 //If I'm the vertex, I pubblish data
+	//	 //
+	//	 //for this simple example, we use a colored piece of text
+	//	 //as data
+	//
+	//	colored :=
+	//		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+	//			"@@@@@ THIS IS A PIECE OF DATA @@@\n" +
+	//			"@@@@@ SENT TO SUBSCRIBERS @@@@@@@\n" +
+	//			"@@@@@ FROM A CENTRAL NODE @@@@@@@\n" +
+	//			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+	//
+	//	theData := []byte(colored)
+	//	// hash the question
+	//	hashOfTheData := cipher.SumSHA256(theData)
+	//	if err != nil {
+	//		fmt.Println("err while signing data: ", err)
+	//		panic("Can't create node")
+	//	}
+	//
+	//	go func() {
+	//		// give time for nodes to subscribe to this node before broadcasting
+	//		// that it has new data
+	//		time.Sleep(time.Second * 40)
+	//
+	//		// when adding the data, a callback is called, which announces the new data to
+	//		// all subscribers
+	//		err = DB.Add(hashOfTheData, theData)
+	//		if err != nil {
+	//			fmt.Println("error while adding data to db", err)
+	//		}
+	//		err = messanger.Announce(hashOfTheData)
+	//		if err != nil {
+	//			fmt.Println("error while announcing hash", err)
+	//		}
+	//
+	//	}()
+	//}
+	//boards := prepareTestData(DB)
+	//fmt.Println("boards.Container", boards.Container)
+	client.dataProvider = bbs.CreateBbs(DB).Container
 	return client
 }
 
 func (r *replicator) Run() {
 	if r.imTheVertex {
-		RunAPI(r.config, r.manager, r.dataProvider)
+		RunAPI(r.config, r.manager, r.dataProvider, r.messanger)
 	} else {
 		time.Sleep(time.Minute * 120)
 	}
-}
-
-func prepareTestData(ds data.IDataSource) *bbs.Bbs {
-	bSystem := bbs.CreateBbs(ds)
-	boards := []bbs.Board{}
-	for b := 0; b < 2; b++ {
-		threads := []bbs.Thread{}
-		for t := 0; t < 20; t++ {
-			posts := []bbs.Post{}
-			for p := 0; p < 20; p++ {
-				posts = append(posts, bSystem.CreatePost("Post_" + generateString(15), "Some text"))
-			}
-			threads = append(threads, bSystem.CreateThread("Thread_" + generateString(15), posts...))
-		}
-		boards = append(boards, bSystem.AddBoard("Board_" + generateString(15), threads...))
-	}
-	return bSystem
-}
-
-const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-const (
-	letterIdxBits = 6                    // 6 bits to represent a letter index
-	letterIdxMask = 1 << letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-	letterIdxMax = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
-)
-
-var src = rand.NewSource(time.Now().UnixNano())
-
-func generateString(n int) string {
-	b := make([]byte, n)
-	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
-	for i, cache, remain := n - 1, src.Int63(), letterIdxMax; i >= 0; {
-		if remain == 0 {
-			cache, remain = src.Int63(), letterIdxMax
-		}
-		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
-			b[i] = letterBytes[idx]
-			i--
-		}
-		cache >>= letterIdxBits
-		remain--
-	}
-
-	return string(b)
 }

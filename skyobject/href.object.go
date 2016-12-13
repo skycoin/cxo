@@ -18,13 +18,14 @@ func (h *HashLink) SetData(data []byte) {
 	h.rdata = data
 }
 
-func (h *HashLink) Save(c ISkyObjects) Href {
+func (h *HashLink) save(c ISkyObjects) Href {
 	objSchema := ReadSchema(h.value)
 	objData := encoder.Serialize(h.value)
 	objHash := href{Type:c.SaveObject(*objSchema), Data:objData}
 	objKey := c.SaveObject(objHash)
 
 	h.Ref = c.SaveObject(&href{Type:h.Type(), Data:objKey[:]})
+	h.rdata = objKey[:]
 	return Href(*h)
 }
 
@@ -32,23 +33,26 @@ func (h *HashLink) Type() cipher.SHA256 {
 	return _linkSchemaKey
 }
 
-func (h *HashLink) References(c ISkyObjects) []cipher.SHA256 {
+func (h *HashLink) References(c ISkyObjects) RefInfoMap {
+	result := RefInfoMap{}
+
 	var objKey cipher.SHA256
 	objKey.Set(h.rdata)
 	objHash := href{}
 	objData, _ := c.Get(objKey)
 	encoder.DeserializeRaw(objData, &objHash)
+	result[objKey] = int32(len(objData))
 
 	objSchema := Schema{}
 	objSchemaData, _ := c.Get(objHash.Type)
 	encoder.DeserializeRaw(objSchemaData, &objSchema)
+	result[objHash.Type] = int32(len(objSchemaData))
 
-	result := []cipher.SHA256{objKey, objHash.Type}
 	for _, f := range objSchema.Fields {
 		if (c.ValidateHashType(f.Type)) {
 			var ref Href
 			encoder.DeserializeField(objHash.Data, objSchema.Fields, f.Name, &ref.Ref)
-			result = append(result, ref.References(c)...)
+			mergeRefs(result, ref.References(c))
 		}
 	}
 	return result

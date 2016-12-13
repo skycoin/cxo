@@ -19,7 +19,7 @@ func (h *HashSlice) SetData(data []byte) {
 	h.rdata = data
 }
 
-func (h *HashSlice) Save(c ISkyObjects) Href {
+func (h *HashSlice) save(c ISkyObjects) Href {
 	v := h.value.([]interface{})
 	items := InterfaceSlice(v[0])
 	keys := []cipher.SHA256{}
@@ -38,13 +38,14 @@ func (h *HashSlice) Type() cipher.SHA256 {
 	return _sliceSchemaKey
 }
 
-func (h *HashSlice) References(c ISkyObjects) []cipher.SHA256 {
-	result := []cipher.SHA256{}
-	encoder.DeserializeRaw(h.rdata, &result)
-	for _, k := range result {
+func (h *HashSlice) References(c ISkyObjects) RefInfoMap {
+	result := RefInfoMap{}
+	items := []cipher.SHA256{}
+	encoder.DeserializeRaw(h.rdata, &items)
+	for _, k := range items {
 		ref := HashLink{}
 		ref.SetData(k[:])
-		result = append(result, ref.References(c)...)
+		mergeRefs(result, ref.References(c))
 	}
 	return result
 }

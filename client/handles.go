@@ -8,33 +8,33 @@ import (
 )
 
 // handle an AnnounceMessage from the node I am subscribed to
-func (msg *AnnounceMessage) HandleFromUpstream(/*dataSource *DataBase,*/ cc *nodeManager.UpstreamContext) error {
+func (msg *AnnounceMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) error {
 	fmt.Println("AnnounceMessage")
 
-	if DB.Has(msg.HashOfNewAvailableData) {
-		return fmt.Errorf("received an announce for data I already have: %v", msg.HashOfNewAvailableData)
+	if DB.Has(msg.Hash) {
+		return fmt.Errorf("received an announce for data I already have: %v", msg.Hash)
 	}
 
 	request := RequestMessage{
-		HashOfDataRequested: msg.HashOfNewAvailableData,
+		Hash: msg.Hash,
 	}
 
 	return cc.Remote.Send(request)
 }
 
 // handle a RequestMessage from a node who is subscribed to me
-func (msg *RequestMessage) HandleFromDownstream(/*dataSource *DataBase,*/ cc *nodeManager.DownstreamContext) error {
+func (msg *RequestMessage) HandleFromDownstream(cc *nodeManager.DownstreamContext) error {
 	fmt.Println("RequestMessage")
 
 	// fetch from DB the data by hash
-	responseData, ok := DB.Get(msg.HashOfDataRequested)
+	responseData, ok := DB.Get(msg.Hash)
 	if !ok {
-		return fmt.Errorf("received request for data I don't have: %v", msg.HashOfDataRequested)
+		return fmt.Errorf("received request for data I don't have: %v", msg.Hash)
 	}
 
 	// fill the response DataMessage
 	message := DataMessage{
-		HashOfData: msg.HashOfDataRequested,
+		Hash: msg.Hash,
 		Data:       responseData,
 	}
 
@@ -43,15 +43,15 @@ func (msg *RequestMessage) HandleFromDownstream(/*dataSource *DataBase,*/ cc *no
 }
 
 // handle a DataMessage from the node I am subscribed to
-func (msg *DataMessage) HandleFromUpstream(/*dataSource *DataBase,*/  cc *nodeManager.UpstreamContext) error {
+func (msg *DataMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) error {
 	fmt.Println("DataMessage")
 
 	// TODO: check whether I really requested that data
 
 	// check whether I already have the received data
-	ok := DB.Has(msg.HashOfData)
+	ok := DB.Has(msg.Hash)
 	if ok {
-		return fmt.Errorf("received data I already have: %v", msg.HashOfData)
+		return fmt.Errorf("received data I already have: %v", msg.Hash)
 	}
 
 	// check HASH of the received data
@@ -59,8 +59,8 @@ func (msg *DataMessage) HandleFromUpstream(/*dataSource *DataBase,*/  cc *nodeMa
 	// hash the received data
 	hashDoneLocally := cipher.SumSHA256(msg.Data)
 	// that the hashes match
-	if msg.HashOfData != hashDoneLocally {
-		return fmt.Errorf("received data and it's hash are different: want %v, got %v", msg.HashOfData, hashDoneLocally)
+	if msg.Hash != hashDoneLocally {
+		return fmt.Errorf("received data and it's hash are different: want %v, got %v", msg.Hash, hashDoneLocally)
 	}
 
 	// print out the received data
@@ -68,7 +68,7 @@ func (msg *DataMessage) HandleFromUpstream(/*dataSource *DataBase,*/  cc *nodeMa
 	time.Sleep(time.Second)
 
 	// store the new data in the DB
-	err := DB.Add(msg.HashOfData, msg.Data)
+	err := DB.Add(msg.Hash, msg.Data)
 
 	return err
 }

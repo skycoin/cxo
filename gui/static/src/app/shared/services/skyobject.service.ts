@@ -62,4 +62,21 @@ export class SkyObjectService {
         return this.http.get(this.api + schema + '/list/' + id, {headers: self.headers})
             .map(res => res.json());
     }
+
+    syncObject(id: string) {
+        let self = this;
+        return this.http.post(this.api + '/sync/' + id, {headers: self.headers})
+    }
+
+    objectInfo(id: string) {
+        let self = this;
+        return this.http.get(this.api + '/sync/' + id, {headers: self.headers})
+            .map(res => res.json());
+    }
+
+    create(schema: string, name: string){
+        let self = this;
+        return this.http.post(this.api + '/create/' + schema + '/' + name, {headers: self.headers})
+            .map(res => res.json());
+    }
 }

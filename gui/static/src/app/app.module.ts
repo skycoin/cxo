@@ -21,6 +21,7 @@ import { CollectionComponent } from './collection';
 import { SchemaComponent } from './schema/schema.component';
 import { SchemaDetailsComponent } from './schema/details.component';
 import { SubscriptionComponent } from './subscription/subscription.component';
+import { BoardsComponent } from './boards/boards.component';
 
 // Application wide providers
 const APP_PROVIDERS = [
@@ -47,6 +48,7 @@ type StoreType = {
         SchemaDetailsComponent,
         CollectionComponent,
         SubscriptionComponent,
+        BoardsComponent,
         NoContentComponent
     ],
     imports: [ // import Angular's modules

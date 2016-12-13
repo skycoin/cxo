@@ -7,7 +7,8 @@ import (
 )
 
 type schemaApi struct {
-	sm skyobject.ISkyObjects
+	sm        skyobject.ISkyObjects
+	messanger *Messenger
 }
 
 type objectLink struct {
@@ -16,17 +17,19 @@ type objectLink struct {
 }
 
 //RegisterNodeManagerHandlers - create routes for NodeManager
-func RegisterSchemaHandlers(router *Router, schemaProvider skyobject.ISkyObjects) {
+func RegisterSchemaHandlers(router *Router, schemaProvider skyobject.ISkyObjects, messanger *Messenger) {
 	// enclose shm into SkyhashManager to be able to add methods
 	//lshm := SkyhashManager{Manager: shm}
 
-	sch := &schemaApi{sm:schemaProvider}
+	sch := &schemaApi{sm:schemaProvider, messanger : messanger}
 
 	router.GET("/object1/_stat", sch.Statistic)
 	router.GET("/object1/_schemas", sch.Schemas)
 	router.GET("/object1/:schema/schema", sch.Schema)
 	router.GET("/object1/:schema/list", sch.ObjectsBySchema)
 	router.GET("/object1/:schema/list/:id", sch.Object)
+	//router.GET("/object1/:schema/list/:id", sch.Object)
+
 	router.GET("/object1/data/:id", sch.Object)
 }
 
@@ -73,5 +76,4 @@ func (api *schemaApi) Schema(ctx *Context) error {
 func (api *schemaApi) Statistic(ctx *Context) error {
 	stat := api.sm.Statistic()
 	return ctx.JSON(200, stat)
-	//return ctx.JSON(200, "")
 }

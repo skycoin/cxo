@@ -6,7 +6,6 @@ export class Subscription {
     ip: string;
     port: string;
     pubKey: string;
-
 }
 
 @Injectable()

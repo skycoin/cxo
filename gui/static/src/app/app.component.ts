@@ -34,6 +34,12 @@ import { SkyObjectService } from './shared/services/skyobject.service';
           </span>
           |
           <span>
+            <a [routerLink]=" ['./boards'] ">
+              Boards
+            </a>
+          </span>
+          |
+          <span>
             <a [routerLink]=" ['./subscription'] ">
               Subscriptions
             </a>
