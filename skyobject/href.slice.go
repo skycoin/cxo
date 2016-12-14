@@ -2,8 +2,8 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/sqdron/squad/encoder"
 	"reflect"
+	"github.com/skycoin/cxo/encoder"
 )
 
 var _sliceSchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(*ReadSchema(HashSlice{})))

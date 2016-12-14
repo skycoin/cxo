@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/sqdron/squad/encoder"
+	"github.com/skycoin/cxo/encoder"
 )
 
 type DataBase struct {
