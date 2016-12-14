@@ -15,7 +15,7 @@ export class BoardsService {
         return this.skyobjects.getObjectList('board');
     }
 
-    createBoard(name: string) {
-        return this.skyobjects.create('board');
-    }
+    // createBoard(name: string) {
+        // return this.skyobjects.create('board');
+    // }
 }

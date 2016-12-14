@@ -9,6 +9,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/gui"
+	"math/rand"
 )
 
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
@@ -142,9 +143,9 @@ func Client() *replicator {
 	//
 	//	}()
 	//}
-	//boards := prepareTestData(DB)
+	boards := prepareTestData(DB)
 	//fmt.Println("boards.Container", boards.Container)
-	client.dataProvider = bbs.CreateBbs(DB).Container
+	client.dataProvider = boards.Container
 	return client
 }
 
@@ -155,3 +156,48 @@ func (r *replicator) Run() {
 		time.Sleep(time.Minute * 120)
 	}
 }
+
+func prepareTestData(ds data.IDataSource) *bbs.Bbs {
+	bSystem := bbs.CreateBbs(ds)
+	boards := []bbs.Board{}
+	for b := 0; b < 2; b++ {
+		threads := []bbs.Thread{}
+		for t := 0; t < 20; t++ {
+			posts := []bbs.Post{}
+			for p := 0; p < 20; p++ {
+				posts = append(posts, bSystem.CreatePost("Post_" + generateString(15), "Some text"))
+			}
+			threads = append(threads, bSystem.CreateThread("Thread_" + generateString(15), posts...))
+		}
+		boards = append(boards, bSystem.AddBoard("Board_" + generateString(15), threads...))
+	}
+	return bSystem
+}
+
+const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const (
+	letterIdxBits = 6                    // 6 bits to represent a letter index
+	letterIdxMask = 1 << letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+	letterIdxMax = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+)
+
+var src = rand.NewSource(time.Now().UnixNano())
+
+func generateString(n int) string {
+	b := make([]byte, n)
+	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
+	for i, cache, remain := n - 1, src.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = src.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			b[i] = letterBytes[idx]
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+
+	return string(b)
+}
+

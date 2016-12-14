@@ -10,27 +10,26 @@ import { SkyObjectService } from '../shared/services/skyobject.service';
 export class BoardsComponent {
     // boards: Board = {};
     items: any[];
-    boardName: string;
+    // boardName: string;
 
-    constructor(public route: ActivatedRoute, private boardsService: BoardsService,
-                private skyObject: SkyObjectService) {
+    constructor(public route: ActivatedRoute) {
     }
 
-    ngOnInit() {
-        this.boardsService.getBoards().subscribe((data: Board[]) => {
-            console.log(data)
-            this.items = data;
-        });
+    // ngOnInit() {
+        // this.boardsService.getBoards().subscribe((data: Board[]) => {
+        //     console.log(data)
+        //     this.items = data;
+        // });
 
-    }
-
-    newBoard(name: string):void{
-        this.skyObject.create('board', name);
-    }
+    // }
+    //
+    // newBoard(name: string):void{
+    //     this.skyObject.create('board', name);
+    // }
 
     sync(id: string): void {
-        this.skyObject.syncObject(id).subscribe((data: any) => {
-
-        });
+        // this.skyObject.syncObject(id).subscribe((data: any) => {
+        //
+        // });
     }
 }
