@@ -9,18 +9,18 @@ import (
 
 type Board struct {
 	Name    string
-	Threads skyobject.HashSlice
+	Threads skyobject.HashArray
 }
 
 type Thread struct {
 	Name  string
-	Posts skyobject.HashSlice
+	Posts skyobject.HashArray
 }
 
 type Post struct {
 	Header string
 	Text   string
-	Poster skyobject.HashLink
+	//Poster skyobject.HashLink
 }
 
 type Poster struct {
