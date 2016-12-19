@@ -12,24 +12,27 @@ export class BoardsComponent {
     items: any[];
     // boardName: string;
 
-    constructor(public route: ActivatedRoute) {
+    constructor(public route: ActivatedRoute, private skyObject: SkyObjectService,
+                private boardsService: BoardsService) {
     }
 
-    // ngOnInit() {
-        // this.boardsService.getBoards().subscribe((data: Board[]) => {
-        //     console.log(data)
-        //     this.items = data;
-        // });
+    ngOnInit() {
+        this.boardsService.getBoards().subscribe((data: Board[]) => {
+            this.items = data;
+        });
 
-    // }
+    }
+
     //
     // newBoard(name: string):void{
     //     this.skyObject.create('board', name);
     // }
 
     sync(id: string): void {
-        // this.skyObject.syncObject(id).subscribe((data: any) => {
-        //
-        // });
+        console.log(this.items[0].id);
+
+        this.skyObject.syncObject(this.items[0].id).subscribe((data: any) => {
+            console.log(data)
+        });
     }
 }

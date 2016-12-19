@@ -19,16 +19,11 @@ type ISkyObjects interface {
 	HashObject(schemaKey cipher.SHA256, data []byte) (IHashObject, bool)
 	ValidateHashType(typeName string) bool
 
-	//CreateBySchema(schemaKey cipher.SHA256) (interface{}, bool)
-	//CreateByType(typeName string) (interface{}, bool)
 	GetSchemas() []Schema
-	//GetSchemaKey(typeName string) cipher.SHA256
 	GetSchema(typeName string) *Schema
 	GetSchemaKey(typeName string) (cipher.SHA256, bool)
-
 	Publish(ref Href, sign *cipher.Sig) (cipher.SHA256)
 
-	//SignRoot(hr IHashObject) HashRoot
 	Save(hr IHashObject) Href
 	SaveObject(schemaKey cipher.SHA256, obj interface{}) (cipher.SHA256)
 	SaveData(schemaKey cipher.SHA256, data []byte) (cipher.SHA256)
@@ -65,12 +60,6 @@ func (s *skyObjects) Get(key cipher.SHA256) ([]byte, bool) {
 func (s *skyObjects) Has(key cipher.SHA256) bool {
 	return s.ds.Has(key)
 }
-//
-//func (s *skyObjects) SignRoot(hr IHashObject) HashRoot {
-//	root := HashRoot{}
-//	//hr.Save(s)
-//	return root
-//}
 
 func (s *skyObjects) SaveObject(schemaKey cipher.SHA256, obj interface{}) (cipher.SHA256) {
 	h := href{Type:schemaKey, Data:encoder.Serialize(obj)}

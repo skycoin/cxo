@@ -65,7 +65,7 @@ export class SkyObjectService {
 
     syncObject(id: string) {
         let self = this;
-        return this.http.post(this.api + '/sync/' + id, {headers: self.headers})
+        return this.http.post(this.api + 'data/' + id + '/sync/', {headers: self.headers});
     }
 
     objectInfo(id: string) {
