@@ -7,6 +7,7 @@ import (
 	"github.com/skycoin/cxo/encoder"
 	"bytes"
 	"strings"
+	"fmt"
 )
 
 //TODO: Split on implementation on something like
@@ -25,17 +26,18 @@ type ISkyObjects interface {
 	GetSchema(typeName string) *Schema
 	GetSchemaKey(typeName string) (cipher.SHA256, bool)
 
-	Publish(hr IHashObject) (cipher.SHA256)
+	Publish(ref Href, sign *cipher.Sig) (cipher.SHA256)
 
-	SignRoot(hr IHashObject) HashRoot
+	//SignRoot(hr IHashObject) HashRoot
 	Save(hr IHashObject) Href
-	SaveObject(obj interface{}) (cipher.SHA256)
-	SaveData(data []byte) (cipher.SHA256)
+	SaveObject(schemaKey cipher.SHA256, obj interface{}) (cipher.SHA256)
+	SaveData(schemaKey cipher.SHA256, data []byte) (cipher.SHA256)
 	Get(key cipher.SHA256) ([]byte, bool)
 	Has(key cipher.SHA256) bool
 	Statistic() *data.Statistic
 	GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256
 	RegisterSchema(tp ...interface{})
+	Inspect()
 
 	LoadFields(key cipher.SHA256) (map[string]string)
 }
@@ -52,7 +54,7 @@ type skyObjects struct {
 
 func SkyObjects(ds data.IDataSource) *skyObjects {
 	result := &skyObjects{ds:ds, types:[]skyTypes{}}
-	result.RegisterSchema(HashLink{}, HashSlice{}, HashRoot{})
+	result.RegisterSchema(HashRoot{}, HashObject{}, HashArray{})
 	return result
 }
 
@@ -63,28 +65,32 @@ func (s *skyObjects) Get(key cipher.SHA256) ([]byte, bool) {
 func (s *skyObjects) Has(key cipher.SHA256) bool {
 	return s.ds.Has(key)
 }
+//
+//func (s *skyObjects) SignRoot(hr IHashObject) HashRoot {
+//	root := HashRoot{}
+//	//hr.Save(s)
+//	return root
+//}
 
-func (s *skyObjects) SignRoot(hr IHashObject) HashRoot {
-	root := HashRoot{}
-	//hr.Save(s)
-	return root
-}
-
-func (s *skyObjects) SaveObject(obj interface{}) (cipher.SHA256) {
-	data := encoder.Serialize(obj)
+func (s *skyObjects) SaveObject(schemaKey cipher.SHA256, obj interface{}) (cipher.SHA256) {
+	h := href{Type:schemaKey, Data:encoder.Serialize(obj)}
+	data := encoder.Serialize(h)
 	key := cipher.SumSHA256(data)
 	s.ds.Add(key, data)
 	return key
 }
 
-func (s *skyObjects) SaveData(data []byte) (cipher.SHA256) {
-	key := cipher.SumSHA256(data)
+func (s *skyObjects) SaveData(schemaKey cipher.SHA256, data []byte) (cipher.SHA256) {
+	h := href{Type:schemaKey, Data:data}
+	refData := encoder.Serialize(h)
+	key := cipher.SumSHA256(refData)
 	s.ds.Add(key, data)
 	return key
 }
 
-func (s *skyObjects) Publish(hr IHashObject) (cipher.SHA256) {
-	return cipher.SHA256{}
+func (s *skyObjects) Publish(ref Href, sign *cipher.Sig) (cipher.SHA256) {
+	root := newRoot(ref, *sign)
+	return root.save(s).Ref
 }
 
 func (s *skyObjects) Save(hr IHashObject) Href {
@@ -92,9 +98,11 @@ func (s *skyObjects) Save(hr IHashObject) Href {
 }
 
 func (s *skyObjects) RegisterSchema(types ...interface{}) {
+	s.SaveObject(_schemaType, Schema{})
 	for _, tp := range types {
 		schema := ReadSchema(tp)
-		key := s.ds.Save(schema)
+		schemaData := encoder.Serialize(schema)
+		key := s.SaveObject(_schemaType, schemaData)
 		s.types = append(s.types, skyTypes{Name:schema.Name, Type:reflect.TypeOf(tp), Schema:key})
 	}
 }
@@ -120,9 +128,14 @@ func (s *skyObjects) typeBySchema(key cipher.SHA256) (reflect.Type, bool) {
 func (s *skyObjects) HashObject(schemaKey cipher.SHA256, data []byte) (IHashObject, bool) {
 	r, ok := s.typeBySchema(schemaKey)
 	if (ok) {
-		res := reflect.New(r).Interface().(IHashObject)
-		res.SetData(data)
-		return res, true
+		res := reflect.New(r)
+		if (!res.IsNil() && res.IsValid()) {
+			resValue, ok := res.Interface().(IHashObject)
+			if (ok) {
+				resValue.SetData(data)
+				return resValue, true
+			}
+		}
 	}
 	return nil, false
 }
@@ -174,10 +187,7 @@ func (s *skyObjects) GetSchemas() []Schema {
 
 func (c *skyObjects) GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
-		if (len(data) > 32) {
-			return bytes.Compare(schemaKey[:32], data[0:32]) == 0
-		}
-		return false
+		return bytes.Compare(schemaKey[:32], data[0:32]) == 0
 	}
 	return c.ds.Where(query)
 }
@@ -186,9 +196,25 @@ func (c *skyObjects) LoadFields(key cipher.SHA256) (map[string]string) {
 	data, _ := c.ds.Get(key)
 	ref := href{}
 	encoder.DeserializeRaw(data, &ref)
-
 	schemaData, _ := c.ds.Get(ref.Type)
 	var sm Schema
 	encoder.DeserializeRaw(schemaData, &sm)
 	return encoder.ParseFields(ref.Data, sm.Fields)
+}
+
+func (c *skyObjects) Inspect() {
+	query := func(key cipher.SHA256, data []byte) bool {
+
+		smKey := cipher.SHA256{}
+		smKey.Set(data[:32])
+		schemaData, ok := c.ds.Get(smKey)
+		if (ok) {
+			var sm Schema
+			encoder.DeserializeRaw(schemaData, &sm)
+			fmt.Println("Schema", sm, " for data: ")
+		}
+
+		return false
+	}
+	c.ds.Where(query)
 }

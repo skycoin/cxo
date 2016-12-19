@@ -14,8 +14,9 @@ import (
 
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
 var DB *data.DataBase
+var Sync *syncContext
 
-type replicator struct {
+type client struct {
 	//db          *DataBase
 	imTheVertex  bool
 	subscribeTo  string
@@ -25,23 +26,23 @@ type replicator struct {
 	dataProvider skyobject.ISkyObjects
 }
 
-func Client() *replicator {
+func Client() *client {
 
-	client := &replicator{}
+	c := &client{}
 	//1. Create Hash Database
 	DB = data.NewDB()
 	//2. Create schema provider. Integrate Hash Database to schema provider(schema store)
 
 	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
-	flag.StringVar(&client.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
-	client.config = defaultConfig()
-	client.config.Parse()
+	flag.StringVar(&c.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
+	c.config = defaultConfig()
+	c.config.Parse()
 
 	nodeManager.Debugging = false
 
 	managerConfig := nodeManager.NewManagerConfig()
 	manager, err := nodeManager.NewManager(managerConfig)
-	client.manager = manager
+	c.manager = manager
 
 	if err != nil {
 		fmt.Println("error while configuring node manager", "error", err)
@@ -76,97 +77,37 @@ func Client() *replicator {
 		panic("Can't create node")
 	}
 
-	client.messanger = NodeMessanger(newNode)
-	client.imTheVertex = client.subscribeTo == ""
-	//
-	// //for the demo, there is one vertex that after a specified period of time
-	// //announces to its subscribers that it has new data.
-	// //
-	// //if this node is not a vertex, just subscribe to the specified node
-	// //and wait for incoming AnnounceMessage
-	//if !client.imTheVertex {
-	//
-	//	ip, portString, err := net.SplitHostPort(client.subscribeTo)
-	//	if err != nil {
-	//		fmt.Println("err: ", err)
-	//		panic("Can't create node")
-	//	}
-	//
-	//	port, err := strconv.ParseUint(portString, 10, 16)
-	//
-	//	// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
-	//	// for any PubKey it communicates us it has.
-	//	// For a specific match, you have to provide a specific pubKey.
-	//	pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
-	//	err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
-	//	if err != nil {
-	//		fmt.Println("err: ", err)
-	//		panic("Can't create node")
-	//	}
-	//
-	//} else {
-	//	 //If I'm the vertex, I pubblish data
-	//	 //
-	//	 //for this simple example, we use a colored piece of text
-	//	 //as data
-	//
-	//	colored :=
-	//		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
-	//			"@@@@@ THIS IS A PIECE OF DATA @@@\n" +
-	//			"@@@@@ SENT TO SUBSCRIBERS @@@@@@@\n" +
-	//			"@@@@@ FROM A CENTRAL NODE @@@@@@@\n" +
-	//			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
-	//
-	//	theData := []byte(colored)
-	//	// hash the question
-	//	hashOfTheData := cipher.SumSHA256(theData)
-	//	if err != nil {
-	//		fmt.Println("err while signing data: ", err)
-	//		panic("Can't create node")
-	//	}
-	//
-	//	go func() {
-	//		// give time for nodes to subscribe to this node before broadcasting
-	//		// that it has new data
-	//		time.Sleep(time.Second * 40)
-	//
-	//		// when adding the data, a callback is called, which announces the new data to
-	//		// all subscribers
-	//		err = DB.Add(hashOfTheData, theData)
-	//		if err != nil {
-	//			fmt.Println("error while adding data to db", err)
-	//		}
-	//		err = messanger.Announce(hashOfTheData)
-	//		if err != nil {
-	//			fmt.Println("error while announcing hash", err)
-	//		}
-	//
-	//	}()
-	//}
-	boards := prepareTestData(DB)
+	c.messanger = NodeMessanger(newNode)
+
+	Sync = SyncContext(c.messanger)
+	c.imTheVertex = c.subscribeTo == ""
+
+	boards := prepareTestData(DB, newNode)
 	//fmt.Println("boards.Container", boards.Container)
-	client.dataProvider = boards.Container
-	return client
+	c.dataProvider = boards.Container
+	return c
 }
 
-func (r *replicator) Run() {
-	if r.imTheVertex {
-		RunAPI(r.config, r.manager, r.dataProvider, r.messanger)
+func (c *client) Run() {
+	if c.imTheVertex {
+		synchronizer := skyobject.Synchronizer(c.dataProvider, Sync)
+		api := SkyObjectsAPI(c.dataProvider, synchronizer)
+		RunAPI(c.config, c.manager, api)
 	} else {
 		time.Sleep(time.Minute * 120)
 	}
 }
 
-func prepareTestData(ds data.IDataSource) *bbs.Bbs {
-	bSystem := bbs.CreateBbs(ds)
+func prepareTestData(ds data.IDataSource, sec nodeManager.INodeSecurity) *bbs.Bbs {
+	bSystem := bbs.CreateBbs(ds, sec)
 	boards := []bbs.Board{}
-	for b := 0; b < 2; b++ {
+	for b := 0; b < 1; b++ {
 		threads := []bbs.Thread{}
-		for t := 0; t < 20; t++ {
+		for t := 0; t < 1; t++ {
 			posts := []bbs.Post{}
-			for p := 0; p < 20; p++ {
-				posts = append(posts, bSystem.CreatePost("Post_" + generateString(15), "Some text"))
-			}
+			//for p := 0; p < 1; p++ {
+			//	posts = append(posts, bSystem.CreatePost("Post_" + generateString(15), "Some text"))
+			//}
 			threads = append(threads, bSystem.CreateThread("Thread_" + generateString(15), posts...))
 		}
 		boards = append(boards, bSystem.AddBoard("Board_" + generateString(15), threads...))

@@ -40,6 +40,12 @@ type downstream struct {
 	callbacks   map[string]reflect.Type
 }
 
+type INodeSecurity interface{
+	Sign(hash cipher.SHA256) cipher.Sig
+}
+
+
+
 // NewNode generates a new node from scratch.
 func (nm *Manager) NewNode() *Node {
 	var pubKey cipher.PubKey // a public key
@@ -89,6 +95,10 @@ func (nm *Manager) NewNodeFromSecKey(secKey cipher.SecKey) (*Node, error) {
 	}
 
 	return &newNode, nil
+}
+
+func (node *Node) Sign(hash cipher.SHA256) cipher.Sig{
+	return cipher.SignHash(hash,*node.secKey)
 }
 
 // validate is used to validate a new node created with user-provided

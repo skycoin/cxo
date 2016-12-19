@@ -14,7 +14,6 @@ import (
 	"github.com/skycoin/skycoin/src/util"
 	//http,json helpers
 	"github.com/skycoin/cxo/nodeManager"
-	"github.com/skycoin/cxo/skyobject"
 )
 
 var (
@@ -29,7 +28,7 @@ const (
 
 // Begins listening on http://$host, for enabling remote web access
 // Does NOT use HTTPS
-func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, schemaProvider skyobject.ISkyObjects, messanger *Messenger) error {
+func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, controllers ...IRouterApi) error {
 	logger.Info("Starting web interface on http://%s", host)
 	logger.Warning("HTTPS not in use!")
 	logger.Info("Web resources directory: %s", staticDir)
@@ -45,10 +44,14 @@ func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, sch
 
 	// register API handlers
 	RegisterNodeManagerHandlers(router, shm)
-	RegisterSchemaHandlers(router, schemaProvider, messanger)
+
+	for _, api := range controllers{
+		api.Register(router)
+	}
+	//RegisterSchemaHandlers(router, schemaProvider, messanger)
+	//api.Register()
 
 	RegisterStaticFolders(router, appLoc)
-
 	/*
 		// Wallet interface
 		RegisterWalletHandlers(mux, daemon.Gateway)

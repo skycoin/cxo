@@ -110,6 +110,7 @@ func (db *DataBase) Statistic() *Statistic {
 	return res
 }
 
+
 func (db *DataBase) GetData() map[cipher.SHA256][]byte {
 	return db.data
 }

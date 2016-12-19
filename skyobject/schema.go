@@ -12,7 +12,7 @@ type Schema struct {
 	Fields []encoder.StructField `json:"fields"`
 }
 
-func ReadSchema(data interface{}) *Schema {
+func ReadSchema(data interface{}) Schema {
 	st := reflect.TypeOf(data)
 	sv := reflect.ValueOf(data)
 	result := &Schema{Name:st.Name(), Fields:[]encoder.StructField{}}
@@ -21,7 +21,7 @@ func ReadSchema(data interface{}) *Schema {
 			result.Fields = append(result.Fields, getField(st.Field(i), sv.Field(i)))
 		}
 	}
-	return result
+	return *result
 }
 
 func (s *Schema) String() string {

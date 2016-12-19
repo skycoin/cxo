@@ -69,6 +69,7 @@ func (msg *DataMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) erro
 
 	// store the new data in the DB
 	err := DB.Add(msg.Hash, msg.Data)
+	Sync.Accept(msg.Hash, msg.Data)
 
 	return err
 }
