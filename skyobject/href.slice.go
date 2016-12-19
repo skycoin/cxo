@@ -4,9 +4,10 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"reflect"
 	"github.com/skycoin/cxo/encoder"
+	"fmt"
 )
 
-var _sliceSchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(*ReadSchema(HashSlice{})))
+var _sliceSchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(ReadSchema(HashSlice{})))
 
 type HashSlice Href
 
@@ -23,14 +24,14 @@ func (h *HashSlice) save(c ISkyObjects) Href {
 	v := h.value.([]interface{})
 	items := InterfaceSlice(v[0])
 	keys := []cipher.SHA256{}
-	itemType := c.SaveData(h.rtype)
+	fmt.Println("Lokking object referencies for slice ")
 	for _, v := range items {
-		itemHash := &href{Type:itemType, Data:encoder.Serialize(v)}
-		item := c.SaveObject(itemHash)
-		keys = append(keys, item)
+		obj := NewObject(v)
+		item := obj.save(c)
+		keys = append(keys, item.Ref)
 	}
 	data := encoder.Serialize(keys)
-	h.Ref = c.SaveObject(&href{Type:h.Type(), Data:data})
+	h.Ref = c.SaveObject(h.Type(), data)
 	return Href(*h)
 }
 
@@ -45,7 +46,7 @@ func (h *HashSlice) References(c ISkyObjects) RefInfoMap {
 	for _, k := range items {
 		ref := HashLink{}
 		ref.SetData(k[:])
-		mergeRefs(result, ref.References(c))
+		return ref.References(c)
 	}
 	return result
 }

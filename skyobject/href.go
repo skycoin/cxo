@@ -6,6 +6,8 @@ import (
 	"fmt"
 )
 
+var  _schemaType cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(Schema{}))
+
 type Href struct {
 	Ref   cipher.SHA256
 	rdata []byte        `enc:"-"`
@@ -34,9 +36,13 @@ func (s *Href) References(c ISkyObjects) RefInfoMap {
 	result[s.Ref] = int32(len(rdata))
 	ref := href{}
 	encoder.DeserializeRaw(rdata, &ref)
+	hobj, ok := c.HashObject(ref.Type, ref.Data)
+	var childRefs RefInfoMap
+	if (!ok){
+		hobj = &HashObject{rdata:s.Ref[:]}
+	}
 
-	hobj, _ := c.HashObject(ref.Type, ref.Data)
-	childRefs := hobj.References(c)
+	childRefs = hobj.References(c)
 
 	return mergeRefs(result, childRefs)
 }
@@ -47,6 +53,10 @@ func (s *Href) String(c ISkyObjects) string {
 	encoder.DeserializeRaw(rdata, &ref)
 	hobj, _ := c.HashObject(ref.Type, ref.Data)
 	return hobj.String(c)
+}
+
+func (h *HashLink) Fields(key cipher.SHA256) (map[string]string) {
+	return map[string]string{}
 }
 
 func mergeRefs(res RefInfoMap, batch RefInfoMap) RefInfoMap {
