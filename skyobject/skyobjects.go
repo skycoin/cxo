@@ -145,15 +145,28 @@ func (s *skyObjects) Statistic() *data.Statistic {
 }
 
 func (s *skyObjects) GetSchema(typeName string) *Schema {
-	for _, tp := range s.types {
-		if (strings.ToLower(tp.Name) == strings.ToLower(typeName)) {
-			var sm Schema
-			data, _ := s.Get(tp.Schema)
-			encoder.DeserializeRaw(data, &sm)
-			return &sm
+	res := Schema{}
+	//TODO: Optimize query
+	query := func(key cipher.SHA256, data []byte) bool {
+		hr := href{}
+		encoder.DeserializeRaw(data, &hr)
+		smKey := hr.Type
+		smKey.Set(data[:32])
+
+		sm := Schema{}
+		if (smKey == _schemaType) {
+			encoder.DeserializeRaw(hr.Data, &sm)
+			if (strings.ToLower(sm.Name) == strings.ToLower(typeName)) {
+				res = sm
+				return true
+			}
+
 		}
+		return false
 	}
-	return nil
+	s.ds.Where(query)
+	return &res
+
 }
 
 func (s *skyObjects) GetSchemaKey(typeName string) (cipher.SHA256, bool) {
@@ -209,7 +222,7 @@ func (c *skyObjects) Inspect() {
 			schemaData, _ := c.ds.Get(smKey)
 			shr := href{}
 			encoder.DeserializeRaw(schemaData, &shr)
-			if(shr.Type != _schemaType) {
+			if (shr.Type != _schemaType) {
 				panic("Reference mast be an schema type")
 			}
 			encoder.DeserializeRaw(shr.Data, &sm)
