@@ -32,7 +32,7 @@ export class BoardsComponent {
         console.log(this.items[0].id);
 
         this.skyObject.syncObject(this.items[0].id).subscribe((data: any) => {
-            console.log(data)
+            console.log(data);
         });
     }
 }

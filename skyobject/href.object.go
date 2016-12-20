@@ -1,11 +1,9 @@
 package skyobject
 
-
 import (
 	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
 )
-
 
 type HashObject Href
 
@@ -16,7 +14,7 @@ func NewObject(value interface{}) HashObject {
 	return res
 }
 
-func (h *HashObject) SetData(data []byte) {
+func (h *HashObject) SetData(tp []byte, data []byte) {
 	h.rdata = data
 }
 
@@ -25,9 +23,9 @@ func (h *HashObject) Type() cipher.SHA256 {
 }
 
 func (h *HashObject) save(c ISkyObjects) Href {
-	typeKey := c.SaveObject(_schemaType, h.rtype)
+	typeKey := c.SaveData(_schemaType, h.rtype)
 	h.rdata = encoder.Serialize(h.value)
-	h.Ref = c.SaveObject(typeKey, h.rdata)
+	h.Ref = c.SaveData(typeKey, h.rdata)
 	return Href(*h)
 }
 
@@ -42,6 +40,7 @@ func (h *HashObject) References(c ISkyObjects) RefInfoMap {
 			mergeRefs(result, ref.References(c))
 		}
 	}
+
 
 	return result
 }

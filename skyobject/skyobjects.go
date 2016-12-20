@@ -16,7 +16,7 @@ import (
 // container.Objects.All()
 // container.Objects.Where()
 type ISkyObjects interface {
-	HashObject(schemaKey cipher.SHA256, data []byte) (IHashObject, bool)
+	HashObject(ref href) (IHashObject, bool)
 	ValidateHashType(typeName string) bool
 
 	GetSchemas() []Schema
@@ -68,12 +68,12 @@ func (s *skyObjects) SaveObject(schemaKey cipher.SHA256, obj interface{}) (ciphe
 	s.ds.Add(key, data)
 	return key
 }
-
+//
 func (s *skyObjects) SaveData(schemaKey cipher.SHA256, data []byte) (cipher.SHA256) {
 	h := href{Type:schemaKey, Data:data}
 	refData := encoder.Serialize(h)
 	key := cipher.SumSHA256(refData)
-	s.ds.Add(key, data)
+	s.ds.Add(key, refData)
 	return key
 }
 
@@ -91,7 +91,7 @@ func (s *skyObjects) RegisterSchema(types ...interface{}) {
 	for _, tp := range types {
 		schema := ReadSchema(tp)
 		schemaData := encoder.Serialize(schema)
-		key := s.SaveObject(_schemaType, schemaData)
+		key := s.SaveData(_schemaType, schemaData)
 		s.types = append(s.types, skyTypes{Name:schema.Name, Type:reflect.TypeOf(tp), Schema:key})
 	}
 }
@@ -114,14 +114,16 @@ func (s *skyObjects) typeBySchema(key cipher.SHA256) (reflect.Type, bool) {
 	return nil, false
 }
 
-func (s *skyObjects) HashObject(schemaKey cipher.SHA256, data []byte) (IHashObject, bool) {
-	r, ok := s.typeBySchema(schemaKey)
+func (s *skyObjects) HashObject(ref href) (IHashObject, bool) {
+	r, ok := s.typeBySchema(ref.Type)
 	if (ok) {
 		res := reflect.New(r)
 		if (!res.IsNil() && res.IsValid()) {
 			resValue, ok := res.Interface().(IHashObject)
 			if (ok) {
-				resValue.SetData(data)
+
+				typeData, _ := s.Get(ref.Type)
+				resValue.SetData(typeData, ref.Data)
 				return resValue, true
 			}
 		}
@@ -194,15 +196,25 @@ func (c *skyObjects) LoadFields(key cipher.SHA256) (map[string]string) {
 func (c *skyObjects) Inspect() {
 	query := func(key cipher.SHA256, data []byte) bool {
 
-		smKey := cipher.SHA256{}
+		hr := href{}
+		encoder.DeserializeRaw(data, &hr)
+		smKey := hr.Type
 		smKey.Set(data[:32])
-		schemaData, ok := c.ds.Get(smKey)
-		if (ok) {
-			var sm Schema
-			encoder.DeserializeRaw(schemaData, &sm)
-			fmt.Println("Schema", sm, " for data: ")
-		}
 
+		var sm Schema = Schema{}
+		if (smKey == _schemaType) {
+			encoder.DeserializeRaw(hr.Data, &sm)
+			fmt.Println("Schema object: ", sm)
+		} else {
+			schemaData, _ := c.ds.Get(smKey)
+			shr := href{}
+			encoder.DeserializeRaw(schemaData, &shr)
+			if(shr.Type != _schemaType) {
+				panic("Reference mast be an schema type")
+			}
+			encoder.DeserializeRaw(shr.Data, &sm)
+			fmt.Println("Object type", sm)
+		}
 		return false
 	}
 	c.ds.Where(query)

@@ -3,6 +3,7 @@ package skyobject
 import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/encoder"
+	"reflect"
 )
 
 //var _arraySchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(*ReadSchema(HashSlice{})))
@@ -11,11 +12,11 @@ type HashArray Href
 
 func NewArray(items ...interface{}) HashArray {
 	h := HashArray{value:items}
-	h.rtype = encoder.Serialize(ReadSchema(HashSlice{}))
+	h.rtype = encoder.Serialize(ReadSchema(HashArray{}))
 	return h
 }
 
-func (h *HashArray) SetData(data []byte) {
+func (h *HashArray) SetData(tp []byte, data []byte) {
 	h.rdata = data
 }
 
@@ -32,7 +33,7 @@ func (h *HashArray) save(c ISkyObjects) Href {
 	}
 
 	h.rdata = encoder.Serialize(keys)
-	h.Ref = c.SaveObject(typeKey, h.rdata)
+	h.Ref = c.SaveData(typeKey, h.rdata)
 	return Href(*h)
 }
 
@@ -45,8 +46,7 @@ func (h *HashArray) References(c ISkyObjects) RefInfoMap {
 	items := []cipher.SHA256{}
 	encoder.DeserializeRaw(h.rdata, &items)
 	for _, k := range items {
-		ref := HashObject{}
-		ref.SetData(k[:])
+		ref := Href{Ref:k}
 		mergeRefs(result, ref.References(c))
 	}
 	return result
@@ -54,4 +54,16 @@ func (h *HashArray) References(c ISkyObjects) RefInfoMap {
 
 func (h *HashArray) String(c ISkyObjects) string {
 	return ""
+}
+
+func InterfaceSlice(slice interface{}) []interface{} {
+	s := reflect.ValueOf(slice)
+	if s.Kind() != reflect.Slice {
+		return []interface{}{}
+	}
+	ret := make([]interface{}, s.Len())
+	for i := 0; i < s.Len(); i++ {
+		ret[i] = s.Index(i).Interface()
+	}
+	return ret
 }

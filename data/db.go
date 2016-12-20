@@ -60,6 +60,10 @@ func (db *DataBase) Save(value interface{}) cipher.SHA256 {
 
 func (db *DataBase) Update(data []byte) cipher.SHA256 {
 	key := createKey(data)
+	if (key == cipher.SHA256{} || data == nil ) {
+		panic("Invalid key")
+	}
+	//fmt.Println("add", key, data)
 	db.mu.Lock()
 	db.data[key] = data
 	db.mu.Unlock()
@@ -67,9 +71,15 @@ func (db *DataBase) Update(data []byte) cipher.SHA256 {
 }
 
 func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
+	if (key == cipher.SHA256{} || value == nil ) {
+		panic("Invalid key")
+	}
+
 	if db.Has(key) {
 		return fmt.Errorf("key already present: %v", key)
 	}
+
+	//fmt.Println("add", key, value)
 	db.mu.Lock()
 	db.data[key] = value
 	db.mu.Unlock()
@@ -109,7 +119,6 @@ func (db *DataBase) Statistic() *Statistic {
 	}
 	return res
 }
-
 
 func (db *DataBase) GetData() map[cipher.SHA256][]byte {
 	return db.data

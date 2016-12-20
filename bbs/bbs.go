@@ -11,9 +11,9 @@ import (
 type Bbs struct {
 	//TODO implement thread lock for Content
 	Container skyobject.ISkyObjects
-	board     cipher.SHA256
+	Board     cipher.SHA256
 	sign      cipher.Sig
-	security    nodeManager.INodeSecurity
+	security  nodeManager.INodeSecurity
 }
 
 func CreateBbs(dataSource data.IDataSource, security nodeManager.INodeSecurity) *Bbs {
@@ -33,7 +33,8 @@ func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 	fmt.Println("ref.Ref", bbs.security, ref.Ref)
 	sign := bbs.security.Sign(ref.Ref)
 	fmt.Println("Sign", sign)
-	bbs.board = bbs.Container.Publish(ref, &sign)
+	bbs.Board = bbs.Container.Publish(ref, &sign)
+	fmt.Println(bbs.Board)
 	return board
 }
 

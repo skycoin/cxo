@@ -20,7 +20,7 @@ func newRoot(ref Href, sign cipher.Sig) HashRoot {
 	return res
 }
 
-func (h *HashRoot) SetData(data []byte) {
+func (h *HashRoot) SetData(tp []byte, data []byte) {
 	h.rdata = data
 }
 
@@ -30,31 +30,20 @@ func (h *HashRoot) Type() cipher.SHA256 {
 
 func (h *HashRoot) save(c ISkyObjects) Href {
 	value := h.value.(rootObject)
-	//for _, s := range value.Root.References(c) {
-	//	value.Size += s
-	//}
+	for _, s := range value.Root.References(c) {
+		value.Size += s
+	}
+	objSchema := ReadSchema(h.value)
+	schemaKey := c.SaveData(_schemaType, encoder.Serialize(objSchema))
+	h.rdata = encoder.Serialize(h.value)
+	h.Ref = c.SaveData(schemaKey, h.rdata)
 	h.value = value
-	//
-	//objSchema := ReadSchema(h.value)
-	//objData := encoder.Serialize(h.value)
-	//objHash := href{Type:c.SaveObject(*objSchema), Data:objData}
-	//objKey := c.SaveObject(objHash)
-	//
-	//h.Ref = c.SaveObject(href{Type:h.Type(), Data:objKey[:]})
-	//h.rdata = objKey[:]
 	return Href(*h)
 }
 
 func (h *HashRoot) References(c ISkyObjects) RefInfoMap {
 	value := rootObject{}
-
-	var objKey cipher.SHA256
-	objKey.Set(h.rdata)
-	objHash := href{}
-
-	objData, _ := c.Get(objKey)
-	encoder.DeserializeRaw(objData, &objHash)
-	encoder.DeserializeRaw(objHash.Data, &value)
+	encoder.DeserializeRaw(h.rdata, &value)
 	return value.Root.References(c)
 }
 

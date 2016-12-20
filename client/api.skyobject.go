@@ -35,13 +35,10 @@ func (api *schemaApi) Register(router *gui.Router) {
 func (api *schemaApi) ObjectsBySchema(ctx *gui.Context) error {
 	schemaName := *ctx.Param("schema")
 	schemaKey, _ := api.container.GetSchemaKey(schemaName)
-	fmt.Println(schemaKey)
 	keys := api.container.GetAllBySchema(schemaKey)
-	fmt.Println(keys)
 	res := []objectLink{}
 	for _, k := range keys {
-		ref := skyobject.HashObject{Ref:k}
-		ref.SetData(k[:])
+		ref := skyobject.Href{Ref:k}
 		res = append(res, objectLink{ID:k.Hex(), Name:ref.String(api.container)})
 	}
 	return ctx.JSON(200, res)
@@ -76,6 +73,7 @@ func (api *schemaApi) Statistic(ctx *gui.Context) error {
 }
 
 func (api *schemaApi) SyncObject(ctx *gui.Context) error {
+
 	id, err := cipher.SHA256FromHex(*ctx.Param("id"))
 	if (err != nil) {
 		return ctx.ErrNotFound(err.Error())
@@ -84,5 +82,6 @@ func (api *schemaApi) SyncObject(ctx *gui.Context) error {
 	root := skyobject.HashRoot{Ref:id}
 	fmt.Println("Sync object")
 	res := <-api.synchronizer.Sync(root)
+
 	return ctx.JSON(200, res)
 }

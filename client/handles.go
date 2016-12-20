@@ -15,11 +15,16 @@ func (msg *AnnounceMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) 
 		return fmt.Errorf("received an announce for data I already have: %v", msg.Hash)
 	}
 
-	request := RequestMessage{
-		Hash: msg.Hash,
-	}
 
-	return cc.Remote.Send(request)
+	fmt.Println("Got hash", msg.Hash)
+	fmt.Println("Got hash hex", msg.Hash.Hex())
+
+	//request := RequestMessage{
+	//	Hash: msg.Hash,
+	//}
+	//
+	//return cc.Remote.Send(request)
+	return nil
 }
 
 // handle a RequestMessage from a node who is subscribed to me
@@ -47,6 +52,8 @@ func (msg *DataMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) erro
 	fmt.Println("DataMessage")
 
 	// TODO: check whether I really requested that data
+
+
 
 	// check whether I already have the received data
 	ok := DB.Has(msg.Hash)

@@ -10,6 +10,9 @@ import (
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/gui"
 	"math/rand"
+	"strconv"
+	"net"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
@@ -81,8 +84,48 @@ func Client() *client {
 
 	Sync = SyncContext(c.messanger)
 	c.imTheVertex = c.subscribeTo == ""
+	boards := bbs.CreateBbs(DB, newNode)
 
-	boards := prepareTestData(DB, newNode)
+	if !c.imTheVertex {
+		prepareTestData(boards)
+		ip, portString, err := net.SplitHostPort(c.subscribeTo)
+		if err != nil {
+			fmt.Println("err: ", err)
+			panic("Can't create node")
+		}
+
+		port, err := strconv.ParseUint(portString, 10, 16)
+
+		// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
+		// for any PubKey it communicates us it has.
+		// For a specific match, you have to provide a specific pubKey.
+		pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
+		err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
+		if err != nil {
+			fmt.Println("err: ", err)
+			panic("Can't create node")
+		}
+
+	} else {
+		go func() {
+			// give time for nodes to subscribe to this node before broadcasting
+			// that it has new data
+			time.Sleep(time.Second * 20)
+
+			newDataIHave := AnnounceMessage{
+				Hash: boards.Board,
+			}
+			fmt.Println("Broadcast hash", boards.Board)
+			newNode.BroadcastToSubscribers(newDataIHave)
+		}()
+	}
+
+
+
+	//
+	//if c.imTheVertex {
+
+	//}
 	//fmt.Println("boards.Container", boards.Container)
 	c.dataProvider = boards.Container
 	return c
@@ -98,21 +141,19 @@ func (c *client) Run() {
 	}
 }
 
-func prepareTestData(ds data.IDataSource, sec nodeManager.INodeSecurity) *bbs.Bbs {
-	bSystem := bbs.CreateBbs(ds, sec)
+func prepareTestData(bs *bbs.Bbs) {
 	boards := []bbs.Board{}
 	for b := 0; b < 1; b++ {
 		threads := []bbs.Thread{}
-		for t := 0; t < 1; t++ {
+		for t := 0; t < 10; t++ {
 			posts := []bbs.Post{}
-			//for p := 0; p < 1; p++ {
-			//	posts = append(posts, bSystem.CreatePost("Post_" + generateString(15), "Some text"))
-			//}
-			threads = append(threads, bSystem.CreateThread("Thread_" + generateString(15), posts...))
+			for p := 0; p < 10; p++ {
+				posts = append(posts, bs.CreatePost("Post_" + generateString(15), "Some text"))
+			}
+			threads = append(threads, bs.CreateThread("Thread_" + generateString(15), posts...))
 		}
-		boards = append(boards, bSystem.AddBoard("Board_" + generateString(15), threads...))
+		boards = append(boards, bs.AddBoard("Board_" + generateString(15), threads...))
 	}
-	return bSystem
 }
 
 const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

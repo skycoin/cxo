@@ -24,39 +24,40 @@ type RefInfoMap map[cipher.SHA256]int32
 
 type IHashObject interface {
 	save(ISkyObjects) Href
-	SetData(data []byte)
+	SetData(tp []byte, data []byte)
 	References(c ISkyObjects) RefInfoMap
 	Type() cipher.SHA256
 	String(c ISkyObjects) string
 }
 
 func (s *Href) References(c ISkyObjects) RefInfoMap {
-	result := RefInfoMap{}
-	rdata, _ := c.Get(s.Ref)
-	result[s.Ref] = int32(len(rdata))
+
+	data, _ := c.Get(s.Ref)
+
 	ref := href{}
-	encoder.DeserializeRaw(rdata, &ref)
-	hobj, ok := c.HashObject(ref.Type, ref.Data)
+	encoder.DeserializeRaw(data, &ref)
+
+	hobj, ok := c.HashObject(ref)
 	var childRefs RefInfoMap
 	if (!ok){
-		hobj = &HashObject{rdata:s.Ref[:]}
+		schemaData, _ := c.Get(ref.Type)
+		smref := href{}
+		encoder.DeserializeRaw(schemaData, &smref)
+		hobj = &HashObject{rdata:ref.Data, rtype:smref.Data}
 	}
-
 	childRefs = hobj.References(c)
-
+	//fmt.Println(childRefs)
+	result := RefInfoMap{}
+	result[s.Ref] = int32(len(data))
 	return mergeRefs(result, childRefs)
 }
 
 func (s *Href) String(c ISkyObjects) string {
-	rdata, _ := c.Get(s.Ref)
-	ref := href{}
-	encoder.DeserializeRaw(rdata, &ref)
-	hobj, _ := c.HashObject(ref.Type, ref.Data)
-	return hobj.String(c)
-}
-
-func (h *HashLink) Fields(key cipher.SHA256) (map[string]string) {
-	return map[string]string{}
+	//rdata, _ := c.Get(s.Ref)
+	//ref := href{}
+	//encoder.DeserializeRaw(rdata, &ref)
+	//hobj, _ := c.HashObject(ref)
+	return s.Ref.Hex()
 }
 
 func mergeRefs(res RefInfoMap, batch RefInfoMap) RefInfoMap {

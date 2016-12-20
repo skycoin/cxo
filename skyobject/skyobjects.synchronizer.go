@@ -23,19 +23,23 @@ func Synchronizer(container ISkyObjects, remote ISyncRemote) *synchronizer {
 }
 
 func (s *synchronizer) Sync(root HashRoot) (<- chan bool) {
+	fmt.Println(s.container.Statistic())
+	//s.container.Inspect()
 	done := make(chan bool)
 	go func() {
 		defer close(done)
-		s.container.Inspect()
-		fmt.Println("CheckKey", root.Ref)
-		res := s.CheckKey(s.remote, root.Ref)
+		res := s.CheckKey(s.remote, root.Ref, 0)
 		fmt.Println("Sync Result: ", res)
+		s.container.Statistic()
 		done <- true
 	}()
 	return done
 }
 
-func (s *synchronizer) CheckKey(remote ISyncRemote, key cipher.SHA256) bool {
+func (s *synchronizer) CheckKey(remote ISyncRemote, key cipher.SHA256, step int) bool {
+	if ( step == 20) {
+		return false
+	}
 	if !s.container.Has(key) {
 		fmt.Println("Requesting key: ", key)
 		ok := <-remote.Request(key)
@@ -47,9 +51,10 @@ func (s *synchronizer) CheckKey(remote ISyncRemote, key cipher.SHA256) bool {
 
 	r := Href{Ref:key}
 	for k := range r.References(s.container) {
-		fmt.Println("Inner Reference: ", k)
-		s.CheckKey(remote, k)
-	}
+		if (k != key) {
+			s.CheckKey(remote, k, step + 1)
+		}
 
+	}
 	return true
 }
