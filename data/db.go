@@ -91,12 +91,16 @@ func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
 }
 
 func (db *DataBase) Has(key cipher.SHA256) bool {
+	db.mu.Lock()
 	_, ok := db.data[key]
+	db.mu.Unlock()
 	return ok
 }
 
 func (db *DataBase) Get(key cipher.SHA256) ([]byte, bool) {
+	db.mu.Lock()
 	value, ok := db.data[key]
+	db.mu.Unlock()
 	return value, ok
 }
 

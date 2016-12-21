@@ -3,7 +3,6 @@ package client
 import (
 	"github.com/skycoin/cxo/nodeManager"
 	"fmt"
-	"time"
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
@@ -19,11 +18,35 @@ func (msg *AnnounceMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) 
 	fmt.Println("Got hash", msg.Hash)
 	fmt.Println("Got hash hex", msg.Hash.Hex())
 
+
 	//request := RequestMessage{
 	//	Hash: msg.Hash,
 	//}
 	//
-	//return cc.Remote.Send(request)
+	requestFunc := func (hash cipher.SHA256) error{
+		return cc.Remote.Send(RequestMessage{Hash:hash})
+	}
+	Syncronizer.Sync(msg.Hash, requestFunc)
+	return nil
+}
+
+func (msg *RequestMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) error {
+	fmt.Println("Request Upstream")
+	//
+	//if DB.Has(msg.Hash) {
+	//	return fmt.Errorf("received an announce for data I already have: %v", msg.Hash)
+	//}
+	//
+	//
+	//fmt.Println("Got hash", msg.Hash)
+	//fmt.Println("Got hash hex", msg.Hash.Hex())
+	//
+	//request := RequestMessage{
+	//	Hash: msg.Hash,
+	//}
+
+
+
 	return nil
 }
 
@@ -52,9 +75,6 @@ func (msg *DataMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) erro
 	fmt.Println("DataMessage")
 
 	// TODO: check whether I really requested that data
-
-
-
 	// check whether I already have the received data
 	ok := DB.Has(msg.Hash)
 	if ok {
@@ -71,12 +91,15 @@ func (msg *DataMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) erro
 	}
 
 	// print out the received data
-	fmt.Println(string(msg.Data))
-	time.Sleep(time.Second)
+	fmt.Println(msg.Data)
 
 	// store the new data in the DB
 	err := DB.Add(msg.Hash, msg.Data)
-	Sync.Accept(msg.Hash, msg.Data)
+	//Sync.Accept(msg.Hash, msg.Data)
 
+	requestFunc := func (hash cipher.SHA256) error{
+		return cc.Remote.Send(RequestMessage{Hash:hash})
+	}
+	Syncronizer.Sync(msg.Hash, requestFunc)
 	return err
 }

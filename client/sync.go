@@ -14,7 +14,7 @@ type syncContext struct {
 }
 
 func SyncContext(messenger *gui.Messenger) *syncContext {
-	return &syncContext{messenger:messenger, mu:&sync.RWMutex{}}
+	return &syncContext{messenger:messenger, mu:&sync.RWMutex{}, pull:map[cipher.SHA256]chan bool{}}
 }
 
 func (s *syncContext) Accept(hash cipher.SHA256, data []byte) {
@@ -22,6 +22,7 @@ func (s *syncContext) Accept(hash cipher.SHA256, data []byte) {
 	defer s.mu.Unlock()
 	_, ok := s.pull[hash]
 	if (ok) {
+		fmt.Println("Accepted message")
 		s.pull[hash] <- true
 		close(s.pull[hash])
 		delete(s.pull, hash);
@@ -35,12 +36,17 @@ func (s syncContext) Request(hash cipher.SHA256) <- chan bool {
 
 	//Hash is a lready in query
 	if (ok) {
+		fmt.Println("Hash is in query")
 		return s.pull[hash]
+
 	}
 
+	fmt.Println("Put request in queue")
 	s.pull[hash] = make(chan bool)
 
 	go func() {
+		fmt.Println("Reuqest")
+
 		err := s.messenger.Request(hash)
 		if (err != nil) {
 			fmt.Errorf("Error requestin data: %v", hash)

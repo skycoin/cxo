@@ -3,12 +3,13 @@ package skyobject
 import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/encoder"
+	"fmt"
 )
 
-var _rootSchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(ReadSchema(HashRoot{})))
+//var _rootSchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(ReadSchema(HashRoot{})))
 
 type rootObject struct {
-	Root Href
+	Root HashObject
 	Size int32
 	Sign cipher.Sig
 }
@@ -16,7 +17,7 @@ type rootObject struct {
 type HashRoot Href
 
 func newRoot(ref Href, sign cipher.Sig) HashRoot {
-	res := HashRoot{value:rootObject{Root:ref, Sign:sign}}
+	res := HashRoot{value:rootObject{Root:HashObject{Ref:ref.Ref}, Sign:sign}}
 	return res
 }
 
@@ -25,7 +26,7 @@ func (h *HashRoot) SetData(tp []byte, data []byte) {
 }
 
 func (h *HashRoot) Type() cipher.SHA256 {
-	return _rootSchemaKey
+	return cipher.SumSHA256(h.rtype)
 }
 
 func (h *HashRoot) save(c ISkyObjects) Href {
@@ -42,6 +43,7 @@ func (h *HashRoot) save(c ISkyObjects) Href {
 }
 
 func (h *HashRoot) References(c ISkyObjects) RefInfoMap {
+	fmt.Println("Root References ")
 	value := rootObject{}
 	encoder.DeserializeRaw(h.rdata, &value)
 	return value.Root.References(c)

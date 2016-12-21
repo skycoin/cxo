@@ -7,6 +7,7 @@ import (
 	"time"
 	"math/rand"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func Test_Bbs_1(T *testing.T) {
@@ -20,7 +21,27 @@ func Test_Bbs_1(T *testing.T) {
 	bbs.AddBoard("Test Board", th1)
 	st := db.Statistic()
 	fmt.Println(st)
-	if (st.Total != 15) {
+	if (st.Total != 17) {
+		T.Fatal("Invalid number of objects", st.Total)
+	}
+}
+
+func Test_Bbs_2(T *testing.T) {
+	db := data.NewDB()
+	bbs := CreateBbs(db, &testNode{})
+	post := bbs.CreatePost("Header post", "Header text")
+	post2 := bbs.CreatePost("Header post2", "Header text2")
+	th1 := bbs.CreateThread("Thread", post, post2)
+	//bbs.Container.Inspect()
+
+	bbs.AddBoard("Test Board", th1)
+	st := db.Statistic()
+	fmt.Println(st)
+	ref := skyobject.Href{Ref:bbs.Board}
+
+	refs := ref.References(bbs.Container)
+	fmt.Println(refs)
+	if (st.Total != 17) {
 		T.Fatal("Invalid number of objects", st.Total)
 	}
 }

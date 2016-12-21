@@ -79,9 +79,9 @@ func (api *schemaApi) SyncObject(ctx *gui.Context) error {
 		return ctx.ErrNotFound(err.Error())
 	}
 	//TODO: Validate for root type
-	root := skyobject.HashRoot{Ref:id}
+	//root := skyobject.HashRoot{Ref:id}
 	fmt.Println("Sync object")
-	res := <-api.synchronizer.Sync(root)
+	//bool := api.synchronizer.Sync(id)
 
-	return ctx.JSON(200, res)
+	return ctx.JSON(200, id)
 }

@@ -4,6 +4,7 @@ import (
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/gui"
+	"fmt"
 )
 
 type nodeMessenger struct {
@@ -15,6 +16,7 @@ func NodeMessanger(node *nodeManager.Node) *gui.Messenger {
 }
 
 func (m *nodeMessenger) send(message interface{}) error {
+	fmt.Println("BroadcastToSubscribers", message)
 	return m.node.BroadcastToSubscribers(message)
 }
 
@@ -24,10 +26,6 @@ func (m *nodeMessenger) Announce(hash cipher.SHA256) error {
 
 func (m *nodeMessenger) Request(hash cipher.SHA256) error {
 	return m.send(RequestMessage{Hash:hash})
-}
-
-func (m *nodeMessenger) Data(hash cipher.SHA256, data []byte) error {
-	return m.send(DataMessage{Hash:hash, Data:data})
 }
 
 // upstream -> downstream (HandleFromUpstream)

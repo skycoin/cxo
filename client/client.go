@@ -18,6 +18,7 @@ import (
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
 var DB *data.DataBase
 var Sync *syncContext
+var Syncronizer skyobject.ISynchronizer
 
 type client struct {
 	//db          *DataBase
@@ -57,23 +58,13 @@ func Client() *client {
 		panic("Can't create node")
 	}
 
-	//// this callback will be executed each time DB.Add(data) is called
-	//DB.NewDataCallback(func(key cipher.SHA256, value interface{}) error {
-	//	newDataIHave := AnnounceMessage{
-	//		Hash: key,
-	//	}
-	//	fmt.Println("broadcasting new data to all connected nodes")
-	//
-	//	return newNode.BroadcastToSubscribers(newDataIHave)
-	//})
-
-
 	// register messages that this node can receive from downstream
 	newNode.RegisterDownstreamMessage(RequestMessage{})
 
 	// register messages that this node can receive from upstream
 	newNode.RegisterUpstreamMessage(AnnounceMessage{})
 	newNode.RegisterUpstreamMessage(DataMessage{})
+	newNode.RegisterUpstreamMessage(RequestMessage{})
 
 	err = newNode.Start()
 	if err != nil {
@@ -83,11 +74,13 @@ func Client() *client {
 	c.messanger = NodeMessanger(newNode)
 
 	Sync = SyncContext(c.messanger)
+
 	c.imTheVertex = c.subscribeTo == ""
 	boards := bbs.CreateBbs(DB, newNode)
+	Syncronizer = skyobject.Synchronizer(boards.Container)
 
 	if !c.imTheVertex {
-		prepareTestData(boards)
+
 		ip, portString, err := net.SplitHostPort(c.subscribeTo)
 		if err != nil {
 			fmt.Println("err: ", err)
@@ -100,6 +93,7 @@ func Client() *client {
 		// for any PubKey it communicates us it has.
 		// For a specific match, you have to provide a specific pubKey.
 		pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
+		fmt.Println(boards.Container.Statistic())
 		err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
 		if err != nil {
 			fmt.Println("err: ", err)
@@ -108,23 +102,29 @@ func Client() *client {
 
 	} else {
 		go func() {
+			prepareTestData(boards)
 			// give time for nodes to subscribe to this node before broadcasting
 			// that it has new data
-			time.Sleep(time.Second * 20)
 
-			newDataIHave := AnnounceMessage{
-				Hash: boards.Board,
+			refs := skyobject.Href{Ref:boards.Board}
+
+			fmt.Println("Root referencies::")
+			r := refs.References(boards.Container)
+
+
+			for k, v:= range r{
+				fmt.Println(k, " size: ", v)
 			}
-			fmt.Println("Broadcast hash", boards.Board)
-			newNode.BroadcastToSubscribers(newDataIHave)
+
+			time.Sleep(time.Second * 30)
+
+
+			c.messanger.Announce(boards.Board)
+
+
+			fmt.Println(boards.Container.Statistic())
 		}()
 	}
-
-
-
-	//
-	//if c.imTheVertex {
-
 	//}
 	//fmt.Println("boards.Container", boards.Container)
 	c.dataProvider = boards.Container
@@ -133,7 +133,7 @@ func Client() *client {
 
 func (c *client) Run() {
 	if c.imTheVertex {
-		synchronizer := skyobject.Synchronizer(c.dataProvider, Sync)
+		synchronizer := skyobject.Synchronizer(c.dataProvider)
 		api := SkyObjectsAPI(c.dataProvider, synchronizer)
 		RunAPI(c.config, c.manager, api)
 	} else {
@@ -145,9 +145,9 @@ func prepareTestData(bs *bbs.Bbs) {
 	boards := []bbs.Board{}
 	for b := 0; b < 1; b++ {
 		threads := []bbs.Thread{}
-		for t := 0; t < 10; t++ {
+		for t := 0; t < 2; t++ {
 			posts := []bbs.Post{}
-			for p := 0; p < 10; p++ {
+			for p := 0; p < 2; p++ {
 				posts = append(posts, bs.CreatePost("Post_" + generateString(15), "Some text"))
 			}
 			threads = append(threads, bs.CreateThread("Thread_" + generateString(15), posts...))

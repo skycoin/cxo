@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-var  _schemaType cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(Schema{}))
+var _schemaType cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(Schema{}))
 
 type Href struct {
 	Ref   cipher.SHA256
@@ -31,7 +31,7 @@ type IHashObject interface {
 }
 
 func (s *Href) References(c ISkyObjects) RefInfoMap {
-
+	result := RefInfoMap{}
 	data, _ := c.Get(s.Ref)
 
 	ref := href{}
@@ -39,15 +39,25 @@ func (s *Href) References(c ISkyObjects) RefInfoMap {
 
 	hobj, ok := c.HashObject(ref)
 	var childRefs RefInfoMap
-	if (!ok){
+
+	//if (ref.Type != _schemaType) {
+	//	typerf := Href{Ref:ref.Type}
+	//	//fmt.Println("Type reference")
+	//	typeRefs := typerf.References(c)
+	//	result = mergeRefs(result, typeRefs)
+	//}
+	if (!ok) {
+		//fmt.Println("Not a hash object")
 		schemaData, _ := c.Get(ref.Type)
 		smref := href{}
 		encoder.DeserializeRaw(schemaData, &smref)
 		hobj = &HashObject{rdata:ref.Data, rtype:smref.Data}
 	}
+
+	//fmt.Println("href", ref)
 	childRefs = hobj.References(c)
 	//fmt.Println(childRefs)
-	result := RefInfoMap{}
+
 	result[s.Ref] = int32(len(data))
 	return mergeRefs(result, childRefs)
 }
