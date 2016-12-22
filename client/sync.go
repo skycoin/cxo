@@ -1,60 +1,27 @@
 package client
 
 import (
-	"github.com/skycoin/cxo/gui"
 	"github.com/skycoin/skycoin/src/cipher"
-	"sync"
+	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/nodeManager"
 	"fmt"
 )
 
 type syncContext struct {
-	messenger *gui.Messenger
-	pull      map[cipher.SHA256]chan bool
-	mu        *sync.RWMutex
+	container  skyobject.ISkyObjects
 }
 
-func SyncContext(messenger *gui.Messenger) *syncContext {
-	return &syncContext{messenger:messenger, mu:&sync.RWMutex{}, pull:map[cipher.SHA256]chan bool{}}
+func SyncContext(container skyobject.ISkyObjects) *syncContext {
+	return &syncContext{container:container}
 }
 
-func (s *syncContext) Accept(hash cipher.SHA256, data []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, ok := s.pull[hash]
-	if (ok) {
-		fmt.Println("Accepted message")
-		s.pull[hash] <- true
-		close(s.pull[hash])
-		delete(s.pull, hash);
-	}
-}
-func (s syncContext) Request(hash cipher.SHA256) <- chan bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	_, ok := s.pull[hash]
-
-	//Hash is a lready in query
-	if (ok) {
-		fmt.Println("Hash is in query")
-		return s.pull[hash]
-
-	}
-
-	fmt.Println("Put request in queue")
-	s.pull[hash] = make(chan bool)
-
-	go func() {
-		fmt.Println("Reuqest")
-
-		err := s.messenger.Request(hash)
-		if (err != nil) {
-			fmt.Errorf("Error requestin data: %v", hash)
-			s.pull[hash] <- false
-			close(s.pull[hash])
-			delete(s.pull, hash);
-
+func (c *syncContext) OnRequest(r *nodeManager.Subscription, hash cipher.SHA256) {
+	toSync := c.container.MissingDependencies(hash)
+	if (len(toSync) >0){
+		for _, item := range toSync {
+			r.Send(RequestMessage{Hash:item})
 		}
-	}()
-	return s.pull[hash]
+		return
+	}
+	fmt.Println("Nothing to sync", c.container.Statistic())
 }

@@ -28,6 +28,11 @@ func (m *nodeMessenger) Request(hash cipher.SHA256) error {
 	return m.send(RequestMessage{Hash:hash})
 }
 
+
+//type RootMessage struct {
+//	Hash cipher.SHA256
+//}
+
 // upstream -> downstream (HandleFromUpstream)
 // AnnounceMessage is a message that announces to subscribers
 // that it has new data

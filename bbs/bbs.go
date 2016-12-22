@@ -30,7 +30,6 @@ func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 	board := Board{Name:name, Threads:sl}
 	bl := skyobject.NewObject(board)
 	ref:= bbs.Container.Save(&bl)
-	fmt.Println("ref.Ref", bbs.security, ref.Ref)
 	sign := bbs.security.Sign(ref.Ref)
 	fmt.Println("Sign", sign)
 	bbs.Board = bbs.Container.Publish(ref, &sign)

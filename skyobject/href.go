@@ -39,13 +39,6 @@ func (s *Href) References(c ISkyObjects) RefInfoMap {
 
 	hobj, ok := c.HashObject(ref)
 	var childRefs RefInfoMap
-
-	//if (ref.Type != _schemaType) {
-	//	typerf := Href{Ref:ref.Type}
-	//	//fmt.Println("Type reference")
-	//	typeRefs := typerf.References(c)
-	//	result = mergeRefs(result, typeRefs)
-	//}
 	if (!ok) {
 		//fmt.Println("Not a hash object")
 		schemaData, _ := c.Get(ref.Type)

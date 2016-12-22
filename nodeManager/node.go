@@ -228,6 +228,7 @@ func (n *Node) Port() int {
 // BroadcastToSubscribers sends a message to all subscribers
 func (n *Node) BroadcastToSubscribers(message interface{}) error {
 	// comunicate to all subscribers that I have new data
+
 	subs := n.Subscribers()
 	for _, subscriber := range subs {
 		subscriber.Send(message)

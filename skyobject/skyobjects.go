@@ -28,11 +28,13 @@ type ISkyObjects interface {
 	SaveObject(schemaKey cipher.SHA256, obj interface{}) (cipher.SHA256)
 	SaveData(schemaKey cipher.SHA256, data []byte) (cipher.SHA256)
 	Get(key cipher.SHA256) ([]byte, bool)
+	Set(key cipher.SHA256, data []byte) error
 	Has(key cipher.SHA256) bool
 	Statistic() *data.Statistic
 	GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256
 	RegisterSchema(tp ...interface{})
 	Inspect()
+	MissingDependencies(key cipher.SHA256) []cipher.SHA256
 
 	LoadFields(key cipher.SHA256) (map[string]string)
 }
@@ -55,6 +57,10 @@ func SkyObjects(ds data.IDataSource) *skyObjects {
 
 func (s *skyObjects) Get(key cipher.SHA256) ([]byte, bool) {
 	return s.ds.Get(key)
+}
+
+func (s *skyObjects) Set(key cipher.SHA256, data []byte) error {
+	return s.ds.Add(key, data)
 }
 
 func (s *skyObjects) Has(key cipher.SHA256) bool {
@@ -231,4 +237,33 @@ func (c *skyObjects) Inspect() {
 		return false
 	}
 	c.ds.Where(query)
+}
+
+func (c *skyObjects) MissingDependencies(key cipher.SHA256) []cipher.SHA256 {
+	result := []cipher.SHA256{}
+	data, ok := c.Get(key)
+	if (!ok) {
+		return []cipher.SHA256{key}
+	}
+
+	typeKey := cipher.SHA256{}
+	typeKey.Set(data[:32])
+	if (typeKey != _schemaType) {
+		result = append(result, c.MissingDependencies(typeKey)...)
+		r := Href{Ref:key}
+		if (len(result) > 0){
+			result = append(result, key)
+		}
+
+		for k := range r.References(c) {
+			if (k != key) {
+				result = append(result, c.MissingDependencies(k)...)
+			}
+		}
+	}
+
+	//if (len(result) > 0) {
+	//	result = append(result, key)
+	//}
+	return result
 }

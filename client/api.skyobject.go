@@ -9,7 +9,7 @@ import (
 
 type schemaApi struct {
 	container    skyobject.ISkyObjects
-	synchronizer skyobject.ISynchronizer
+	//synchronizer skyobject.ISynchronizer
 }
 
 type objectLink struct {
@@ -17,8 +17,8 @@ type objectLink struct {
 	Name string `json:"name"`
 }
 
-func SkyObjectsAPI(container skyobject.ISkyObjects, synchronizer skyobject.ISynchronizer) *schemaApi {
-	return &schemaApi{container:container, synchronizer : synchronizer}
+func SkyObjectsAPI(container skyobject.ISkyObjects) *schemaApi {
+	return &schemaApi{container:container}
 }
 
 func (api *schemaApi) Register(router *gui.Router) {

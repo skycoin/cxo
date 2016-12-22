@@ -18,7 +18,7 @@ import (
 //TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
 var DB *data.DataBase
 var Sync *syncContext
-var Syncronizer skyobject.ISynchronizer
+var Syncronizer syncContext
 
 type client struct {
 	//db          *DataBase
@@ -64,7 +64,6 @@ func Client() *client {
 	// register messages that this node can receive from upstream
 	newNode.RegisterUpstreamMessage(AnnounceMessage{})
 	newNode.RegisterUpstreamMessage(DataMessage{})
-	newNode.RegisterUpstreamMessage(RequestMessage{})
 
 	err = newNode.Start()
 	if err != nil {
@@ -73,11 +72,12 @@ func Client() *client {
 
 	c.messanger = NodeMessanger(newNode)
 
-	Sync = SyncContext(c.messanger)
+
 
 	c.imTheVertex = c.subscribeTo == ""
 	boards := bbs.CreateBbs(DB, newNode)
-	Syncronizer = skyobject.Synchronizer(boards.Container)
+
+	Sync = SyncContext(boards.Container)
 
 	if !c.imTheVertex {
 
@@ -108,20 +108,11 @@ func Client() *client {
 
 			refs := skyobject.Href{Ref:boards.Board}
 
-			fmt.Println("Root referencies::")
-			r := refs.References(boards.Container)
-
-
-			for k, v:= range r{
-				fmt.Println(k, " size: ", v)
-			}
+			refs.References(boards.Container)
 
 			time.Sleep(time.Second * 30)
 
-
 			c.messanger.Announce(boards.Board)
-
-
 			fmt.Println(boards.Container.Statistic())
 		}()
 	}
@@ -133,8 +124,7 @@ func Client() *client {
 
 func (c *client) Run() {
 	if c.imTheVertex {
-		synchronizer := skyobject.Synchronizer(c.dataProvider)
-		api := SkyObjectsAPI(c.dataProvider, synchronizer)
+		api := SkyObjectsAPI(c.dataProvider)
 		RunAPI(c.config, c.manager, api)
 	} else {
 		time.Sleep(time.Minute * 120)
@@ -145,9 +135,9 @@ func prepareTestData(bs *bbs.Bbs) {
 	boards := []bbs.Board{}
 	for b := 0; b < 1; b++ {
 		threads := []bbs.Thread{}
-		for t := 0; t < 2; t++ {
+		for t := 0; t < 100; t++ {
 			posts := []bbs.Post{}
-			for p := 0; p < 2; p++ {
+			for p := 0; p < 20; p++ {
 				posts = append(posts, bs.CreatePost("Post_" + generateString(15), "Some text"))
 			}
 			threads = append(threads, bs.CreateThread("Thread_" + generateString(15), posts...))
