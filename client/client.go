@@ -72,8 +72,6 @@ func Client() *client {
 
 	c.messanger = NodeMessanger(newNode)
 
-
-
 	c.imTheVertex = c.subscribeTo == ""
 	boards := bbs.CreateBbs(DB, newNode)
 
@@ -99,7 +97,6 @@ func Client() *client {
 			fmt.Println("err: ", err)
 			panic("Can't create node")
 		}
-
 	} else {
 		go func() {
 			prepareTestData(boards)
@@ -113,7 +110,11 @@ func Client() *client {
 			time.Sleep(time.Second * 30)
 
 			c.messanger.Announce(boards.Board)
-			fmt.Println(boards.Container.Statistic())
+
+			r := skyobject.Href{Ref:boards.Board}
+			rs := r.References(boards.Container)
+			fmt.Println("Total refs:", len(rs), boards.Container.Statistic())
+			time.Sleep(time.Minute * 120)
 		}()
 	}
 	//}
@@ -135,9 +136,9 @@ func prepareTestData(bs *bbs.Bbs) {
 	boards := []bbs.Board{}
 	for b := 0; b < 1; b++ {
 		threads := []bbs.Thread{}
-		for t := 0; t < 100; t++ {
+		for t := 0; t < 10; t++ {
 			posts := []bbs.Post{}
-			for p := 0; p < 20; p++ {
+			for p := 0; p < 200; p++ {
 				posts = append(posts, bs.CreatePost("Post_" + generateString(15), "Some text"))
 			}
 			threads = append(threads, bs.CreateThread("Thread_" + generateString(15), posts...))

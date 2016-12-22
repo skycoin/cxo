@@ -214,7 +214,6 @@ func (c *skyObjects) LoadFields(key cipher.SHA256) (map[string]string) {
 
 func (c *skyObjects) Inspect() {
 	query := func(key cipher.SHA256, data []byte) bool {
-
 		hr := href{}
 		encoder.DeserializeRaw(data, &hr)
 		smKey := hr.Type
@@ -261,9 +260,5 @@ func (c *skyObjects) MissingDependencies(key cipher.SHA256) []cipher.SHA256 {
 			}
 		}
 	}
-
-	//if (len(result) > 0) {
-	//	result = append(result, key)
-	//}
 	return result
 }

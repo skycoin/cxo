@@ -45,8 +45,8 @@ func (bbs *Bbs) CreateThread(name string, posts ...Post) Thread {
 }
 
 func (bbs *Bbs) CreatePost(header string, text string) Post {
-	poster := skyobject.NewObject(Poster{})
-	bbs.Container.Save(&poster)
+	//poster := skyobject.NewObject(Poster{})
+	//bbs.Container.Save(&poster)
 
 	return Post{Header:header, Text:text}
 }

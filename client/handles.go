@@ -20,8 +20,6 @@ func (msg *AnnounceMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) 
 
 // handle a RequestMessage from a node who is subscribed to me
 func (msg *RequestMessage) HandleFromDownstream(cc *nodeManager.DownstreamContext) error {
-	//fmt.Println("RequestMessage", msg.Hash)
-
 	// fetch from DB the data by hash
 	responseData, ok := DB.Get(msg.Hash)
 	if !ok {
@@ -40,8 +38,6 @@ func (msg *RequestMessage) HandleFromDownstream(cc *nodeManager.DownstreamContex
 
 // handle a DataMessage from the node I am subscribed to
 func (msg *DataMessage) HandleFromUpstream(cc *nodeManager.UpstreamContext) error {
-	//fmt.Println("DataMessage", msg.Hash)
-
 	// TODO: check whether I really requested that data
 	// check whether I already have the received data
 	//ok := DB.Has(msg.Hash)
