@@ -2,9 +2,9 @@ package data
 
 import (
 	"fmt"
-	"sync"
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher"
+	"sync"
 )
 
 type DataBase struct {
@@ -14,8 +14,8 @@ type DataBase struct {
 }
 
 type Statistic struct {
-	Total  int        `json:"total"`
-	Memory int        `json:"memory"`
+	Total  int `json:"total"`
+	Memory int `json:"memory"`
 }
 
 type queryCondition func(key cipher.SHA256, data []byte) bool
@@ -60,7 +60,7 @@ func (db *DataBase) Save(value interface{}) cipher.SHA256 {
 
 func (db *DataBase) Update(data []byte) cipher.SHA256 {
 	key := createKey(data)
-	if (key == cipher.SHA256{} || data == nil ) {
+	if (key == cipher.SHA256{} || data == nil) {
 		panic("Invalid key")
 	}
 	//fmt.Println("add", key, data)
@@ -71,30 +71,36 @@ func (db *DataBase) Update(data []byte) cipher.SHA256 {
 }
 
 func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
-	if (key == cipher.SHA256{} || value == nil ) {
+	if (key == cipher.SHA256{} || value == nil) {
 		panic("Invalid key")
 	}
 
-	if db.Has(key) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.has(key) {
 		return fmt.Errorf("key already present: %v", key)
 	}
 
 	//fmt.Println("add", key, value)
-	db.mu.Lock()
 	db.data[key] = value
-	db.mu.Unlock()
 
-	if (db.newDataCallback != nil) {
+	if db.newDataCallback != nil {
 		db.newDataCallback(key, value)
 	}
 	return nil
 }
 
+// "Has" without mutex lock (for internal usage)
+func (db *DataBase) has(key cipher.SHA256) (ok bool) {
+	_, ok = db.data[key]
+	return
+}
+
 func (db *DataBase) Has(key cipher.SHA256) bool {
 	db.mu.Lock()
-	_, ok := db.data[key]
-	db.mu.Unlock()
-	return ok
+	defer db.mu.Unlock()
+	return db.has()
 }
 
 func (db *DataBase) Get(key cipher.SHA256) ([]byte, bool) {
@@ -109,7 +115,7 @@ func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
 
 	for key := range db.data {
 
-		if (q(key, db.data[key])) {
+		if q(key, db.data[key]) {
 			result = append(result, key)
 		}
 	}
@@ -117,7 +123,7 @@ func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
 }
 
 func (db *DataBase) Statistic() *Statistic {
-	res := &Statistic{Total:len(db.data)}
+	res := &Statistic{Total: len(db.data)}
 	for i := 0; i < res.Total; i++ {
 		res.Memory += len(db.data)
 	}

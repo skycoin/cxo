@@ -93,32 +93,32 @@ func main() {
 		case strings.HasPrefix(inpt, "list subscriptions"):
 			client.listSubscriptions(trim(inpt, "list subscriptions"))
 
-		case strings.HasPrefix(inpt, "list nodes"):
-			client.listNodes()
+		case strings.HasPrefix(inpt, "list connections"):
+			client.listConnections()
 
 		case strings.HasPrefix(inpt, "list"):
 			fmt.Println(`list what?
 	- list subscriptions
-	- list nodes`)
+	- list connections`)
 			continue
 
 		case strings.HasPrefix(inpt, "add subscription"):
 			client.addSubscription(trim(inpt, "add subscription"))
 
-		case strings.HasPrefix(inpt, "add node"):
-			client.addNode(trim(inpt, "add node"))
+		case strings.HasPrefix(inpt, "add connection"):
+			client.addConnection(trim(inpt, "add connection"))
 
 		case strings.HasPrefix(inpt, "add"):
 			fmt.Println(`add what?
 	- add subscription
-	- add node`)
+	- add connection`)
 			continue
 
 		case strings.HasPrefix(inpt, "remove subscription"):
-			niy()
+			client.removeSubscription(trim(inpt, "remove subscription"))
 
-		case strings.HasPrefix(inpt, "data size"):
-			niy()
+		case strings.HasPrefix(inpt, "stat"):
+			client.getStat()
 
 		case strings.HasPrefix(inpt, "help"):
 			printHelp()
@@ -182,12 +182,12 @@ func storeHistory(line *liner.State) {
 
 var complets = []string{
 	"list subscriptions ",
-	"list nodes ",
+	"list connections ",
 	"list ",
 	"add subscription ",
-	"add node ",
+	"add connection ",
 	"remove subscription ",
-	"data size ",
+	"stat ",
 	"help ",
 	"exit ",
 	"quit ",
@@ -209,18 +209,18 @@ func autoComplite(line string) (cm []string) {
 func printHelp() {
 	fmt.Print(`Available commands:
 
-	list subscriptions <node id>
+	list subscriptions <connection id>
 		list subscriptions (number of peers, size of data for subscription)
-	list nodes
-		list nodes
-	add subscription <node id> <host:port> <pubKey>
+	list connections
+		list conections
+	add subscription <connection id> <host:port> <pubKey>
 		add subscription
-	add node <secKey>
-		add node by its secret key
-	remove subscription
-		remove subscription (not implemented)
-	data size
-		get data size (not implemented)
+	add connection <secKey>
+		add connection by its secret key
+	remove subscription <cnnetion id> <pubKey>
+		remove subscription
+	stat
+		get statistic (total objects, memory)
 	help
 		show this help message
 	exit or
@@ -229,11 +229,7 @@ func printHelp() {
 `)
 }
 
-func niy() {
-	fmt.Println("NOT IMPLEMENTED YET")
-}
-
-// time cmd prefix from inpt and time spaces
+// trim cmd prefix from inpt and trim spaces
 func trim(inpt string, cmd string) string {
 	return strings.TrimSpace(strings.TrimPrefix(inpt, cmd))
 
@@ -258,15 +254,16 @@ func (c *Client) Debug(args ...interface{}) {
 // list
 //
 
-func (c *Client) listSubscriptions(nodeId string) {
-	if nodeId == "" {
-		fmt.Println("node id required: list subscriptions <node id>")
+func (c *Client) listSubscriptions(connId string) {
+	if connId == "" {
+		fmt.Println(
+			"connection id required: list subscriptions <connection id>")
 		return
 	}
-	// sanitize nodeId
-	nodeId = url.QueryEscape(nodeId)
+	// sanitize connId
+	connId = url.QueryEscape(connId)
 	// request path
-	req := c.addr + "/manager/nodes/" + nodeId + "/subscriptions"
+	req := c.addr + "/manager/nodes/" + connId + "/subscriptions"
 	c.Debug("[GET] ", req)
 	// obtain
 	resp, err := c.Get(req)
@@ -303,7 +300,7 @@ func (c *Client) listSubscriptions(nodeId string) {
 	}
 }
 
-func (c *Client) listNodes() {
+func (c *Client) listConnections() {
 	// request path
 	req := c.addr + "/manager/nodes/"
 	c.Debug("[GET] ", req)
@@ -352,14 +349,16 @@ func (c *Client) addSubscription(args string) {
 	var reqp, reqb string // requset URL and request body
 	switch ss := strings.Fields(args); len(ss) {
 	case 0, 1, 2:
-		fmt.Println("to few arguments, want <node id>, <host:port> <pub key>")
+		fmt.Println(
+			"to few arguments, want <connection id>, <host:port> <pub key>")
 		return
 	case 3:
 		reqp = c.addr + "/manager/nodes/" + url.QueryEscape(ss[0]) +
 			"/subscriptions"
 		reqb = fmt.Sprintf(`{"ip":%q,"pubKey":%q}`, ss[1], ss[2])
 	default:
-		fmt.Println("to many arguments, want <node id>, <host:port> <pub key>")
+		fmt.Println(
+			"to many arguments, want <connection id>, <host:port> <pub key>")
 		return
 	}
 	//
@@ -381,9 +380,14 @@ func (c *Client) addSubscription(args string) {
 	fmt.Println(" ", jr.Detail)
 }
 
-func (c *Client) addNode(secKey string) {
+func (c *Client) addConnection(secKey string) {
 	// POST "/manager/nodes"
 	//   {"secKey": "theKey"}
+
+	if secKey == "" {
+		fmt.Println("secKey required: add connection <secKey>")
+		return
+	}
 
 	// requset URL and request body
 	var reqp, reqb string = c.addr + "/manager/nodes",
@@ -408,6 +412,84 @@ func (c *Client) addNode(secKey string) {
 	fmt.Println(" ", jr.Detail)
 }
 
+//
+// remove subscription
+//
+
+func (c *Client) removeSubscription(args string) {
+	// DELETE "/manager/nodes/:node_id/subscriptions/:subscription_id"
+
+	var reqs string
+	switch ss := strings.Fields(args); len(ss) {
+	case 0, 1:
+		fmt.Println("to few argumets, want: <connection id> <subscription id>")
+		return
+	case 2:
+		reqs = c.addr + "/manager/nodes/" + url.QueryEscape(ss[0]) +
+			"/subscriptions/" + url.QueryEscape(ss[1])
+	default:
+		fmt.Println("to many argumets, want: <connection id> <subscription id>")
+		return
+	}
+
+	req, err := http.NewRequest("DELETE", reqs, nil)
+	if err != nil {
+		log.Print("request creating error:", err) // BUG
+		return
+	}
+
+	c.Debug("[DELETE] ", reqs)
+	resp, err := c.Do(req)
+	if err != nil {
+		fmt.Println("request error:", err)
+		return
+	}
+
+	c.Debug("response status: ", resp.Status)
+	defer resp.Body.Close()
+	// anyway it's JSONResponse
+	jr, err := readResponse(resp)
+	if err != nil {
+		fmt.Println("error reading response: ", err)
+		return
+	}
+	// detailed error or success message
+	fmt.Println(" ", jr.Detail)
+
+}
+
+//
+// stat
+//
+
+func (c *Client) getStat() {
+	// GET "/object1/_stat"
+
+	var req string = c.addr + "/object1/_stat"
+	c.Debug("[GET] ", req)
+	resp, err := c.Get(req)
+	if err != nil {
+		fmt.Println("request error:", err)
+		return
+	}
+	c.Debug("response status: ", resp.Status)
+	defer resp.Body.Close()
+	// no error descripto
+	if resp.StatusCode != 200 {
+		fmt.Println("response error:", resp.Status)
+		return
+	}
+	// read stat
+	var stat Statistic
+	if err = json.NewDecoder(resp.Body).Decode(&stat); err != nil {
+		fmt.Println("error decoding response:", err)
+		return
+	}
+	// print the stat
+	fmt.Println("total objects:", stat.Total)
+	fmt.Println("memory:       ", humanMemory(stat.Memory))
+}
+
 // helpers
 
 func readResponse(resp *http.Response) (jr JSONResponse, err error) {
@@ -418,6 +500,20 @@ func readResponse(resp *http.Response) (jr JSONResponse, err error) {
 func readList(resp *http.Response) (li []Item, err error) {
 	err = json.NewDecoder(resp.Body).Decode(&li)
 	return
+}
+
+func humanMemory(bytes int) string {
+	var fb float64 = float64(bytes)
+	var ms string = "B"
+	for _, m := range []string{"KiB", "MiB", "GiB"} {
+		if fb > 1024.0 {
+			fb = fb / 1024.0
+			ms = m
+			continue
+		}
+		break
+	}
+	return fmt.Sprintf("%.2f%s", fb, ms)
 }
 
 // nessesary JSON-structures
@@ -435,4 +531,10 @@ type Item struct {
 	IP     string `json:"ip"`
 	PubKey string `json:"pubKey"`
 	Port   int    `json:"port"`
+}
+
+// stat cxo/data/db.go
+type Statistic struct {
+	Total  int `json:"total"`
+	Memory int `json:"memory"`
 }
