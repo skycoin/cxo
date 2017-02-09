@@ -2,134 +2,116 @@ package data
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
-	"sync"
 )
 
-type DataBase struct {
-	data            map[cipher.SHA256][]byte
-	mu              *sync.RWMutex
-	newDataCallback func(cipher.SHA256, interface{}) error
+type DB struct {
+	sync.RWMutex
+	data map[cipher.SHA256][]byte
 }
 
-type Statistic struct {
+type Stat struct {
 	Total  int `json:"total"`
 	Memory int `json:"memory"`
 }
 
-type queryCondition func(key cipher.SHA256, data []byte) bool
+type QueryFunc func(key cipher.SHA256, data []byte) bool
 
-type IDataSource interface {
+type DataSource interface {
 	Save(value interface{}) cipher.SHA256
 	Update(value []byte) cipher.SHA256
 	Add(ds cipher.SHA256, value []byte) error
 	Has(ds cipher.SHA256) bool
 	Get(ds cipher.SHA256) ([]byte, bool)
-	Where(queryCondition) []cipher.SHA256
-	Statistic() *Statistic
+	Where(QueryFunc) []cipher.SHA256
+	Stat() Stat
 
-	GetData() map[cipher.SHA256][]byte
+	Data() map[cipher.SHA256][]byte
 }
 
-func NewDB() *DataBase {
-	db := DataBase{}
-	db.data = make(map[cipher.SHA256][]byte)
-	db.mu = &sync.RWMutex{}
-	return &db
-}
-
-func (db *DataBase) NewDataCallback(newDataCallback func(cipher.SHA256, interface{}) error) error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
-	if newDataCallback != nil {
-		db.newDataCallback = newDataCallback
+func NewDB() *DB {
+	return &DB{
+		data: make(map[cipher.SHA256][]byte),
 	}
-	return nil
 }
 
 func createKey(data []byte) cipher.SHA256 {
 	return cipher.SumSHA256(data)
 }
 
-func (db *DataBase) Save(value interface{}) cipher.SHA256 {
-	data := encoder.Serialize(value)
-	return db.Update(data)
+func (d *DB) Save(value interface{}) cipher.SHA256 {
+	return d.Update(encoder.Serialize(value))
 }
 
-func (db *DataBase) Update(data []byte) cipher.SHA256 {
+func (d *DB) Update(data []byte) cipher.SHA256 {
 	key := createKey(data)
-	if (key == cipher.SHA256{} || data == nil) {
+	if key == (cipher.SHA256{}) || data == nil {
 		panic("Invalid key")
 	}
-	//fmt.Println("add", key, data)
-	db.mu.Lock()
-	db.data[key] = data
-	db.mu.Unlock()
+	d.Lock()
+	d.data[key] = data
+	d.Unlock()
 	return key
 }
 
-func (db *DataBase) Add(key cipher.SHA256, value []byte) error {
-	if (key == cipher.SHA256{} || value == nil) {
+func (d *DB) Add(key cipher.SHA256, value []byte) (err error) {
+	if key == (cipher.SHA256{}) || value == nil {
 		panic("Invalid key")
 	}
 
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	d.Lock()
+	defer d.Unlock()
 
-	if db.has(key) {
+	if d.has(key) {
 		return fmt.Errorf("key already present: %v", key)
 	}
-
-	//fmt.Println("add", key, value)
-	db.data[key] = value
-
-	if db.newDataCallback != nil {
-		db.newDataCallback(key, value)
-	}
-	return nil
-}
-
-// "Has" without mutex lock (for internal usage)
-func (db *DataBase) has(key cipher.SHA256) (ok bool) {
-	_, ok = db.data[key]
+	d.data[key] = value
 	return
 }
 
-func (db *DataBase) Has(key cipher.SHA256) bool {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	return db.has()
+func (d *DB) has(key cipher.SHA256) (ok bool) {
+	_, ok = d.data[key]
+	return
 }
 
-func (db *DataBase) Get(key cipher.SHA256) ([]byte, bool) {
-	db.mu.Lock()
-	value, ok := db.data[key]
-	db.mu.Unlock()
-	return value, ok
+func (d *DB) Has(key cipher.SHA256) bool {
+	d.RLock()
+	defer d.RUnlock()
+	return d.has()
 }
 
-func (db *DataBase) Where(q queryCondition) []cipher.SHA256 {
+func (d *DB) Get(key cipher.SHA256) ([]byte, bool) {
+	d.RLock()
+	defer d.RUnclock()
+	return d.data[key]
+}
+
+func (d *DB) Where(q QueryFunc) []cipher.SHA256 {
 	result := []cipher.SHA256{}
-
-	for key := range db.data {
-
-		if q(key, db.data[key]) {
+	d.Rlock()
+	defer d.RUnlock()
+	for key, value := range d.data {
+		if q(key, value) {
 			result = append(result, key)
 		}
 	}
 	return result
 }
 
-func (db *DataBase) Statistic() *Statistic {
-	res := &Statistic{Total: len(db.data)}
-	for i := 0; i < res.Total; i++ {
-		res.Memory += len(db.data)
+func (d *DB) Stat() (s Stat) {
+	d.Rlock()
+	d.RUnclock()
+	s.Total = len(d.data)
+	for _, v := range d.data {
+		s.Memory += len(v) // + len(cipher.SHA256) ?
 	}
-	return res
+	return
 }
 
-func (db *DataBase) GetData() map[cipher.SHA256][]byte {
-	return db.data
+// it's unsafe to use it asyncronously
+func (d *DB) Data() map[cipher.SHA256][]byte {
+	return d.data
 }
