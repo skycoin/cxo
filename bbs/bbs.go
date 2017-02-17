@@ -1,11 +1,11 @@
 package bbs
 
 import (
+	"fmt"
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/nodeManager"
-	"fmt"
 )
 
 type Bbs struct {
@@ -21,15 +21,16 @@ func CreateBbs(dataSource data.IDataSource, security nodeManager.INodeSecurity) 
 	c.RegisterSchema(Board{})
 	c.RegisterSchema(Thread{})
 	c.RegisterSchema(Post{})
-	return &Bbs{Container:c, security:security}
+	return &Bbs{Container: c, security: security}
 }
+
 func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 	sl := skyobject.NewArray(threads)
 	fmt.Println("Create threads")
 	bbs.Container.Save(&sl)
-	board := Board{Name:name, Threads:sl}
+	board := Board{Name: name, Threads: sl}
 	bl := skyobject.NewObject(board)
-	ref:= bbs.Container.Save(&bl)
+	ref := bbs.Container.Save(&bl)
 	sign := bbs.security.Sign(ref.Ref)
 	fmt.Println("Sign", sign)
 	bbs.Board = bbs.Container.Publish(ref, &sign)
@@ -40,7 +41,7 @@ func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 func (bbs *Bbs) CreateThread(name string, posts ...Post) Thread {
 	sl := skyobject.NewArray(posts)
 	bbs.Container.Save(&sl)
-	return Thread{Name:name, Posts:sl}
+	return Thread{Name: name, Posts: sl}
 
 }
 
@@ -48,5 +49,5 @@ func (bbs *Bbs) CreatePost(header string, text string) Post {
 	//poster := skyobject.NewObject(Poster{})
 	//bbs.Container.Save(&poster)
 
-	return Post{Header:header, Text:text}
+	return Post{Header: header, Text: text}
 }
