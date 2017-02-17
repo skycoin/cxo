@@ -13,21 +13,21 @@ type DB struct {
 	data map[cipher.SHA256][]byte
 }
 
-type Stat struct {
+type Statistic struct {
 	Total  int `json:"total"`
 	Memory int `json:"memory"`
 }
 
 type QueryFunc func(key cipher.SHA256, data []byte) bool
 
-type DataSource interface {
+type IDataSource interface {
 	Save(value interface{}) cipher.SHA256
 	Update(value []byte) cipher.SHA256
 	Add(ds cipher.SHA256, value []byte) error
 	Has(ds cipher.SHA256) bool
 	Get(ds cipher.SHA256) ([]byte, bool)
 	Where(QueryFunc) []cipher.SHA256
-	Stat() Stat
+	Statistic() Statistic
 
 	Data() map[cipher.SHA256][]byte
 }
@@ -80,18 +80,19 @@ func (d *DB) has(key cipher.SHA256) (ok bool) {
 func (d *DB) Has(key cipher.SHA256) bool {
 	d.RLock()
 	defer d.RUnlock()
-	return d.has()
+	return d.has(key)
 }
 
-func (d *DB) Get(key cipher.SHA256) ([]byte, bool) {
+func (d *DB) Get(key cipher.SHA256) (v []byte, ok bool) {
 	d.RLock()
-	defer d.RUnclock()
-	return d.data[key]
+	defer d.RUnlock()
+	v, ok = d.data[key]
+	return
 }
 
 func (d *DB) Where(q QueryFunc) []cipher.SHA256 {
 	result := []cipher.SHA256{}
-	d.Rlock()
+	d.RLock()
 	defer d.RUnlock()
 	for key, value := range d.data {
 		if q(key, value) {
@@ -101,9 +102,9 @@ func (d *DB) Where(q QueryFunc) []cipher.SHA256 {
 	return result
 }
 
-func (d *DB) Stat() (s Stat) {
-	d.Rlock()
-	d.RUnclock()
+func (d *DB) Statistic() (s Statistic) {
+	d.RLock()
+	d.RUnlock()
 	s.Total = len(d.data)
 	for _, v := range d.data {
 		s.Memory += len(v) // + len(cipher.SHA256) ?

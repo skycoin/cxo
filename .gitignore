@@ -27,3 +27,7 @@ node_modules
 
 .idea
 gui/static/dev/
+
+
+cmd/cli/cli
+cmd/cxod/cxod
