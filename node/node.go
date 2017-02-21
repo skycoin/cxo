@@ -104,9 +104,11 @@ func NewNode(sec cipher.SecKey, conf *Config, d db.DB, e enc.Encoder) Node {
 	// '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 	// Unfotunately, it's impossible to determine listening address
-	// and port, because of _gnet_ limitations. Thus, we must privide
+	// and port, because of _gnet_ limitations. Thus, we must provide
 	// real address and real port (instead of empty values for
 	// arbitrary assignment)
+
+	// PR: https://github.com/skycoin/skycoin/pull/290
 
 	if conf.Address == "" {
 		conf.Address = "127.0.0.1"
@@ -153,7 +155,7 @@ func NewNode(sec cipher.SecKey, conf *Config, d db.DB, e enc.Encoder) Node {
 }
 
 type node struct {
-	sync.RWMutex
+	// sync.RWMutex
 
 	Logger
 
@@ -174,14 +176,18 @@ type node struct {
 	inflow *gnet.ConnectionPool // receive data (connections to remote feeds)
 
 	// pending connections (handshake processing)
-	pending map[*gnet.Connection]*hsp
+	pending   map[*gnet.Connection]*hsp
+	pendinglk sync.RWMutex
 
 	// desired pubkey of remote node to connect to
-	desired map[*gnet.Connection]cipher.PubKey
+	desired   map[*gnet.Connection]cipher.PubKey
+	desiredlk sync.Mutex
 
 	// pubkey -> connection (after handshake)
-	feedpk   map[cipher.PubKey]*gnet.Connection
-	inflowpk map[cipher.PubKey]*gnet.Connection
+	feedpk     map[cipher.PubKey]*gnet.Connection
+	inflowpk   map[cipher.PubKey]*gnet.Connection
+	feedpklk   sync.RWMutex
+	inflowpklk sync.RWMutex
 
 	// quiting
 	quito sync.Once
@@ -194,16 +200,14 @@ type node struct {
 
 func (n *node) Start() (err error) {
 	n.Debug("start node")
-
-	// create channels for Close
-	n.quitq = make(chan struct{})
-	n.feedd = make(chan struct{})
-	n.inflowd = make(chan struct{})
-
 	if err = n.startFeed(); err != nil {
 		return
 	}
 	n.startInflow()
+	// create channels for Close
+	n.quitq = make(chan struct{})
+	n.feedd = make(chan struct{})
+	n.inflowd = make(chan struct{})
 	return
 }
 
@@ -215,8 +219,8 @@ func (n *node) countHandshakeTimeout(c *gnet.Connection) {
 		n.Debug("quit counting handshake timeout: ", c.Conn.RemoteAddr())
 		return
 	case <-time.After(n.conf.HandshakeTimeout):
-		n.RLock()
-		defer n.RUnlock()
+		n.pendinglk.RLock()
+		defer n.pendinglk.RUnlock()
 		// if !ok then handshake already performed
 		if _, ok := n.pending[c]; !ok {
 			return
@@ -241,22 +245,25 @@ func (n *node) startFeed() (err error) {
 			c.Conn.RemoteAddr(),
 			reason)
 
-		n.Lock()
-		{
-			// is it pending?
-			if _, ok := n.pending[c]; ok {
-				delete(n.pending, c)
-			} else {
-				// established
-				for k, v := range n.feedpk {
-					if v == c {
-						n.Debug("remove subscriber: ", k.Hex())
-						delete(n.feedpk, k)
-					}
+		n.pendinglk.Lock()
+		defer n.pendinglk.Unlock()
+
+		// is it pending?
+		if _, ok := n.pending[c]; ok {
+			delete(n.pending, c)
+		} else {
+			// established
+			n.feedpklk.Lock()
+			defer n.feedpklk.Unlock()
+
+			for k, v := range n.feedpk {
+				if v == c {
+					n.Debug("remove subscriber: ", k.Hex())
+					delete(n.feedpk, k)
 				}
 			}
 		}
-		n.Unlock()
+
 	}
 
 	// set up connect callback
@@ -265,16 +272,16 @@ func (n *node) startFeed() (err error) {
 		n.Printf("new incoming connection: %v",
 			c.Conn.RemoteAddr())
 
-		n.Lock()
-		{
-			n.pending[c] = new(hsp)
+		n.pendinglk.Lock()
+		defer n.pendinglk.Unlock()
 
-			// is there any handshake timeout?
-			if n.conf.HandshakeTimeout != 0 {
-				go n.countHandshakeTimeout(c)
-			}
+		n.pending[c] = new(hsp)
+
+		// is there any handshake timeout?
+		if n.conf.HandshakeTimeout != 0 {
+			go n.countHandshakeTimeout(c)
 		}
-		n.Unlock()
+
 	}
 
 	n.feed = gnet.NewConnectionPool(gc, n)
@@ -303,25 +310,31 @@ func (n *node) startInflow() {
 			c.Conn.RemoteAddr(),
 			reason)
 
-		n.Lock()
-		{
-			// is it pending?
-			if _, ok := n.pending[c]; ok {
-				delete(n.pending, c)
-				// may be this conenction has desired public key
+		n.pendinglk.Lock()
+		defer n.pendinglk.Unlock()
+
+		// is it pending?
+		if _, ok := n.pending[c]; ok {
+			delete(n.pending, c)
+			// may be this conenction has desired public key
+			n.desiredlk.Lock()
+			{
 				delete(n.desired, c)
-			} else {
-				// established
-				for k, v := range n.inflowpk {
-					if v == c {
-						n.Debug("remove subscription: ", k.Hex())
-						delete(n.inflowpk, k)
-						break
-					}
+			}
+			n.desiredlk.Unlock()
+		} else {
+			// established
+			n.inflowpklk.Lock()
+			defer n.inflowpklk.Unlock()
+
+			for k, v := range n.inflowpk {
+				if v == c {
+					n.Debug("remove subscription: ", k.Hex())
+					delete(n.inflowpk, k)
+					break
 				}
 			}
 		}
-		n.Unlock()
 
 	}
 
@@ -335,16 +348,16 @@ func (n *node) startInflow() {
 
 		var h *hsp = new(hsp)
 
-		n.Lock()
+		n.pendinglk.Lock()
 		{
 			n.pending[c] = h
-
-			// is there any handshake timeout?
-			if n.conf.HandshakeTimeout != 0 {
-				go n.countHandshakeTimeout(c)
-			}
 		}
-		n.Unlock()
+		n.pendinglk.Unlock()
+
+		// is there any handshake timeout?
+		if n.conf.HandshakeTimeout != 0 {
+			go n.countHandshakeTimeout(c)
+		}
 
 		// send initial handshake message
 		n.Debug("send handshake question")
@@ -449,14 +462,16 @@ func (n *node) Subscribe(address string, pub cipher.PubKey) error {
 		n.Debug("subscribe to %s, with desired pub key: %s",
 			address, pub.Hex())
 	}
-	n.Lock()
-	defer n.Unlock()
 	conn, err := n.inflow.Connect(address)
 	if err != nil {
 		return err
 	}
 	if pub != (cipher.PubKey{}) {
-		n.desired[conn] = pub
+		n.desiredlk.Lock()
+		{
+			n.desired[conn] = pub
+		}
+		n.desiredlk.Unlock()
 	}
 	return nil
 }
@@ -467,11 +482,11 @@ func (n *node) Unsubscribe(pub cipher.PubKey) (err error) {
 		conn *gnet.Connection
 		ok   bool
 	)
-	n.RLock()
+	n.inflowpklk.RLock()
 	{
 		conn, ok = n.inflowpk[pub]
 	}
-	n.RUnlock()
+	n.inflowpklk.RUnlock()
 	if !ok {
 		err = errors.New("not found")
 		return
@@ -486,8 +501,8 @@ func (n *node) ListSubscriptions(fn ListFunc) {
 	if fn == nil {
 		n.Panic("call ListSubscriptions with nil")
 	}
-	n.RLock()
-	defer n.RUnlock()
+	n.inflowpklk.RLock()
+	defer n.inflowpklk.RUnlock()
 	for pk, conn := range n.inflowpk {
 		fn(pk, conn.Conn.RemoteAddr())
 	}
@@ -497,8 +512,8 @@ func (n *node) ListSubscribers(fn ListFunc) {
 	if fn == nil {
 		n.Panic("call ListSubscribers with nil")
 	}
-	n.RLock()
-	defer n.RUnlock()
+	n.feedpklk.RLock()
+	defer n.feedpklk.RUnlock()
 	for pk, conn := range n.feedpk {
 		fn(pk, conn.Conn.RemoteAddr())
 	}
@@ -550,11 +565,11 @@ func (n *node) hsQuestion(q *hsQuestion, ctx *gnet.MessageContext) error {
 		ok bool
 	)
 	// reading lock/unlock
-	n.RLock()
+	n.pendinglk.RLock()
 	{
 		h, ok = n.pending[ctx.Conn]
 	}
-	n.RUnlock()
+	n.pendinglk.RUnlock()
 	// doesn't exists
 	if !ok {
 		return ErrUnexpectedHandshake // terminate connection
@@ -593,11 +608,11 @@ func (n *node) hsQuestionAnswer(qa *hsQuestionAnswer,
 		err error
 	)
 	// reading lock/unlock
-	n.RLock()
+	n.pendinglk.RLock()
 	{
 		h, ok = n.pending[ctx.Conn]
 	}
-	n.RUnlock()
+	n.pendinglk.RUnlock()
 	// doesn't exists
 	if !ok {
 		return ErrUnexpectedHandshake // terminate connection
@@ -613,7 +628,7 @@ func (n *node) hsQuestionAnswer(qa *hsQuestionAnswer,
 		return ErrMalformedHandshake // terminate connection
 	}
 	// desired public key
-	n.RLock()
+	n.desiredlk.Lock()
 	{
 		var dpub cipher.PubKey
 		// do we have desired public key for this connection
@@ -621,7 +636,7 @@ func (n *node) hsQuestionAnswer(qa *hsQuestionAnswer,
 			// missmatch
 			if h.pub != dpub {
 				// n.desired will be cleaned up by DisconnectCallback
-				n.RUnlock()
+				n.desiredlk.Unlock()
 				return ErrPubKeyMismatch
 			}
 		}
@@ -629,7 +644,7 @@ func (n *node) hsQuestionAnswer(qa *hsQuestionAnswer,
 		// ok, we don't have desired public key or
 		// received (remote) key is what we want
 	}
-	n.RUnlock()
+	n.desiredlk.Unlock()
 	//
 	// verify answer
 	err = cipher.VerifySignature(
@@ -662,11 +677,11 @@ func (n *node) hsAnswer(a *hsAnswer, ctx *gnet.MessageContext) error {
 		err error
 	)
 	// reading lock/unlock
-	n.RLock()
+	n.pendinglk.RLock()
 	{
 		h, ok = n.pending[ctx.Conn]
 	}
-	n.RUnlock()
+	n.pendinglk.RUnlock()
 	// doesn't exists
 	if !ok {
 		return ErrUnexpectedHandshake // terminate connection
@@ -689,24 +704,28 @@ func (n *node) hsAnswer(a *hsAnswer, ctx *gnet.MessageContext) error {
 	}
 	// remove connection from pending and add it to pubKey->connection mapping
 	// (not sure that deferred unlock is frendly with SendMessage)
-	n.Lock()
+	n.feedpklk.Lock()
 	{
 		// firstly we need to check n.feedpk; may be we already have
 		// connection with given public key
 		if _, ok = n.feedpk[h.pub]; ok {
-			n.Unlock()
+			n.feedpklk.Unlock()
 			return ErrAlreadyConnected
 		}
 		// map public key -> connection
 		n.feedpk[h.pub] = ctx.Conn
 		// delete from pending
-		delete(n.pending, ctx.Conn)
+		n.pendinglk.Lock()
+		{
+			delete(n.pending, ctx.Conn)
+		}
+		n.pendinglk.Unlock()
 		n.Debug("feed got new established connection from %v,"+
 			" public key of wich is %s",
 			ctx.Conn.Conn.RemoteAddr(),
 			h.pub.Hex())
 	}
-	n.Unlock()
+	n.feedpklk.Unlock()
 	// success, yay!
 	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, h.hsSuccess())
 
@@ -729,11 +748,11 @@ func (n *node) hsSuccess(s *hsSuccess, ctx *gnet.MessageContext) error {
 		ok bool
 	)
 	// reading lock/unlock
-	n.RLock()
+	n.pendinglk.RLock()
 	{
 		h, ok = n.pending[ctx.Conn]
 	}
-	n.RUnlock()
+	n.pendinglk.RUnlock()
 	// doesn't exists
 	if !ok {
 		return ErrUnexpectedHandshake // terminate connection
@@ -744,24 +763,28 @@ func (n *node) hsSuccess(s *hsSuccess, ctx *gnet.MessageContext) error {
 	}
 	// remove connection from pending and add it to pubKey->connection mapping
 	// (not sure that deferred unlock is frendly with SendMessage)
-	n.Lock()
+	n.inflowpklk.Lock()
 	{
 		// firstly we need to check n.inflowpk; may be we already have
 		// connection with given public key
 		if _, ok = n.inflowpk[h.pub]; ok {
-			n.Unlock()
+			n.inflowpklk.Unlock()
 			return ErrAlreadyConnected
 		}
 		// map public key -> connection
 		n.inflowpk[h.pub] = ctx.Conn
 		// delete from pending
-		delete(n.pending, ctx.Conn)
+		n.pendinglk.Lock()
+		{
+			delete(n.pending, ctx.Conn)
+		}
+		n.pendinglk.Unlock()
 		n.Debug(
 			"new connection was established to %v, public key of wich is %s",
 			ctx.Conn.Conn.RemoteAddr(),
 			h.pub.Hex())
 	}
-	n.Unlock()
+	n.inflowpklk.Unlock()
 	// success, yay!
 	// no more handshake messages
 
