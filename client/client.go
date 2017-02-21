@@ -3,19 +3,23 @@ package client
 import (
 	"flag"
 	"fmt"
+	"math/rand"
+	"net"
+	"strconv"
+	"time"
+
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/gui"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/skycoin/src/cipher"
-	"math/rand"
-	"net"
-	"strconv"
-	"time"
 )
 
-//TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
+//TODO: Refactor - avoid global var.
+// The problem now in HandleFromUpstream/HandleFromDownstream.
+// No way to provide Dataprovider into the handler
 var DB *data.DB
 var Sync *syncContext
 var Syncronizer syncContext
@@ -35,10 +39,12 @@ func Client() *client {
 	c := &client{}
 	//1. Create Hash Database
 	DB = data.NewDB()
-	//2. Create schema provider. Integrate Hash Database to schema provider(schema store)
+	//2. Create schema provider.
+	//   Integrate Hash Database to schema provider(schema store)
 
 	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
-	flag.StringVar(&c.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
+	flag.StringVar(&c.subscribeTo, "subscribe-to", "",
+		"Address of the node to subscribe to")
 	c.config = defaultConfig()
 	c.config.Parse()
 
@@ -87,7 +93,8 @@ func Client() *client {
 
 		port, err := strconv.ParseUint(portString, 10, 16)
 
-		// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
+		// If the pubKey parameter is an empty cipher.PubKey{}, we will
+		// connect to that node
 		// for any PubKey it communicates us it has.
 		// For a specific match, you have to provide a specific pubKey.
 		pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
@@ -103,7 +110,7 @@ func Client() *client {
 			// give time for nodes to subscribe to this node before broadcasting
 			// that it has new data
 
-			refs := skyobject.Href{Ref:boards.Board}
+			refs := skyobject.Href{Ref: boards.Board}
 
 			refs.References(boards.Container)
 
@@ -139,16 +146,25 @@ func prepareTestData(bs *bbs.Bbs) {
 		for t := 0; t < 10; t++ {
 			posts := []bbs.Post{}
 			for p := 0; p < 200; p++ {
-				posts = append(posts, bs.CreatePost("Post_"+generateString(15), "Some text"))
+				posts = append(posts, bs.CreatePost(
+					"Post_"+generateString(15),
+					"Some text",
+				))
 			}
-			threads = append(threads, bs.CreateThread("Thread_"+generateString(15), posts...))
+			threads = append(threads, bs.CreateThread(
+				"Thread_"+generateString(15), posts...,
+			))
 		}
-		boards = append(boards, bs.AddBoard("Board_"+generateString(15), threads...))
+		boards = append(boards, bs.AddBoard(
+			"Board_"+generateString(15), threads...,
+		))
 	}
 }
 
-const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
+	letterBytes = "0123456789" +
+		"abcdefghijklmnopqrstuvwxyz" +
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	letterIdxBits = 6                    // 6 bits to represent a letter index
 	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits

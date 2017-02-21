@@ -101,13 +101,13 @@ func main() {
 		case strings.HasPrefix(inpt, "list subscriptions"):
 			client.listSubscriptions()
 
-		case strings.HasPrefix(inpt, "list connections"):
-			client.listConnections()
+		case strings.HasPrefix(inpt, "list subscribers"):
+			client.listSubscribers()
 
 		case strings.HasPrefix(inpt, "list"):
 			fmt.Println(`list what?
 	- list subscriptions
-	- list connections`)
+	- list subscribers`)
 			continue
 
 		case strings.HasPrefix(inpt, "add subscription"):
@@ -120,13 +120,13 @@ func main() {
 		case strings.HasPrefix(inpt, "remove subscription"):
 			client.removeSubscription(trim(inpt, "remove subscription"))
 
-		case strings.HasPrefix(inpt, "remove connection"):
-			client.removeConnecion(trim(inpt, "remove connection"))
+		case strings.HasPrefix(inpt, "remove subscriber"):
+			client.removeSubscriber(trim(inpt, "remove subscriber"))
 
 		case strings.HasPrefix(inpt, "remove"):
 			fmt.Println(`remove what?
-	- remove subscriptions
-	- remove connections`)
+	- remove subscription
+	- remove subscriber`)
 			continue
 
 		case strings.HasPrefix(inpt, "stat"):
@@ -202,11 +202,11 @@ func storeHistory(line *liner.State) {
 
 var complets = []string{
 	"list subscriptions ",
-	"list connections ",
+	"list subscribers ",
 	"list ",
 	"add subscription ",
 	"remove subscription ",
-	"remove connection",
+	"remove subscriber",
 	"stat ",
 	"info",
 	"help ",
@@ -231,17 +231,17 @@ func printHelp() {
 	fmt.Print(`Available commands:
 
 	list subscriptions
-		list subscriptions
-	list connections
-		list subscribers
+		list all subscriptions
+	list subscribers
+		list all subscribers
 	add subscription <ip:port> [pubKey]
 		add subscription to given ip:port, the pubKey is optional
 	remove subscription <id or ip:port>
-		remove subscription
-	remove connection <id or ip:port>
-		remove subscriber
+		remove subscription by id or ip:port
+	remove subscriber <id or ip:port>
+		remove subscriber by id or ip:port
 	stat
-		get statistic (total objects, memory)
+		get statistic (total objects, memory) of all objects
 	info
 		print node id and address
 	help
@@ -361,8 +361,8 @@ func (c *Client) getConnectionsList() (connections []Item, err error) {
 	return
 }
 
-// listConnections requests list of subscribers
-func (c *Client) listConnections() {
+// listSubscribers requests list of subscribers
+func (c *Client) listSubscribers() {
 	subscribers, err := c.getConnectionsList()
 	if err != nil {
 		fmt.Println("error requesting connections:", err)
@@ -508,7 +508,7 @@ Request:
 
 }
 
-func (c *Client) removeConnecion(args string) {
+func (c *Client) removeSubscriber(args string) {
 	// DELETE "/manager/nodes/:node_id/subscribers/:subscriber_id
 
 	var (

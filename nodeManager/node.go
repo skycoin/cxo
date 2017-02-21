@@ -40,11 +40,9 @@ type downstream struct {
 	callbacks   map[string]reflect.Type
 }
 
-type INodeSecurity interface{
+type INodeSecurity interface {
 	Sign(hash cipher.SHA256) cipher.Sig
 }
-
-
 
 // NewNode generates a new node from scratch.
 func (nm *Manager) NewNode() *Node {
@@ -60,11 +58,15 @@ func (nm *Manager) NewNode() *Node {
 		mu:     nm.mu,
 		upstream: upstream{
 			subscriptions: make(map[cipher.PubKey]*Subscription),
-			callbacks:     nm.upstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool of upstream callbacks
+			callbacks:     nm.upstreamCallbacks,
+			// reference to the pool of callbacks of the node manager;
+			//  it's just one shared pool of upstream callbacks
 		},
 		downstream: downstream{
 			subscribers: make(map[cipher.PubKey]*Subscriber),
-			callbacks:   nm.downstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool of downstream callbacks
+			callbacks:   nm.downstreamCallbacks,
+			// reference to the pool of callbacks of the node manager;
+			// it's just one shared pool of downstream callbacks
 		},
 	}
 }
@@ -82,11 +84,15 @@ func (nm *Manager) NewNodeFromSecKey(secKey cipher.SecKey) (*Node, error) {
 		mu:     nm.mu,
 		upstream: upstream{
 			subscriptions: make(map[cipher.PubKey]*Subscription),
-			callbacks:     nm.upstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool upstream callbacks
+			callbacks:     nm.upstreamCallbacks,
+			// reference to the pool of callbacks of the node manager;
+			// it's just one shared pool upstream callbacks
 		},
 		downstream: downstream{
 			subscribers: make(map[cipher.PubKey]*Subscriber),
-			callbacks:   nm.downstreamCallbacks, // reference to the pool of callbacks of the node manager; it's just one shared pool downstream callbacks
+			callbacks:   nm.downstreamCallbacks,
+			// reference to the pool of callbacks of the node manager;
+			// it's just one shared pool downstream callbacks
 		},
 	}
 
@@ -97,8 +103,8 @@ func (nm *Manager) NewNodeFromSecKey(secKey cipher.SecKey) (*Node, error) {
 	return &newNode, nil
 }
 
-func (node *Node) Sign(hash cipher.SHA256) cipher.Sig{
-	return cipher.SignHash(hash,*node.secKey)
+func (node *Node) Sign(hash cipher.SHA256) cipher.Sig {
+	return cipher.SignHash(hash, *node.secKey)
 }
 
 // validate is used to validate a new node created with user-provided
@@ -157,11 +163,17 @@ func (node *Node) Start() error {
 	var err error
 
 	// let the kernel assign a free port where to listen to
-	listener, err = net.Listen("tcp", fmt.Sprintf("%v:%v", node.config.ip.String(), node.config.Port))
+	listener, err = net.Listen(
+		"tcp",
+		fmt.Sprintf("%v:%v", node.config.ip.String(), node.config.Port),
+	)
 	if err != nil {
 		return fmt.Errorf("Error listening plain text:", err.Error())
 	}
-	fmt.Printf("Listening (plain) on %v, pubKey %v\n", listener.Addr().String(), node.pubKey.Hex())
+	fmt.Printf("Listening (plain) on %v, pubKey %v\n",
+		listener.Addr().String(),
+		node.pubKey.Hex(),
+	)
 
 	// start listening for connections from downstream
 	go node.acceptSubscribersFrom(listener)
@@ -176,7 +188,10 @@ func (node *Node) close() error {
 
 	// terminate all subscribers
 	for _, subscriber := range node.downstream.subscribers {
-		err := node.TerminateSubscriber(subscriber, errors.New("closing node"))
+		err := node.TerminateSubscriber(
+			subscriber,
+			errors.New("closing node"),
+		)
 		if err != nil {
 			// TODO:
 		}
@@ -184,7 +199,10 @@ func (node *Node) close() error {
 
 	// terminate all subscriptions
 	for _, subscription := range node.upstream.subscriptions {
-		err := node.TerminateSubscription(subscription, errors.New("closing node"))
+		err := node.TerminateSubscription(
+			subscription,
+			errors.New("closing node"),
+		)
 		if err != nil {
 			// TODO:
 		}
@@ -201,24 +219,32 @@ func (node *Node) PubKey() cipher.PubKey {
 	return *node.pubKey
 }
 
-// IP returns the local IP at which this node is listening to for incoming connections
+// IP returns the local IP at which this node is
+// listening to for incoming connections
 func (n *Node) IP() net.IP {
 	if n.downstream.listener == nil {
 		return net.IP{}
 	}
-	addr, err := net.ResolveTCPAddr("tcp", n.downstream.listener.Addr().String())
+	addr, err := net.ResolveTCPAddr(
+		"tcp",
+		n.downstream.listener.Addr().String(),
+	)
 	if err != nil {
 		return net.IP{}
 	}
 	return addr.IP
 }
 
-// Port returns the local Port at which this node is listening to for incoming connections
+// Port returns the local Port at which this node is
+// listening to for incoming connections
 func (n *Node) Port() int {
 	if n.downstream.listener == nil {
 		return 0
 	}
-	addr, err := net.ResolveTCPAddr("tcp", n.downstream.listener.Addr().String())
+	addr, err := net.ResolveTCPAddr(
+		"tcp",
+		n.downstream.listener.Addr().String(),
+	)
 	if err != nil {
 		return 0
 	}

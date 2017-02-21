@@ -12,7 +12,8 @@
 //
 // Varints are a method of encoding integers using one or more bytes;
 // numbers with smaller absolute value take a smaller number of bytes.
-// For a specification, see http://code.google.com/apis/protocolbuffers/docs/encoding.html.
+// For a specification, see
+//     http://code.google.com/apis/protocolbuffers/docs/encoding.html
 package encoder
 
 import (
@@ -23,14 +24,15 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type StructField struct {
 	Name string `json:"name"`
-	Kind uint32`json:"kind"`
-	Type string`json:"type"`
-	Tag  string`json:"tag"`
+	Kind uint32 `json:"kind"`
+	Type string `json:"type"`
+	Tag  string `json:"tag"`
 }
 
 /*
@@ -181,12 +183,13 @@ func DeserializeRaw(in []byte, data interface{}) error {
 	return d1.value(v)
 }
 
-
 //TODO: replace fieldType on reflect.Kind
-func getFieldSize(in []byte, d *decoder, fieldType reflect.Kind, s int) (int, error) {
+func getFieldSize(in []byte, d *decoder, fieldType reflect.Kind,
+	s int) (int, error) {
+
 	switch fieldType {
 	case reflect.Slice, reflect.String:
-		length := int(le_Uint32(d.buf[s:s + 4]))
+		length := int(le_Uint32(d.buf[s : s+4]))
 		s += 4 + length
 	case reflect.Struct, reflect.Array:
 		s += 32
@@ -206,13 +209,15 @@ func getFieldSize(in []byte, d *decoder, fieldType reflect.Kind, s int) (int, er
 }
 
 //TODO: replace fieldType on reflect.Kind
-func getFieldValue(in []byte, d *decoder, fieldType reflect.Kind, s int) string {
-	fd := &decoder{buf: make([]byte, len(in) - s)}
+func getFieldValue(in []byte, d *decoder, fieldType reflect.Kind,
+	s int) string {
+
+	fd := &decoder{buf: make([]byte, len(in)-s)}
 	copy(fd.buf, d.buf[s:])
 	switch fieldType {
 	case reflect.Slice, reflect.String:
 		length := int(le_Uint32(fd.buf[0:4]))
-		return string(fd.buf[4:4 + length])
+		return string(fd.buf[4 : 4+length])
 	case reflect.Struct, reflect.Array:
 		s := cipher.SHA256{}
 		s.Set(fd.buf[0:32])
@@ -241,21 +246,22 @@ func getFieldValue(in []byte, d *decoder, fieldType reflect.Kind, s int) string 
 	return ""
 }
 
-func DeserializeField(in []byte, fields []StructField, fieldName string, field interface{}) error {
+func DeserializeField(in []byte, fields []StructField, fieldName string,
+	field interface{}) error {
 
 	d := &decoder{buf: make([]byte, len(in))}
 	copy(d.buf, in)
 	fv := reflect.ValueOf(field).Elem()
 	s := 0
 	for _, f := range fields {
-		if (f.Name == fieldName) {
-			fd := &decoder{buf: make([]byte, len(in) - s)}
+		if f.Name == fieldName {
+			fd := &decoder{buf: make([]byte, len(in)-s)}
 			copy(fd.buf, d.buf[s:])
 			fd.value(fv)
 			return nil
 		}
 		res, err := getFieldSize(in, d, reflect.Kind(f.Kind), s)
-		if (err != nil) {
+		if err != nil {
 			return err
 		}
 		s = res
@@ -293,7 +299,8 @@ func Deserialize(r io.Reader, dsize int, data interface{}) error {
 	case reflect.Struct:
 
 	default:
-		return errors.New("binary.Read: invalid type " + reflect.TypeOf(d).String())
+		return errors.New("binary.Read: invalid type " +
+			reflect.TypeOf(d).String())
 	}
 	//size, err := datasizeWrite(v)
 	//if err != nil {
@@ -339,7 +346,8 @@ func DeserializeRawToValue(in []byte, dst reflect.Value) (int, error) {
 		v = dst
 	case reflect.Struct:
 	default:
-		return 0, errors.New("binary.Read: invalid type " + reflect.TypeOf(dst).String())
+		return 0, errors.New("binary.Read: invalid type " +
+			reflect.TypeOf(dst).String())
 	}
 
 	inlen := len(in)
@@ -359,7 +367,8 @@ func DeserializeRawToValue(in []byte, dst reflect.Value) (int, error) {
 
 func DeserializeToValue(r io.Reader, dsize int, dst reflect.Value) error {
 
-	//fmt.Printf("*A1 v is type %s \n", data.Type().String() )		//this is the type of the value
+	// fmt.Printf("*A1 v is type %s \n", data.Type().String()
+	// this is the type of the value
 
 	var v reflect.Value
 	switch dst.Kind() {
@@ -370,10 +379,12 @@ func DeserializeToValue(r io.Reader, dsize int, dst reflect.Value) error {
 	case reflect.Struct:
 
 	default:
-		return errors.New("binary.Read: invalid type " + reflect.TypeOf(dst).String())
+		return errors.New("binary.Read: invalid type " +
+			reflect.TypeOf(dst).String())
 	}
 
-	//fmt.Printf("*A2 v is type %s \n", v.Type().String() )		//this is the type of the value
+	// fmt.Printf("*A2 v is type %s \n", v.Type().String() )
+	// this is the type of the value
 
 	d1 := &decoder{buf: make([]byte, dsize)}
 	if _, err := io.ReadFull(r, d1.buf); err != nil {
@@ -383,7 +394,7 @@ func DeserializeToValue(r io.Reader, dsize int, dst reflect.Value) error {
 	return d1.value(v)
 }
 
-//serialize int or other atomic
+// serialize int or other atomic
 func SerializeAtomic(data interface{}) []byte {
 	var b [8]byte
 	var bs []byte
@@ -463,7 +474,7 @@ func Serialize(data interface{}) []byte {
 	v := reflect.Indirect(reflect.ValueOf(data))
 	size, err := datasizeWrite(v)
 	if err != nil {
-		//return nil, errors.New("binary.Write: " + err.Error())
+		// return nil, errors.New("binary.Write: " + err.Error())
 		log.Panic(err)
 	}
 	buf := make([]byte, size)
@@ -473,7 +484,8 @@ func Serialize(data interface{}) []byte {
 }
 
 // Size returns how many bytes Write would generate to encode the value v, which
-// must be a fixed-size value or a slice of fixed-size values, or a pointer to such data.
+// must be a fixed-size value or a slice of fixed-size values, or a pointer to
+// such data
 func Size(v interface{}) int {
 	n, err := datasizeWrite(reflect.Indirect(reflect.ValueOf(v)))
 	if err != nil {
@@ -482,10 +494,11 @@ func Size(v interface{}) int {
 	return n
 }
 
-// dataSize returns the number of bytes the actual data represented by v occupies in memory.
-// For compound structures, it sums the sizes of the elements. Thus, for instance, for a slice
-// it returns the length of the slice times the element size and does not count the memory
-// occupied by the header.
+// dataSize returns the number of bytes the actual data represented by v
+// occupies in memory. For compound structures, it sums the sizes of the
+// elements. Thus, for instance, for a slice it returns the length of the
+// slice times the element size and does not count the memory occupied by
+// the header
 
 /* Datasize needs to write variable length slice fields */
 /* Datasize for serialization is different than for serialization */
@@ -553,7 +566,7 @@ func datasizeWrite(v reflect.Value) (int, error) {
 */
 
 func le_Uint16(b []byte) uint16 {
-	return uint16(b[0]) | uint16(b[1]) << 8
+	return uint16(b[0]) | uint16(b[1])<<8
 }
 
 func le_PutUint16(b []byte, v uint16) {
@@ -562,7 +575,7 @@ func le_PutUint16(b []byte, v uint16) {
 }
 
 func le_Uint32(b []byte) uint32 {
-	return uint32(b[0]) | uint32(b[1]) << 8 | uint32(b[2]) << 16 | uint32(b[3]) << 24
+	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 }
 
 func le_PutUint32(b []byte, v uint32) {
@@ -573,8 +586,14 @@ func le_PutUint32(b []byte, v uint32) {
 }
 
 func le_Uint64(b []byte) uint64 {
-	return uint64(b[0]) | uint64(b[1]) << 8 | uint64(b[2]) << 16 | uint64(b[3]) << 24 |
-		uint64(b[4]) << 32 | uint64(b[5]) << 40 | uint64(b[6]) << 48 | uint64(b[7]) << 56
+	return uint64(b[0]) |
+		uint64(b[1])<<8 |
+		uint64(b[2])<<16 |
+		uint64(b[3])<<24 |
+		uint64(b[4])<<32 |
+		uint64(b[5])<<40 |
+		uint64(b[6])<<48 |
+		uint64(b[7])<<56
 }
 
 func le_PutUint64(b []byte, v uint64) {
@@ -1034,7 +1053,8 @@ func (e *encoder) value(v reflect.Value) {
 			e.int64(v.Int())
 		}
 
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32,
+		reflect.Uint64, reflect.Uintptr:
 		switch v.Type().Kind() {
 		case reflect.Uint8:
 			e.uint8(uint8(v.Uint()))

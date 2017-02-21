@@ -1,10 +1,12 @@
 package client
 
 import (
-	"github.com/skycoin/cxo/nodeManager"
-	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/gui"
 	"fmt"
+
+	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/gui"
+	"github.com/skycoin/cxo/nodeManager"
 )
 
 type nodeMessenger struct {
@@ -12,7 +14,7 @@ type nodeMessenger struct {
 }
 
 func NodeMessanger(node *nodeManager.Node) *gui.Messenger {
-	return &gui.Messenger{Context:&nodeMessenger{node:node}}
+	return &gui.Messenger{Context: &nodeMessenger{node: node}}
 }
 
 func (m *nodeMessenger) send(message interface{}) error {
@@ -21,13 +23,12 @@ func (m *nodeMessenger) send(message interface{}) error {
 }
 
 func (m *nodeMessenger) Announce(hash cipher.SHA256) error {
-	return m.send(AnnounceMessage{Hash:hash})
+	return m.send(AnnounceMessage{Hash: hash})
 }
 
 func (m *nodeMessenger) Request(hash cipher.SHA256) error {
-	return m.send(RequestMessage{Hash:hash})
+	return m.send(RequestMessage{Hash: hash})
 }
-
 
 //type RootMessage struct {
 //	Hash cipher.SHA256

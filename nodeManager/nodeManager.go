@@ -14,13 +14,15 @@ import (
 // Debugging; of set to true, all debugging messages will be printed out.
 var Debugging = false
 
-const defaultMaxNodes = 1000
-const defaultMaxConnections = 1000
-const defaultMaxMessageLength = 1024 * 256
-const defaultIP = "127.0.0.1"
-const defaultPort uint16 = 0 // 0 tells the kernel to assign a free port
-const defaultHandshakeTimeout = time.Duration(time.Second * 5)
-const defaultReadDeadline = time.Duration(time.Minute * 5)
+const (
+	defaultMaxNodes                = 1000
+	defaultMaxConnections          = 1000
+	defaultMaxMessageLength        = 1024 * 256
+	defaultIP                      = "127.0.0.1"
+	defaultPort             uint16 = 0 // 0 tells the OS to assign a free port
+	defaultHandshakeTimeout        = time.Duration(time.Second * 5)
+	defaultReadDeadline            = time.Duration(time.Minute * 5)
+)
 
 // ManagerConfig is the configuration struct of a node manager
 type ManagerConfig struct {
@@ -48,37 +50,36 @@ type Manager struct {
 	upstreamCallbacks   map[string]reflect.Type
 }
 
-// NewManagerConfig returns an instance of ManagerConfig loaded with default values
+// NewManagerConfig returns an instance of ManagerConfig
+// loaded with default values
 func NewManagerConfig() ManagerConfig {
 	// set defaults
-	newConfig := ManagerConfig{
+	return ManagerConfig{
 		IP:               defaultIP,
 		Port:             defaultPort,
 		MaxNodes:         defaultMaxNodes,
 		MaxConnections:   defaultMaxConnections,
 		MaxMessageLength: defaultMaxMessageLength,
 	}
-	return newConfig
 }
 
-func (mc *ManagerConfig) validate() error {
+func (mc *ManagerConfig) validate() (err error) {
 	// parse and validate IP address
 	mc.ip = net.ParseIP(mc.IP)
 	if mc.ip == nil {
-		return fmt.Errorf("cannot parse IP: %v", mc.IP)
+		err = fmt.Errorf("cannot parse IP: %v", mc.IP)
 	}
-	return nil
+	return
 }
 
 // NewManager returns a new manager
-func NewManager(config ManagerConfig) (*Manager, error) {
+func NewManager(config ManagerConfig) (m *Manager, err error) {
 	// validate config
-	err := config.validate()
-	if err != nil {
-		return &Manager{}, err
+	if err = config.validate(); err != nil {
+		return
 	}
 
-	newManager := Manager{
+	m = &Manager{
 		nodes:               make(map[cipher.PubKey]*Node),
 		config:              &config,
 		downstreamCallbacks: make(map[string]reflect.Type),
@@ -88,14 +89,14 @@ func NewManager(config ManagerConfig) (*Manager, error) {
 
 	// REGISTER HANDSHAKE MESSAGES
 	// register messages that this node can receive from downstream
-	newManager.registerDownstreamMessage(hsm1{})
-	newManager.registerDownstreamMessage(hsm3{})
+	m.registerDownstreamMessage(hsm1{})
+	m.registerDownstreamMessage(hsm3{})
 
 	// register messages that this node can receive from upstream
-	newManager.registerUpstreamMessage(hsm2{})
-	newManager.registerUpstreamMessage(hsm4{})
+	m.registerUpstreamMessage(hsm2{})
+	m.registerUpstreamMessage(hsm4{})
 
-	return &newManager, nil
+	return
 }
 
 func (nm *Manager) registerDownstreamMessage(msg interface{}) {
@@ -118,17 +119,21 @@ func (nm *Manager) Nodes() []*Node {
 func (nm *Manager) NodeByID(pubKey cipher.PubKey) (*Node, error) {
 	node, ok := nm.nodes[pubKey]
 	if !ok {
-		return &Node{}, errors.New("Node not found")
+		return nil, errors.New("Node not found")
 	}
 	return node, nil
 }
 
 func (nm *Manager) Shutdown() error {
-	// TODO: Shutdown gracefully every component (starting from the level most at the bottom)
+	// TODO: Shutdown gracefully every component
+	// (starting from the level most at the bottom)
 	return nil
 }
 
-func (nm *Manager) TerminateNodeByID(pubKey *cipher.PubKey, reason error) error {
+func (nm *Manager) TerminateNodeByID(
+	pubKey *cipher.PubKey,
+	reason error) error {
+
 	if pubKey == nil {
 		return ErrPubKeyIsNil
 	}

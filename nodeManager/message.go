@@ -54,7 +54,12 @@ func (node *Node) RegisterUpstreamMessage(msg interface{}) {
 	registerMessage("UpstreamMessage", node.mu, node.upstream.callbacks, msg)
 }
 
-func registerMessage(messageTypeName string, mu *sync.RWMutex, destination map[string]reflect.Type, msg interface{}) {
+func registerMessage(
+	messageTypeName string,
+	mu *sync.RWMutex,
+	destination map[string]reflect.Type,
+	msg interface{}) {
+
 	t := reflect.TypeOf(msg)
 	rcvr := reflect.ValueOf(msg)
 	name := reflect.Indirect(rcvr).Type().Name()

@@ -16,7 +16,9 @@ type Bbs struct {
 	security  nodeManager.INodeSecurity
 }
 
-func CreateBbs(dataSource data.IDataSource, security nodeManager.INodeSecurity) *Bbs {
+func CreateBbs(dataSource data.IDataSource,
+	security nodeManager.INodeSecurity) *Bbs {
+
 	c := skyobject.SkyObjects(dataSource)
 	c.RegisterSchema(Board{})
 	c.RegisterSchema(Thread{})
@@ -41,8 +43,10 @@ func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 func (bbs *Bbs) CreateThread(name string, posts ...Post) Thread {
 	sl := skyobject.NewArray(posts)
 	bbs.Container.Save(&sl)
-	return Thread{Name: name, Posts: sl}
-
+	return Thread{
+		Name:  name,
+		Posts: sl,
+	}
 }
 
 func (bbs *Bbs) CreatePost(header string, text string) Post {

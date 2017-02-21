@@ -180,7 +180,8 @@ func (node *Node) onSubscriberConnect(conn net.Conn) {
 	debug("server: started read loop")
 	for {
 
-		// TODO: if handshake is not done yet, do not receive messages other than handshake messages
+		// TODO: if handshake is not done yet, do not receive messages
+		// other than handshake messages
 
 		if incomingSubscriber.isQuitting {
 			return
@@ -194,7 +195,7 @@ func (node *Node) onSubscriberConnect(conn net.Conn) {
 			}
 			time.Sleep(time.Millisecond * 50)
 			continue
-			debug("readDownstreamMessagereadDownstreamMessage error:", err.Error())
+			debug("readDownstreamMessage error:", err.Error())
 		}
 		cc := DownstreamContext{
 			Remote: incomingSubscriber,
