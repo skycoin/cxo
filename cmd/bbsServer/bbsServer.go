@@ -1,8 +1,10 @@
 package main
 
 import (
-	// "errors"
+	"errors"
 	"fmt"
+	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/mesh/messages"
 	// "io"
 	"log"
@@ -15,9 +17,18 @@ import (
 const DEFAULT_PORT = "1235"
 
 type RPCReceiver struct {
+	SkyObjects skyobject.ISkyObjects
 }
 
-func (receiver *RPCReceiver) Greet(args []string, results *[]byte) error {
+func MakeRPCReceiver() (receiver *RPCReceiver) {
+	db := data.NewDB()
+	receiver = &RPCReceiver{
+		SkyObjects: skyobject.SkyObjects(db),
+	}
+	return
+}
+
+func (r *RPCReceiver) Greet(args []string, result *[]byte) error {
 	replyMsg := "Hello "
 	if len(args) == 0 {
 		fmt.Println("Greeting anonymous.")
@@ -27,7 +38,28 @@ func (receiver *RPCReceiver) Greet(args []string, results *[]byte) error {
 		replyMsg += args[0]
 
 	}
-	*results = messages.Serialize((uint16)(0), &replyMsg)
+	*result = messages.Serialize((uint16)(0), &replyMsg)
+	return nil
+}
+
+func (r *RPCReceiver) ListBoards(_ []string, result *[]byte) error {
+	// TODO: Implement.
+	return nil
+}
+
+func (r *RPCReceiver) ListThreadsForBoard(args []string, result *[]byte) error {
+	if len(args) < 1 {
+		return errors.New("no Board specified")
+	}
+	// TODO: Implement.
+	return nil
+}
+
+func (r *RPCReceiver) ListPostsForThread(args []string, result *[]byte) error {
+	if len(args) < 1 {
+		return errors.New("no Thread specified")
+	}
+	// TODO: Implement.
 	return nil
 }
 
@@ -38,7 +70,7 @@ func main() {
 		port = DEFAULT_PORT
 	}
 
-	receiver := new(RPCReceiver)
+	receiver := MakeRPCReceiver()
 	e := rpc.Register(receiver)
 	if e != nil {
 		panic(e)
