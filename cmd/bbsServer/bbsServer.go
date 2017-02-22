@@ -3,8 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/skyobject"
+	// "github.com/skycoin/cxo/data"
+	// "github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/mesh/messages"
 	// "io"
 	"log"
@@ -17,13 +17,13 @@ import (
 const DEFAULT_PORT = "1235"
 
 type RPCReceiver struct {
-	SkyObjects skyobject.ISkyObjects
+	I *BBSIndexer
 }
 
 func MakeRPCReceiver() (receiver *RPCReceiver) {
-	db := data.NewDB()
+	// db := data.NewDB()
 	receiver = &RPCReceiver{
-		SkyObjects: skyobject.SkyObjects(db),
+		I: MakeBBSIndexerSimple(),
 	}
 	return
 }
@@ -42,8 +42,25 @@ func (r *RPCReceiver) Greet(args []string, result *[]byte) error {
 	return nil
 }
 
+func (r *RPCReceiver) GenerateRandomData(_ []string, result *[]byte) error {
+	post1 := r.I.CreatePost("post1", "bla 111")
+	post2 := r.I.CreatePost("post2", "bla 222")
+	post3 := r.I.CreatePost("post3", "bla 333")
+	thread1 := r.I.AddThread("thread1", post1, post2)
+	thread2 := r.I.AddThread("thread2", post3)
+	thread3 := r.I.AddThread("thread3")
+	r.I.AddBoard("board1", thread1)
+	r.I.AddBoard("board2", thread2, thread3)
+
+	replyMsg := "Generated 3 posts, 3 threads and 2 boards."
+	*result = messages.Serialize((uint16)(0), &replyMsg)
+	return nil
+}
+
 func (r *RPCReceiver) ListBoards(_ []string, result *[]byte) error {
-	// TODO: Implement.
+	r.I.Load()
+	fmt.Printf("Listing %d boards.\n", len(r.I.Boards))
+	*result = messages.Serialize((uint16)(0), r.I.Boards)
 	return nil
 }
 

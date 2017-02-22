@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+type objectLink struct {
+	ID   string
+	Name string
+}
+
 func main() {
 	port := "1235"
 	if len(os.Args) >= 2 {
@@ -46,6 +51,22 @@ func commandDispatcher(rpcClient *RPCClient) bool {
 
 	case "hello":
 		hello(rpcClient, args)
+
+	case "generate_random_data":
+		generateRandomData(rpcClient)
+
+	case "list":
+		switch {
+		case len(args) < 1:
+			fmt.Printf("\nUnspecified arguments for 'list'.\n\n")
+			break
+
+		case args[0] == "boards":
+			listBoards(rpcClient)
+
+		default:
+			fmt.Printf("\nUnknown arguments for 'list': %v, type 'help' to get the list of available commands.\n\n", args)
+		}
 
 	default:
 		fmt.Printf("\nUnknown command: %s, type 'help' to get the list of available commands.\n\n", cmd)
@@ -97,4 +118,46 @@ func hello(client *RPCClient, args []string) {
 
 	fmt.Println(respMsg)
 
+}
+
+func listBoards(client *RPCClient) {
+	response, e := client.SendToRPC("ListBoards", []string{})
+	if e != nil {
+		fmt.Errorf("listBoards: %v", e)
+		return
+	}
+
+	var respArray []objectLink
+	e = messages.Deserialize(response, &respArray)
+	if e != nil {
+		fmt.Errorf("listBoards: %v", e)
+		return
+	}
+
+	switch {
+	case len(respArray) < 1:
+		fmt.Println("No boards to display.")
+
+	default:
+		fmt.Println("Listing", len(respArray), "boards:")
+		for _, v := range respArray {
+			fmt.Println("", "-", v.Name)
+		}
+	}
+}
+
+func generateRandomData(client *RPCClient) {
+	response, e := client.SendToRPC("GenerateRandomData", []string{})
+	if e != nil {
+		fmt.Errorf("generateRandomData: %v", e)
+		return
+	}
+
+	var respMsg string
+	e = messages.Deserialize(response, &respMsg)
+	if e != nil {
+		fmt.Errorf("generateRandomData: %v", e)
+	}
+
+	fmt.Println(respMsg)
 }
