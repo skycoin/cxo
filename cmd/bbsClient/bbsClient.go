@@ -3,9 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
-	// "github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/mesh/messages"
-	// "net/rpc"
 	"os"
 	"strings"
 )

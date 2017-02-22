@@ -28,6 +28,7 @@ type ISkyObjects interface {
 	SaveObject(schemaKey cipher.SHA256, obj interface{}) cipher.SHA256
 	SaveData(schemaKey cipher.SHA256, data []byte) cipher.SHA256
 	Get(key cipher.SHA256) ([]byte, bool)
+	GetRef(key cipher.SHA256) (cipher.SHA256, []byte)
 	Set(key cipher.SHA256, data []byte) error
 	Has(key cipher.SHA256) bool
 	Statistic() data.Statistic
@@ -57,6 +58,16 @@ func SkyObjects(ds data.IDataSource) *skyObjects {
 
 func (s *skyObjects) Get(key cipher.SHA256) ([]byte, bool) {
 	return s.ds.Get(key)
+}
+
+func (s *skyObjects) GetRef(key cipher.SHA256) (cipher.SHA256, []byte) {
+	byteArray, ok := s.ds.Get(key)
+	if ok == false {
+		return cipher.SHA256{}, nil
+	}
+	var ref href
+	encoder.DeserializeRaw(byteArray, &ref)
+	return ref.Type, ref.Data
 }
 
 func (s *skyObjects) Set(key cipher.SHA256, data []byte) error {

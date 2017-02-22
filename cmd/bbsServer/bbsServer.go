@@ -48,9 +48,8 @@ func (r *RPCReceiver) GenerateRandomData(_ []string, result *[]byte) error {
 	post3 := r.I.CreatePost("post3", "bla 333")
 	thread1 := r.I.AddThread("thread1", post1, post2)
 	thread2 := r.I.AddThread("thread2", post3)
-	thread3 := r.I.AddThread("thread3")
 	r.I.AddBoard("board1", thread1)
-	r.I.AddBoard("board2", thread2, thread3)
+	r.I.AddBoard("board2", thread2)
 
 	replyMsg := "Generated 3 posts, 3 threads and 2 boards."
 	*result = messages.Serialize((uint16)(0), &replyMsg)
@@ -115,22 +114,6 @@ func (r *RPCReceiver) ListPosts(args []string, result *[]byte) error {
 
 	return nil
 }
-
-// func (r *RPCReceiver) ListThreadsForBoard(args []string, result *[]byte) error {
-// 	if len(args) < 1 {
-// 		return errors.New("no Board specified")
-// 	}
-// 	// TODO: Implement.
-// 	return nil
-// }
-
-// func (r *RPCReceiver) ListPostsForThread(args []string, result *[]byte) error {
-// 	if len(args) < 1 {
-// 		return errors.New("no Thread specified")
-// 	}
-// 	// TODO: Implement.
-// 	return nil
-// }
 
 func main() {
 	port := os.Getenv("BBS_SERVER_PORT")

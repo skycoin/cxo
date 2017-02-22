@@ -26,6 +26,7 @@ func CreateBbs(dataSource data.IDataSource, security nodeManager.INodeSecurity) 
 
 func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 	sl := skyobject.NewArray(threads)
+	fmt.Println("[AddBoard] THREAD Href Array:", sl)
 	fmt.Println("Create threads")
 	bbs.Container.Save(&sl)
 	board := Board{Name: name, Threads: sl}

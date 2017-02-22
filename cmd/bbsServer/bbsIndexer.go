@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
-	// "github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
 	// "reflect"
+	// "bytes"
 	"github.com/skycoin/skycoin/src/cipher"
 	"strings"
 	// "github.com/skycoin/skycoin/src/mesh/messages"
@@ -24,10 +25,14 @@ type href struct {
 }
 
 type BBSIndexer struct {
-	BBS     *bbs.Bbs
+	BBS *bbs.Bbs
+
 	Boards  []objectLink
 	Threads []objectLink
 	Posts   []objectLink
+
+	BoardMap  map[string][]byte
+	ThreadMap map[string][]byte
 }
 
 func MakeBBSIndexer(bbsIn *bbs.Bbs) *BBSIndexer {
@@ -155,6 +160,11 @@ func (bi *BBSIndexer) isPostKey(key string) bool {
 	return false
 }
 
+type testHref struct {
+	Type cipher.SHA256
+	Data []byte
+}
+
 func (bi *BBSIndexer) loadBoards() {
 	c := bi.BBS.Container
 	schemaKey, _ := c.GetSchemaKey("Board")
@@ -163,6 +173,36 @@ func (bi *BBSIndexer) loadBoards() {
 		ref := skyobject.Href{Ref: k}
 		bi.Boards = append(bi.Boards, objectLink{ID: k.Hex(), Name: ref.String(c)})
 	}
+
+	// TEST 1 >>>
+	fmt.Println("\n<<< [START TEST 1] >>>")
+	for _, k := range keys {
+		fmt.Println("HASH:", k.Hex())
+
+		_, byteArray := c.GetRef(k)
+
+		// fmt.Println("HREF:", string(refTest.Data))
+
+		var boardTest bbs.Board
+		encoder.DeserializeRaw(byteArray, &boardTest)
+
+		fmt.Println("BOARD:", boardTest.Name)
+	}
+	fmt.Println("<<< [  END TEST 1] >>>\n")
+
+	// TEST 2 >>>
+	fmt.Println("\n<<< [START TEST 2] >>>")
+	for _, k := range keys {
+		fmt.Println("", "HASH:", k.Hex())
+
+		var ref = skyobject.Href{Ref: k}
+		infoMap := ref.References(c)
+
+		for k2, i := range infoMap {
+			fmt.Println("[infoMap value] k:", k2.Hex(), ", i:", i)
+		}
+	}
+	fmt.Println("<<< [  END TEST 2] >>>\n")
 }
 
 func (bi *BBSIndexer) loadThreads() {
