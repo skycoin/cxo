@@ -1,8 +1,6 @@
 package node
 
 import (
-	"log"
-
 	"github.com/satori/go.uuid"
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -33,82 +31,6 @@ func init() {
 		hsSuccess{})
 
 	gnet.VerifyMessages()
-}
-
-//
-// Handshakes
-//
-
-// inflow -> feed (question { inflow_pubKey, inflow_question })
-// feed -> inflow (qa { feed_pubKey, feed_question, inflow_answer, })
-// inflow -> feed (answer { feed_answer })
-// feed -> inflow (success { "success" })
-
-//
-// handshake processing
-//
-
-type hsp struct {
-	// steps
-	// inflow:
-	//   0 - send question
-	//   1 - receive qa
-	//   2 - receive success
-	// feed:
-	//   0 - receive question
-	//   1 - receive answer
-	step     int           // handshake step (from 0)
-	question uuid.UUID     // my question
-	pub      cipher.PubKey // remote public key
-}
-
-// inflow -> feed
-// pub is local (inflow's) public key
-// qusetion is generated automatically and stored in hsp
-func (h *hsp) hsQuestion(n Node) *hsQuestion {
-
-	h.step++ // next step
-	h.question = uuid.NewV4()
-
-	return &hsQuestion{
-		PubKey:   n.PubKey(), // public key of inflow
-		Question: h.question, // inflow->feed question
-	}
-}
-
-// feed -> inflow
-// q is received hsQuestion
-// question for remote inflow node generated automatically and stored in hsp
-func (h *hsp) hsQuestionAnswer(q *hsQuestion, n Node) *hsQuestionAnswer {
-
-	h.step++ // next step
-	h.question = uuid.NewV4()
-
-	return &hsQuestionAnswer{
-		PubKey:   n.PubKey(), // public key of feed
-		Question: h.question, // feed->inflow question
-		Answer: n.Sign(
-			cipher.SumSHA256(q.Question.Bytes())), // feed->inflow answer
-	}
-}
-
-// inflow -> feed
-// qa is received hsQuestionAnswer
-// answer for received hsQuestionAnswer,
-func (h *hsp) hsAnswer(qa *hsQuestionAnswer, n Node) *hsAnswer {
-
-	h.step++ // next step
-
-	return &hsAnswer{
-		Answer: n.Sign(
-			cipher.SumSHA256(qa.Question.Bytes())), // inflow->feed answer
-	}
-}
-
-// feed -> inflow
-// success report (hsAnswer is correct)
-func (*hsp) hsSuccess() *hsSuccess {
-	return &hsSuccess{}
 }
 
 // hsQuestion is initial handshake message that
@@ -162,12 +84,196 @@ func getNodeFromState(ni interface{}) (node Node) {
 	var ok bool
 
 	if node, ok = ni.(Node); !ok {
-		log.Panicf("state of pool doesn't set to Node: %T", ni)
+		panic("state of pool doesn't set to Node")
 	}
 
 	if node == nil {
-		log.Panic("state of pool is nil")
+		panic("state of pool is nil")
 	}
 
 	return
+}
+
+// handled by feed
+func (n *node) hsQuestion(q *hsQuestion, ctx *gnet.MessageContext) error {
+	n.Debugf("got handshake question from %v, public key of wich is %s",
+		ctx.Conn.Conn.RemoteAddr(),
+		q.PubKey.Hex())
+
+	var (
+		c  *conn
+		ok bool
+	)
+	n.backmx.RLock()
+	defer n.backmx.RUnlock()
+	if c, ok = n.back[ctx.Conn]; !ok {
+		return ErrUnexpectedHandshake // terminate
+	}
+	// hsQuestion must be handled by feed
+	if !c.isFeed() || !c.isPending() {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake step
+	if c.step != hsStepInit {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake message
+	if q.PubKey == (cipher.PubKey{}) || q.Question == (uuid.UUID{}) {
+		return ErrMalformedHandshake // terminate connection
+	}
+	c.pub = q.PubKey
+	// answer and question
+	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, c.QuestionAnswer(q, n))
+
+	return nil
+}
+
+// handled by inflow
+func (n *node) hsQuestionAnswer(qa *hsQuestionAnswer,
+	ctx *gnet.MessageContext) error {
+
+	n.Debugf(
+		"got handshake question-answer from %v, public key of wich is %s",
+		ctx.Conn.Conn.RemoteAddr(),
+		qa.PubKey.Hex())
+
+	var (
+		c  *conn
+		ok bool
+
+		err error
+	)
+	n.backmx.RLock()
+	defer n.backmx.RUnlock()
+	if c, ok = n.back[ctx.Conn]; !ok {
+		return ErrUnexpectedHandshake // terminate
+	}
+	// hsQuestionAnswer must be handled by inflow
+	if c.isFeed() || !c.isPending() {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake step
+	if c.step != hsStepSendQuestion {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake message
+	if qa.PubKey == (cipher.PubKey{}) ||
+		qa.Question == (uuid.UUID{}) ||
+		qa.Answer == (cipher.Sig{}) {
+		return ErrMalformedHandshake // terminate connection
+	}
+	// desired public key
+	if c.pub != (cipher.PubKey{}) && qa.PubKey != c.pub {
+		return ErrPubKeyMismatch // terminate
+	}
+	c.pub = qa.PubKey
+	//
+	// verify answer
+	err = cipher.VerifySignature(
+		qa.PubKey,
+		qa.Answer,
+		cipher.SumSHA256(c.quest.Bytes()))
+	if err != nil {
+		return gnet.DisconnectReason(err) // terminate connection
+	}
+	// answer and question
+	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, c.Answer(qa, n))
+
+	return nil
+}
+
+// handled by feed
+func (n *node) hsAnswer(a *hsAnswer, ctx *gnet.MessageContext) error {
+
+	n.Debugf("got handshake answer from %v",
+		ctx.Conn.Conn.RemoteAddr())
+
+	var (
+		c  *conn
+		ok bool
+
+		err error
+	)
+	n.backmx.RLock()
+	defer n.backmx.RUnlock()
+	if c, ok = n.back[ctx.Conn]; !ok {
+		return ErrUnexpectedHandshake // terminate
+	}
+	// hsAnswer must be handled by feed
+	if !c.isFeed() || !c.isPending() {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake step
+	if c.step != hsStepSendQA {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake message
+	if a.Answer == (cipher.Sig{}) {
+		return ErrMalformedHandshake // terminate connection
+	}
+	// verify answer
+	err = cipher.VerifySignature(
+		c.pub,    // remote public key
+		a.Answer, // received answer
+		cipher.SumSHA256(c.quest.Bytes())) // my question hash
+	if err != nil {
+		return gnet.DisconnectReason(err) // terminate connection
+	}
+	// do we already have the public key?
+	for _, bc := range n.back {
+		if !bc.isFeed() || bc.isPending() || bc.pub != c.pub {
+			continue
+		}
+		// we alrady have a subscriber with the same public key
+		return ErrAlreadyConnected
+	}
+	// established
+	c.step = hsStepSuccess
+	close(c.done)
+	// success, yay!
+	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, c.Success(n))
+
+	return nil
+}
+
+// handled by inflow
+func (n *node) hsSuccess(s *hsSuccess, ctx *gnet.MessageContext) error {
+
+	n.Debugf("got handshake success from %v",
+		ctx.Conn.Conn.RemoteAddr())
+
+	var (
+		c  *conn
+		ok bool
+	)
+	n.backmx.RLock()
+	defer n.backmx.RUnlock()
+	if c, ok = n.back[ctx.Conn]; !ok {
+		return ErrUnexpectedHandshake // terminate
+	}
+	// hsSucces must be handled by inflow
+	if c.isFeed() || !c.isPending() {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// check handshake step
+	if c.step != 3 {
+		return ErrUnexpectedHandshake // terminate connection
+	}
+	// do we already have the public key?
+	for _, bc := range n.back {
+		if bc.isFeed() || bc.isPending() || bc.pub != c.pub {
+			continue
+		}
+		// we alrady have a subscription with the same public key
+		return ErrAlreadyConnected
+	}
+	// established
+	c.step = hsStepSuccess
+	close(c.done)
+	n.Debugf("handshake success: %v",
+		ctx.Conn.Conn.RemoteAddr())
+	// success, yay!
+	// no more handshake messages
+
+	return nil
 }

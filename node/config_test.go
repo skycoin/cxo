@@ -16,8 +16,7 @@ func TestNewConfig(t *testing.T) {
 	}
 	if c.Address != ADDRESS ||
 		c.Port != PORT ||
-		c.MaxIncomingConnections != MAX_INCOMING_CONNECTIONS ||
-		c.MaxOutgoingConnections != MAX_OUTGOING_CONNECTIONS ||
+		c.MaxConnections != MAX_CONNECTIONS ||
 		c.MaxMessageLength != MAX_MESSAGE_LENGTH ||
 		c.DialTimeout != DIAL_TIMEOUT ||
 		c.ReadTimeout != READ_TIMEOUT ||
@@ -25,7 +24,9 @@ func TestNewConfig(t *testing.T) {
 		c.EventChannelSize != EVENT_CHANNEL_SIZE ||
 		c.BroadcastResultSize != BROADCAST_RESULT_SIZE ||
 		c.ConnectionWriteQueueSize != CONNECTION_WRITE_QUEUE_SIZE ||
-		c.HandshakeTimeout != HANDSHAKE_TIMEOUT {
+		c.HandshakeTimeout != HANDSHAKE_TIMEOUT ||
+		c.Name != NAME ||
+		c.Debug != DEBUG {
 		t.Error("wrong default values for NewConfig")
 	}
 }
@@ -33,8 +34,9 @@ func TestNewConfig(t *testing.T) {
 func TestConfig_FromFlags(t *testing.T) {
 	// local
 	const (
-		ADDRESS                     = "192.168.0.1"
-		PORT                        = "1599"
+		ADDRESS = "192.168.0.1"
+		PORT    = "1599"
+
 		MAX_INCOMING_CONNECTIONS    = "666"
 		MAX_OUTGOING_CONNECTIONS    = "777"
 		MAX_MESSAGE_LENGTH          = "20"
@@ -45,6 +47,11 @@ func TestConfig_FromFlags(t *testing.T) {
 		BROADCAST_RESULT_SIZE       = "22"
 		CONNECTION_WRITE_QUEUE_SIZE = "23"
 		HANDSHAKE_TIMEOUT           = "8s"
+
+		NAME  = "x-name"
+		DEBUG = "f"
+
+		SECRET_KEY = "[secret]"
 	)
 
 	c := NewConfig()
@@ -63,6 +70,13 @@ func TestConfig_FromFlags(t *testing.T) {
 	flag.Set("conn-write-queue-size", CONNECTION_WRITE_QUEUE_SIZE)
 	flag.Set("ht", HANDSHAKE_TIMEOUT)
 
+	flag.Set("ht", HANDSHAKE_TIMEOUT)
+
+	flag.Set("name", NAME)
+	flag.Set("d", DEBUG)
+
+	flag.Set("sec", SECRET_KEY)
+
 	// namespace isolation
 	func(c *Config) {
 		const (
@@ -78,11 +92,14 @@ func TestConfig_FromFlags(t *testing.T) {
 			BROADCAST_RESULT_SIZE       = 22
 			CONNECTION_WRITE_QUEUE_SIZE = 23
 			HANDSHAKE_TIMEOUT           = 8 * time.Second
+
+			NAME       = "x-name"
+			DEBUG      = false
+			SECRET_KEY = "[secret]"
 		)
 		if c.Address != ADDRESS ||
 			c.Port != PORT ||
-			c.MaxIncomingConnections != MAX_INCOMING_CONNECTIONS ||
-			c.MaxOutgoingConnections != MAX_OUTGOING_CONNECTIONS ||
+			c.MaxConnections != MAX_CONNECTIONS ||
 			c.MaxMessageLength != MAX_MESSAGE_LENGTH ||
 			c.DialTimeout != DIAL_TIMEOUT ||
 			c.ReadTimeout != READ_TIMEOUT ||
@@ -90,7 +107,10 @@ func TestConfig_FromFlags(t *testing.T) {
 			c.EventChannelSize != EVENT_CHANNEL_SIZE ||
 			c.BroadcastResultSize != BROADCAST_RESULT_SIZE ||
 			c.ConnectionWriteQueueSize != CONNECTION_WRITE_QUEUE_SIZE ||
-			c.HandshakeTimeout != HANDSHAKE_TIMEOUT {
+			c.HandshakeTimeout != HANDSHAKE_TIMEOUT ||
+			c.Name != NAME ||
+			c.Debug != DEBUG ||
+			c.SecretKey != SECRET_KEY {
 			t.Error("wrong configs given from flags")
 			t.Log(c.HumanString())
 		}
@@ -98,10 +118,10 @@ func TestConfig_FromFlags(t *testing.T) {
 
 }
 
-func cmpConfigGnetConfig(c *Config, gc *gnet.Config, mc int) bool {
+func cmpConfigGnetConfig(c *Config, gc *gnet.Config) bool {
 	return gc.Address == c.Address ||
 		gc.Port == uint16(c.Port) ||
-		gc.MaxConnections == mc ||
+		gc.MaxConnections == c.MaxConnections ||
 		gc.MaxMessageLength == c.MaxMessageLength ||
 		gc.DialTimeout == c.DialTimeout ||
 		gc.ReadTimeout == c.ReadTimeout ||
@@ -118,28 +138,8 @@ func TestConfig_gnetConfig(t *testing.T) {
 		c  *Config     = NewConfig()
 		gc gnet.Config = c.gnetConfig()
 	)
-	if !cmpConfigGnetConfig(c, &gc, 0) {
+	if !cmpConfigGnetConfig(c, &gc) {
 		t.Error("(*Config).gnetConfig returns wrong result")
-	}
-}
-
-func TestConfig_gnetConfigInflow(t *testing.T) {
-	var (
-		c  *Config     = NewConfig()
-		gc gnet.Config = c.gnetConfig()
-	)
-	if !cmpConfigGnetConfig(c, &gc, c.MaxIncomingConnections) {
-		t.Error("(*Config).gnetConfigInflow returns wrong result")
-	}
-}
-
-func TestConfig_gnetConfigFeed(t *testing.T) {
-	var (
-		c  *Config     = NewConfig()
-		gc gnet.Config = c.gnetConfig()
-	)
-	if !cmpConfigGnetConfig(c, &gc, c.MaxOutgoingConnections) {
-		t.Error("(*Config).gnetConfigFeed returns wrong result")
 	}
 }
 
@@ -159,6 +159,32 @@ func TestConfig_humanAddress(t *testing.T) {
 		t.Error("(*Config).humanAddress doen't returns 'auto'" +
 			" if address is empty")
 	}
+}
+
+func TestConfig_humanSecretKey(t *testing.T) {
+	c := NewConfig()
+	t.Run("debug true", func(t *testing.T) {
+		c.Debug = true
+		c.SecretKey = "very_secret"
+		if s := c.humanSecretKey(); s != "very_secret" {
+			t.Errorf("wrong value: want %q, got %q", "very_secret", s)
+		}
+		c.SecretKey = ""
+		if s := c.humanSecretKey(); s != "[not provided]" {
+			t.Errorf("wrong value: want %q, got %q", "[not provided]", s)
+		}
+	})
+	t.Run("debug false", func(t *testing.T) {
+		c.Debug = false
+		c.SecretKey = "very_secret"
+		if s := c.humanSecretKey(); s != "[hidden]" {
+			t.Errorf("wrong value: want %q, got %q", "[hidden]", s)
+		}
+		c.SecretKey = ""
+		if s := c.humanSecretKey(); s != "[hidden]" {
+			t.Errorf("wrong value: want %q, got %q", "[hidden]", s)
+		}
+	})
 }
 
 func Test_humanInt(t *testing.T) {
@@ -189,10 +215,9 @@ func ExampleConfig_HumanString() {
 
 	// Output:
 	//
-	// 	address:                     127.0.0.1
-	// 	port:                        7899
-	// 	max subscriptions:           unlimited
-	// 	max subscribers:             unlimited
+	// 	address:                     auto
+	// 	port:                        auto
+	// 	max connections:             unlimited
 	// 	max message length:          8192
 	// 	dial timeout:                20s
 	// 	read timeout:                unlimited
@@ -202,4 +227,8 @@ func ExampleConfig_HumanString() {
 	// 	connection write queue size: 20
 	//
 	// 	handshake timeout:           20s
+	//
+	// 	name:                        node
+	// 	secret key:                  [not provided]
+
 }

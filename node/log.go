@@ -1,6 +1,7 @@
 package node
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -45,19 +46,19 @@ func NewLogger(prefix string, debug bool) Logger {
 
 func (l *logger) Debug(args ...interface{}) {
 	if l.debug {
-		l.Print(args...)
+		l.Output(2, fmt.Sprint(args...))
 	}
 }
 
 func (l *logger) Debugln(args ...interface{}) {
 	if l.debug {
-		l.Println(args...)
+		l.Output(2, fmt.Sprintln(args...))
 	}
 }
 
 func (l *logger) Debugf(format string, args ...interface{}) {
 	if l.debug {
-		l.Printf(format, args...)
+		l.Output(2, fmt.Sprintf(format, args...))
 	}
 }
 
