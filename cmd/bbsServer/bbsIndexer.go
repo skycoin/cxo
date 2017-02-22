@@ -7,12 +7,20 @@ import (
 	// "github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
-	// "github.com/skycoin/skycoin/src/cipher"
+	// "reflect"
+	"github.com/skycoin/skycoin/src/cipher"
+	"strings"
+	// "github.com/skycoin/skycoin/src/mesh/messages"
 )
 
 type objectLink struct {
 	ID   string
 	Name string
+}
+
+type href struct {
+	Type cipher.SHA256
+	Data []byte
 }
 
 type BBSIndexer struct {
@@ -71,6 +79,80 @@ func (bi *BBSIndexer) Load() {
 	bi.loadThreads()
 	bi.loadPosts()
 	fmt.Printf("Generated: %d Boards, %d Threads, %d Posts.\n", len(bi.Boards), len(bi.Threads), len(bi.Posts))
+}
+
+func (bi *BBSIndexer) GetThreadsFromBoard(key string) (threads []objectLink, e error) {
+	c := bi.BBS.Container
+	bi.Load()
+
+	boardKey, e := cipher.SHA256FromHex(key)
+	if e != nil {
+		return
+	}
+
+	ref := skyobject.Href{Ref: boardKey}
+	threadKeyMap := ref.References(c)
+
+	for k, _ := range threadKeyMap {
+		threadRef := skyobject.Href{Ref: k}
+		if key = k.Hex(); bi.isThreadKey(key) {
+			threads = append(threads, objectLink{ID: key, Name: threadRef.String(c)})
+		}
+	}
+
+	return
+}
+
+func (bi *BBSIndexer) GetPostsFromThread(key string) (posts []objectLink, e error) {
+	c := bi.BBS.Container
+	bi.Load()
+
+	threadKey, e := cipher.SHA256FromHex(key)
+	if e != nil {
+		return
+	}
+
+	ref := skyobject.Href{Ref: threadKey}
+	postKeyMap := ref.References(c)
+
+	for k, _ := range postKeyMap {
+		postRef := skyobject.Href{Ref: k}
+		if key = k.Hex(); bi.isPostKey(key) {
+			posts = append(posts, objectLink{ID: key, Name: postRef.String(c)})
+		}
+	}
+
+	return
+}
+
+func (bi *BBSIndexer) isBoardKey(key string) bool {
+	key = strings.TrimSpace(key)
+	for _, v := range bi.Boards {
+		if key == v.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func (bi *BBSIndexer) isThreadKey(key string) bool {
+	key = strings.TrimSpace(key)
+	for _, v := range bi.Threads {
+		if key == v.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func (bi *BBSIndexer) isPostKey(key string) bool {
+	key = strings.TrimSpace(key)
+	for _, v := range bi.Posts {
+		if key == v.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func (bi *BBSIndexer) loadBoards() {

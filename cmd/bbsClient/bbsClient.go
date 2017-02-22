@@ -52,7 +52,7 @@ func commandDispatcher(rpcClient *RPCClient) bool {
 	case "hello":
 		hello(rpcClient, args)
 
-	case "generate_random_data":
+	case "random":
 		generateRandomData(rpcClient)
 
 	case "list":
@@ -63,6 +63,12 @@ func commandDispatcher(rpcClient *RPCClient) bool {
 
 		case args[0] == "boards":
 			listBoards(rpcClient)
+
+		case args[0] == "threads":
+			listThreads(rpcClient, args[1:])
+
+		case args[0] == "posts":
+			listPosts(rpcClient, args[1:])
 
 		default:
 			fmt.Printf("\nUnknown arguments for 'list': %v, type 'help' to get the list of available commands.\n\n", args)
@@ -107,13 +113,13 @@ func printHelp() {
 func hello(client *RPCClient, args []string) {
 	response, e := client.SendToRPC("Greet", args)
 	if e != nil {
-		fmt.Errorf("hello: %v", e)
+		fmt.Println("ERROR:", e)
 	}
 
 	var respMsg string
 	e = messages.Deserialize(response, &respMsg)
 	if e != nil {
-		fmt.Errorf("hello: %v", e)
+		fmt.Println("ERROR:", e)
 	}
 
 	fmt.Println(respMsg)
@@ -123,14 +129,14 @@ func hello(client *RPCClient, args []string) {
 func listBoards(client *RPCClient) {
 	response, e := client.SendToRPC("ListBoards", []string{})
 	if e != nil {
-		fmt.Errorf("listBoards: %v", e)
+		fmt.Println("ERROR:", e)
 		return
 	}
 
 	var respArray []objectLink
 	e = messages.Deserialize(response, &respArray)
 	if e != nil {
-		fmt.Errorf("listBoards: %v", e)
+		fmt.Println("ERROR:", e)
 		return
 	}
 
@@ -146,17 +152,69 @@ func listBoards(client *RPCClient) {
 	}
 }
 
+func listThreads(client *RPCClient, args []string) {
+	response, e := client.SendToRPC("ListThreads", args)
+	if e != nil {
+		fmt.Println("ERROR:", e)
+		return
+	}
+
+	var respArray []objectLink
+	e = messages.Deserialize(response, &respArray)
+	if e != nil {
+		fmt.Println("ERROR:", e)
+		return
+	}
+
+	switch {
+	case len(respArray) < 1:
+		fmt.Println("No threads to display.")
+
+	default:
+		fmt.Println("Listing", len(respArray), "threads:")
+		for _, v := range respArray {
+			fmt.Println("", "-", v.Name)
+		}
+	}
+}
+
+func listPosts(client *RPCClient, args []string) {
+	response, e := client.SendToRPC("ListPosts", args)
+	if e != nil {
+		fmt.Println("ERROR:", e)
+		return
+	}
+
+	var respArray []objectLink
+	e = messages.Deserialize(response, &respArray)
+	if e != nil {
+		fmt.Println("ERROR:", e)
+		return
+	}
+
+	switch {
+	case len(respArray) < 1:
+		fmt.Println("No posts to display.")
+
+	default:
+		fmt.Println("Listing", len(respArray), "posts:")
+		for _, v := range respArray {
+			fmt.Println("", "-", v.Name)
+		}
+	}
+}
+
 func generateRandomData(client *RPCClient) {
 	response, e := client.SendToRPC("GenerateRandomData", []string{})
 	if e != nil {
-		fmt.Errorf("generateRandomData: %v", e)
+		fmt.Println("ERROR:", e)
 		return
 	}
 
 	var respMsg string
 	e = messages.Deserialize(response, &respMsg)
 	if e != nil {
-		fmt.Errorf("generateRandomData: %v", e)
+		fmt.Println("ERROR:", e)
 	}
 
 	fmt.Println(respMsg)
