@@ -105,8 +105,17 @@ func printHelp() {
 	fmt.Println("HELP")
 	fmt.Println("=====================\n")
 
-	fmt.Println("help\t\tprints help.")
-	fmt.Println("hello X\t\tsends a hello.")
+	fmt.Println("help\t\tprints help.\n")
+
+	fmt.Println("hello X\t\tsends a hello to X.")
+	fmt.Println("random\t\tadds random data (boards, threads and posts).\n")
+
+	fmt.Println("list boards\t\tlists all boards as keys.")
+	fmt.Println("list threads\t\tlists all threads as keys.")
+	fmt.Println("list threads X\t\tlists all threads of board X as keys.")
+	fmt.Println("list posts\t\tlists all posts as IDs.")
+	fmt.Println("list posts X\t\tlists all posts of thread X as keys.\n")
+
 	fmt.Println("exit (or quit)\t\tcloses the terminal.\n")
 }
 
