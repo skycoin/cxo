@@ -33,7 +33,7 @@ type ISkyObjects interface {
 	GetRef(key cipher.SHA256) href
 	GetObject(key cipher.SHA256) (cipher.SHA256, []byte)
 	GetField(objType cipher.SHA256, objData []byte, fieldName string) cipher.SHA256
-	GetArray(key cipher.SHA256, typeName string) [][]byte
+	GetMap(key cipher.SHA256, typeName string) map[cipher.SHA256][]byte
 	Set(key cipher.SHA256, data []byte) error
 	Has(key cipher.SHA256) bool
 	Statistic() data.Statistic
@@ -85,14 +85,20 @@ func (s *skyObjects) GetField(objType cipher.SHA256, objData []byte, fieldName s
 	return
 }
 
-func (s *skyObjects) GetArray(key cipher.SHA256, typeName string) (dataArray [][]byte) {
+// func (s *skyObjects) GetArray(key cipher.SHA256, typeName string) (keys []cipher.SHA256) {
+// 	ref := Href{Ref: key}
+// 	refMap := ref.Children(s) // ___________________________________________________________kfenelskfnlesfnelsknf
+// }
+
+func (s *skyObjects) GetMap(key cipher.SHA256, typeName string) (dataMap map[cipher.SHA256][]byte) {
+	dataMap = make(map[cipher.SHA256][]byte)
 	ref := Href{Ref: key}
 	refMap := ref.Children(s)
 
 	for k, _ := range refMap {
 		typ, data := s.GetObject(k)
 		if s.GetSchemaFromKey(typ).Name == typeName {
-			dataArray = append(dataArray, data)
+			dataMap[k] = data
 		}
 	}
 

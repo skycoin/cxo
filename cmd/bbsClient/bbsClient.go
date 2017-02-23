@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/skycoin/src/mesh/messages"
 	"os"
 	"strings"
@@ -136,14 +137,14 @@ func hello(client *RPCClient, args []string) {
 func listBoards(client *RPCClient) {
 	response, e := client.SendToRPC("ListBoards", []string{})
 	if e != nil {
-		fmt.Println("ERROR:", e)
+		fmt.Println(e)
 		return
 	}
 
-	var respArray []objectLink
+	var respArray []bbs.Board
 	e = messages.Deserialize(response, &respArray)
 	if e != nil {
-		fmt.Println("ERROR:", e)
+		fmt.Println(e)
 		return
 	}
 
@@ -162,14 +163,14 @@ func listBoards(client *RPCClient) {
 func listThreads(client *RPCClient, args []string) {
 	response, e := client.SendToRPC("ListThreads", args)
 	if e != nil {
-		fmt.Println("ERROR:", e)
+		fmt.Println(e)
 		return
 	}
 
-	var respArray []objectLink
+	var respArray []bbs.Thread
 	e = messages.Deserialize(response, &respArray)
 	if e != nil {
-		fmt.Println("ERROR:", e)
+		fmt.Println(e)
 		return
 	}
 
