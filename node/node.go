@@ -3,7 +3,6 @@ package node
 import (
 	"errors"
 	"reflect"
-	"sync"
 	"time"
 
 	uuid "github.com/satori/go.uuid"
@@ -52,6 +51,46 @@ var (
 		"got mesage that doesn't implements Outgoing")
 )
 
+type Node interface {
+	Logger
+
+	Incoming() Incoming // manage incoming connections
+	Outgoing() Outgoing // manage outgoing connections
+
+	PubKey() cipher.PubKey
+	Sign(hash cipher.SHA256) cipher.Sig
+
+	// Start launches node and block current goroutine.
+	// It returns when node is closed or if some error occured
+	Start() error
+	// Close stops node
+	Close()
+
+	// Register registers type of mesages that conections can handle.
+	// The method panics if given msg is invalid or given twice.
+	// It's not safe to use the methos async (its designed to
+	// register all types before start). Also, there's no way
+	// to clean up registry
+	Register(msg interface{})
+
+	//
+	// internals
+	//
+
+	pend(*gnet.Connection) (*pendingConnection, bool)
+
+	// remote public key, is incoming and error
+	handleMessage(*gnet.Connection) (pub cipher.PubKey,
+		incoming bool,
+		err error)
+
+	addOutgoing(gc *gnet.Connection, pub cipher.PubKey) error
+	addIncoming(gc *gnet.Connection, pub cipher.PubKey) error
+
+	encode(msg interface{}) (m *Msg, err error)
+	decode(body []byte) (msg interface{}, err error)
+}
+
 type connectEvent struct {
 	gc       *gnet.Connection
 	outgoing bool
@@ -66,8 +105,6 @@ type pendingConnection struct {
 }
 
 type node struct {
-	sync.Mutex
-
 	Logger
 
 	conf Config // local copy
@@ -83,7 +120,6 @@ type node struct {
 
 	pool *gnet.ConnectionPool
 
-	// remote address -> conn
 	pending            map[*gnet.Connection]*pendingConnection
 	onConnectEventChan chan connectEvent
 
@@ -181,43 +217,13 @@ func (n *node) lookupHandshakeTime() {
 	}
 }
 
-type Node interface {
-	Logger
-
-	Incoming() Incoming // manage incoming connections
-	Outgoing() Outgoing // manage outgoing connections
-
-	PubKey() cipher.PubKey
-	Sign(hash cipher.SHA256) cipher.Sig
-
-	// Start launches node and block current goroutine.
-	// It returns when node is closed or if some error occured
-	Start() error
-	// Close stops node
-	Close()
-
-	//
-	// internals
-	//
-
-	pend(*gnet.Connection) (*pendingConnection, bool)
-
-	// remote public key, is incoming and error
-	handleMessage(*gnet.Connection) (pub cipher.PubKey,
-		incoming bool,
-		err error)
-
-	addOutgoing(gc *gnet.Connection, pub cipher.PubKey) error
-	addIncoming(gc *gnet.Connection, pub cipher.PubKey) error
-
-	encode(msg interface{}) (m *Msg, err error)
-	decode(body []byte) (msg interface{}, err error)
-}
-
 // NewNode creates new Node using given Configs
 // and secret key
 func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
-	var nd *node
+	var (
+		nd *node
+		gc gnet.Config
+	)
 
 	if err = conf.Validate(); err != nil {
 		return
@@ -230,7 +236,7 @@ func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
 
 	nd = new(node)
 
-	nd.Logger = NewLogger(conf.Name, conf.Debug)
+	nd.Logger = NewLogger("["+conf.Name+"] ", conf.Debug)
 	nd.conf = conf
 
 	nd.pub = cipher.PubKeyFromSecKey(sec)
@@ -240,6 +246,11 @@ func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
 
 	nd.incomingTypes = make(map[typereg.Type]struct{})
 	nd.outgoingTypes = make(map[typereg.Type]struct{})
+
+	gc = conf.gnetConfig()
+
+	gc.ConnectCallback = nd.onGnetConnect
+	gc.DisconnectCallback = nd.onGnetDisconnect
 
 	nd.pool = gnet.NewConnectionPool(conf.gnetConfig(), nd)
 
@@ -323,8 +334,7 @@ func (n *node) addIncoming(gc *gnet.Connection, pub cipher.PubKey) error {
 // start blocks
 func (n *node) Start() (err error) {
 	n.Print("[INF] start node")
-	n.Debug("[DBG]")
-	n.Debug(n.conf.HumanString())
+	n.Debug("[DBG] ", n.conf.HumanString())
 
 	n.quit = make(chan struct{})
 	n.done = make(chan struct{})
@@ -358,20 +368,25 @@ func (n *node) Start() (err error) {
 	}
 
 	if n.conf.MaxIncomingConnections > 0 {
+		n.Debugf("[DBG] start listener on: %s:%d", n.conf.Address, n.conf.Port)
 		if err = n.pool.StartListen(); err != nil {
 			n.Debug("[DBG] error starting listener: ", err)
 			return
 		}
+		go n.pool.AcceptConnections()
 	}
 
 	defer close(done)
 	defer n.pool.StopListen()
 
+	n.Debug("[DBG] start event loop")
 	for {
 		select {
 		case de = <-n.pool.DisconnectQueue:
+			n.Debug("[DBG] disconnect event")
 			n.pool.HandleDisconnectEvent(de)
 		case sr = <-n.pool.SendResults:
+			n.Debug("[DBG] send result event")
 			if sr.Error != nil {
 				n.Printf("[ERR] error sending message %s to %s: %v",
 					reflect.TypeOf(sr.Message).Name(),
@@ -381,11 +396,15 @@ func (n *node) Start() (err error) {
 		case <-handleMsgTicker.C:
 			n.pool.HandleMessages()
 		case <-handshakeTimeoutChan:
+			n.Debug("[DBG] lookup handshake tick")
 			n.lookupHandshakeTime()
 		case ce = <-n.onConnectEventChan:
+			n.Debug("[DBG] connect event")
 			n.onConnectEvent(ce)
 		case <-n.lockChan:
+			n.Debug("[DBG] lock chan")
 			<-n.unlockChan
+			n.Debug("[DBG] unlock chan")
 		case <-quit:
 			n.Debug("[DBG] quiting start loop")
 			return
@@ -446,4 +465,8 @@ func (n *node) encode(msg interface{}) (m *Msg, err error) {
 
 func (n *node) decode(body []byte) (msg interface{}, err error) {
 	return n.registry.Decode(body)
+}
+
+func (n *node) Register(msg interface{}) {
+	n.registry.Register(msg)
 }

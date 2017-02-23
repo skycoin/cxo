@@ -114,6 +114,12 @@ func TestConfig_Validate(t *testing.T) {
 				c.MaxMessageLength)
 		}
 	})
+	t.Run("new config", func(t *testing.T) {
+		var c Config = NewConfig()
+		if err = c.Validate(); err != nil {
+			t.Error("NewConfig return invalid config: ", err)
+		}
+	})
 }
 
 func TestConfig_FromFlags(t *testing.T) {

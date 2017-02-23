@@ -1,11 +1,14 @@
 package node
 
 import (
+	"net"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
 type Incoming interface {
+	Address() (string, error)
 	Broadcast(msg interface{}) (err error) // broadcast msg to all subscribers
 	List() []Connection                    // list all incoming connections
 	Terminate(pub cipher.PubKey)           // terminate incoming connection
@@ -61,5 +64,14 @@ func (i incoming) Broadcast(msg interface{}) (err error) {
 	for gc = range i.incoming {
 		gc.ConnectionPool.SendMessage(gc, d)
 	}
+	return
+}
+
+func (i incoming) Address() (addr string, err error) {
+	var na net.Addr
+	if na, err = i.pool.ListeningAddress(); err != nil {
+		return
+	}
+	addr = na.String()
 	return
 }
