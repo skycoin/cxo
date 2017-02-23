@@ -2,7 +2,7 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 	"reflect"
 )
 
@@ -11,7 +11,7 @@ import (
 type HashArray Href
 
 func NewArray(items ...interface{}) HashArray {
-	h := HashArray{value:items}
+	h := HashArray{value: items}
 	h.rtype = encoder.Serialize(ReadSchema(HashArray{}))
 	return h
 }
@@ -46,7 +46,7 @@ func (h *HashArray) References(c ISkyObjects) RefInfoMap {
 	items := []cipher.SHA256{}
 	encoder.DeserializeRaw(h.rdata, &items)
 	for _, k := range items {
-		ref := Href{Ref:k}
+		ref := Href{Ref: k}
 		mergeRefs(result, ref.References(c))
 	}
 	return result

@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 	// "github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
 	// "strings"
+	// "errors"
 )
 
 type BBSIndexer struct {
@@ -97,13 +98,16 @@ func (bi *BBSIndexer) GetThreadsFromBoard(boardName string) (threads []bbs.Threa
 	// bi.Load()
 
 	// Get Board of name boardName.
-	var key cipher.SHA256
-
+	found, key := false, cipher.SHA256{}
 	for k, v := range bi.Boards {
 		if v.Name == boardName {
-			key = k
+			found, key = true, k
 			break
 		}
+	}
+	if found == false {
+		e = fmt.Errorf("board '%s' not found", boardName)
+		return
 	}
 
 	// Get Threads from Board.
@@ -125,13 +129,16 @@ func (bi *BBSIndexer) GetPostsFromThread(threadName string) (posts []bbs.Post, e
 	// bi.Load()
 
 	// Get Thread of name threadName.
-	var key cipher.SHA256
-
+	found, key := false, cipher.SHA256{}
 	for k, v := range bi.Threads {
 		if v.Name == threadName {
-			key = k
+			found, key = true, k
 			break
 		}
+	}
+	if found == false {
+		e = fmt.Errorf("thread %s not found", threadName)
+		return
 	}
 
 	// Get Posts from Thread.
@@ -147,90 +154,3 @@ func (bi *BBSIndexer) GetPostsFromThread(threadName string) (posts []bbs.Post, e
 
 	return
 }
-
-// func (bi *BBSIndexer) loadBoards() {
-// 	c := bi.BBS.Container
-// 	schemaKey, _ := c.GetSchemaKey("Board")
-// 	keys := c.GetAllBySchema(schemaKey)
-// 	for _, k := range keys {
-// 		ref := skyobject.Href{Ref: k}
-// 		bi.Boards = append(bi.Boards, objectLink{ID: k.Hex(), Name: ref.String(c)})
-// 	}
-
-// 	fmt.Println("\n[BOARDS]\n")
-// 	for _, k := range keys {
-// 		var boardExtract bbs.Board // <----------------------------------------- (BOARD)
-// 		boardType, boardData := c.GetObject(k)
-// 		encoder.DeserializeRaw(boardData, &boardExtract)
-// 		bi.BoardMap[boardExtract.Name] = k
-
-// 		var threadsExtract []bbs.Thread // <------------------------------------ (CHILDREN THREADS)
-// 		threadsKey := c.GetField(boardType, boardData, "Threads")
-// 		threadDataArray := c.GetArray(threadsKey, "Thread")
-
-// 		for _, threadData := range threadDataArray {
-// 			var threadExtract bbs.Thread // <----------------------------------- (CHILD THREAD)
-// 			encoder.DeserializeRaw(threadData, &threadExtract)
-// 			threadsExtract = append(threadsExtract, threadExtract)
-// 		}
-
-// 		fmt.Println(boardExtract.Name)
-// 		for _, v := range threadsExtract {
-// 			fmt.Println("", "-", v.Name)
-// 		}
-// 	}
-// }
-
-// func (bi *BBSIndexer) loadThreads() {
-// 	c := bi.BBS.Container
-// 	schemaKey, _ := c.GetSchemaKey("Thread")
-// 	keys := c.GetAllBySchema(schemaKey)
-// 	for _, k := range keys {
-// 		ref := skyobject.Href{Ref: k}
-// 		bi.Threads = append(bi.Threads, objectLink{ID: k.Hex(), Name: ref.String(c)})
-// 	}
-
-// 	fmt.Println("\n[THREADS]\n")
-// 	for _, k := range keys {
-// 		var threadExtract bbs.Thread // <--------------------------------------- (THREAD)
-// 		threadType, threadData := c.GetObject(k)
-// 		encoder.DeserializeRaw(threadData, &threadExtract)
-// 		bi.ThreadMap[threadExtract.Name] = k
-
-// 		var postsExtract []bbs.Post // <---------------------------------------- (CHILDREN POSTS)
-// 		postsKey := c.GetField(threadType, threadData, "Posts")
-// 		postDataArray := c.GetArray(postsKey, "Post")
-
-// 		for _, postData := range postDataArray {
-// 			var postExtract bbs.Post // <--------------------------------------- (CHILD POST)
-// 			encoder.DeserializeRaw(postData, &postExtract)
-// 			postsExtract = append(postsExtract, postExtract)
-// 		}
-
-// 		fmt.Println(threadExtract.Name)
-// 		for _, v := range postsExtract {
-// 			fmt.Println("", "-", v.Header)
-// 		}
-// 	}
-// }
-
-// func (bi *BBSIndexer) loadPosts() {
-// 	c := bi.BBS.Container
-// 	schemaKey, _ := c.GetSchemaKey("Post")
-// 	keys := c.GetAllBySchema(schemaKey)
-// 	for _, k := range keys {
-// 		ref := skyobject.Href{Ref: k}
-// 		bi.Posts = append(bi.Posts, objectLink{ID: k.Hex(), Name: ref.String(c)})
-// 	}
-
-// 	fmt.Println("\n[POSTS]\n")
-// 	for _, k := range keys {
-// 		var postExtract bbs.Post
-// 		_, postData := c.GetObject(k)
-// 		encoder.DeserializeRaw(postData, &postExtract)
-// 		bi.PostMap[postExtract.Header] = postExtract.Text
-
-// 		fmt.Println(postExtract.Header, "-", postExtract.Text)
-// 	}
-// 	fmt.Print('\n')
-// }

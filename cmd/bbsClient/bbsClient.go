@@ -33,6 +33,7 @@ func promptCycle(rpcClient *RPCClient) {
 
 func commandDispatcher(rpcClient *RPCClient) bool {
 	cmd, args := cliInput("\nEnter the command:\n>>> ")
+	fmt.Print("\n")
 
 	if cmd == "" {
 		return false

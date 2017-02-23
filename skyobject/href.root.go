@@ -2,7 +2,7 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 //var _rootSchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(ReadSchema(HashRoot{})))
@@ -16,7 +16,7 @@ type rootObject struct {
 type HashRoot Href
 
 func newRoot(ref Href, sign cipher.Sig) HashRoot {
-	res := HashRoot{value:rootObject{Root:HashObject{Ref:ref.Ref}, Sign:sign}}
+	res := HashRoot{value: rootObject{Root: HashObject{Ref: ref.Ref}, Sign: sign}}
 	return res
 }
 

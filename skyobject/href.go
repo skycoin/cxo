@@ -2,8 +2,8 @@ package skyobject
 
 import (
 	"fmt"
-	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 var _schemaType cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(Schema{}))

@@ -2,7 +2,7 @@ package skyobject
 
 import (
 	"bytes"
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 	"reflect"
 	"strings"
 )
