@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 	"reflect"
 	"strings"
 )

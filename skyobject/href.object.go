@@ -1,14 +1,14 @@
 package skyobject
 
 import (
-	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 type HashObject Href
 
 func NewObject(value interface{}) HashObject {
-	res := HashObject{value:value}
+	res := HashObject{value: value}
 	sm := ReadSchema(value)
 	res.rtype = encoder.Serialize(sm)
 	return res
@@ -32,10 +32,10 @@ func (h *HashObject) save(c ISkyObjects) Href {
 func (h *HashObject) References(c ISkyObjects) RefInfoMap {
 	result := RefInfoMap{}
 	objSchema := Schema{}
-	if (h.rtype != nil) {
+	if h.rtype != nil {
 		encoder.DeserializeRaw(h.rtype, &objSchema)
 		for _, f := range objSchema.Fields {
-			if (c.ValidateHashType(f.Type)) {
+			if c.ValidateHashType(f.Type) {
 				var ref Href
 				encoder.DeserializeField(h.rdata, objSchema.Fields, f.Name, &ref.Ref)
 				mergeRefs(result, ref.References(c))

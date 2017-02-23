@@ -5,8 +5,7 @@ import (
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 type DB struct {

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 type Schema struct {
