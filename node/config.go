@@ -1,155 +1,297 @@
 package node
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
 	"github.com/skycoin/skycoin/src/daemon/gnet"
-
-	"github.com/skycoin/cxo/db"
-	"github.com/skycoin/cxo/enc"
 )
 
+// Default values for Config returned using NewConfig
 const (
-	NAME  string = "node"
-	DEBUG bool   = true
+	NAME  string = "node" // default Name
+	DEBUG bool   = true   // default Debug
 
 	//
 	// defaults
 	//
 
-	// connection pools related defaults
-	ADDRESS                     string        = "" // "" is auto
-	PORT                        int           = 0  // 0 is auto
-	MAX_CONNECTIONS             int           = 0  // 0 is unlimited
-	MAX_MESSAGE_LENGTH          int           = 8192
-	DIAL_TIMEOUT                time.Duration = 20 * time.Second
-	READ_TIMEOUT                time.Duration = 0  // 0 is unlimited
-	WRITE_TIMEOUT               time.Duration = 0  // 0 is unlimited
-	EVENT_CHANNEL_SIZE          int           = 20 //
-	BROADCAST_RESULT_SIZE       int           = 20 //
-	CONNECTION_WRITE_QUEUE_SIZE int           = 20 //
-	// node related defaults
-	HANDSHAKE_TIMEOUT time.Duration = 20 * time.Second
+	ADDRESS string = "" // default Address
+	PORT    int    = 0  // default Port
+
+	MAX_INCOMING_CONNECTIONS int = 64 // default MaxIncomingConnections
+	MAX_OUTGOUNG_CONNECTIONS int = 64 // default MaxOutgoingConnections
+
+	MAX_PENDING_CONNECTIONS int = 64 // default MaxPendingConnections
+
+	MAX_MESSAGE_LENGTH          int = 8192 // default MaxMessageLength
+	EVENT_CHANNEL_SIZE          int = 4096 // default EvetnChannelSize
+	BROADCAST_RESULT_SIZE       int = 16   // default BroadcastResultSize
+	CONNECTION_WRITE_QUEUE_SIZE int = 32   // default ConnectionWriteQueueSize
+
+	DIAL_TIMEOUT  time.Duration = 20 * time.Second // default DialTimeout
+	READ_TIMEOUT  time.Duration = 20 * time.Second // default ReadTimeout
+	WRITE_TIMEOUT time.Duration = 20 * time.Second // default WriteTimeout
+
+	// HANDSHAKE_TIMEOUT is default HandshakeTimeout
+	HANDSHAKE_TIMEOUT time.Duration = 40 * time.Second
+
+	// MESSAGE_HANDLING_RATE is default MessageHandlingRate
+	MESSAGE_HANDLING_RATE time.Duration = 50 * time.Millisecond
 )
 
+// A Config represents set of configurations of a Node
 type Config struct {
-	// connection pool related configs
-	Address                  string
-	Port                     int
-	MaxConnections           int
-	MaxMessageLength         int
-	DialTimeout              time.Duration
-	ReadTimeout              time.Duration
-	WriteTimeout             time.Duration
-	EventChannelSize         int
-	BroadcastResultSize      int
-	ConnectionWriteQueueSize int
-	// node related configs
+	Name  string // Name is used as log-prefix
+	Debug bool   // Debug enables debug logs
+
+	// Address is listening address. Empty string allows OS to
+	// choose address itself
+	Address string
+	// Port is listenong port. Zero allows OS to choose
+	// port itself
+	Port int
+
+	// MaxIncomingConnections is maximum nuber of subscribers of the Node.
+	// Set it to zero to disable listening
+	MaxIncomingConnections int
+	// MaxOutgoingConnections is maximum number of subscriptions of the Node.
+	// If it is zero then the Node can't subscribe to anothe one
+	MaxOutgoingConnections int
+
+	// MaxPendingConnections is maximum number of incoming and outgoing
+	// connections together that are not established yet (which are performing
+	// handshake)
+	MaxPendingConnections int
+
+	MaxMessageLength         int // limit of message size
+	EventChannelSize         int // size of events queue
+	BroadcastResultSize      int // size of results queue
+	ConnectionWriteQueueSize int // size of write queue for every connection
+
+	DialTimeout  time.Duration // dial timeout, use 0 to ignore timeout
+	ReadTimeout  time.Duration // read timeout, use 0 to system's default
+	WriteTimeout time.Duration // writ timeout, use 0 to system's default
+
+	// HandshakeTimeout is timeout after which connection will be
+	// closed if handshake is not performed. The hndshake is four-step
+	// procedure (send->receive->send->receive or receive->send->receive->send).
+	// Use 0 to ignore timeout
 	HandshakeTimeout time.Duration
 
-	SecretKey string
-	Name      string // [log prefix]
-
-	DB      db.DB
-	Encoder enc.Encoder
-
-	Debug bool
-
-	ReceiveCallback ReceiveCallback
+	// MessageHandlingRate is interval of handling messages. Set it to zero
+	// if you want to handle messages in infinity loop
+	MessageHandlingRate time.Duration
 }
 
-// NewConfig retusn Config with default values
-func NewConfig() *Config {
-	return &Config{
-		Address: ADDRESS,
-		Port:    PORT,
+// NewConfig returns Config filled down with default values
+func NewConfig() (c Config) {
+	c.Name = NAME
+	c.Debug = DEBUG
 
-		MaxConnections:           MAX_CONNECTIONS,
-		MaxMessageLength:         MAX_MESSAGE_LENGTH,
-		DialTimeout:              DIAL_TIMEOUT,
-		ReadTimeout:              READ_TIMEOUT,
-		WriteTimeout:             WRITE_TIMEOUT,
-		EventChannelSize:         EVENT_CHANNEL_SIZE,
-		BroadcastResultSize:      BROADCAST_RESULT_SIZE,
-		ConnectionWriteQueueSize: CONNECTION_WRITE_QUEUE_SIZE,
-		HandshakeTimeout:         HANDSHAKE_TIMEOUT,
+	c.Address = ADDRESS
+	c.Port = PORT
 
-		Name:  NAME,
-		Debug: DEBUG,
+	c.MaxIncomingConnections = MAX_INCOMING_CONNECTIONS
+	c.MaxOutgoingConnections = MAX_OUTGOUNG_CONNECTIONS
+
+	c.MaxPendingConnections = MAX_PENDING_CONNECTIONS
+
+	c.MaxMessageLength = MAX_MESSAGE_LENGTH
+	c.EventChannelSize = EVENT_CHANNEL_SIZE
+	c.BroadcastResultSize = BROADCAST_RESULT_SIZE
+	c.ConnectionWriteQueueSize = CONNECTION_WRITE_QUEUE_SIZE
+
+	c.DialTimeout = DIAL_TIMEOUT
+	c.ReadTimeout = READ_TIMEOUT
+	c.WriteTimeout = WRITE_TIMEOUT
+
+	c.HandshakeTimeout = HANDSHAKE_TIMEOUT
+
+	c.MessageHandlingRate = MESSAGE_HANDLING_RATE
+	return
+}
+
+// Validate config values
+func (c *Config) Validate() (err error) {
+	_, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.Address, c.Port))
+	if err != nil {
+		return
 	}
+	if c.MaxPendingConnections <= 0 {
+		err = errors.New("no pending connections allowed: 0")
+		return
+	}
+	if c.MaxMessageLength <= 0 {
+		err = errors.New("max mesage length is zero of below")
+	}
+	return
 }
 
-// Fill up Config using flags. The method doesn't include flag.Parse()
-// function call
+// FromFlags obtains configurations from command line flags.
+// The method doesn't call flag.Parse
 func (c *Config) FromFlags() {
-	// connection pool related configs
-	flag.StringVar(&c.Address,
-		"a",
-		ADDRESS,
-		"listening address")
-	flag.IntVar(&c.Port,
-		"p",
-		PORT,
-		"port number")
-	flag.IntVar(&c.MaxConnections,
-		"max-conn",
-		MAX_CONNECTIONS,
-		"max connections (0 is unlimited)")
-	flag.IntVar(&c.MaxMessageLength,
-		"max-msg-len",
-		MAX_MESSAGE_LENGTH,
-		"max message length (0 is unlimited)")
-	flag.DurationVar(&c.DialTimeout,
-		"dt",
-		DIAL_TIMEOUT,
-		"dial timeout (0 is unlimited)")
-	flag.DurationVar(&c.ReadTimeout,
-		"rt",
-		READ_TIMEOUT,
-		"read timeout (0 is unlimited)")
-	flag.DurationVar(&c.WriteTimeout,
-		"wt",
-		WRITE_TIMEOUT,
-		"write timeout (0 is unlimited)")
-	flag.IntVar(&c.EventChannelSize,
-		"event-chan-szie",
-		EVENT_CHANNEL_SIZE,
-		"channel size for events")
-	flag.IntVar(&c.BroadcastResultSize,
-		"broadcast-result-size",
-		BROADCAST_RESULT_SIZE,
-		"breadcast result size")
-	flag.IntVar(&c.ConnectionWriteQueueSize,
-		"conn-write-queue-size",
-		CONNECTION_WRITE_QUEUE_SIZE,
-		"write queue size of connection")
-	// node related configs
-	flag.DurationVar(&c.HandshakeTimeout,
-		"ht",
-		HANDSHAKE_TIMEOUT,
-		"handshake timeout (0 is unlimited)")
-
-	flag.StringVar(&c.SecretKey,
-		"sec",
-		"",
-		"hexadecimal encoded secret key")
 	flag.StringVar(&c.Name,
 		"name",
-		"node",
-		"name of node for logs")
+		NAME,
+		"node name (log prefix)")
 	flag.BoolVar(&c.Debug,
 		"d",
 		DEBUG,
-		"enable debug mode")
+		"show debug logs")
+
+	flag.StringVar(&c.Address,
+		"a",
+		ADDRESS,
+		"listening address (set to empty string for arbitrary assignment)")
+	flag.IntVar(&c.Port,
+		"p",
+		PORT,
+		"listening port number (set to zero for arbitrary assignment)")
+
+	flag.IntVar(&c.MaxIncomingConnections,
+		"max-incoming",
+		MAX_INCOMING_CONNECTIONS,
+		"maximum incoming connections (set to zero to desable listening)")
+	flag.IntVar(&c.MaxOutgoingConnections,
+		"max-outgoing",
+		MAX_OUTGOUNG_CONNECTIONS,
+		"maximum outgoing connections (set to zero to diable subscriptions)")
+
+	flag.IntVar(&c.MaxPendingConnections,
+		"max-pending",
+		MAX_PENDING_CONNECTIONS,
+		"maximum pending connections (must be above zero)")
+
+	flag.IntVar(&c.MaxMessageLength,
+		"max-msg-len",
+		MAX_MESSAGE_LENGTH,
+		"maximum message size (must be above zero)")
+	flag.IntVar(&c.EventChannelSize,
+		"event-queue",
+		EVENT_CHANNEL_SIZE,
+		"event queue size")
+	flag.IntVar(&c.BroadcastResultSize,
+		"result-queue",
+		BROADCAST_RESULT_SIZE,
+		"result queue size")
+	flag.IntVar(&c.ConnectionWriteQueueSize,
+		"write-queue",
+		CONNECTION_WRITE_QUEUE_SIZE,
+		"write queue size of every connection")
+
+	flag.DurationVar(&c.DialTimeout,
+		"dt",
+		DIAL_TIMEOUT,
+		"dial timeout (set to zero to ignore)")
+	flag.DurationVar(&c.ReadTimeout,
+		"rt",
+		READ_TIMEOUT,
+		"reading timeout (set to zero to use system's default)")
+	flag.DurationVar(&c.WriteTimeout,
+		"wt",
+		WRITE_TIMEOUT,
+		"write timeout (set to zero to use system's default)")
+
+	flag.DurationVar(&c.HandshakeTimeout,
+		"ht",
+		HANDSHAKE_TIMEOUT,
+		"handshake timeout (set to zero to disable)")
+
+	flag.DurationVar(&c.MessageHandlingRate,
+		"rate",
+		MESSAGE_HANDLING_RATE,
+		"messages handling rate (set to zero to immediate handling)")
 }
 
+func humanBool(b bool, t, f string) string {
+	if b {
+		return t
+	}
+	return f
+}
+
+func humanDur(d time.Duration, zero string) string {
+	if d == 0 {
+		return zero
+	}
+	return d.String()
+}
+
+func humanInt(i int, zero string) string {
+	if i == 0 {
+		return zero
+	}
+	return strconv.Itoa(i)
+}
+
+func humanString(s, empty string) string {
+	if s == "" {
+		return empty
+	}
+	return s
+}
+
+// HumanString retusn human readable representation of Config
+func (c *Config) HumanString() (s string) {
+	s = fmt.Sprintf(`	name:       %s
+	debug logs: %s
+
+	address:    %s
+	port:       %s
+
+	max incoming connections: %s
+	max outgoing connections: %s
+	max pending connections:  %d
+
+	max message length:          %d
+	event channel size:          %d
+	broadcast result size:       %d
+	connection write queue size: %d
+
+	dial timeout:  %s
+	read timeout:  %s
+	write timeout: %s
+
+	handshake timeout: %s
+
+	messages handling rate: %s`,
+
+		c.Name,
+		humanBool(c.Debug, "enabled", "disabled"),
+
+		humanString(c.Address, "auto"),
+		humanInt(c.Port, "auto"),
+
+		humanInt(c.MaxIncomingConnections, "disabled"),
+		humanInt(c.MaxOutgoingConnections, "disabled"),
+		c.MaxPendingConnections,
+
+		c.MaxMessageLength,
+		c.EventChannelSize,
+		c.BroadcastResultSize,
+		c.ConnectionWriteQueueSize,
+
+		humanDur(c.DialTimeout, "ignore"),
+		humanDur(c.ReadTimeout, "system deafult"),
+		humanDur(c.WriteTimeout, "system default"),
+
+		humanDur(c.HandshakeTimeout, "ignore"),
+
+		c.MessageHandlingRate.String())
+
+	return
+}
+
+// gnetConfig generates gnet.Config based on Config
 func (c *Config) gnetConfig() (gc gnet.Config) {
 	gc.Address = c.Address
 	gc.Port = uint16(c.Port)
-	gc.MaxConnections = c.MaxConnections
+	gc.MaxConnections = c.MaxIncomingConnections + c.MaxOutgoingConnections
 	gc.MaxMessageLength = c.MaxMessageLength
 	gc.DialTimeout = c.DialTimeout
 	gc.ReadTimeout = c.ReadTimeout
@@ -158,84 +300,4 @@ func (c *Config) gnetConfig() (gc gnet.Config) {
 	gc.BroadcastResultSize = c.BroadcastResultSize
 	gc.ConnectionWriteQueueSize = c.ConnectionWriteQueueSize
 	return
-}
-
-func (c *Config) HumanString() string {
-	return fmt.Sprintf(`
-	address:                     %s
-	port:                        %s
-	max connections:             %s
-	max message length:          %s
-	dial timeout:                %s
-	read timeout:                %s
-	write timeout:               %s
-	event channel size:          %s
-	broadcast result size:       %s
-	connection write queue size: %s
-
-	handshake timeout:           %s
-
-	name:                        %s
-	secret key:                  %s
-
-`,
-		c.humanAddress(),
-		c.humanPort(),
-
-		humanInt(c.MaxConnections),
-
-		humanInt(c.MaxMessageLength),
-
-		humanDuration(c.DialTimeout),
-		humanDuration(c.ReadTimeout),
-		humanDuration(c.WriteTimeout),
-
-		humanInt(c.EventChannelSize),
-		humanInt(c.BroadcastResultSize),
-		humanInt(c.ConnectionWriteQueueSize),
-
-		humanDuration(c.HandshakeTimeout),
-		c.Name,
-		c.humanSecretKey(),
-	)
-}
-
-func (c *Config) humanAddress() string {
-	if c.Address == "" {
-		return "auto"
-	}
-	return c.Address
-}
-
-func (c *Config) humanPort() string {
-	if c.Port == 0 {
-		return "auto"
-	}
-	return strconv.Itoa(int(c.Port))
-}
-
-func (c *Config) humanSecretKey() string {
-	if !c.Debug {
-		return "[hidden]"
-	}
-	if c.SecretKey == "" {
-		return "[not provided]"
-	}
-	return c.SecretKey
-}
-
-// where 0 is unlimited
-func humanInt(i int) string {
-	if i == 0 {
-		return "unlimited"
-	}
-	return strconv.Itoa(i)
-}
-
-// where 0 is unlimited
-func humanDuration(d time.Duration) string {
-	if d == 0 {
-		return "unlimited"
-	}
-	return d.String()
 }

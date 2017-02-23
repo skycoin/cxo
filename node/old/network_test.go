@@ -24,6 +24,7 @@ func newNetworkNode(name string, rc ReceiveCallback) Node {
 	return NewNode(c)
 }
 
+// send PING from feed to subscriber and receive PONG back
 func Test_ping_pong_simplex(t *testing.T) {
 	var (
 		n1, n2 Node
@@ -91,6 +92,8 @@ func Test_ping_pong_simplex(t *testing.T) {
 	}
 }
 
+// Send PING and receive PONG from n1 to n2 and vice versa.
+// Then send PONG without reply (n1->n2, n2->n1)
 func Test_ping_pong_duplex(t *testing.T) {
 	var (
 		n1, n2 Node
@@ -182,6 +185,8 @@ func Test_ping_pong_duplex(t *testing.T) {
 	}
 }
 
+// Send PING from feed to many subscribers
+// and receive PONG back from every subscriber
 func Test_ping_pong_one_to_multiply(t *testing.T) {
 	var (
 		feed           Node
@@ -246,10 +251,10 @@ func Test_ping_pong_one_to_multiply(t *testing.T) {
 	feed.Feed().Broadcast([]byte("PING"))
 	time.Sleep(1 * time.Second)
 	//
-	if ping != 1 {
+	if ping != 4 {
 		t.Error("wrong ping: ", ping)
 	}
-	if pong != 2 {
+	if pong != 4 {
 		t.Error("wrong pong: ", pong)
 	}
 }

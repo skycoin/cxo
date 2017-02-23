@@ -7,29 +7,31 @@ import (
 	"os"
 )
 
-// A Logger is similar to log.Logger with Debug(ln|f)? methods;
-// There are no mutexes for 'debug' flag
+// A Logger is similar to log.Logger with Debug(ln|f)? methods
 type Logger interface {
+	// SetDebug is used to change debug logs flag. The method is not
+	// safe for async usage
 	SetDebug(bool)
-	SetPrefix(string)
-	SetFlags(int)
-	SetOutput(io.Writer)
 
-	Print(...interface{})
-	Println(...interface{})
-	Printf(string, ...interface{})
+	SetPrefix(string)    //
+	SetFlags(int)        //
+	SetOutput(io.Writer) //
 
-	Panic(...interface{})
-	Panicln(...interface{})
-	Panicf(string, ...interface{})
+	Print(...interface{})          //
+	Println(...interface{})        //
+	Printf(string, ...interface{}) //
 
-	Fatal(...interface{})
-	Fatalln(...interface{})
-	Fatalf(string, ...interface{})
+	Panic(...interface{})          //
+	Panicln(...interface{})        //
+	Panicf(string, ...interface{}) //
 
-	Debug(...interface{})
-	Debugln(...interface{})
-	Debugf(string, ...interface{})
+	Fatal(...interface{})          //
+	Fatalln(...interface{})        //
+	Fatalf(string, ...interface{}) //
+
+	Debug(...interface{})          //
+	Debugln(...interface{})        //
+	Debugf(string, ...interface{}) //
 }
 
 type logger struct {
@@ -37,6 +39,8 @@ type logger struct {
 	debug bool
 }
 
+// NewLogger create new Logger with given prefix and debug-enabling value.
+// By default flags of the Logger is log.Lshortfile|log.Ltime
 func NewLogger(prefix string, debug bool) Logger {
 	return &logger{
 		Logger: log.New(os.Stderr, prefix, log.Lshortfile|log.Ltime),

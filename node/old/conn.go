@@ -29,12 +29,12 @@ type conn struct {
 
 func (c *conn) String() string {
 	var (
-		feed string = "subscriber"
+		feed string = "inflow side"
 		step string = "established"
 		done string
 	)
 	if c.feed {
-		feed = "feed"
+		feed = "feed side"
 	}
 	if c.step != hsStepSuccess {
 		step = "pending"

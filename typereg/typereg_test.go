@@ -1,4 +1,4 @@
-package enc
+package typereg
 
 import (
 	"bytes"
@@ -13,11 +13,11 @@ type X struct {
 	String string
 }
 
-func TestNewEncoder(t *testing.T) {
-	var e Encoder
-	e = NewEncoder()
+func TestNewTypereg(t *testing.T) {
+	var e Typereg
+	e = NewTypereg()
 	if e == nil {
-		t.Fatal("NewEncoder returns nil")
+		t.Fatal("NewTypereg returns nil")
 	}
 }
 
@@ -27,11 +27,11 @@ func handleUnexpectedPanic(t *testing.T) {
 	}
 }
 
-func TestEncoder_Register(t *testing.T) {
+func TestTypereg_Register(t *testing.T) {
 	// (1) register and inspect underlying maps
 	t.Run("register X", func(t *testing.T) {
 		var (
-			e Encoder = NewEncoder()
+			e Typereg = NewTypereg()
 			u *enc
 		)
 		// handle possible panics
@@ -65,7 +65,7 @@ func TestEncoder_Register(t *testing.T) {
 	})
 	// (2) panic if value is nil
 	t.Run("nil-value panic", func(t *testing.T) {
-		var e Encoder = NewEncoder()
+		var e Typereg = NewTypereg()
 		defer func() {
 			if e := recover(); e == nil {
 				t.Error("missing Register(nil) panic")
@@ -78,7 +78,7 @@ func TestEncoder_Register(t *testing.T) {
 	})
 	// (3) already registered panic
 	t.Run("alredy registered panic", func(t *testing.T) {
-		var e Encoder = NewEncoder()
+		var e Typereg = NewTypereg()
 		defer func() {
 			if e := recover(); e == nil {
 				t.Error("missing panic on twice register")
@@ -92,7 +92,7 @@ func TestEncoder_Register(t *testing.T) {
 	})
 	// (4) X{} and &X{}
 	t.Run("pointer dereference", func(t *testing.T) {
-		var e Encoder = NewEncoder()
+		var e Typereg = NewTypereg()
 		defer func() {
 			if e := recover(); e == nil {
 				t.Error("treat X{} and &X{} as different types")
@@ -104,7 +104,7 @@ func TestEncoder_Register(t *testing.T) {
 	// (5) synthetic collision panic
 	t.Run("synthetic collision", func(t *testing.T) {
 		var (
-			e Encoder = NewEncoder()
+			e Typereg = NewTypereg()
 			u *enc
 		)
 		defer func() {
@@ -125,9 +125,9 @@ func TestEncoder_Register(t *testing.T) {
 	})
 }
 
-func TestEncoder_Encode(t *testing.T) {
+func TestTypereg_Encode(t *testing.T) {
 	t.Run("value is nil err", func(t *testing.T) {
-		if _, err := NewEncoder().Encode(nil); err == nil {
+		if _, err := NewTypereg().Encode(nil); err == nil {
 			t.Error("missing nil-value encoding error")
 		} else if err != ErrValueIsNil {
 			t.Errorf("wrong error: wanr ErrValueIsNil, got %q", err)
@@ -135,21 +135,21 @@ func TestEncoder_Encode(t *testing.T) {
 	})
 	t.Run("null-pointer", func(t *testing.T) {
 		var x *X
-		if _, err := NewEncoder().Encode(x); err == nil {
+		if _, err := NewTypereg().Encode(x); err == nil {
 			t.Error("missing nil-value encoding error")
 		} else if err != ErrValueIsNil {
 			t.Errorf("wrong error: wanr ErrValueIsNil, got %q", err)
 		}
 	})
 	t.Run("unregistered err", func(t *testing.T) {
-		if _, err := NewEncoder().Encode(X{150, "some"}); err == nil {
+		if _, err := NewTypereg().Encode(X{150, "some"}); err == nil {
 			t.Error("missing nil-value encoding error")
 		} else if err != ErrUnregistered {
 			t.Errorf("wrong error: wanr ErrUnregistered, got %q", err.Error())
 		}
 	})
 	t.Run("encode", func(t *testing.T) {
-		e := NewEncoder()
+		e := NewTypereg()
 		e.Register(X{})
 		data, err := e.Encode(X{150, "some"})
 		if err != nil {
@@ -170,7 +170,7 @@ func TestEncoder_Encode(t *testing.T) {
 	// X{} vs &X{}
 	t.Run("encode pointer", func(t *testing.T) {
 		var (
-			e Encoder = NewEncoder()
+			e Typereg = NewTypereg()
 
 			xs X  = X{150, "some"}
 			xp *X = &xs
@@ -192,35 +192,35 @@ func TestEncoder_Encode(t *testing.T) {
 	})
 }
 
-func TestEncoder_Decode(t *testing.T) {
+func TestTypereg_Decode(t *testing.T) {
 	t.Run("short buffer", func(t *testing.T) {
-		if _, err := NewEncoder().Decode(nil); err == nil {
+		if _, err := NewTypereg().Decode(nil); err == nil {
 			t.Error("missign ErrShortBuffer")
 		} else if err != ErrShortBuffer {
 			t.Errorf("wrong err: want ErrShortBuffer, got %q", err.Error())
 		}
-		if _, err := NewEncoder().Decode([]byte{0, 0, 0}); err == nil {
+		if _, err := NewTypereg().Decode([]byte{0, 0, 0}); err == nil {
 			t.Error("missign ErrShortBuffer")
 		} else if err != ErrShortBuffer {
 			t.Errorf("wrong err: want ErrShortBuffer, got %q", err.Error())
 		}
 	})
 	t.Run("unregistered", func(t *testing.T) {
-		e := NewEncoder()
+		e := NewTypereg()
 		e.Register(X{})
 		data, err := e.Encode(X{150, "some"})
 		if err != nil {
 			t.Error("unexpected error: ", err)
 			return
 		}
-		if _, err = NewEncoder().Decode(data); err == nil {
+		if _, err = NewTypereg().Decode(data); err == nil {
 			t.Error("missing ErrUnregistered")
 		} else if err != ErrUnregistered {
 			t.Errorf("wrong error: wnat ErrUnregistered, got %q", err.Error())
 		}
 	})
 	t.Run("incomplite decoding", func(t *testing.T) {
-		e := NewEncoder()
+		e := NewTypereg()
 		e.Register(X{})
 		data, err := e.Encode(X{150, "some"})
 		if err != nil {
@@ -239,7 +239,7 @@ func TestEncoder_Decode(t *testing.T) {
 
 func Test_encode_decode(t *testing.T) {
 	var (
-		e Encoder = NewEncoder()
+		e Typereg = NewTypereg()
 		x X       = X{150, "some"}
 
 		data []byte
@@ -274,7 +274,7 @@ func Example_simple() {
 	}
 
 	var (
-		e Encoder = NewEncoder()
+		e Typereg = NewTypereg()
 		x User    = User{"Alice", 21}
 
 		data []byte

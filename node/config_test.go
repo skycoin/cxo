@@ -9,226 +9,262 @@ import (
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
-func TestNewConfig(t *testing.T) {
-	c := NewConfig()
-	if c == nil {
-		t.Fatal("NewConfig retusn nil")
+func TestConfig_NewConfig(t *testing.T) {
+	var c Config = NewConfig()
+	if c.Name != NAME {
+		t.Error("wrong defalt value for Name: ", c.Name)
 	}
-	if c.Address != ADDRESS ||
-		c.Port != PORT ||
-		c.MaxConnections != MAX_CONNECTIONS ||
-		c.MaxMessageLength != MAX_MESSAGE_LENGTH ||
-		c.DialTimeout != DIAL_TIMEOUT ||
-		c.ReadTimeout != READ_TIMEOUT ||
-		c.WriteTimeout != WRITE_TIMEOUT ||
-		c.EventChannelSize != EVENT_CHANNEL_SIZE ||
-		c.BroadcastResultSize != BROADCAST_RESULT_SIZE ||
-		c.ConnectionWriteQueueSize != CONNECTION_WRITE_QUEUE_SIZE ||
-		c.HandshakeTimeout != HANDSHAKE_TIMEOUT ||
-		c.Name != NAME ||
-		c.Debug != DEBUG {
-		t.Error("wrong default values for NewConfig")
+	if c.Debug != DEBUG {
+		t.Error("wrong defalt value for Debug: ", c.Debug)
 	}
+	if c.Address != ADDRESS {
+		t.Error("wrong defalt value for Address: ", c.Address)
+	}
+	if c.Port != PORT {
+		t.Error("wrong defalt value for Port: ", c.Port)
+	}
+	if c.MaxIncomingConnections != MAX_INCOMING_CONNECTIONS {
+		t.Error("wrong defalt value for MaxIncomingConnections: ",
+			c.MaxIncomingConnections)
+	}
+	if c.MaxOutgoingConnections != MAX_OUTGOUNG_CONNECTIONS {
+		t.Error("wrong defalt value for MaxOutgoingConnections: ",
+			c.MaxOutgoingConnections)
+	}
+	if c.MaxPendingConnections != MAX_PENDING_CONNECTIONS {
+		t.Error("wrong defalt value for MaxPendingConnections: ",
+			c.MaxPendingConnections)
+	}
+	if c.MaxMessageLength != MAX_MESSAGE_LENGTH {
+		t.Error("wrong defalt value for MaxMessageLength: ", c.MaxMessageLength)
+	}
+	if c.EventChannelSize != EVENT_CHANNEL_SIZE {
+		t.Error("wrong defalt value for EventChannelSize: ", c.EventChannelSize)
+	}
+	if c.BroadcastResultSize != BROADCAST_RESULT_SIZE {
+		t.Error("wrong defalt value for BroadcastResultSize: ",
+			c.BroadcastResultSize)
+	}
+	if c.ConnectionWriteQueueSize != CONNECTION_WRITE_QUEUE_SIZE {
+		t.Error("wrong defalt value for ConnectionWriteQueueSize: ",
+			c.ConnectionWriteQueueSize)
+	}
+	if c.DialTimeout != DIAL_TIMEOUT {
+		t.Error("wrong defalt value for DialTimeout: ", c.DialTimeout)
+	}
+	if c.ReadTimeout != READ_TIMEOUT {
+		t.Error("wrong defalt value for ReadTimeout: ", c.ReadTimeout)
+	}
+	if c.WriteTimeout != WRITE_TIMEOUT {
+		t.Error("wrong defalt value for WriteTimeout: ", c.WriteTimeout)
+	}
+	if c.HandshakeTimeout != HANDSHAKE_TIMEOUT {
+		t.Error("wrong defalt value for HandshakeTimeout: ", c.HandshakeTimeout)
+	}
+	if c.MessageHandlingRate != MESSAGE_HANDLING_RATE {
+		t.Error("wrong defalt value for MessageHandlingRate: ",
+			c.MessageHandlingRate)
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	var (
+		c   Config
+		err error
+	)
+	t.Run("address", func(t *testing.T) {
+		c = NewConfig()
+		c.Address = "__invalid__"
+		if err = c.Validate(); err == nil {
+			t.Errorf("Validate allows invalid address: %s:%d",
+				c.Address,
+				c.Port)
+		}
+	})
+	t.Run("port", func(t *testing.T) {
+		c = NewConfig()
+		c.Port = -90
+		if err = c.Validate(); err == nil {
+			t.Errorf("Validate allows invalid port: %s:%d",
+				c.Address,
+				c.Port)
+		}
+	})
+	t.Run("pending", func(t *testing.T) {
+		c = NewConfig()
+		c.MaxPendingConnections = 0
+		if err = c.Validate(); err == nil {
+			t.Error("Validate allows zero pending connections")
+		}
+		c.MaxPendingConnections = -10
+		if err = c.Validate(); err == nil {
+			t.Error("Validate allows negative number of pending connections: ",
+				c.MaxPendingConnections)
+		}
+	})
+	t.Run("message length", func(t *testing.T) {
+		c = NewConfig()
+		c.MaxMessageLength = 0
+		if err = c.Validate(); err == nil {
+			t.Error("Validate allows zero message length")
+		}
+		c.MaxMessageLength = -10
+		if err = c.Validate(); err == nil {
+			t.Error("Validate allows negative message length: ",
+				c.MaxMessageLength)
+		}
+	})
 }
 
 func TestConfig_FromFlags(t *testing.T) {
-	// local
-	const (
-		ADDRESS = "192.168.0.1"
-		PORT    = "1599"
-
-		MAX_INCOMING_CONNECTIONS    = "666"
-		MAX_OUTGOING_CONNECTIONS    = "777"
-		MAX_MESSAGE_LENGTH          = "20"
-		DIAL_TIMEOUT                = "5s"
-		READ_TIMEOUT                = "6s"
-		WRITE_TIMEOUT               = "7s"
-		EVENT_CHANNEL_SIZE          = "21"
-		BROADCAST_RESULT_SIZE       = "22"
-		CONNECTION_WRITE_QUEUE_SIZE = "23"
-		HANDSHAKE_TIMEOUT           = "8s"
-
-		NAME  = "x-name"
-		DEBUG = "f"
-
-		SECRET_KEY = "[secret]"
-	)
-
-	c := NewConfig()
+	var c Config = NewConfig()
 	c.FromFlags()
 
-	flag.Set("a", ADDRESS)
-	flag.Set("p", PORT)
-	flag.Set("max-in", MAX_INCOMING_CONNECTIONS)
-	flag.Set("max-out", MAX_OUTGOING_CONNECTIONS)
-	flag.Set("max-msg-len", MAX_MESSAGE_LENGTH)
-	flag.Set("dt", DIAL_TIMEOUT)
-	flag.Set("rt", READ_TIMEOUT)
-	flag.Set("wt", WRITE_TIMEOUT)
-	flag.Set("event-chan-szie", EVENT_CHANNEL_SIZE)
-	flag.Set("broadcast-result-size", BROADCAST_RESULT_SIZE)
-	flag.Set("conn-write-queue-size", CONNECTION_WRITE_QUEUE_SIZE)
-	flag.Set("ht", HANDSHAKE_TIMEOUT)
+	flag.Set("name", "zorro")
+	if c.Name != "zorro" {
+		t.Error("wrong value for Name: ", c.Name)
+	}
+	flag.Set("d", "off")
+	if c.Debug != false {
+		t.Error("wrong value for Debug: ", c.Debug)
+	}
 
-	flag.Set("ht", HANDSHAKE_TIMEOUT)
+	flag.Set("a", "192.168.0.1")
+	if c.Address != "192.168.0.1" {
+		t.Error("wrong defalt value for Address: ", c.Address)
+	}
+	flag.Set("p", "7789")
+	if c.Port != 7789 {
+		t.Error("wrong defalt value for Port: ", c.Port)
+	}
 
-	flag.Set("name", NAME)
-	flag.Set("d", DEBUG)
+	flag.Set("max-incoming", "10")
+	if c.MaxIncomingConnections != 10 {
+		t.Error("wrong defalt value for MaxIncomingConnections: ",
+			c.MaxIncomingConnections)
+	}
+	flag.Set("max-outgoing", "11")
+	if c.MaxOutgoingConnections != 11 {
+		t.Error("wrong defalt value for MaxOutgoingConnections: ",
+			c.MaxOutgoingConnections)
+	}
 
-	flag.Set("sec", SECRET_KEY)
+	flag.Set("max-pending", "12")
+	if c.MaxPendingConnections != 12 {
+		t.Error("wrong defalt value for MaxPendingConnections: ",
+			c.MaxPendingConnections)
+	}
 
-	// namespace isolation
-	func(c *Config) {
-		const (
-			ADDRESS                     = "192.168.0.1"
-			PORT                        = 1599
-			MAX_INCOMING_CONNECTIONS    = 666
-			MAX_OUTGOING_CONNECTIONS    = 777
-			MAX_MESSAGE_LENGTH          = 20
-			DIAL_TIMEOUT                = 5 * time.Second
-			READ_TIMEOUT                = 6 * time.Second
-			WRITE_TIMEOUT               = 7 * time.Second
-			EVENT_CHANNEL_SIZE          = 21
-			BROADCAST_RESULT_SIZE       = 22
-			CONNECTION_WRITE_QUEUE_SIZE = 23
-			HANDSHAKE_TIMEOUT           = 8 * time.Second
+	flag.Set("max-msg-len", "1024")
+	if c.MaxMessageLength != 1024 {
+		t.Error("wrong defalt value for MaxMessageLength: ", c.MaxMessageLength)
+	}
+	flag.Set("event-queue", "13")
+	if c.EventChannelSize != 13 {
+		t.Error("wrong defalt value for EventChannelSize: ", c.EventChannelSize)
+	}
+	flag.Set("result-queue", "14")
+	if c.BroadcastResultSize != 14 {
+		t.Error("wrong defalt value for BroadcastResultSize: ",
+			c.BroadcastResultSize)
+	}
+	flag.Set("write-queue", "15")
+	if c.ConnectionWriteQueueSize != 15 {
+		t.Error("wrong defalt value for ConnectionWriteQueueSize: ",
+			c.ConnectionWriteQueueSize)
+	}
 
-			NAME       = "x-name"
-			DEBUG      = false
-			SECRET_KEY = "[secret]"
-		)
-		if c.Address != ADDRESS ||
-			c.Port != PORT ||
-			c.MaxConnections != MAX_CONNECTIONS ||
-			c.MaxMessageLength != MAX_MESSAGE_LENGTH ||
-			c.DialTimeout != DIAL_TIMEOUT ||
-			c.ReadTimeout != READ_TIMEOUT ||
-			c.WriteTimeout != WRITE_TIMEOUT ||
-			c.EventChannelSize != EVENT_CHANNEL_SIZE ||
-			c.BroadcastResultSize != BROADCAST_RESULT_SIZE ||
-			c.ConnectionWriteQueueSize != CONNECTION_WRITE_QUEUE_SIZE ||
-			c.HandshakeTimeout != HANDSHAKE_TIMEOUT ||
-			c.Name != NAME ||
-			c.Debug != DEBUG ||
-			c.SecretKey != SECRET_KEY {
-			t.Error("wrong configs given from flags")
-			t.Log(c.HumanString())
-		}
-	}(c)
+	flag.Set("dt", "1s")
+	if c.DialTimeout != 1*time.Second {
+		t.Error("wrong defalt value for DialTimeout: ", c.DialTimeout)
+	}
+	flag.Set("rt", "2s")
+	if c.ReadTimeout != 2*time.Second {
+		t.Error("wrong defalt value for ReadTimeout: ", c.ReadTimeout)
+	}
+	flag.Set("wt", "3s")
+	if c.WriteTimeout != 3*time.Second {
+		t.Error("wrong defalt value for WriteTimeout: ", c.WriteTimeout)
+	}
 
-}
+	flag.Set("ht", "4s")
+	if c.HandshakeTimeout != 4*time.Second {
+		t.Error("wrong defalt value for HandshakeTimeout: ", c.HandshakeTimeout)
+	}
 
-func cmpConfigGnetConfig(c *Config, gc *gnet.Config) bool {
-	return gc.Address == c.Address ||
-		gc.Port == uint16(c.Port) ||
-		gc.MaxConnections == c.MaxConnections ||
-		gc.MaxMessageLength == c.MaxMessageLength ||
-		gc.DialTimeout == c.DialTimeout ||
-		gc.ReadTimeout == c.ReadTimeout ||
-		gc.WriteTimeout == c.WriteTimeout ||
-		gc.EventChannelSize == c.EventChannelSize ||
-		gc.BroadcastResultSize == c.BroadcastResultSize ||
-		gc.ConnectionWriteQueueSize == c.ConnectionWriteQueueSize ||
-		gc.DisconnectCallback == nil ||
-		gc.ConnectCallback == nil
+	flag.Set("rate", "5s")
+	if c.MessageHandlingRate != 5*time.Second {
+		t.Error("wrong defalt value for MessageHandlingRate: ",
+			c.MessageHandlingRate)
+	}
+
 }
 
 func TestConfig_gnetConfig(t *testing.T) {
 	var (
-		c  *Config     = NewConfig()
+		c  Config      = NewConfig()
 		gc gnet.Config = c.gnetConfig()
 	)
-	if !cmpConfigGnetConfig(c, &gc) {
-		t.Error("(*Config).gnetConfig returns wrong result")
+	if gc.Address != c.Address {
+		t.Error("wrong Address: ", gc.Address)
+	}
+	if gc.Port != uint16(c.Port) {
+		t.Error("wrong Port: ", gc.Port)
+	}
+	if gc.MaxConnections != (c.MaxIncomingConnections +
+		c.MaxOutgoingConnections) {
+		t.Error("wrong MaxConnections: ", gc.MaxConnections)
+	}
+	if gc.MaxMessageLength != c.MaxMessageLength {
+		t.Error("wrong MaxMessageLength: ", gc.MaxMessageLength)
+	}
+	if gc.DialTimeout != c.DialTimeout {
+		t.Error("wrong DialTimeout: ", gc.DialTimeout)
+	}
+	if gc.ReadTimeout != c.ReadTimeout {
+		t.Error("wrong ReadTimeout: ", gc.ReadTimeout)
+	}
+	if gc.WriteTimeout != c.WriteTimeout {
+		t.Error("wrong WriteTimeout: ", gc.WriteTimeout)
+	}
+	if gc.EventChannelSize != c.EventChannelSize {
+		t.Error("wrong EventChannelSize: ", gc.EventChannelSize)
+	}
+	if gc.BroadcastResultSize != c.BroadcastResultSize {
+		t.Error("wrong BroadcastResultSize: ", gc.BroadcastResultSize)
+	}
+	if gc.ConnectionWriteQueueSize != c.ConnectionWriteQueueSize {
+		t.Error("wrong ConnectionWriteQueueSize: ", gc.ConnectionWriteQueueSize)
 	}
 }
-
-func TestConfig_humanPort(t *testing.T) {
-	c := NewConfig()
-	c.Port = 0
-	if c.humanPort() != "auto" {
-		t.Error("(*Config).humanPort doen't returns 'auto'" +
-			" if port is zero")
-	}
-}
-
-func TestConfig_humanAddress(t *testing.T) {
-	c := NewConfig()
-	c.Address = ""
-	if c.humanAddress() != "auto" {
-		t.Error("(*Config).humanAddress doen't returns 'auto'" +
-			" if address is empty")
-	}
-}
-
-func TestConfig_humanSecretKey(t *testing.T) {
-	c := NewConfig()
-	t.Run("debug true", func(t *testing.T) {
-		c.Debug = true
-		c.SecretKey = "very_secret"
-		if s := c.humanSecretKey(); s != "very_secret" {
-			t.Errorf("wrong value: want %q, got %q", "very_secret", s)
-		}
-		c.SecretKey = ""
-		if s := c.humanSecretKey(); s != "[not provided]" {
-			t.Errorf("wrong value: want %q, got %q", "[not provided]", s)
-		}
-	})
-	t.Run("debug false", func(t *testing.T) {
-		c.Debug = false
-		c.SecretKey = "very_secret"
-		if s := c.humanSecretKey(); s != "[hidden]" {
-			t.Errorf("wrong value: want %q, got %q", "[hidden]", s)
-		}
-		c.SecretKey = ""
-		if s := c.humanSecretKey(); s != "[hidden]" {
-			t.Errorf("wrong value: want %q, got %q", "[hidden]", s)
-		}
-	})
-}
-
-func Test_humanInt(t *testing.T) {
-	if s := humanInt(100); s != "100" {
-		t.Error("humanInt(100) error: want 100, got ", s)
-	}
-	if s := humanInt(0); s != "unlimited" {
-		t.Errorf(`humanInt(100) error: want "unlimited", got %q`, s)
-	}
-}
-
-func Test_humanDuration(t *testing.T) {
-	if s := humanDuration(1 * time.Second); s != "1s" {
-		t.Error("humanDuration(1 * time.Second) error: want 1s, got ", s)
-	}
-	if s := humanDuration(0); s != "unlimited" {
-		t.Errorf(`humanDuration(0) error: want "unlimited", got %q`, s)
-	}
-}
-
-//
-// debug print example
-//
 
 func ExampleConfig_HumanString() {
-	c := NewConfig()
+	var c Config = NewConfig()
+
 	fmt.Println(c.HumanString())
 
 	// Output:
 	//
-	// 	address:                     auto
-	// 	port:                        auto
-	// 	max connections:             unlimited
+	// 	name:       node
+	// 	debug logs: enabled
+	//
+	// 	address:    auto
+	// 	port:       auto
+	//
+	// 	max incoming connections: 64
+	// 	max outgoing connections: 64
+	// 	max pending connections:  64
+	//
 	// 	max message length:          8192
-	// 	dial timeout:                20s
-	// 	read timeout:                unlimited
-	// 	write timeout:               unlimited
-	// 	event channel size:          20
-	// 	broadcast result size:       20
-	// 	connection write queue size: 20
+	// 	event channel size:          4096
+	// 	broadcast result size:       16
+	// 	connection write queue size: 32
 	//
-	// 	handshake timeout:           20s
+	// 	dial timeout:  20s
+	// 	read timeout:  20s
+	// 	write timeout: 20s
 	//
-	// 	name:                        node
-	// 	secret key:                  [not provided]
-
+	// 	handshake timeout: 40s
+	//
+	// 	messages handling rate: 50ms
 }

@@ -31,30 +31,32 @@ type Feed interface {
 	Address() (net.Addr, error)
 }
 
-type feed node
+type feed struct {
+	*node
+}
 
-func (f *feed) List(fn ListFunc) {
+func (f feed) List(fn ListFunc) {
 	if fn == nil {
 		f.Panic("call (Feed).List with nil")
 	}
-	f.RLock()
+	f.backmx.RLock()
 	for gc, c := range f.back {
 		if c.isPending() || !c.isFeed() {
 			continue
 		}
-		f.RUnlock()
+		f.backmx.RUnlock()
 		if fn(c.pub, gc.Conn.RemoteAddr()) {
 			return
 		}
-		f.RLock()
+		f.backmx.RLock()
 	}
-	f.RUnlock()
+	f.backmx.RUnlock()
 }
 
-func (f *feed) Terminate(pub cipher.PubKey) error {
+func (f feed) Terminate(pub cipher.PubKey) error {
 	f.Debug("terminate ", pub.Hex())
-	f.RLock()
-	defer f.RUnlock()
+	f.backmx.RLock()
+	defer f.backmx.RUnlock()
 	for gc, c := range f.back {
 		if c.isPending() || !c.isFeed() || c.pub != pub {
 			continue
@@ -65,10 +67,10 @@ func (f *feed) Terminate(pub cipher.PubKey) error {
 	return ErrNotFound
 }
 
-func (f *feed) Broadcast(data []byte) {
+func (f feed) Broadcast(data []byte) {
 	f.Debug("broadcast")
-	f.RLock()
-	defer f.RUnlock()
+	f.backmx.RLock()
+	defer f.backmx.RUnlock()
 	for gc, c := range f.back {
 		if c.isPending() || !c.isFeed() {
 			continue
@@ -79,7 +81,7 @@ func (f *feed) Broadcast(data []byte) {
 	}
 }
 
-func (f *feed) Address() (addr net.Addr, err error) {
+func (f feed) Address() (addr net.Addr, err error) {
 	// temporary (skycoin/skycoin PR 290)
 	f.RLock()
 	defer f.RUnlock()

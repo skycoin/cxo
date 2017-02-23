@@ -1,6 +1,7 @@
 package node
 
 import (
+	"net"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -114,6 +115,42 @@ func TestNode_Inflow(t *testing.T) {
 	if newNode().Inflow() == nil {
 		t.Error("(Node).Inflow returns nil")
 	}
+}
+
+type dummyListener struct {
+	l net.Listener
+}
+
+func startDummyListener(t *testing.T) *dummyListener {
+	var err error
+	dl := new(dummyListener)
+	if dl.l, err = net.Listen("tcp", ""); err != nil {
+		t.Fatal("error starting dummy listener: ", err)
+	}
+	go func() {
+		_, err := dl.l.Accept()
+		if err != nil {
+			t.Error("accept error: ", err)
+			return
+		}
+	}()
+	return dl
+}
+
+func (d *dummyListener) address() string {
+	return d.l.Addr().String()
+}
+
+func TestNode_stop(t *testing.T) {
+	n := newNode()
+	dl := startDummyListener(t)
+	if err := n.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.Inflow().Subscribe(dl.address(), cipher.PubKey{}); err != nil {
+		t.Fatal(err)
+	}
+	n.Close()
 }
 
 //	Start() error

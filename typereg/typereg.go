@@ -13,7 +13,7 @@
 // The enc uses FNV-32 hash of (reflect.Type).Name() as
 // type name that it stores in registry. Thus, we
 // use only 4 byte as type-prefix
-package enc
+package typereg
 
 import (
 	"errors"
@@ -24,7 +24,11 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-type Encoder interface {
+// A Typereg implements types registry that is used
+// to encode and decode some values to []byte and back
+// to go-native types. The skycoin/skycoin/src/cipher/encoder
+// is used as underlying encoder
+type Typereg interface {
 	// Register registers new type to encoed/decode.
 	// It panics if type with given name already registered or
 	// there is fnv-hash-collision. It panics if given
@@ -42,8 +46,8 @@ type Encoder interface {
 	Decode([]byte) (interface{}, error)
 }
 
-// NewEncoder returns new Encoder instance
-func NewEncoder() Encoder {
+// NewTypereg returns new Typereg instance
+func NewTypereg() Typereg {
 	return &enc{
 		hash:  fnv.New32(),
 		types: make(map[Type]reflect.Type),
@@ -51,7 +55,7 @@ func NewEncoder() Encoder {
 	}
 }
 
-// A Type represents hash of type name
+// A Type represents LE-encoder FNV-32 hash of type name
 type Type [4]byte
 
 type enc struct {

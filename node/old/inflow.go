@@ -15,11 +15,11 @@ type Inflow interface {
 	Subscribe(string, cipher.PubKey) error
 }
 
-type inflow node
+type inflow struct {
+	*node
+}
 
-func (i *inflow) node() *node { return (*node)(i) }
-
-func (i *inflow) List(fn ListFunc) {
+func (i inflow) List(fn ListFunc) {
 	if fn == nil {
 		i.Panic("call (Inflow).List with nil")
 	}
@@ -37,7 +37,7 @@ func (i *inflow) List(fn ListFunc) {
 	i.backmx.RUnlock()
 }
 
-func (i *inflow) Terminate(pub cipher.PubKey) error {
+func (i inflow) Terminate(pub cipher.PubKey) error {
 	i.Debug("terminate ", pub.Hex())
 	i.backmx.RLock()
 	defer i.backmx.RUnlock()
@@ -51,7 +51,7 @@ func (i *inflow) Terminate(pub cipher.PubKey) error {
 	return ErrNotFound
 }
 
-func (i *inflow) Subscribe(address string, dpub cipher.PubKey) (err error) {
+func (i inflow) Subscribe(address string, dpub cipher.PubKey) (err error) {
 	if dpub == (cipher.PubKey{}) {
 		i.Debug("subscribe ", address)
 	} else {
@@ -75,8 +75,8 @@ func (i *inflow) Subscribe(address string, dpub cipher.PubKey) (err error) {
 	defer i.backmx.Unlock()
 	i.back[gc] = c
 	if i.conf.HandshakeTimeout > 0 {
-		go i.node().countDownHandshakeTimeout(gc, c.done)
+		go i.countDownHandshakeTimeout(gc, c.done)
 	}
-	i.pool.SendMessage(gc, c.Question(i.node()))
+	i.pool.SendMessage(gc, c.Question(i.node))
 	return
 }
