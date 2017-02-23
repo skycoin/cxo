@@ -4,14 +4,14 @@ import (
 	"net"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
 type Incoming interface {
 	Address() (string, error)
 	Broadcast(msg interface{}) (err error) // broadcast msg to all subscribers
-	List() []Connection                    // list all incoming connections
+	List() <-chan Connection               // list all incoming connections
 	Terminate(pub cipher.PubKey)           // terminate incoming connection
+	TerminateByAddress(address string)     // terminate by address
 }
 
 // namespace isolation for node->incoming and node->outgoing
@@ -24,36 +24,32 @@ type Connection struct {
 	Addr string
 }
 
-func (i incoming) List() (cs []Connection) {
-	i.lock()
-	defer i.unlock()
-	cs = make([]Connection, 0, len(i.incoming))
-	for gc, pk := range i.incoming {
-		cs = append(cs, Connection{
-			Pub:  pk,
-			Addr: gc.Addr(),
-		})
+func (i incoming) List() <-chan Connection {
+	reply := make(chan Connection, i.conf.MaxIncomingConnections)
+	i.events <- listEvent{
+		outgoing: false,
+		reply:    reply,
 	}
-	return
+	return reply
 }
 
 func (i incoming) Terminate(pub cipher.PubKey) {
-	i.lock()
-	defer i.unlock()
-	for gc, pk := range i.incoming {
-		if pk == pub {
-			gc.ConnectionPool.Disconnect(gc, ErrManualDisconnect)
-			return
-		}
+	i.events <- terminateEvent{
+		outgoing: false,
+		pub:      pub,
 	}
-	return
+}
+
+func (i incoming) TerminateByAddress(address string) {
+	i.events <- terminateByAddressEvent{
+		outgoing: false,
+		address:  address,
+	}
 }
 
 func (i incoming) Broadcast(msg interface{}) (err error) {
-	var (
-		d  *Msg
-		gc *gnet.Connection
-	)
+	i.Debug("[DBG] broadcast: ", msg)
+	var d *Msg
 	if d, err = i.encode(msg); err != nil {
 		i.Printf("[ERR] error encoding message: %q, %T, %v,",
 			err.Error(),
@@ -61,17 +57,20 @@ func (i incoming) Broadcast(msg interface{}) (err error) {
 			msg)
 		return
 	}
-	for gc = range i.incoming {
-		gc.ConnectionPool.SendMessage(gc, d)
-	}
+	i.events <- broadcastEvent{d}
 	return
 }
 
 func (i incoming) Address() (addr string, err error) {
-	var na net.Addr
-	if na, err = i.pool.ListeningAddress(); err != nil {
-		return
-	}
-	addr = na.String()
+	done := make(chan struct{})
+	i.events <- anyEvent(func(n *node) {
+		var na net.Addr
+		if na, err = i.pool.ListeningAddress(); err != nil {
+			return
+		}
+		addr = na.String()
+		close(done)
+	})
+	<-done
 	return
 }

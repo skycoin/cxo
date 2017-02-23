@@ -65,6 +65,10 @@ func TestConfig_NewConfig(t *testing.T) {
 		t.Error("wrong defalt value for MessageHandlingRate: ",
 			c.MessageHandlingRate)
 	}
+	if c.ManageEventsChannelSize != MANAGE_EVENTS_CHANNEL_SIZE {
+		t.Error("wroong default value for ManageEventsChannelSize: ",
+			c.ManageEventsChannelSize)
+	}
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -204,6 +208,12 @@ func TestConfig_FromFlags(t *testing.T) {
 			c.MessageHandlingRate)
 	}
 
+	flag.Set("man-chan-size", "87")
+	if c.ManageEventsChannelSize != 87 {
+		t.Error("wrong defalt value for ManageEventsChannelSize: ",
+			c.ManageEventsChannelSize)
+	}
+
 }
 
 func TestConfig_gnetConfig(t *testing.T) {
@@ -273,4 +283,6 @@ func ExampleConfig_HumanString() {
 	// 	handshake timeout: 40s
 	//
 	// 	messages handling rate: 50ms
+	//
+	// 	managing events channel size: 20
 }

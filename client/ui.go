@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/skycoin/skycoin/src/util"
-	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/gui"
+	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/skycoin/src/util"
 )
 
 const (
@@ -19,19 +19,19 @@ const (
 )
 
 var (
-	logger = util.MustGetLogger(logModuleName)
+	logger     = util.MustGetLogger(logModuleName)
 	logModules = []string{logModuleName}
 )
 
 // default configurations
 const (
 	webInterfaceEnable = true
-	webInterfacePort = 6481
-	webInterfaceAddr = "127.0.0.1"
-	webInterfaceHttps = false
-	launchBrowser = true
-	guiDirectory = "gui/static/"
-	dataDirectory = ".skyhash"
+	webInterfacePort   = 6481
+	webInterfaceAddr   = "127.0.0.1"
+	webInterfaceHttps  = false
+	launchBrowser      = true
+	guiDirectory       = "gui/static/"
+	dataDirectory      = ".skyhash"
 )
 
 // TODO:
@@ -39,25 +39,25 @@ const (
 //       (github.com/skycoin/skycoin/src/mesh/gui) ?
 // Remote web interface
 type WebInterfaceConfig struct {
-	Enable        bool
-	Port          int
-	Addr          string
-	Cert          string
-	Key           string
-	HTTPS         bool
+	Enable bool
+	Port   int
+	Addr   string
+	Cert   string
+	Key    string
+	HTTPS  bool
 	// Launch system default browser after client startup
 	LaunchBrowser bool
 	// static htmls + assets location
-	GUIDirectory  string
+	GUIDirectory string
 }
 
 type Config struct {
 	// WebInterface configs
-	WebInterface  WebInterfaceConfig
+	WebInterface WebInterfaceConfig
 	// Data directory holds app data -- defaults to ~/.skycoin
 	DataDirectory string
 	// logging configs
-	Log           *util.LogConfig
+	Log *util.LogConfig
 }
 
 // TODO: defaultConfig or may be (developConfig + productConfig) ?
@@ -111,10 +111,10 @@ func (c *Config) fromFlags() {
 	flag.StringVar(&c.WebInterface.Addr, "web-interface-addr",
 		c.WebInterface.Addr, "addr to serve web interface on")
 	flag.StringVar(&c.WebInterface.Cert, "web-interface-cert",
-		c.WebInterface.Cert, "cert.pem file for web interface HTTPS. " +
+		c.WebInterface.Cert, "cert.pem file for web interface HTTPS. "+
 			"If not provided, will use cert.pem in -data-directory")
 	flag.StringVar(&c.WebInterface.Key, "web-interface-key",
-		c.WebInterface.Key, "key.pem file for web interface HTTPS. " +
+		c.WebInterface.Key, "key.pem file for web interface HTTPS. "+
 			"If not provided, will use key.pem in -data-directory")
 	flag.BoolVar(&c.WebInterface.HTTPS, "web-interface-https",
 		c.WebInterface.HTTPS, "enable HTTPS for web interface")
@@ -165,7 +165,10 @@ func RunAPI(c *Config, manager *nodeManager.Manager, controllers ...gui.IRouterA
 		if c.WebInterface.HTTPS == true {
 			log.Panic("HTTPS support is not implemented yet")
 		} else {
-			err = gui.LaunchWebInterfaceAPI(c.host(), c.WebInterface.GUIDirectory, manager, controllers...)
+			err = gui.LaunchWebInterfaceAPI(c.host(),
+				c.WebInterface.GUIDirectory,
+				manager,
+				controllers...)
 		}
 
 		if err != nil {

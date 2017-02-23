@@ -29,7 +29,7 @@ const (
 	MAX_PENDING_CONNECTIONS int = 64 // default MaxPendingConnections
 
 	MAX_MESSAGE_LENGTH          int = 8192 // default MaxMessageLength
-	EVENT_CHANNEL_SIZE          int = 4096 // default EvetnChannelSize
+	EVENT_CHANNEL_SIZE          int = 4096 // default EventChannelSize
 	BROADCAST_RESULT_SIZE       int = 16   // default BroadcastResultSize
 	CONNECTION_WRITE_QUEUE_SIZE int = 32   // default ConnectionWriteQueueSize
 
@@ -42,6 +42,10 @@ const (
 
 	// MESSAGE_HANDLING_RATE is default MessageHandlingRate
 	MESSAGE_HANDLING_RATE time.Duration = 50 * time.Millisecond
+
+	// MANAGE_EVENTS_CHANNEL_SIZE size of managing events like
+	// List, Connect, Terminate etc
+	MANAGE_EVENTS_CHANNEL_SIZE = 20
 )
 
 // A Config represents set of configurations of a Node
@@ -86,6 +90,10 @@ type Config struct {
 	// MessageHandlingRate is interval of handling messages. Set it to zero
 	// if you want to handle messages in infinity loop
 	MessageHandlingRate time.Duration
+
+	// ManageEventsChannelSize is csize of channel for managing events
+	// such as list connections, connect, terminate connection, etc
+	ManageEventsChannelSize int
 }
 
 // NewConfig returns Config filled down with default values
@@ -113,6 +121,8 @@ func NewConfig() (c Config) {
 	c.HandshakeTimeout = HANDSHAKE_TIMEOUT
 
 	c.MessageHandlingRate = MESSAGE_HANDLING_RATE
+
+	c.ManageEventsChannelSize = MANAGE_EVENTS_CHANNEL_SIZE
 	return
 }
 
@@ -206,6 +216,11 @@ func (c *Config) FromFlags() {
 		"rate",
 		MESSAGE_HANDLING_RATE,
 		"messages handling rate (set to zero to immediate handling)")
+
+	flag.IntVar(&c.ManageEventsChannelSize,
+		"man-chan-size",
+		MANAGE_EVENTS_CHANNEL_SIZE,
+		"size of managing events channel")
 }
 
 func humanBool(b bool, t, f string) string {
@@ -259,7 +274,9 @@ func (c *Config) HumanString() (s string) {
 
 	handshake timeout: %s
 
-	messages handling rate: %s`,
+	messages handling rate: %s
+
+	managing events channel size: %d`,
 
 		c.Name,
 		humanBool(c.Debug, "enabled", "disabled"),
@@ -282,7 +299,8 @@ func (c *Config) HumanString() (s string) {
 
 		humanDur(c.HandshakeTimeout, "ignore"),
 
-		c.MessageHandlingRate.String())
+		c.MessageHandlingRate.String(),
+		c.ManageEventsChannelSize)
 
 	return
 }

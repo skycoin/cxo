@@ -6,10 +6,15 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
+func init() {
+	gnet.DebugPrint = testing.Verbose()
+}
+
 func wait() {
-	time.Sleep(5500 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 }
 
 type pingPongCounter struct {
@@ -57,7 +62,7 @@ func (s *String) HandleOutgoing(oc OutgoingContext) (terminate error) {
 func TestNode_ping_pong(t *testing.T) {
 	var (
 		n1, n2 Node
-		c      Config = NewConfig()
+		c      Config = newConfig()
 
 		err error
 	)
@@ -74,20 +79,16 @@ func TestNode_ping_pong(t *testing.T) {
 
 	//for _, n := range []Node{n1, n2} { // <- stupid, doesn't work
 	n1.Register(String{})
-	go func() {
-		if err := n1.Start(); err != nil {
-			t.Fatal("error staring node: ", err)
-		}
-	}()
-	n2.Register(String{})
-	go func() {
-		if err := n2.Start(); err != nil {
-			t.Fatal("error staring node: ", err)
-		}
-	}()
-	//}
-
+	if err := n1.Start(); err != nil {
+		t.Error("error staring node: ", err)
+		return
+	}
 	defer n1.Close()
+	n2.Register(String{})
+	if err := n2.Start(); err != nil {
+		t.Error("error staring node: ", err)
+		return
+	}
 	defer n2.Close()
 
 	wait()
@@ -96,14 +97,19 @@ func TestNode_ping_pong(t *testing.T) {
 	if addr, err := n1.Incoming().Address(); err != nil {
 		t.Fatal("can't get listening address of node: ", err)
 	} else {
+		n1.Debug("[TEST] listening address: ", addr)
 		if err := n2.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
 			t.Fatal("error conection to remote node: ", err)
 		}
 	}
 
+	wait()
+
 	gPingPong.reset() // reset global ping-pong counter
 
-	n1.Incoming().Broadcast(&String{"PING"})
+	if err = n1.Incoming().Broadcast(&String{"PING"}); err != nil {
+		t.Error("broadcasting error: ", err)
+	}
 
 	wait()
 

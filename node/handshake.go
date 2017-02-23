@@ -51,7 +51,7 @@ func (q *hsQuest) Handle(ctx *gnet.MessageContext,
 		gc *gnet.Connection = ctx.Conn
 	)
 
-	n.Debug("[DBG] got HSQS from: %s, public key: %s",
+	n.Debugf("[DBG] got HSQS from: %s, public key: %s",
 		gc.Addr(),
 		q.Pub.Hex())
 
@@ -187,7 +187,7 @@ func (a *hsAnswer) Handle(ctx *gnet.MessageContext,
 		err error
 	)
 
-	n.Debug("[DBG] got HSAN from: %s", gc.Addr())
+	n.Debug("[DBG] got HSAN from: ", gc.Addr())
 
 	pend, ok := ni.(Node).pend(gc)
 	if !ok {
@@ -207,8 +207,8 @@ func (a *hsAnswer) Handle(ctx *gnet.MessageContext,
 		return ErrMalformedHandshake
 	}
 
-	if pend.step != 2 {
-		n.Print("[ERR] HSAN: invalid handshake step: want 2, got ", pend.step)
+	if pend.step != 1 {
+		n.Print("[ERR] HSAN: invalid handshake step: want 1, got ", pend.step)
 		return ErrUnexpectedHandshake
 	}
 
@@ -253,7 +253,7 @@ func (h *hsSuccess) Handle(ctx *gnet.MessageContext,
 		err error
 	)
 
-	n.Debug("[DBG] got HSSC from: %s", gc.Addr())
+	n.Debug("[DBG] got HSSC from: ", gc.Addr())
 
 	pend, ok := ni.(Node).pend(gc)
 	if !ok {
@@ -274,7 +274,7 @@ func (h *hsSuccess) Handle(ctx *gnet.MessageContext,
 	}
 
 	if err = n.addOutgoing(gc, pend.remotePub); err != nil {
-		n.Print("[ERR] HSAN already have outgoing connection to %s",
+		n.Print("[ERR] HSAN already have outgoing connection to ",
 			pend.remotePub.Hex())
 		return err
 	}
