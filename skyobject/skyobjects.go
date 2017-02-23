@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"bytes"
+	// "errors"
 	"fmt"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/encoder"
@@ -21,6 +22,7 @@ type ISkyObjects interface {
 
 	GetSchemas() []Schema
 	GetSchema(typeName string) *Schema
+	GetSchemaFromKey(schemaKey cipher.SHA256) *Schema
 	GetSchemaKey(typeName string) (cipher.SHA256, bool)
 	Publish(ref Href, sign *cipher.Sig) cipher.SHA256
 
@@ -28,7 +30,10 @@ type ISkyObjects interface {
 	SaveObject(schemaKey cipher.SHA256, obj interface{}) cipher.SHA256
 	SaveData(schemaKey cipher.SHA256, data []byte) cipher.SHA256
 	Get(key cipher.SHA256) ([]byte, bool)
-	GetRef(key cipher.SHA256) (cipher.SHA256, []byte)
+	GetRef(key cipher.SHA256) href
+	GetObject(key cipher.SHA256) (cipher.SHA256, []byte)
+	GetField(objType cipher.SHA256, objData []byte, fieldName string) cipher.SHA256
+	GetArray(key cipher.SHA256, typeName string) [][]byte
 	Set(key cipher.SHA256, data []byte) error
 	Has(key cipher.SHA256) bool
 	Statistic() data.Statistic
@@ -60,14 +65,38 @@ func (s *skyObjects) Get(key cipher.SHA256) ([]byte, bool) {
 	return s.ds.Get(key)
 }
 
-func (s *skyObjects) GetRef(key cipher.SHA256) (cipher.SHA256, []byte) {
-	byteArray, ok := s.ds.Get(key)
+func (s *skyObjects) GetRef(key cipher.SHA256) (ref href) {
+	byteArray, ok := s.Get(key)
 	if ok == false {
-		return cipher.SHA256{}, nil
+		return
 	}
-	var ref href
 	encoder.DeserializeRaw(byteArray, &ref)
+	return
+}
+
+func (s *skyObjects) GetObject(key cipher.SHA256) (cipher.SHA256, []byte) {
+	ref := s.GetRef(key)
 	return ref.Type, ref.Data
+}
+
+func (s *skyObjects) GetField(objType cipher.SHA256, objData []byte, fieldName string) (field cipher.SHA256) {
+	objSchema := s.GetSchemaFromKey(objType)
+	encoder.DeserializeField(objData, objSchema.Fields, fieldName, &field)
+	return
+}
+
+func (s *skyObjects) GetArray(key cipher.SHA256, typeName string) (dataArray [][]byte) {
+	ref := Href{Ref: key}
+	refMap := ref.Children(s)
+
+	for k, _ := range refMap {
+		typ, data := s.GetObject(k)
+		if s.GetSchemaFromKey(typ).Name == typeName {
+			dataArray = append(dataArray, data)
+		}
+	}
+
+	return
 }
 
 func (s *skyObjects) Set(key cipher.SHA256, data []byte) error {
@@ -185,6 +214,26 @@ func (s *skyObjects) GetSchema(typeName string) *Schema {
 	s.ds.Where(query)
 	return &res
 
+}
+
+func (s *skyObjects) GetSchemaFromKey(schemaKey cipher.SHA256) *Schema {
+	var res Schema
+	var ref href
+
+	dataBytes, ok := s.ds.Get(schemaKey)
+	if ok == false {
+		return &res
+	}
+
+	encoder.DeserializeRaw(dataBytes, &ref)
+	smKey := ref.Type
+	smKey.Set(dataBytes[:32])
+
+	if smKey == _schemaType {
+		encoder.DeserializeRaw(ref.Data, &res)
+	}
+
+	return &res
 }
 
 func (s *skyObjects) GetSchemaKey(typeName string) (cipher.SHA256, bool) {

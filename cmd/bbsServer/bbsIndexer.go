@@ -7,11 +7,8 @@ import (
 	"github.com/skycoin/cxo/encoder"
 	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
-	// "reflect"
-	// "bytes"
 	"github.com/skycoin/skycoin/src/cipher"
 	"strings"
-	// "github.com/skycoin/skycoin/src/mesh/messages"
 )
 
 type objectLink struct {
@@ -31,8 +28,10 @@ type BBSIndexer struct {
 	Threads []objectLink
 	Posts   []objectLink
 
-	BoardMap  map[string][]byte
-	ThreadMap map[string][]byte
+	// [Key] : Item Name, [Data] : Object Key
+	BoardMap  map[string]cipher.SHA256
+	ThreadMap map[string]cipher.SHA256
+	PostMap   map[string]cipher.SHA256
 }
 
 func MakeBBSIndexer(bbsIn *bbs.Bbs) *BBSIndexer {
@@ -83,7 +82,7 @@ func (bi *BBSIndexer) Load() {
 	bi.loadBoards()
 	bi.loadThreads()
 	bi.loadPosts()
-	fmt.Printf("Generated: %d Boards, %d Threads, %d Posts.\n", len(bi.Boards), len(bi.Threads), len(bi.Posts))
+	fmt.Printf("Loaded: %d Boards, %d Threads, %d Posts.\n", len(bi.Boards), len(bi.Threads), len(bi.Posts))
 }
 
 func (bi *BBSIndexer) GetThreadsFromBoard(key string) (threads []objectLink, e error) {
@@ -174,35 +173,27 @@ func (bi *BBSIndexer) loadBoards() {
 		bi.Boards = append(bi.Boards, objectLink{ID: k.Hex(), Name: ref.String(c)})
 	}
 
-	// TEST 1 >>>
-	fmt.Println("\n<<< [START TEST 1] >>>")
+	fmt.Println("\n[BOARDS]\n")
 	for _, k := range keys {
-		fmt.Println("HASH:", k.Hex())
+		var boardExtract bbs.Board // <----------------------------------------- (BOARD)
+		boardType, boardData := c.GetObject(k)
+		encoder.DeserializeRaw(boardData, &boardExtract)
 
-		_, byteArray := c.GetRef(k)
+		var threadsExtract []bbs.Thread // <------------------------------------ (CHILDREN THREADS)
+		threadsKey := c.GetField(boardType, boardData, "Threads")
+		threadDataArray := c.GetArray(threadsKey, "Thread")
 
-		// fmt.Println("HREF:", string(refTest.Data))
+		for _, threadData := range threadDataArray {
+			var threadExtract bbs.Thread // <----------------------------------- (CHILD THREAD)
+			encoder.DeserializeRaw(threadData, &threadExtract)
+			threadsExtract = append(threadsExtract, threadExtract)
+		}
 
-		var boardTest bbs.Board
-		encoder.DeserializeRaw(byteArray, &boardTest)
-
-		fmt.Println("BOARD:", boardTest.Name)
-	}
-	fmt.Println("<<< [  END TEST 1] >>>\n")
-
-	// TEST 2 >>>
-	fmt.Println("\n<<< [START TEST 2] >>>")
-	for _, k := range keys {
-		fmt.Println("", "HASH:", k.Hex())
-
-		var ref = skyobject.Href{Ref: k}
-		infoMap := ref.References(c)
-
-		for k2, i := range infoMap {
-			fmt.Println("[infoMap value] k:", k2.Hex(), ", i:", i)
+		fmt.Println(boardExtract.Name)
+		for _, v := range threadsExtract {
+			fmt.Println("", "-", v.Name)
 		}
 	}
-	fmt.Println("<<< [  END TEST 2] >>>\n")
 }
 
 func (bi *BBSIndexer) loadThreads() {
@@ -212,6 +203,28 @@ func (bi *BBSIndexer) loadThreads() {
 	for _, k := range keys {
 		ref := skyobject.Href{Ref: k}
 		bi.Threads = append(bi.Threads, objectLink{ID: k.Hex(), Name: ref.String(c)})
+	}
+
+	fmt.Println("\n[THREADS]\n")
+	for _, k := range keys {
+		var threadExtract bbs.Thread // <--------------------------------------- (THREAD)
+		threadType, threadData := c.GetObject(k)
+		encoder.DeserializeRaw(threadData, &threadExtract)
+
+		var postsExtract []bbs.Post // <---------------------------------------- (CHILDREN POSTS)
+		postsKey := c.GetField(threadType, threadData, "Posts")
+		postDataArray := c.GetArray(postsKey, "Post")
+
+		for _, postData := range postDataArray {
+			var postExtract bbs.Post // <--------------------------------------- (CHILD POST)
+			encoder.DeserializeRaw(postData, &postExtract)
+			postsExtract = append(postsExtract, postExtract)
+		}
+
+		fmt.Println(threadExtract.Name)
+		for _, v := range postsExtract {
+			fmt.Println("", "-", v.Header)
+		}
 	}
 }
 
@@ -223,4 +236,14 @@ func (bi *BBSIndexer) loadPosts() {
 		ref := skyobject.Href{Ref: k}
 		bi.Posts = append(bi.Posts, objectLink{ID: k.Hex(), Name: ref.String(c)})
 	}
+
+	fmt.Println("\n[POSTS]\n")
+	for _, k := range keys {
+		var postExtract bbs.Post
+		_, postData := c.GetObject(k)
+		encoder.DeserializeRaw(postData, &postExtract)
+
+		fmt.Println(postExtract.Header, "-", postExtract.Text)
+	}
+	fmt.Print('\n')
 }

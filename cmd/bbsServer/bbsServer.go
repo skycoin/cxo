@@ -48,8 +48,8 @@ func (r *RPCReceiver) GenerateRandomData(_ []string, result *[]byte) error {
 	post3 := r.I.CreatePost("post3", "bla 333")
 	thread1 := r.I.AddThread("thread1", post1, post2)
 	thread2 := r.I.AddThread("thread2", post3)
-	r.I.AddBoard("board1", thread1)
-	r.I.AddBoard("board2", thread2)
+	r.I.AddBoard("board1", thread1, thread2)
+	// r.I.AddBoard("board2", thread2)
 
 	replyMsg := "Generated 3 posts, 3 threads and 2 boards."
 	*result = messages.Serialize((uint16)(0), &replyMsg)

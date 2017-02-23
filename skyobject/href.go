@@ -1,18 +1,18 @@
 package skyobject
 
 import (
-	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/cxo/encoder"
 	"fmt"
+	"github.com/skycoin/cxo/encoder"
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 var _schemaType cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(Schema{}))
 
 type Href struct {
 	Ref   cipher.SHA256
-	rdata []byte        `enc:"-"`
-	rtype []byte        `enc:"-"`
-	value interface{}   `enc:"-"`
+	rdata []byte      `enc:"-"`
+	rtype []byte      `enc:"-"`
+	value interface{} `enc:"-"`
 }
 
 type href struct {
@@ -39,12 +39,12 @@ func (s *Href) References(c ISkyObjects) RefInfoMap {
 
 	hobj, ok := c.HashObject(ref)
 	var childRefs RefInfoMap
-	if (!ok) {
+	if !ok {
 		//fmt.Println("Not a hash object")
 		schemaData, _ := c.Get(ref.Type)
 		smref := href{}
 		encoder.DeserializeRaw(schemaData, &smref)
-		hobj = &HashObject{rdata:ref.Data, rtype:smref.Data}
+		hobj = &HashObject{rdata: ref.Data, rtype: smref.Data}
 	}
 
 	//fmt.Println("href", ref)
@@ -53,6 +53,13 @@ func (s *Href) References(c ISkyObjects) RefInfoMap {
 
 	result[s.Ref] = int32(len(data))
 	return mergeRefs(result, childRefs)
+}
+
+func (s *Href) Children(c ISkyObjects) (result RefInfoMap) {
+	var ref = c.GetRef(s.Ref)
+	hobj, _ := c.HashObject(ref)
+	result = hobj.References(c)
+	return
 }
 
 func (s *Href) String(c ISkyObjects) string {
