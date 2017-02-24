@@ -3,20 +3,27 @@ package bbs
 import (
 	"fmt"
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
 )
+
+// developer note:
+// this is replacemant for obsolete cxo/nodeManager.INodeSecurity { Sign(blah) }
+// Because of Golang naming convention, now it called Signer and placed here
+type Signer interface {
+	Sign(hash cipher.SHA256) cipher.Sig //
+}
 
 type Bbs struct {
 	//TODO implement thread lock for Content
 	Container skyobject.ISkyObjects
 	Board     cipher.SHA256
 	sign      cipher.Sig
-	security  nodeManager.INodeSecurity
+	security  Signer
 }
 
-func CreateBbs(dataSource data.IDataSource, security nodeManager.INodeSecurity) *Bbs {
+func CreateBbs(dataSource data.IDataSource, security Signer) *Bbs {
+
 	c := skyobject.SkyObjects(dataSource)
 	c.RegisterSchema(Board{})
 	c.RegisterSchema(Thread{})
@@ -41,8 +48,10 @@ func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
 func (bbs *Bbs) CreateThread(name string, posts ...Post) Thread {
 	sl := skyobject.NewArray(posts)
 	bbs.Container.Save(&sl)
-	return Thread{Name: name, Posts: sl}
-
+	return Thread{
+		Name:  name,
+		Posts: sl,
+	}
 }
 
 func (bbs *Bbs) CreatePost(header string, text string) Post {

@@ -1,12 +1,14 @@
 package bbs
 
 import (
-	"testing"
-	"github.com/skycoin/cxo/data"
 	"fmt"
-	"time"
 	"math/rand"
+	"testing"
+	"time"
+
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -21,7 +23,7 @@ func Test_Bbs_1(T *testing.T) {
 	bbs.AddBoard("Test Board", th1)
 	st := db.Statistic()
 	fmt.Println(st)
-	if (st.Total != 17) {
+	if st.Total != 17 {
 		T.Fatal("Invalid number of objects", st.Total)
 	}
 }
@@ -37,14 +39,15 @@ func Test_Bbs_2(T *testing.T) {
 	bbs.AddBoard("Test Board", th1)
 	st := db.Statistic()
 	fmt.Println(st)
-	ref := skyobject.Href{Ref:bbs.Board}
+	ref := skyobject.Href{Ref: bbs.Board}
 
 	refs := ref.References(bbs.Container)
 	fmt.Println(refs)
-	if (st.Total != 17) {
+	if st.Total != 17 {
 		T.Fatal("Invalid number of objects", st.Total)
 	}
 }
+
 //
 //func Test_Bbs_2(T *testing.T) {
 //	db := data.NewDB()
@@ -76,17 +79,16 @@ func prepareTestData(ds data.IDataSource) *Bbs {
 		for t := 0; t < 10; t++ {
 			posts := []Post{}
 			for p := 0; p < 10; p++ {
-				posts = append(posts, bbs.CreatePost("Post_" + GenerateString(15), "some Text"))
+				posts = append(posts, bbs.CreatePost("Post_"+GenerateString(15), "some Text"))
 			}
-			threads = append(threads, bbs.CreateThread("Thread_" + GenerateString(15), posts...))
+			threads = append(threads, bbs.CreateThread("Thread_"+GenerateString(15), posts...))
 		}
-		boards = append(boards, bbs.AddBoard("Board_" + GenerateString(15), threads...))
+		boards = append(boards, bbs.AddBoard("Board_"+GenerateString(15), threads...))
 	}
 	return bbs
 }
 
 type testNode struct {
-
 }
 
 func (t *testNode) Sign(hash cipher.SHA256) cipher.Sig {
@@ -94,11 +96,13 @@ func (t *testNode) Sign(hash cipher.SHA256) cipher.Sig {
 	return cipher.SignHash(hash, sk)
 }
 
-const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
+	letterBytes = "0123456789" +
+		"abcdefghijklmnopqrstuvwxyz" +
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	letterIdxBits = 6                    // 6 bits to represent a letter index
-	letterIdxMask = 1 << letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-	letterIdxMax = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
 
 var src = rand.NewSource(time.Now().UnixNano())
@@ -106,7 +110,7 @@ var src = rand.NewSource(time.Now().UnixNano())
 func GenerateString(n int) string {
 	b := make([]byte, n)
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
-	for i, cache, remain := n - 1, src.Int63(), letterIdxMax; i >= 0; {
+	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {
 			cache, remain = src.Int63(), letterIdxMax
 		}
