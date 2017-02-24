@@ -2,10 +2,7 @@ package client
 
 import (
 	"flag"
-	"fmt"
 	"math/rand"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -13,7 +10,7 @@ import (
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/gui"
-	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -29,7 +26,7 @@ type client struct {
 	imTheVertex  bool
 	subscribeTo  string
 	config       *Config
-	manager      *nodeManager.Manager
+	node         node.Node
 	messanger    *gui.Messenger
 	dataProvider skyobject.ISkyObjects
 }
@@ -48,61 +45,52 @@ func Client() *client {
 	c.config = defaultConfig()
 	c.config.Parse()
 
-	nodeManager.Debugging = false
+	// DEVELOPMENT:
+	// =========================================================================
+	// generate secret key for node if it is not set
+	{
+		if c.config.SecretKey == "" {
+			_, sec := cipher.GenerateKeyPair()
+			c.config.SecretKey = sec.Hex()
+		}
+	}
+	// =========================================================================
 
-	managerConfig := nodeManager.NewManagerConfig()
-	manager, err := nodeManager.NewManager(managerConfig)
-	c.manager = manager
-
+	nd, err := node.NewNode(mustParseSecretKey(c.config.SecretKey),
+		c.config.NodeConfig)
 	if err != nil {
-		fmt.Println("error while configuring node manager", "error", err)
+		logger.Fatal("can't create node: ", err)
+	}
+	c.node = nd
+
+	// check interfaces implementation
+	var (
+		_ node.IncomingHandler = &AnnounceMessage{}
+		_ node.OutgoingHndler  = &RequestMessage{}
+		_ node.IncomingHandler = &DataMessage{}
+	)
+
+	nd.Register(RequestMessage{})
+	nd.Register(AnnounceMessage{})
+	nd.Register(DataMessage{})
+
+	err = nd.Start()
+	if err != nil {
+		logger.Fatal("can't start node: ", err)
 	}
 
-	newNode := manager.NewNode()
-	err = manager.AddNode(newNode)
-	if err != nil {
-		panic("Can't create node")
-	}
-
-	// register messages that this node can receive from downstream
-	newNode.RegisterDownstreamMessage(RequestMessage{})
-
-	// register messages that this node can receive from upstream
-	newNode.RegisterUpstreamMessage(AnnounceMessage{})
-	newNode.RegisterUpstreamMessage(DataMessage{})
-
-	err = newNode.Start()
-	if err != nil {
-		panic("Can't create node")
-	}
-
-	c.messanger = NodeMessanger(newNode)
+	c.messanger = NodeMessanger(nd)
 
 	c.imTheVertex = c.subscribeTo == ""
-	boards := bbs.CreateBbs(DB, newNode)
+	boards := bbs.CreateBbs(DB, nd)
 
 	Sync = SyncContext(boards.Container)
 
 	if !c.imTheVertex {
-
-		ip, portString, err := net.SplitHostPort(c.subscribeTo)
+		logger.Info("Stat: %v", boards.Container.Statistic())
+		err = nd.Outgoing().Connect(c.subscribeTo, cipher.PubKey{})
 		if err != nil {
-			fmt.Println("err: ", err)
-			panic("Can't create node")
-		}
-
-		port, err := strconv.ParseUint(portString, 10, 16)
-
-		// If the pubKey parameter is an empty cipher.PubKey{}, we will
-		// connect to that node
-		// for any PubKey it communicates us it has.
-		// For a specific match, you have to provide a specific pubKey.
-		pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
-		fmt.Println(boards.Container.Statistic())
-		err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
-		if err != nil {
-			fmt.Println("err: ", err)
-			panic("Can't create node")
+			logger.Fatal("can't connect to remote node: ", err)
 		}
 	} else {
 		go func() {
@@ -120,7 +108,9 @@ func Client() *client {
 
 			r := skyobject.Href{Ref: boards.Board}
 			rs := r.References(boards.Container)
-			fmt.Println("Total refs:", len(rs), boards.Container.Statistic())
+			logger.Info("Total refs: %d %v",
+				len(rs),
+				boards.Container.Statistic())
 			time.Sleep(time.Minute * 120)
 		}()
 	}
@@ -130,10 +120,18 @@ func Client() *client {
 	return c
 }
 
+func mustParseSecretKey(str string) cipher.SecKey {
+	sec, err := cipher.SecKeyFromHex(str)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return sec
+}
+
 func (c *client) Run() {
 	if c.imTheVertex {
 		api := SkyObjectsAPI(c.dataProvider)
-		RunAPI(c.config, c.manager, api)
+		RunAPI(c.config, c.node, api)
 	} else {
 		time.Sleep(time.Minute * 120)
 	}

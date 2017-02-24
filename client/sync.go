@@ -5,7 +5,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -18,11 +17,13 @@ func SyncContext(container skyobject.ISkyObjects) *syncContext {
 }
 
 func (c *syncContext) OnRequest(
-	r *nodeManager.Subscription,
+	r Replier,
 	hash cipher.SHA256) {
 
 	for _, item := range c.container.MissingDependencies(hash) {
 		fmt.Println("RequestMessage", item)
-		r.Send(RequestMessage{Hash: item})
+		if err := r.Reply(RequestMessage{Hash: item}); err != nil {
+			logger.Error("error sending reply: ", err)
+		}
 	}
 }

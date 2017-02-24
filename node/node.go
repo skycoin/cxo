@@ -548,7 +548,14 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 }
 
 func (n *node) Register(msg interface{}) {
-	n.registry.Register(msg)
+	ih := reflect.TypeOf((IncomingHandler)(nil))
+	oh := reflect.TypeOf((OutgoingHndler)(nil))
+	tm := reflect.TypeOf(msg)
+	if tm.Implements(ih) || tm.Implements(oh) {
+		n.registry.Register(msg)
+		return
+	}
+	n.Panicf("%T doesn't inpemetns IncomingHandler nor OutgoingHandler", msg)
 }
 
 func (n *node) handleIncomingConnections() {

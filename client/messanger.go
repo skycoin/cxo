@@ -6,20 +6,20 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/gui"
-	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/cxo/node"
 )
 
 type nodeMessenger struct {
-	node *nodeManager.Node
+	node node.Node
 }
 
-func NodeMessanger(node *nodeManager.Node) *gui.Messenger {
+func NodeMessanger(node node.Node) *gui.Messenger {
 	return &gui.Messenger{Context: &nodeMessenger{node: node}}
 }
 
-func (m *nodeMessenger) send(message interface{}) error {
-	fmt.Println("BroadcastToSubscribers", message)
-	return m.node.BroadcastToSubscribers(message)
+func (m *nodeMessenger) send(msg interface{}) error {
+	fmt.Println("BroadcastToSubscribers", msg)
+	return m.node.Incoming().Broadcast(msg)
 }
 
 func (m *nodeMessenger) Announce(hash cipher.SHA256) error {

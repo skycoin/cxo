@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/skycoin/cxo/gui"
-	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/skycoin/src/util"
 )
 
@@ -52,6 +52,10 @@ type WebInterfaceConfig struct {
 }
 
 type Config struct {
+	// secret key
+	SecretKey string
+	// node configs
+	NodeConfig node.Config
 	// WebInterface configs
 	WebInterface WebInterfaceConfig
 	// Data directory holds app data -- defaults to ~/.skycoin
@@ -64,6 +68,7 @@ type Config struct {
 
 func defaultConfig() *Config {
 	cfg := &Config{
+		NodeConfig: node.NewConfig(),
 		WebInterface: WebInterfaceConfig{
 			Enable: webInterfaceEnable,
 			Port:   webInterfacePort,
@@ -104,6 +109,13 @@ func (c *Config) Parse() {
 }
 
 func (c *Config) fromFlags() {
+	c.NodeConfig.FromFlags()
+
+	flag.StringVar(&c.SecretKey,
+		"secret-key",
+		"",
+		"secret key of node")
+
 	flag.BoolVar(&c.WebInterface.Enable, "web-interface", c.WebInterface.Enable,
 		"enable the web interface")
 	flag.IntVar(&c.WebInterface.Port, "web-interface-port",
@@ -146,7 +158,7 @@ func (c *Config) scheme() string {
 	return "http"
 }
 
-func RunAPI(c *Config, manager *nodeManager.Manager, controllers ...gui.IRouterApi) {
+func RunAPI(c *Config, node node.Node, controllers ...gui.IRouterApi) {
 	c.WebInterface.GUIDirectory = util.ResolveResourceDirectory(
 		c.WebInterface.GUIDirectory)
 
@@ -155,10 +167,6 @@ func RunAPI(c *Config, manager *nodeManager.Manager, controllers ...gui.IRouterA
 
 	// start node_manager
 	fmt.Printf("Starting Skyhash Manager Service...\n")
-	// TODO: empty config? what the hell?
-	// *nodemanager.NodeManager
-
-	//nm := nodemanager.NewNodeManager(&nodemanager.NodeManagerConfig{})
 
 	if c.WebInterface.Enable == true {
 		var err error
@@ -167,7 +175,7 @@ func RunAPI(c *Config, manager *nodeManager.Manager, controllers ...gui.IRouterA
 		} else {
 			err = gui.LaunchWebInterfaceAPI(c.host(),
 				c.WebInterface.GUIDirectory,
-				manager,
+				node,
 				controllers...)
 		}
 
