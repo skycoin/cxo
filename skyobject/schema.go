@@ -2,7 +2,7 @@ package skyobject
 
 import (
 
-	"bytes"
+	// "bytes"
 
 	"reflect"
 	"strings"

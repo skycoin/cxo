@@ -5,8 +5,8 @@ import (
 
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/nodeManager"
 	"github.com/skycoin/skycoin/src/cipher"
+	// "github.com/skycoin/skycoin/src/mesh/nodeManager"
 )
 
 type BBSIndexer struct {
@@ -19,16 +19,9 @@ type BBSIndexer struct {
 
 func MakeBBSIndexer() *BBSIndexer {
 	db := data.NewDB()
+	security := Signer{}
 
-	config := nodeManager.NewManagerConfig()
-	manager, e := nodeManager.NewManager(config)
-	if e != nil {
-		fmt.Println(e)
-		return nil
-	}
-	node := manager.NewNode()
-
-	bbsIn := bbs.CreateBbs(db, node)
+	bbsIn := bbs.CreateBbs(db, security)
 	return &BBSIndexer{
 		BBS:     bbsIn,
 		Boards:  make(map[cipher.SHA256]bbs.Board),

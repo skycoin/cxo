@@ -3,7 +3,7 @@
 
 Specifications: https://pad.riseup.net/p/cxo
 
-# SkyObjects Quickstart
+## SkyObjects Quickstart
 `import "github.com/skycoin/cxo/skyobject"`
 
 ### Creating a SkyObjects Container
@@ -49,6 +49,10 @@ boardsRef := skyobject.NewArray(boards) // Make array reference object.
 container.Save(&boardRef) // Store boards in container.
 ```
 Note that the objects in the array are stored separately, and the array is infact an array of references.
+
+### Registering Object as Root
+
+`**** TODO ****`
 
 ### Storing Objects That Reference Other Objects
 Objects can be stored to refer to one another.
@@ -96,3 +100,5 @@ parent := Parent{Name: "Bob", Children: childrenRef}
 parentRef := skyobject.NewObject(parent)
 container.Save(&parentRef)
 ```
+### Retrieving Objects
+`**** TODO ****`
