@@ -19,22 +19,6 @@ type incoming struct {
 	*node
 }
 
-type Connection struct {
-	Pub  cipher.PubKey `json:"pub"`
-	Addr string        `json:"addr"`
-}
-
-func (c *Connection) MarshalJSON() (data []byte, _ error) {
-	// hex + {"pub":"","addr":""} + addr
-	data = make([]byte, 0, 66+20+20) // scratch
-	data = append(data, `{"pub":"`...)
-	data = append(data, c.Pub.Hex()...)
-	data = append(data, `","addr":"`...)
-	data = append(data, c.Addr...)
-	data = append(data, `"}`...)
-	return
-}
-
 func (i incoming) List() <-chan Connection {
 	reply := make(chan Connection, i.conf.MaxIncomingConnections)
 	i.events <- listEvent{

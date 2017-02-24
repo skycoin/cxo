@@ -14,7 +14,7 @@ import (
 // Default values for Config returned using NewConfig
 const (
 	NAME  string = "node" // default Name
-	DEBUG bool   = true   // default Debug
+	DEBUG bool   = false  // default Debug
 
 	//
 	// defaults
@@ -34,8 +34,8 @@ const (
 	CONNECTION_WRITE_QUEUE_SIZE int = 32   // default ConnectionWriteQueueSize
 
 	DIAL_TIMEOUT  time.Duration = 20 * time.Second // default DialTimeout
-	READ_TIMEOUT  time.Duration = 20 * time.Second // default ReadTimeout
-	WRITE_TIMEOUT time.Duration = 20 * time.Second // default WriteTimeout
+	READ_TIMEOUT  time.Duration = 0                // default ReadTimeout
+	WRITE_TIMEOUT time.Duration = 0                // default WriteTimeout
 
 	// HANDSHAKE_TIMEOUT is default HandshakeTimeout
 	HANDSHAKE_TIMEOUT time.Duration = 40 * time.Second

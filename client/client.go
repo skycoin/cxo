@@ -70,9 +70,9 @@ func Client() *client {
 		_ node.IncomingHandler = &DataMessage{}
 	)
 
-	nd.Register(RequestMessage{})
-	nd.Register(AnnounceMessage{})
-	nd.Register(DataMessage{})
+	nd.Register(&RequestMessage{})
+	nd.Register(&AnnounceMessage{})
+	nd.Register(&DataMessage{})
 
 	err = nd.Start()
 	if err != nil {

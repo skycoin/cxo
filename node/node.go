@@ -365,7 +365,6 @@ func (n *node) start(quit, done chan struct{}) {
 			n.Debug("[DBG] handle incoming connection")
 			n.handleIncomingConnection(ic)
 		case <-handleMsgChan:
-			n.Debug("[DBG] handle messages")
 			n.pool.HandleMessages()
 		case <-handshakeTimeoutChan:
 			n.Debug("[DBG] lookup handshake tick")
@@ -548,8 +547,9 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 }
 
 func (n *node) Register(msg interface{}) {
-	ih := reflect.TypeOf((IncomingHandler)(nil))
-	oh := reflect.TypeOf((OutgoingHndler)(nil))
+	// TODO: non-pointer values
+	ih := reflect.TypeOf((*IncomingHandler)(nil)).Elem()
+	oh := reflect.TypeOf((*OutgoingHndler)(nil)).Elem()
 	tm := reflect.TypeOf(msg)
 	if tm.Implements(ih) || tm.Implements(oh) {
 		n.registry.Register(msg)

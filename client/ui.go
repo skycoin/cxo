@@ -193,6 +193,7 @@ func RunAPI(c *Config, node node.Node, controllers ...gui.IRouterApi) {
 
 	// waiting for SIGINT (Ctrl+C)
 	logger.Info("Got signal %q, shutting down...", <-sigint)
+	node.Close() // TOOD
 
 	logger.Info("Goodbye")
 }

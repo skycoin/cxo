@@ -28,6 +28,9 @@ func RegisterNodeManagerHandlers(router *Router, shm node.Node) {
 	router.GET("/manager/nodes/:node_id", lshm.GetNodeByID)
 	router.DELETE("/manager/nodes/:node_id", lshm.TerminateNodeByID)
 
+	// request node listening address and public key
+	router.GET("/node", lshm.NodeInfo)
+
 	// TODO: rid out of nodes/node_id
 
 	router.GET("/manager/nodes/:node_id/subscriptions", lshm.ListSubscriptions)
@@ -67,6 +70,15 @@ func (self *SkyhashManager) GetNodeByID(ctx *Context) error {
 
 func (self *SkyhashManager) TerminateNodeByID(ctx *Context) error {
 	return ctx.ErrInternal("OBSOLETE")
+}
+
+func (s *SkyhashManager) NodeInfo(ctx *Context) error {
+	addr, err := s.Incoming().Address()
+	return ctx.JSON(200, map[string]interface{}{
+		"address":   addr,
+		"listening": err == nil,
+		"pubKey":    s.PubKey().Hex(),
+	})
 }
 
 func (self *SkyhashManager) ListSubscriptions(ctx *Context) error {

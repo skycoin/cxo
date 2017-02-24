@@ -2,17 +2,14 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/peterh/liner"
@@ -79,14 +76,8 @@ func main() {
 	}
 	log.Print("debug logs: ", *debug)
 
-	// first of all: get node id
-	var err error
-	if err = client.getNode(); err != nil {
-		log.Print(err)
-		return // must return to close liner (opposite to log.Fatal and os.Exit)
-	}
-
 	fmt.Println("enter 'help' to get help")
+	var err error
 	var inpt string
 	// prompt loop
 	for {
@@ -133,7 +124,7 @@ func main() {
 			client.getStat()
 
 		case strings.HasPrefix(inpt, "info"):
-			client.getInfo()
+			client.getNodeInfo()
 
 		case strings.HasPrefix(inpt, "help"):
 			printHelp()
@@ -234,12 +225,12 @@ func printHelp() {
 		list all subscriptions
 	list subscribers
 		list all subscribers
-	add subscription <ip:port> [pubKey]
-		add subscription to given ip:port, the pubKey is optional
-	remove subscription <id or ip:port>
-		remove subscription by id or ip:port
-	remove subscriber <id or ip:port>
-		remove subscriber by id or ip:port
+	add subscription <address> [desired public key]
+		add subscription to given address, the public key is optional
+	remove subscription <id or address>
+		remove subscription by id or address
+	remove subscriber <id or address>
+		remove subscriber by id or address
 	stat
 		get statistic (total objects, memory) of all objects
 	info
@@ -263,10 +254,8 @@ func trim(inpt string, cmd string) string {
 // net/http.Client wrapper
 type Client struct {
 	http.Client
-	addr   string
-	debug  bool
-	nodeId string // pubKey of node
-	listen string // ip:port of the node
+	addr  string
+	debug bool
 }
 
 func (c *Client) Debug(args ...interface{}) {
@@ -279,39 +268,34 @@ func (c *Client) Debug(args ...interface{}) {
 // request node id, ip and port
 //
 
-func (c *Client) getNode() (err error) {
-	// (1) list nodes
-	//
-	// GET /manager/nodes
-	// => []Item{}, where PubKey is nodeId
+func (c *Client) getNodeInfo() (err error) {
+	// GET /node
+	// => {
+	//     "address":   "[::]:34735",
+	//     "listening": true,
+	//     "pubKey":    "hex"
+	//    }
 
-	var nodes []Item
+	var node map[string]interface{} = make(map[string]interface{})
 
-	nodes, err = c.getList(c.addr+"/manager/nodes", false)
+	resp, err := c.Get(c.addr + "/node")
 	if err != nil {
-		err = fmt.Errorf("error requesting nodes list: %s", err.Error())
+		fmt.Println("error requesting node info: ", err)
+		return
+	}
+	defer resp.Body.Close()
+	if err = json.NewDecoder(resp.Body).Decode(&node); err != nil {
+		fmt.Println("error decoding response: ", err)
 		return
 	}
 
-	// we work with single node
-	if len(nodes) != 1 {
-		err = fmt.Errorf("invalid length of nodes list: %d", len(nodes))
-		return
+	for _, k := range []string{"address", "listening", "pubKey"} {
+		if v, ok := node[k]; ok {
+			printf("%-20s %v", k+":", v)
+			continue
+		}
+		printf("unable to obtain %s value", k)
 	}
-
-	c.nodeId = nodes[0].PubKey
-
-	// must be non-empty and clear for url
-	if c.nodeId == "" || url.QueryEscape(c.nodeId) != c.nodeId {
-		err = errors.New("invalid node id")
-		return
-	}
-
-	c.listen = fmt.Sprintf("%s:%d", nodes[0].IP, nodes[0].Port)
-
-	c.nodeId = nodes[0].PubKey
-	log.Print("node id:    ", c.nodeId)
-	log.Print("node addr:  ", c.listen)
 
 	return
 }
@@ -326,8 +310,8 @@ func (c *Client) getSubscriptionsList() (subscriptions []Item, err error) {
 	// GET /manager/nodes/:node_id/subscriptions
 	// => []Item
 
-	subscriptions, err = c.getList(c.addr+"/manager/nodes/"+
-		c.nodeId+"/subscriptions", true)
+	subscriptions, err = c.getList(c.addr+
+		"/manager/nodes/stub/subscriptions", true)
 	return
 }
 
@@ -343,9 +327,8 @@ func (c *Client) listSubscriptions() {
 		return
 	}
 	for _, s := range subscriptions {
-		printf("  %s:%d %s",
-			s.IP,
-			s.Port,
+		printf("  %s %s",
+			s.Address,
 			s.PubKey)
 	}
 }
@@ -356,8 +339,8 @@ func (c *Client) getConnectionsList() (connections []Item, err error) {
 	// GET /manager/nodes/:node_id/subscribers
 	// => []Item
 
-	connections, err = c.getList(c.addr+"/manager/nodes/"+
-		c.nodeId+"/subscribers", true)
+	connections, err = c.getList(c.addr+
+		"/manager/nodes/stub/subscribers", true)
 	return
 }
 
@@ -375,9 +358,8 @@ func (c *Client) listSubscribers() {
 		return
 	}
 	for _, s := range subscribers {
-		printf("  %s:%d %s",
-			s.IP,
-			s.Port,
+		printf("  %s %s",
+			s.Address,
 			s.PubKey)
 	}
 
@@ -396,10 +378,10 @@ func (c *Client) addSubscription(args string) {
 		fmt.Println("to few arguments, want <host:port> [pub key]")
 		return
 	case 1:
-		reqp = c.addr + "/manager/nodes/" + c.nodeId + "/subscriptions"
+		reqp = c.addr + "/manager/nodes/stub/subscriptions"
 		reqb = fmt.Sprintf(`{"ip":%q,"pubKey":""}`, ss[0])
 	case 2:
-		reqp = c.addr + "/manager/nodes/" + c.nodeId + "/subscriptions"
+		reqp = c.addr + "/manager/nodes/stub/subscriptions"
 		reqb = fmt.Sprintf(`{"ip":%q,"pubKey":%q}`, ss[0], ss[1])
 	default:
 		fmt.Println("to many arguments, want <host:port> [pub key]")
@@ -432,9 +414,8 @@ func (c *Client) removeSubscription(args string) {
 	// DELETE "/manager/nodes/:node_id/subscriptions/:subscription_id"
 
 	var (
-		reqs string // remove using id
-		host string // or remove using host:port
-		port string //
+		reqs    string // remove using id
+		address string // or remove using address
 
 		err error
 	)
@@ -444,14 +425,11 @@ func (c *Client) removeSubscription(args string) {
 		return
 	case 1:
 		if strings.Contains(ss[0], ":") {
-			if host, port, err = net.SplitHostPort(ss[0]); err != nil {
-				fmt.Println("error spiting ip:port:", err)
-				return
-			}
+			address = ss[0]
 			break
 		}
-		reqs = c.addr + "/manager/nodes/" + c.nodeId +
-			"/subscriptions/" + url.QueryEscape(ss[0])
+		reqs = c.addr + "/manager/nodes/stub/subscriptions/" +
+			url.QueryEscape(ss[0])
 	default:
 		fmt.Println("to many argumets, want: <id or ip:port>")
 		return
@@ -465,20 +443,15 @@ func (c *Client) removeSubscription(args string) {
 			fmt.Println("error requesting subscriptions list", err)
 			return
 		}
-		var portNo int
-		if portNo, err = strconv.Atoi(port); err != nil {
-			fmt.Println("error parsing port number:", err)
-			return
-		}
 		for _, s := range subscriptions {
-			if s.Port == portNo && s.IP == host {
-				reqs = c.addr + "/manager/nodes/" + c.nodeId +
-					"/subscriptions/" + s.PubKey
+			if s.Address == address {
+				reqs = c.addr + "/manager/nodes/stub/subscriptions/" +
+					s.PubKey
 				goto Request
 			}
 		}
 		// not found
-		printf("subscription %s:%s not found", host, port)
+		printf("subscription %s not found", address)
 		return
 	}
 Request:
@@ -512,9 +485,8 @@ func (c *Client) removeSubscriber(args string) {
 	// DELETE "/manager/nodes/:node_id/subscribers/:subscriber_id
 
 	var (
-		reqs string // remove using id
-		host string // or remove using host:port
-		port string //
+		reqs    string // remove using id
+		address string // or remove using address
 
 		err error
 	)
@@ -524,14 +496,11 @@ func (c *Client) removeSubscriber(args string) {
 		return
 	case 1:
 		if strings.Contains(ss[0], ":") {
-			if host, port, err = net.SplitHostPort(ss[0]); err != nil {
-				fmt.Println("error spiting ip:port:", err)
-				return
-			}
+			address = ss[0]
 			break
 		}
-		reqs = c.addr + "/manager/nodes/" + c.nodeId +
-			"/subscribers/" + url.QueryEscape(ss[0])
+		reqs = c.addr + "/manager/nodes/stub/subscribers/" +
+			url.QueryEscape(ss[0])
 	default:
 		fmt.Println("to many argumets, want: <id or ip:port>")
 		return
@@ -545,20 +514,14 @@ func (c *Client) removeSubscriber(args string) {
 			fmt.Println("error requesting subscribers list", err)
 			return
 		}
-		var portNo int
-		if portNo, err = strconv.Atoi(port); err != nil {
-			fmt.Println("error parsing port number:", err)
-			return
-		}
 		for _, s := range subscribers {
-			if s.Port == portNo && s.IP == host {
-				reqs = c.addr + "/manager/nodes/" + c.nodeId +
-					"/subscribers/" + s.PubKey
+			if s.Address == address {
+				reqs = c.addr + "/manager/nodes/stub/subscribers/" + s.PubKey
 				goto Request
 			}
 		}
 		// not found
-		printf("connection %s:%s not found", host, port)
+		printf("connection %s not found", address)
 		return
 	}
 Request:
@@ -618,11 +581,6 @@ func (c *Client) getStat() {
 	// print the stat
 	fmt.Println("total objects:", stat.Total)
 	fmt.Println("memory:       ", humanMemory(stat.Memory))
-}
-
-func (c *Client) getInfo() {
-	fmt.Println("node id:     ", c.nodeId)
-	fmt.Println("node address:", c.listen)
 }
 
 //
@@ -701,9 +659,8 @@ type JSONResponse struct {
 
 // list nodes or list subscriptions
 type Item struct {
-	IP     string `json:"ip"`
-	PubKey string `json:"pubKey"`
-	Port   int    `json:"port"`
+	Address string `json:"addr"`
+	PubKey  string `json:"pub"`
 }
 
 // stat cxo/data/db.go
