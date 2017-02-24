@@ -2,9 +2,10 @@ package skyobject
 
 import (
 	"bytes"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 	"reflect"
 	"strings"
+
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 type Schema struct {
