@@ -32,10 +32,13 @@ type IHashObject interface {
 }
 
 func (s *Href) References(c ISkyObjects) RefInfoMap {
-	result := RefInfoMap{}
-	data, _ := c.Get(s.Ref)
+	var result = RefInfoMap{}
 
-	ref := href{}
+	var ref href
+	data, ok := c.Get(s.Ref)
+	if ok == false {
+		return result
+	}
 	encoder.DeserializeRaw(data, &ref)
 
 	hobj, ok := c.HashObject(ref)
@@ -56,11 +59,23 @@ func (s *Href) References(c ISkyObjects) RefInfoMap {
 	return mergeRefs(result, childRefs)
 }
 
+func (s *Href) Children(c ISkyObjects) (result RefInfoMap) {
+	var ref href
+	data, ok := c.Get(s.Ref)
+	if ok == false {
+		return
+	}
+	encoder.DeserializeRaw(data, &ref)
+
+	hobj, ok := c.HashObject(ref)
+	if ok == false {
+		return
+	}
+	result = hobj.References(c)
+	return
+}
+
 func (s *Href) String(c ISkyObjects) string {
-	//rdata, _ := c.Get(s.Ref)
-	//ref := href{}
-	//encoder.DeserializeRaw(rdata, &ref)
-	//hobj, _ := c.HashObject(ref)
 	return s.Ref.Hex()
 }
 

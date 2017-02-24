@@ -3,11 +3,13 @@ package skyobject
 import (
 	"bytes"
 	"fmt"
+
+	"reflect"
+	"strings"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-	"reflect"
-	"strings"
 )
 
 //TODO: Split on implementation on something like
@@ -21,6 +23,7 @@ type ISkyObjects interface {
 
 	GetSchemas() []Schema
 	GetSchema(typeName string) *Schema
+	GetSchemaFromKey(schemaKey cipher.SHA256) *Schema
 	GetSchemaKey(typeName string) (cipher.SHA256, bool)
 	Publish(ref Href, sign *cipher.Sig) cipher.SHA256
 
@@ -28,6 +31,7 @@ type ISkyObjects interface {
 	SaveObject(schemaKey cipher.SHA256, obj interface{}) cipher.SHA256
 	SaveData(schemaKey cipher.SHA256, data []byte) cipher.SHA256
 	Get(key cipher.SHA256) ([]byte, bool)
+	GetObjRef(key cipher.SHA256) ObjRef
 	Set(key cipher.SHA256, data []byte) error
 	Has(key cipher.SHA256) bool
 	Statistic() data.Statistic
@@ -58,6 +62,22 @@ func SkyObjects(ds data.IDataSource) *skyObjects {
 
 func (s *skyObjects) Get(key cipher.SHA256) ([]byte, bool) {
 	return s.ds.Get(key)
+}
+
+func (s *skyObjects) GetObjRef(key cipher.SHA256) (objref ObjRef) {
+	var ref href
+	data, ok := s.Get(key)
+	if ok == false {
+		return
+	}
+	encoder.DeserializeRaw(data, &ref)
+
+	return ObjRef{
+		key:       key,
+		schemaKey: ref.Type,
+		data:      ref.Data,
+		c:         s,
+	}
 }
 
 func (s *skyObjects) Set(key cipher.SHA256, data []byte) error {
@@ -183,6 +203,26 @@ func (s *skyObjects) GetSchema(typeName string) *Schema {
 	s.ds.Where(query)
 	return &res
 
+}
+
+func (s *skyObjects) GetSchemaFromKey(schemaKey cipher.SHA256) *Schema {
+	var res Schema
+	var ref href
+
+	dataBytes, ok := s.ds.Get(schemaKey)
+	if ok == false {
+		return &res
+	}
+
+	encoder.DeserializeRaw(dataBytes, &ref)
+	smKey := ref.Type
+	smKey.Set(dataBytes[:32])
+
+	if smKey == _schemaType {
+		encoder.DeserializeRaw(ref.Data, &res)
+	}
+
+	return &res
 }
 
 func (s *skyObjects) GetSchemaKey(typeName string) (cipher.SHA256, bool) {

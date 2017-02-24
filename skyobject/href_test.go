@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"testing"
+
 	"github.com/skycoin/cxo/data"
 )
 
@@ -10,7 +11,6 @@ type TestHref1 struct {
 	Field2       bool
 	fieldPrivate bool
 }
-
 
 type TestHrefObj struct {
 	Field1 uint32

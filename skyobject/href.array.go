@@ -1,9 +1,11 @@
 package skyobject
 
 import (
+
+	"reflect"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-	"reflect"
 )
 
 //var _arraySchemaKey cipher.SHA256 = cipher.SumSHA256(encoder.Serialize(*ReadSchema(HashSlice{})))
