@@ -6,10 +6,7 @@ import (
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/nodeManager"
-	// "github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
-	// "strings"
-	// "errors"
 )
 
 type BBSIndexer struct {

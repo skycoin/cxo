@@ -2,13 +2,13 @@ package skyobject
 
 import (
 	"bytes"
-	// "errors"
 	"fmt"
+	"reflect"
+	"strings"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-	"reflect"
-	"strings"
 )
 
 //TODO: Split on implementation on something like
@@ -31,9 +31,6 @@ type ISkyObjects interface {
 	SaveData(schemaKey cipher.SHA256, data []byte) cipher.SHA256
 	Get(key cipher.SHA256) ([]byte, bool)
 	GetObjRef(key cipher.SHA256) ObjRef
-	GetObject(key cipher.SHA256) (cipher.SHA256, []byte)
-	GetField(objType cipher.SHA256, objData []byte, fieldName string) cipher.SHA256
-	GetMap(key cipher.SHA256, typeName string) map[cipher.SHA256][]byte
 	Set(key cipher.SHA256, data []byte) error
 	Has(key cipher.SHA256) bool
 	Statistic() data.Statistic
@@ -77,38 +74,6 @@ func (s *skyObjects) GetObjRef(key cipher.SHA256) (objref ObjRef) {
 		data:      ref.Data,
 		c:         s,
 	}
-}
-
-func (s *skyObjects) GetObject(key cipher.SHA256) (cipher.SHA256, []byte) {
-	var ref href
-
-	byteArray, ok := s.Get(key)
-	if ok == true {
-		encoder.DeserializeRaw(byteArray, &ref)
-	}
-
-	return ref.Type, ref.Data
-}
-
-func (s *skyObjects) GetField(objType cipher.SHA256, objData []byte, fieldName string) (field cipher.SHA256) {
-	objSchema := s.GetSchemaFromKey(objType)
-	encoder.DeserializeField(objData, objSchema.Fields, fieldName, &field)
-	return
-}
-
-func (s *skyObjects) GetMap(key cipher.SHA256, typeName string) (dataMap map[cipher.SHA256][]byte) {
-	dataMap = make(map[cipher.SHA256][]byte)
-	ref := Href{Ref: key}
-	refMap := ref.Children(s)
-
-	for k, _ := range refMap {
-		typ, data := s.GetObject(k)
-		if s.GetSchemaFromKey(typ).Name == typeName {
-			dataMap[k] = data
-		}
-	}
-
-	return
 }
 
 func (s *skyObjects) Set(key cipher.SHA256, data []byte) error {

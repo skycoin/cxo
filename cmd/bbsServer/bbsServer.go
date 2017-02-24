@@ -3,15 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
-	// "github.com/skycoin/cxo/data"
-	// "github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/skycoin/src/mesh/messages"
-	// "io"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
+
+	"github.com/skycoin/skycoin/src/mesh/messages"
 )
 
 const DEFAULT_PORT = "1235"
