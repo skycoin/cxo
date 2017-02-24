@@ -3,6 +3,7 @@ package skyobject
 import (
 	"bytes"
 	"fmt"
+
 	"reflect"
 	"strings"
 
@@ -41,6 +42,7 @@ type ISkyObjects interface {
 
 	LoadFields(key cipher.SHA256) map[string]string
 }
+
 type skyTypes struct {
 	Name   string
 	Schema cipher.SHA256
@@ -86,7 +88,9 @@ func (s *skyObjects) Has(key cipher.SHA256) bool {
 	return s.ds.Has(key)
 }
 
-func (s *skyObjects) SaveObject(schemaKey cipher.SHA256, obj interface{}) cipher.SHA256 {
+func (s *skyObjects) SaveObject(schemaKey cipher.SHA256,
+	obj interface{}) cipher.SHA256 {
+
 	h := href{Type: schemaKey, Data: encoder.Serialize(obj)}
 	data := encoder.Serialize(h)
 	key := cipher.SumSHA256(data)
@@ -95,7 +99,9 @@ func (s *skyObjects) SaveObject(schemaKey cipher.SHA256, obj interface{}) cipher
 }
 
 //
-func (s *skyObjects) SaveData(schemaKey cipher.SHA256, data []byte) cipher.SHA256 {
+func (s *skyObjects) SaveData(schemaKey cipher.SHA256,
+	data []byte) cipher.SHA256 {
+
 	h := href{Type: schemaKey, Data: data}
 	refData := encoder.Serialize(h)
 	key := cipher.SumSHA256(refData)
@@ -118,7 +124,11 @@ func (s *skyObjects) RegisterSchema(types ...interface{}) {
 		schema := ReadSchema(tp)
 		schemaData := encoder.Serialize(schema)
 		key := s.SaveData(_schemaType, schemaData)
-		s.types = append(s.types, skyTypes{Name: schema.Name, Type: reflect.TypeOf(tp), Schema: key})
+		s.types = append(s.types, skyTypes{
+			Name:   schema.Name,
+			Type:   reflect.TypeOf(tp),
+			Schema: key,
+		})
 	}
 }
 

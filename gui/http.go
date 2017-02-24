@@ -13,7 +13,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/util"
 	//http,json helpers
-	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/cxo/node"
 )
 
 var (
@@ -22,13 +22,16 @@ var (
 
 const (
 	resourceDir = "dist/"
-	devDir = "dev/"
-	indexPage = "index.html"
+	devDir      = "dev/"
+	indexPage   = "index.html"
 )
 
 // Begins listening on http://$host, for enabling remote web access
 // Does NOT use HTTPS
-func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, controllers ...IRouterApi) error {
+func LaunchWebInterfaceAPI(host, staticDir string,
+	shm node.Node,
+	controllers ...IRouterApi) error {
+
 	logger.Info("Starting web interface on http://%s", host)
 	logger.Warning("HTTPS not in use!")
 	logger.Info("Web resources directory: %s", staticDir)
@@ -45,7 +48,7 @@ func LaunchWebInterfaceAPI(host, staticDir string, shm *nodeManager.Manager, con
 	// register API handlers
 	RegisterNodeManagerHandlers(router, shm)
 
-	for _, api := range controllers{
+	for _, api := range controllers {
 		api.Register(router)
 	}
 	//RegisterSchemaHandlers(router, schemaProvider, messanger)

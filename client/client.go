@@ -2,20 +2,21 @@ package client
 
 import (
 	"flag"
-	"fmt"
+	"math/rand"
+	"time"
+
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/gui"
-	"github.com/skycoin/cxo/nodeManager"
+	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/skycoin/src/cipher"
-	"math/rand"
-	"net"
-	"strconv"
-	"time"
 )
 
-//TODO: Refactor - avoid global var. The problem now in HandleFromUpstream/HandleFromDownstream. No way to provide Dataprovider into the handler
+//TODO: Refactor - avoid global var.
+// The problem now in HandleFromUpstream/HandleFromDownstream.
+// No way to provide Dataprovider into the handler
 var DB *data.DB
 var Sync *syncContext
 var Syncronizer syncContext
@@ -25,7 +26,7 @@ type client struct {
 	imTheVertex  bool
 	subscribeTo  string
 	config       *Config
-	manager      *nodeManager.Manager
+	node         node.Node
 	messanger    *gui.Messenger
 	dataProvider skyobject.ISkyObjects
 }
@@ -35,67 +36,61 @@ func Client() *client {
 	c := &client{}
 	//1. Create Hash Database
 	DB = data.NewDB()
-	//2. Create schema provider. Integrate Hash Database to schema provider(schema store)
+	//2. Create schema provider.
+	//   Integrate Hash Database to schema provider(schema store)
 
 	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
-	flag.StringVar(&c.subscribeTo, "subscribe-to", "", "Address of the node to subscribe to")
+	flag.StringVar(&c.subscribeTo, "subscribe-to", "",
+		"Address of the node to subscribe to")
 	c.config = defaultConfig()
 	c.config.Parse()
 
-	nodeManager.Debugging = false
+	// DEVELOPMENT:
+	// =========================================================================
+	// generate secret key for node if it is not set
+	{
+		if c.config.SecretKey == "" {
+			_, sec := cipher.GenerateKeyPair()
+			c.config.SecretKey = sec.Hex()
+		}
+	}
+	// =========================================================================
 
-	managerConfig := nodeManager.NewManagerConfig()
-	manager, err := nodeManager.NewManager(managerConfig)
-	c.manager = manager
-
+	nd, err := node.NewNode(mustParseSecretKey(c.config.SecretKey),
+		c.config.NodeConfig)
 	if err != nil {
-		fmt.Println("error while configuring node manager", "error", err)
+		logger.Fatal("can't create node: ", err)
+	}
+	c.node = nd
+
+	// check interfaces implementation
+	var (
+		_ node.IncomingHandler = &AnnounceMessage{}
+		_ node.OutgoingHndler  = &RequestMessage{}
+		_ node.IncomingHandler = &DataMessage{}
+	)
+
+	nd.Register(&RequestMessage{})
+	nd.Register(&AnnounceMessage{})
+	nd.Register(&DataMessage{})
+
+	err = nd.Start()
+	if err != nil {
+		logger.Fatal("can't start node: ", err)
 	}
 
-	newNode := manager.NewNode()
-	err = manager.AddNode(newNode)
-	if err != nil {
-		panic("Can't create node")
-	}
-
-	// register messages that this node can receive from downstream
-	newNode.RegisterDownstreamMessage(RequestMessage{})
-
-	// register messages that this node can receive from upstream
-	newNode.RegisterUpstreamMessage(AnnounceMessage{})
-	newNode.RegisterUpstreamMessage(DataMessage{})
-
-	err = newNode.Start()
-	if err != nil {
-		panic("Can't create node")
-	}
-
-	c.messanger = NodeMessanger(newNode)
+	c.messanger = NodeMessanger(nd)
 
 	c.imTheVertex = c.subscribeTo == ""
-	boards := bbs.CreateBbs(DB, newNode)
+	boards := bbs.CreateBbs(DB, nd)
 
 	Sync = SyncContext(boards.Container)
 
 	if !c.imTheVertex {
-
-		ip, portString, err := net.SplitHostPort(c.subscribeTo)
+		logger.Info("Stat: %v", boards.Container.Statistic())
+		err = nd.Outgoing().Connect(c.subscribeTo, cipher.PubKey{})
 		if err != nil {
-			fmt.Println("err: ", err)
-			panic("Can't create node")
-		}
-
-		port, err := strconv.ParseUint(portString, 10, 16)
-
-		// If the pubKey parameter is an empty cipher.PubKey{}, we will connect to that node
-		// for any PubKey it communicates us it has.
-		// For a specific match, you have to provide a specific pubKey.
-		pubKeyOfNodeToSubscribeTo := &cipher.PubKey{}
-		fmt.Println(boards.Container.Statistic())
-		err = newNode.Subscribe(ip, uint16(port), pubKeyOfNodeToSubscribeTo)
-		if err != nil {
-			fmt.Println("err: ", err)
-			panic("Can't create node")
+			logger.Fatal("can't connect to remote node: ", err)
 		}
 	} else {
 		go func() {
@@ -103,7 +98,7 @@ func Client() *client {
 			// give time for nodes to subscribe to this node before broadcasting
 			// that it has new data
 
-			refs := skyobject.Href{Ref:boards.Board}
+			refs := skyobject.Href{Ref: boards.Board}
 
 			refs.References(boards.Container)
 
@@ -113,7 +108,9 @@ func Client() *client {
 
 			r := skyobject.Href{Ref: boards.Board}
 			rs := r.References(boards.Container)
-			fmt.Println("Total refs:", len(rs), boards.Container.Statistic())
+			logger.Info("Total refs: %d %v",
+				len(rs),
+				boards.Container.Statistic())
 			time.Sleep(time.Minute * 120)
 		}()
 	}
@@ -123,10 +120,18 @@ func Client() *client {
 	return c
 }
 
+func mustParseSecretKey(str string) cipher.SecKey {
+	sec, err := cipher.SecKeyFromHex(str)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return sec
+}
+
 func (c *client) Run() {
 	if c.imTheVertex {
 		api := SkyObjectsAPI(c.dataProvider)
-		RunAPI(c.config, c.manager, api)
+		RunAPI(c.config, c.node, api)
 	} else {
 		time.Sleep(time.Minute * 120)
 	}
@@ -139,16 +144,25 @@ func prepareTestData(bs *bbs.Bbs) {
 		for t := 0; t < 10; t++ {
 			posts := []bbs.Post{}
 			for p := 0; p < 200; p++ {
-				posts = append(posts, bs.CreatePost("Post_"+generateString(15), "Some text"))
+				posts = append(posts, bs.CreatePost(
+					"Post_"+generateString(15),
+					"Some text",
+				))
 			}
-			threads = append(threads, bs.CreateThread("Thread_"+generateString(15), posts...))
+			threads = append(threads, bs.CreateThread(
+				"Thread_"+generateString(15), posts...,
+			))
 		}
-		boards = append(boards, bs.AddBoard("Board_"+generateString(15), threads...))
+		boards = append(boards, bs.AddBoard(
+			"Board_"+generateString(15), threads...,
+		))
 	}
 }
 
-const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
+	letterBytes = "0123456789" +
+		"abcdefghijklmnopqrstuvwxyz" +
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	letterIdxBits = 6                    // 6 bits to represent a letter index
 	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits

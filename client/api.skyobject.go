@@ -2,13 +2,15 @@ package client
 
 import (
 	"fmt"
-	"github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/cxo/gui"
+
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/gui"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 type schemaApi struct {
-	container    skyobject.ISkyObjects
+	container skyobject.ISkyObjects
 	//synchronizer skyobject.ISynchronizer
 }
 
@@ -18,7 +20,7 @@ type objectLink struct {
 }
 
 func SkyObjectsAPI(container skyobject.ISkyObjects) *schemaApi {
-	return &schemaApi{container:container}
+	return &schemaApi{container: container}
 }
 
 func (api *schemaApi) Register(router *gui.Router) {
@@ -38,15 +40,18 @@ func (api *schemaApi) ObjectsBySchema(ctx *gui.Context) error {
 	keys := api.container.GetAllBySchema(schemaKey)
 	res := []objectLink{}
 	for _, k := range keys {
-		ref := skyobject.Href{Ref:k}
-		res = append(res, objectLink{ID:k.Hex(), Name:ref.String(api.container)})
+		ref := skyobject.Href{Ref: k}
+		res = append(res, objectLink{
+			ID:   k.Hex(),
+			Name: ref.String(api.container),
+		})
 	}
 	return ctx.JSON(200, res)
 }
 
 func (api *schemaApi) Object(ctx *gui.Context) error {
 	id, err := cipher.SHA256FromHex(*ctx.Param("id"))
-	if (err != nil) {
+	if err != nil {
 		return ctx.ErrNotFound(err.Error())
 	}
 	fmt.Println("id", id)
@@ -75,7 +80,7 @@ func (api *schemaApi) Statistic(ctx *gui.Context) error {
 func (api *schemaApi) SyncObject(ctx *gui.Context) error {
 
 	id, err := cipher.SHA256FromHex(*ctx.Param("id"))
-	if (err != nil) {
+	if err != nil {
 		return ctx.ErrNotFound(err.Error())
 	}
 	//TODO: Validate for root type

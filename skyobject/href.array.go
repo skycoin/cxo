@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+
 	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
