@@ -51,7 +51,11 @@ func (r *RPCReceiver) GenerateRandomData(_ []string, result *[]byte) error {
 	r.I.AddBoard("board1", thread1, thread2)
 	r.I.AddBoard("board2", thread2)
 
-	replyMsg := "Generated 3 posts, 3 threads and 2 boards."
+	replyMsg := fmt.Sprintf(
+		"We now have %d boards, %d threads and %d posts.",
+		len(r.I.Boards), len(r.I.Threads), len(r.I.Posts),
+	)
+
 	*result = messages.Serialize((uint16)(0), &replyMsg)
 	return nil
 }

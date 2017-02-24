@@ -25,16 +25,17 @@ func CreateBbs(dataSource data.IDataSource, security nodeManager.INodeSecurity) 
 }
 
 func (bbs *Bbs) AddBoard(name string, threads ...Thread) Board {
+
 	sl := skyobject.NewArray(threads)
-	// fmt.Println("Create threads")
 	bbs.Container.Save(&sl)
+
 	board := Board{Name: name, Threads: sl}
 	bl := skyobject.NewObject(board)
 	ref := bbs.Container.Save(&bl)
+
 	sign := bbs.security.Sign(ref.Ref)
-	// fmt.Println("Sign", sign)
 	bbs.Board = bbs.Container.Publish(ref, &sign)
-	// fmt.Println(bbs.Board)
+
 	return board
 }
 

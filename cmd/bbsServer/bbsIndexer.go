@@ -5,9 +5,9 @@ import (
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/nodeManager"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 	// "github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 	// "strings"
 	// "errors"
 )
@@ -67,8 +67,8 @@ func (bi *BBSIndexer) Load() {
 	keys := c.GetAllBySchema(schemaKey)
 	for _, k := range keys {
 		var board bbs.Board
-		_, data := c.GetObject(k)
-		encoder.DeserializeRaw(data, &board)
+		objref := c.GetObjRef(k)
+		objref.Deserialize(&board)
 		bi.Boards[k] = board
 	}
 
@@ -76,8 +76,8 @@ func (bi *BBSIndexer) Load() {
 	keys = c.GetAllBySchema(schemaKey)
 	for _, k := range keys {
 		var thread bbs.Thread
-		_, data := c.GetObject(k)
-		encoder.DeserializeRaw(data, &thread)
+		objref := c.GetObjRef(k)
+		objref.Deserialize(&thread)
 		bi.Threads[k] = thread
 	}
 
@@ -85,8 +85,8 @@ func (bi *BBSIndexer) Load() {
 	keys = c.GetAllBySchema(schemaKey)
 	for _, k := range keys {
 		var post bbs.Post
-		_, data := c.GetObject(k)
-		encoder.DeserializeRaw(data, &post)
+		objref := c.GetObjRef(k)
+		objref.Deserialize(&post)
 		bi.Posts[k] = post
 	}
 
