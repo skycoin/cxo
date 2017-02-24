@@ -38,6 +38,8 @@ type ISkyObjects interface {
 	RegisterSchema(tp ...interface{})
 	Inspect()
 	MissingDependencies(key cipher.SHA256) []cipher.SHA256
+
+	LoadFields(key cipher.SHA256) map[string]string
 }
 type skyTypes struct {
 	Name   string
@@ -238,6 +240,16 @@ func (c *skyObjects) GetAllBySchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 		return bytes.Compare(schemaKey[:32], data[0:32]) == 0
 	}
 	return c.ds.Where(query)
+}
+
+func (c *skyObjects) LoadFields(key cipher.SHA256) map[string]string {
+	data, _ := c.ds.Get(key)
+	ref := href{}
+	encoder.DeserializeRaw(data, &ref)
+	schemaData, _ := c.ds.Get(ref.Type)
+	var sm Schema
+	encoder.DeserializeRaw(schemaData, &sm)
+	return encoder.ParseFields(ref.Data, sm.Fields)
 }
 
 func (c *skyObjects) Inspect() {

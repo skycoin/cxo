@@ -75,3 +75,8 @@ func (r *ObjRef) GetValuesAsObjArray() (objArray []ObjRef, e error) {
 	}
 	return
 }
+
+func (r *ObjRef) IsCool() {
+	
+	return
+}

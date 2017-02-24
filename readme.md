@@ -6,7 +6,7 @@ Specifications: https://pad.riseup.net/p/cxo
 ## SkyObjects Quickstart
 `import "github.com/skycoin/cxo/skyobject"`
 
-### Create a SkyObjects Container
+#### Create a SkyObjects Container
 To create a container, use the `SkyObjects(ds data.IDataSource) *skyObjects` function. Only a database source needs to be specified.
 
 ```go
@@ -21,7 +21,7 @@ func main() {
     container.Inspect() // Example container use.
 }
 ```
-### Register Schema
+#### Register Schema
 Before storing objects into the SkyObjects container, we need to register the object's Schema. Schema tells the container what 'type' of object it is, and what fields the object will have.
 
 Later, we can get list all Schema types from the container, and retrieve all objects of a specific Schema.
@@ -36,5 +36,5 @@ type Board struct {
 var container = skyobject.SkyObjects(data.NewDB())
 container.RegisterSchema(Board{}) // Register Schema.
 ```
-### Store Object
-Objects can be saved into the container using the `Save(hr IHashObject) Href` member function of the container. The input of the function needs to be of type IHashObject. 
+#### Store Object
+Objects can be stored into the container using the `Save(hr IHashObject) Href` member function of the container. The input of the function needs to be of type IHashObject. 
