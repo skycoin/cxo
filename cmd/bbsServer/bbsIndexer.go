@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/nodeManager"
 	// "github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 	// "strings"
 	// "errors"
 )
@@ -111,16 +111,15 @@ func (bi *BBSIndexer) GetThreadsFromBoard(boardName string) (threads []bbs.Threa
 	}
 
 	// Get Threads from Board.
-	typ, data := c.GetObject(key)
-	threadArrayKey := c.GetField(typ, data, "Threads")
-	threadMap := c.GetMap(threadArrayKey, "Thread")
+	boardRef := c.GetObjRef(key)
+	threadArrayRef, _ := boardRef.GetFieldAsObj("Threads")
+	threadObjArray, _ := threadArrayRef.GetValuesAsObjArray()
 
-	for _, threadData := range threadMap {
+	for _, threadObj := range threadObjArray {
 		var thread bbs.Thread
-		encoder.DeserializeRaw(threadData, &thread)
+		threadObj.Deserialize(&thread)
 		threads = append(threads, thread)
 	}
-
 	return
 }
 
@@ -142,15 +141,14 @@ func (bi *BBSIndexer) GetPostsFromThread(threadName string) (posts []bbs.Post, e
 	}
 
 	// Get Posts from Thread.
-	typ, data := c.GetObject(key)
-	postArrayKey := c.GetField(typ, data, "Posts")
-	postMap := c.GetMap(postArrayKey, "Post")
+	threadRef := c.GetObjRef(key)
+	postArrayRef, _ := threadRef.GetFieldAsObj("Posts")
+	postObjArray, _ := postArrayRef.GetValuesAsObjArray()
 
-	for _, postData := range postMap {
+	for _, postObj := range postObjArray {
 		var post bbs.Post
-		encoder.DeserializeRaw(postData, &post)
+		postObj.Deserialize(&post)
 		posts = append(posts, post)
 	}
-
 	return
 }
