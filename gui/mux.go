@@ -36,10 +36,9 @@ type branch struct {
 
 type muxBranches map[string]branch
 
-type IRouterApi interface{
+type IRouterApi interface {
 	Register(router *Router)
 }
-
 
 // NewRouter creates and returns pointer to a new router object
 func NewRouter() *Router {
