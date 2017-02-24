@@ -1,12 +1,12 @@
-CX Object System
-===
+**CX Object System**
+====================
 
 Specifications: https://pad.riseup.net/p/cxo
 
-## SkyObjects Quickstart
+# SkyObjects Quickstart
 `import "github.com/skycoin/cxo/skyobject"`
 
-#### Creating a SkyObjects Container
+### Creating a SkyObjects Container
 To create a container, use the `SkyObjects` function. Only a database source needs to be specified. Here is an example:
 
 ```go
@@ -21,7 +21,7 @@ func main() {
     container.Inspect() // Example container use.
 }
 ```
-#### Registering Schemas
+### Registering Schemas
 Before storing objects into the SkyObjects container, we need to register the object's Schema. Schema tells the container what 'type' of object it is, and what fields the object will have.
 
 Schemas are registered into a SkyObjects container using the `RegisterSchema` member function:
@@ -35,7 +35,7 @@ container.RegisterSchema(Board{}) // Register Schema.
 ```
 Later, we can list all Schema types from the container, and retrieve all objects of a specified Schema. (LINK HERE)
 
-#### Storing Objects
+### Storing Objects
 Objects can be stored into the container using the `Save` member function of the container:
 ```go
 board1 := Board{"board1"} // Create a new Board.
@@ -48,9 +48,9 @@ boards := []Board{{"board1"}, {"board1"}, {"board1"}} // Create a Board array.
 boardsRef := skyobject.NewArray(boards) // Make array reference object.
 container.Save(&boardRef) // Store boards in container.
 ```
-Note that the objects are stored separately, and the array is infact an array of references.
+Note that the objects in the array are stored separately, and the array is infact an array of references.
 
-#### Storing Objects That Reference Other Objects
+### Storing Objects That Reference Other Objects
 Objects can be stored to refer to one another.
 
 Here is an example where the Parent object references the Child object:
