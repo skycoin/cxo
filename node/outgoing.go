@@ -1,6 +1,8 @@
 package node
 
 import (
+	"time"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
@@ -50,10 +52,10 @@ func (o outgoing) Connect(address string, desired cipher.PubKey) (err error) {
 	if gc, err = o.pool.Connect(address); err != nil {
 		return
 	}
-	o.onConnectEventChan <- connectEvent{
-		gc:       gc,
-		outgoing: true,
-		desired:  desired,
+	o.events <- outgoingConnection{
+		gc:      gc,
+		start:   time.Now(),
+		desired: desired,
 	}
-	return
+	return // nil
 }

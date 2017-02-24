@@ -144,6 +144,10 @@ func (m *Msg) Handle(ctx *gnet.MessageContext, ni interface{}) (err error) {
 			err = ErrIncomingMessageInterface
 			return
 		}
+		// for tests
+		if nd := n.(*node); nd.testHook != nil {
+			nd.testHook(nd, testReceivedIncoming)
+		}
 		return inh.HandleIncoming(&msgContext{
 			r:  rpk,
 			gc: gc,
@@ -154,6 +158,10 @@ func (m *Msg) Handle(ctx *gnet.MessageContext, ni interface{}) (err error) {
 	if ogh, ok = msg.(OutgoingHndler); !ok {
 		err = ErrOutgoingMessageInterface
 		return
+	}
+	// for tests
+	if nd := n.(*node); nd.testHook != nil {
+		nd.testHook(nd, testReceivedOutgoign)
 	}
 	return ogh.HandleOutgoing(&msgContext{
 		r:  rpk,

@@ -1,7 +1,10 @@
 package node
 
 import (
+	"time"
+
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
 type Event interface{}
@@ -26,3 +29,14 @@ type broadcastEvent struct {
 }
 
 type anyEvent func(*node)
+
+type outgoingConnection struct {
+	gc      *gnet.Connection
+	desired cipher.PubKey
+	start   time.Time
+}
+
+type incomingConnection struct {
+	gc    *gnet.Connection
+	start time.Time
+}

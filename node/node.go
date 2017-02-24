@@ -91,12 +91,6 @@ type Node interface {
 	decode(body []byte) (msg interface{}, err error)
 }
 
-type connectEvent struct {
-	gc       *gnet.Connection
-	outgoing bool
-	desired  cipher.PubKey
-}
-
 type pendingConnection struct {
 	remotePub cipher.PubKey
 	quest     uuid.UUID
@@ -118,75 +112,41 @@ type node struct {
 
 	pool *gnet.ConnectionPool
 
-	pending            map[*gnet.Connection]*pendingConnection
-	onConnectEventChan chan connectEvent
+	pending map[*gnet.Connection]*pendingConnection
 
 	incoming map[*gnet.Connection]cipher.PubKey // incoming connections (feed)
 	outgoing map[*gnet.Connection]cipher.PubKey // outgoing connections
 
 	//
-	events chan Event
+	events              chan Event
+	incomingConnections chan incomingConnection
 
 	quit chan struct{}
 	done chan struct{}
+
+	//
+	// testing
+	//
+
+	testHook func(*node, int)
 }
 
-func (n *node) onConnect(gc *gnet.Connection,
-	outgoing bool,
-	desired cipher.PubKey) {
-
-	var a string = gc.Addr()
-	if outgoing {
-		n.Debug("[DBG] connected to ", a)
-	} else {
-		n.Debug("[DBG] got incoming connection from:", a)
-	}
-	if len(n.pending) == n.conf.MaxPendingConnections {
-		n.Debug("[DBG] pending limit disconnecting: ", a)
-		gc.ConnectionPool.Disconnect(gc, ErrPendingLimit)
-		return
-	}
-	if outgoing {
-		if len(n.outgoing) == n.conf.MaxOutgoingConnections {
-			n.Debug("[DBG] outgoing limit disconnecting: ", a)
-			gc.ConnectionPool.Disconnect(gc, ErrOutgoingLimit)
-			return
-		}
-		var quest uuid.UUID = uuid.NewV4()
-		n.Debug("[DBG] add outgoing conenction to pending: ", gc.Addr())
-		n.pending[gc] = &pendingConnection{
-			outgoing:  true,
-			remotePub: desired,
-			start:     time.Now(),
-			quest:     quest,
-			step:      1,
-		}
-		n.Debug("[DBG] send handshake question to: ", gc.Addr())
-		gc.ConnectionPool.SendMessage(gc, &hsQuest{
-			Quest: quest,
-			Pub:   n.PubKey(),
-		})
-	} else {
-		if len(n.incoming) == n.conf.MaxIncomingConnections {
-			n.Debug("[DBG] incoming limit disconnecting: ", gc.Addr())
-			gc.ConnectionPool.Disconnect(gc, ErrIncomingLimit)
-			return
-		}
-		n.Debug("[DBG] add incoming conenction to pending: ", gc.Addr())
-		n.pending[gc] = &pendingConnection{
-			outgoing: false,
-			start:    time.Now(),
-		}
-	}
-}
+const (
+	testNewPending = iota + 1
+	testOutgoingEstablished
+	testIncomingEstablished
+	testReceivedIncoming
+	testReceivedOutgoign
+)
 
 func (n *node) onGnetConnect(gc *gnet.Connection, outgoing bool) {
 	n.Debugf("[DBG] new connection to %s, outgoiong: %t", gc.Addr(), outgoing)
 	if !outgoing {
-		n.onConnect(gc, false, cipher.PubKey{})
+		n.incomingConnections <- incomingConnection{
+			gc:    gc,
+			start: time.Now(),
+		}
 	}
-	// outgoing connections handled using onConnecEventChan, because of
-	// desired public key
 }
 
 func (n *node) onGnetDisconnect(gc *gnet.Connection,
@@ -194,7 +154,7 @@ func (n *node) onGnetDisconnect(gc *gnet.Connection,
 
 	var a string = gc.Addr()
 
-	n.Print("[INF] disconnect %s, reason %v", a, reason)
+	n.Printf("[INF] disconnect %s, reason: %v", a, reason)
 
 	delete(n.incoming, gc)
 	delete(n.outgoing, gc)
@@ -246,7 +206,8 @@ func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
 
 	nd.pending = make(map[*gnet.Connection]*pendingConnection,
 		conf.MaxPendingConnections)
-	nd.onConnectEventChan = make(chan connectEvent, conf.MaxPendingConnections)
+	nd.incomingConnections = make(chan incomingConnection,
+		conf.MaxPendingConnections)
 
 	nd.incoming = make(map[*gnet.Connection]cipher.PubKey,
 		conf.MaxIncomingConnections)
@@ -299,6 +260,10 @@ func (n *node) addOutgoing(gc *gnet.Connection, pub cipher.PubKey) error {
 	n.Printf("[INF] new established outgoing connection %s, %s",
 		gc.Addr(),
 		pub.Hex())
+	// for tests only
+	if n.testHook != nil {
+		n.testHook(n, testOutgoingEstablished)
+	}
 	return nil
 }
 
@@ -311,6 +276,10 @@ func (n *node) addIncoming(gc *gnet.Connection, pub cipher.PubKey) error {
 	n.Printf("[INF] new established incoming connection %s, %s",
 		gc.Addr(),
 		pub.Hex())
+	// for tests only
+	if n.testHook != nil {
+		n.testHook(n, testIncomingEstablished)
+	}
 	return nil
 }
 
@@ -328,6 +297,7 @@ func (n *node) Start() (err error) {
 			n.Debug("[DBG] error starting listener: ", err)
 			return
 		}
+		// print actual listening address
 		if addr, err := n.pool.ListeningAddress(); err != nil {
 			n.Print("[ERR] can't get listening address: ", err)
 		} else {
@@ -352,7 +322,7 @@ func (n *node) start(quit, done chan struct{}) {
 		de gnet.DisconnectEvent
 		sr gnet.SendResult
 
-		ce connectEvent
+		ic incomingConnection
 
 		evt Event
 	)
@@ -391,15 +361,15 @@ func (n *node) start(quit, done chan struct{}) {
 					sr.Connection.Addr(),
 					sr.Error)
 			}
+		case ic = <-n.incomingConnections:
+			n.Debug("[DBG] handle incoming connection")
+			n.handleIncomingConnection(ic)
 		case <-handleMsgChan:
 			n.Debug("[DBG] handle messages")
 			n.pool.HandleMessages()
 		case <-handshakeTimeoutChan:
 			n.Debug("[DBG] lookup handshake tick")
 			n.lookupHandshakeTime()
-		case ce = <-n.onConnectEventChan:
-			n.Debug("[DBG] connect event")
-			n.onConnect(ce.gc, ce.outgoing, ce.desired)
 		case evt = <-n.events:
 			n.Debugf("[DBG] got event: %T, %v", evt, evt)
 			n.handleEvents(evt)
@@ -414,7 +384,6 @@ func (n *node) drainEvents() {
 	for {
 		select {
 		case <-n.events:
-		case <-n.onConnectEventChan:
 		default:
 			return
 		}
@@ -506,9 +475,45 @@ func (n *node) handleEvents(evt Event) {
 		}
 	case anyEvent:
 		x(n)
+	case outgoingConnection:
+		n.handleOutgoingConnection(x)
 	default:
 		n.Printf("[ERR] unknown event type: %T, %v", evt, evt)
 	}
+}
+
+func (n *node) handleOutgoingConnection(x outgoingConnection) {
+
+	var (
+		gc *gnet.Connection = x.gc
+		a  string           = gc.Addr()
+	)
+
+	n.Debug("[DBG] new outgoing conenction to ", a)
+
+	if len(n.outgoing) == n.conf.MaxOutgoingConnections {
+		n.Print("[ERR] outgoing limit disconnecting: ", a)
+		gc.ConnectionPool.Disconnect(gc, ErrPendingLimit)
+		return
+	}
+	var quest uuid.UUID = uuid.NewV4()
+	n.pending[gc] = &pendingConnection{
+		outgoing:  true,
+		remotePub: x.desired,
+		start:     x.start,
+		quest:     quest,
+		step:      1,
+	}
+	// // for tests only
+	if n.testHook != nil {
+		n.testHook(n, testNewPending)
+	}
+	n.Debug("[DBG] send handshake question to: ", a)
+	gc.ConnectionPool.SendMessage(gc, &hsQuest{
+		Quest: quest,
+		Pub:   n.PubKey(),
+	})
+
 }
 
 func (n *node) handleMessage(gc *gnet.Connection) (pub cipher.PubKey,
@@ -544,4 +549,36 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 
 func (n *node) Register(msg interface{}) {
 	n.registry.Register(msg)
+}
+
+func (n *node) handleIncomingConnections() {
+	for len(n.incomingConnections) > 0 {
+		n.handleIncomingConnection(<-n.incomingConnections)
+	}
+}
+
+func (n *node) handleIncomingConnection(ic incomingConnection) {
+	var (
+		gc *gnet.Connection = ic.gc
+		a  string           = gc.Addr()
+	)
+	if len(n.pending) == n.conf.MaxPendingConnections {
+		n.Debug("[DBG] pending limit disconnecting: ", a)
+		gc.ConnectionPool.Disconnect(gc, ErrPendingLimit)
+		return
+	}
+	if len(n.incoming) == n.conf.MaxIncomingConnections {
+		n.Debug("[DBG] incoming limit disconnecting: ", a)
+		gc.ConnectionPool.Disconnect(gc, ErrIncomingLimit)
+		return
+	}
+	n.Debug("[DBG] add incoming conenction to pending: ", a)
+	n.pending[ic.gc] = &pendingConnection{
+		outgoing: false,
+		start:    ic.start,
+	}
+	// // for testing only
+	if n.testHook != nil {
+		n.testHook(n, testNewPending)
+	}
 }

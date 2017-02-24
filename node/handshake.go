@@ -43,6 +43,7 @@ type hsQuest struct {
 	Quest uuid.UUID
 }
 
+// handled by feed
 func (q *hsQuest) Handle(ctx *gnet.MessageContext,
 	ni interface{}) error {
 
@@ -55,7 +56,10 @@ func (q *hsQuest) Handle(ctx *gnet.MessageContext,
 		gc.Addr(),
 		q.Pub.Hex())
 
-	pend, ok := ni.(Node).pend(gc)
+	// first of all we need to process all incoming connections
+	n.(*node).handleIncomingConnections()
+
+	pend, ok := n.pend(gc)
 	if !ok {
 		n.Print("[WRN] HSQS: connection not in pendings list")
 		return ErrUnexpectedHandshake
@@ -112,7 +116,7 @@ func (qa *hsQuestAnswer) Handle(ctx *gnet.MessageContext,
 		err error
 	)
 
-	n.Debug("[DBG] got HSQA from: %s, public key: %s",
+	n.Debugf("[DBG] got HSQA from: %s, public key: %s",
 		gc.Addr(),
 		qa.Pub.Hex())
 

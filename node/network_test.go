@@ -14,25 +14,17 @@ func init() {
 }
 
 func wait() {
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 }
 
 type pingPongCounter struct {
-	pingc int
-	pongc int
+	ping int
+	pong int
 }
 
 func (p *pingPongCounter) reset() {
-	p.pingc = 0
-	p.pongc = 0
-}
-
-func (p *pingPongCounter) ping() {
-	p.pingc++
-}
-
-func (p *pingPongCounter) pong() {
-	p.pongc++
+	p.ping = 0
+	p.pong = 0
 }
 
 var gPingPong pingPongCounter
@@ -41,18 +33,18 @@ type String struct {
 	Value string
 }
 
-// feed side
+// feed side (feed sends PIND)
 func (s *String) HandleIncoming(ic IncomingContext) (terminate error) {
-	gPingPong.pong()
+	gPingPong.pong++
 	if testing.Verbose() {
 		fmt.Println(s.Value)
 	}
 	return
 }
 
-// subscriber side
+// subscriber side (subscriber replies PONG)
 func (s *String) HandleOutgoing(oc OutgoingContext) (terminate error) {
-	gPingPong.ping()
+	gPingPong.ping++
 	if testing.Verbose() {
 		fmt.Println(s.Value)
 	}
@@ -61,8 +53,82 @@ func (s *String) HandleOutgoing(oc OutgoingContext) (terminate error) {
 
 func TestNode_ping_pong(t *testing.T) {
 	var (
-		n1, n2 Node
-		c      Config = newConfig()
+		th1, th2 *testHook = newTestHook(), newTestHook()
+		n1, n2   Node
+		c        Config = newConfig()
+
+		err error
+	)
+	c.Name = "feed"
+	if n1, err = NewNode(secretKey(), c); err != nil {
+		t.Fatal(err)
+	}
+	th1.Set(n1) // set test hook to node
+	c.Name = "subsrciber"
+	c.MaxIncomingConnections = 0 // suppress listening
+	if n2, err = NewNode(secretKey(), c); err != nil {
+		t.Fatal(err)
+	}
+	th2.Set(n2) // set test hook to node
+	//
+	n1.Register(String{})
+	if err := n1.Start(); err != nil {
+		t.Error("error staring node: ", err)
+		return
+	}
+	defer n1.Close()
+	n2.Register(String{})
+	if err := n2.Start(); err != nil {
+		t.Error("error staring node: ", err)
+		return
+	}
+	defer n2.Close()
+	// subscribe n2 to n1
+	if addr, err := n1.Incoming().Address(); err != nil {
+		t.Fatal("can't get listening address of node: ", err)
+	} else {
+		n1.Debug("[TEST] listening address: ", addr)
+		if err := n2.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
+			t.Fatal("error conection to remote node: ", err)
+		}
+	}
+
+	if !th1.estIncTimeout(1, time.Second, t) {
+		return
+	}
+	if !th2.estOutTimeout(1, time.Second, t) {
+		return
+	}
+
+	gPingPong.reset() // reset global ping-pong counter
+
+	if err = n1.Incoming().Broadcast(&String{"PING"}); err != nil {
+		t.Error("broadcasting error: ", err)
+	}
+
+	if !th2.recvOutTimeout(1, time.Second, t) {
+		return
+	}
+
+	if !th1.recvIncTimeout(1, time.Second, t) {
+		return
+	}
+
+	if gPingPong.ping != 1 {
+		t.Error("wrong ping counter: want 1, got ", gPingPong.ping)
+	}
+
+	if gPingPong.pong != 1 {
+		t.Error("wrong pong counter: want 1, got ", gPingPong.ping)
+	}
+
+}
+
+func TestNode_cross_ping_pong(t *testing.T) {
+	var (
+		th1, th2 *testHook = newTestHook(), newTestHook()
+		n1, n2   Node
+		c        Config = newConfig()
 
 		err error
 	)
@@ -71,11 +137,12 @@ func TestNode_ping_pong(t *testing.T) {
 	if n1, err = NewNode(secretKey(), c); err != nil {
 		t.Fatal(err)
 	}
+	th1.Set(n1)
 	c.Name = "subsrciber"
-	c.MaxIncomingConnections = 0 // suppress listening
 	if n2, err = NewNode(secretKey(), c); err != nil {
 		t.Fatal(err)
 	}
+	th2.Set(n2)
 
 	//for _, n := range []Node{n1, n2} { // <- stupid, doesn't work
 	n1.Register(String{})
@@ -91,8 +158,6 @@ func TestNode_ping_pong(t *testing.T) {
 	}
 	defer n2.Close()
 
-	wait()
-
 	// subscribe n2 to n1
 	if addr, err := n1.Incoming().Address(); err != nil {
 		t.Fatal("can't get listening address of node: ", err)
@@ -103,22 +168,45 @@ func TestNode_ping_pong(t *testing.T) {
 		}
 	}
 
-	wait()
+	// subscribe n1 to n2
+	if addr, err := n2.Incoming().Address(); err != nil {
+		t.Fatal("can't get listening address of node: ", err)
+	} else {
+		n2.Debug("[TEST] listening address: ", addr)
+		if err := n1.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
+			t.Fatal("error conection to remote node: ", err)
+		}
+	}
+
+	if !th1.estIncTimeout(1, time.Second, t) ||
+		!th1.estOutTimeout(1, time.Second, t) ||
+		!th2.estIncTimeout(1, time.Second, t) ||
+		!th2.estOutTimeout(1, time.Second, t) {
+		return
+	}
 
 	gPingPong.reset() // reset global ping-pong counter
 
 	if err = n1.Incoming().Broadcast(&String{"PING"}); err != nil {
 		t.Error("broadcasting error: ", err)
 	}
-
-	wait()
-
-	if gPingPong.pingc != 1 {
-		t.Error("wrong ping counter: ", gPingPong.pingc)
+	if err = n2.Incoming().Broadcast(&String{"PING"}); err != nil {
+		t.Error("broadcasting error: ", err)
 	}
 
-	if gPingPong.pongc != 1 {
-		t.Error("wrong pong counter: ", gPingPong.pingc)
+	if !(th1.recvIncTimeout(1, time.Second, t) &&
+		th1.recvOutTimeout(1, time.Second, t) &&
+		th2.recvIncTimeout(1, time.Second, t) &&
+		th2.recvOutTimeout(1, time.Second, t)) {
+		return
+	}
+
+	if gPingPong.ping != 2 {
+		t.Error("wrong ping counter: ", gPingPong.ping)
+	}
+
+	if gPingPong.pong != 2 {
+		t.Error("wrong pong counter: ", gPingPong.ping)
 	}
 
 }
