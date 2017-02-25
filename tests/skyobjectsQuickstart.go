@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
-	// "github.com/skycoin/skycoin/src/cipher"
 )
 
 // Parent type.
