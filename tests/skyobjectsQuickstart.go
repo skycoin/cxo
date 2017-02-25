@@ -20,7 +20,8 @@ type Child struct {
 
 func main() {
 	container := skyobject.SkyObjects(data.NewDB())
-	container.RegisterSchema(Parent{}, Child{})
+	container.RegisterSchema(Parent{})
+	container.RegisterSchema(Child{})
 
 	getParentRef := func() skyobject.ObjRef {
 		children := []Child{{"Ben"}, {"James"}, {"Ryan"}}
@@ -59,4 +60,36 @@ func main() {
 
 		fmt.Println(" -", child.Name)
 	}
+
+	// Schemas.
+	fmt.Println("Schemas:")
+	schemas := container.GetSchemas()
+	for _, schema := range schemas {
+		fmt.Println("-", schema.Name)
+	}
+
+	// Inspect.
+	fmt.Println("Inspect:")
+	container.Inspect()
+
+	func() {
+		// Get all keys of objects with Schema type 'Child'.
+		schemaKey, ok := container.GetSchemaKey("Child")
+		if ok == false {
+			fmt.Println("Woops! This Schema doesn't exist in the container.")
+			return
+		}
+		childrenKeys := container.GetAllBySchema(schemaKey)
+
+		// Get all children.
+		fmt.Println("Children:")
+
+		for _, childKey := range childrenKeys {
+			var child Child
+			childRef := container.GetObjRef(childKey)
+			childRef.Deserialize(&child)
+
+			fmt.Println(" -", child.Name)
+		}
+	}()
 }

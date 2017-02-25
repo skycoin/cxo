@@ -37,7 +37,16 @@ type Board struct {
 container.RegisterSchema(Board{}) // Register Schema.
 ```
 
-Later, we can list all Schema types from the container, and retrieve all objects of a specified Schema. (LINK HERE)
+We can list all Schema types from the container using the `GetSchemas` member function which returns `[]Schema`:
+
+```go
+schemas := container.GetSchemas() // Get array of all schemas from container.
+
+fmt.Println("Schemas:") // Print results.
+for _, schema := range schemas {
+    fmt.Println(" -", schema.Name)
+}
+```
 
 ### Storing Objects
 
@@ -122,8 +131,6 @@ The output will be of type `ObjRef`, which we can use to obtain useful data, and
 Here is an example of retrieving an object with a given key:
 
 ```go
-...
-
 // Get the parent's reference object with 'cipher.SHA256' key.
 parentRef := container.GetObjRef(parentKey) 
 
@@ -138,8 +145,6 @@ fmt.Println("I've obtained a parent:", parent.Name)
 We can also use `ObjRef` to obtain children objects:
 
 ```go
-...
-
 // Retrieve the 'Children' field of the Parent object as an 'ObjRef'.
 childrenRef, e := parentRef.GetFieldAsObj("Children")
 if e != nil {
@@ -163,4 +168,28 @@ for _, childRef := range childRefArray {
 
     fmt.Println(" -", child.Name)
 }
+```
+
+Here is an example of retrieving all objects of a specific Schema:
+
+```go
+// Get all keys of objects with Schema type 'Child'.
+schemaKey, ok := container.GetSchemaKey("Child")
+if ok == false {
+    fmt.Println("Woops! This Schema doesn't exist in the container.")
+    return
+}
+childrenKeys := container.GetAllBySchema(schemaKey)
+
+// Get all children.
+fmt.Println("Children:")
+
+for _, childKey := range childrenKeys {
+    var child Child
+    childRef := container.GetObjRef(childKey)
+    childRef.Deserialize(&child)
+
+    fmt.Println(" -", child.Name)
+}
+
 ```

@@ -157,7 +157,6 @@ func (s *skyObjects) HashObject(ref href) (IHashObject, bool) {
 		if !res.IsNil() && res.IsValid() {
 			resValue, ok := res.Interface().(IHashObject)
 			if ok {
-
 				typeData, _ := s.Get(ref.Type)
 				resValue.SetData(typeData, ref.Data)
 				return resValue, true
@@ -237,10 +236,11 @@ func (s *skyObjects) GetSchemaKey(typeName string) (cipher.SHA256, bool) {
 func (s *skyObjects) GetSchemas() []Schema {
 	result := []Schema{}
 	for _, k := range s.types {
-		data, _ := s.Get(k.Schema)
-		var sm Schema
-		encoder.DeserializeRaw(data, &sm)
-		result = append(result, sm)
+		// data, _ := s.Get(k.Schema)
+		// var sm Schema
+		// encoder.DeserializeRaw(data, &sm)
+		// result = append(result, sm)
+		result = append(result, *s.GetSchemaFromKey(k.Schema))
 	}
 	return result
 }
