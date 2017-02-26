@@ -262,7 +262,7 @@ func ExampleConfig_HumanString() {
 	// Output:
 	//
 	// 	name:       node
-	// 	debug logs: enabled
+	// 	debug logs: disabled
 	//
 	// 	address:    auto
 	// 	port:       auto
