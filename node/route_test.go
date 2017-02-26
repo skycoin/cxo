@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -64,15 +65,20 @@ type Forward struct {
 
 // keep last router instance
 type ForwardStore struct {
+	sync.Mutex
 	Store  map[int64]Forward
 	LastId int64
 }
 
 func (f *ForwardStore) Save(x *Forward) {
+	f.Lock()
+	defer f.Unlock()
 	f.Store[x.Id] = *x
 }
 
 func (f *ForwardStore) New() (x *Forward) {
+	f.Lock()
+	defer f.Unlock()
 	f.LastId++
 	x = new(Forward)
 	x.Id = f.LastId
@@ -81,12 +87,16 @@ func (f *ForwardStore) New() (x *Forward) {
 }
 
 func (f *ForwardStore) Get(id int64) (x Forward, ok bool) {
+	f.Lock()
+	defer f.Unlock()
 	x, ok = f.Store[id]
 	return
 }
 
 // clean up to free memory
 func (f *ForwardStore) Reset() {
+	f.Lock()
+	defer f.Unlock()
 	f.Store = make(map[int64]Forward)
 	f.LastId = 0
 }
@@ -111,12 +121,15 @@ var sendReceiveStore SendReciveStore = SendReciveStore{
 // SendReciveStore opposite to ForwardStore keeps routes from inside
 // the store (not message itself)
 type SendReciveStore struct {
+	sync.Mutex
 	LastId int64
 	// id-> []{point, connection_side, route_point}
 	Store map[int64][]SendReceivePoint
 }
 
 func (s *SendReciveStore) New() (x *SendReceive) {
+	s.Lock()
+	defer s.Unlock()
 	s.LastId++
 	x = new(SendReceive)
 	x.Id = s.LastId // x.Point = 0
@@ -124,18 +137,24 @@ func (s *SendReciveStore) New() (x *SendReceive) {
 }
 
 func (s *SendReciveStore) Save(x *SendReceive, srp SendReceivePoint) {
+	s.Lock()
+	defer s.Unlock()
 	stored := s.Store[x.Id]
 	stored = append(stored, srp)
 	s.Store[x.Id] = stored
 }
 
 func (s *SendReciveStore) Get(id int64) (x []SendReceivePoint, ok bool) {
+	s.Lock()
+	defer s.Unlock()
 	x, ok = s.Store[id]
 	return
 }
 
 // clean up to free memory
 func (s *SendReciveStore) Reset() {
+	s.Lock()
+	defer s.Unlock()
 	s.LastId = 0
 	s.Store = make(map[int64][]SendReceivePoint)
 }

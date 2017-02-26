@@ -16,6 +16,10 @@ func init() {
 	gnet.DebugPrint = testing.Verbose()
 }
 
+//
+// TODO: DRY
+//
+
 // Send message from feed to single subscriber using broadcsting.
 // The subscriber sends response back. That's all
 func TestNode_sendReceive(t *testing.T) {
@@ -121,76 +125,197 @@ func TestNode_sendReceive(t *testing.T) {
 	}
 }
 
-func TestNode_cross_send_receive(t *testing.T) {
-	// var err error
-	// tf, ts := newTestHook(), newTestHook()
-	// feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
-	// for _, x := range []struct {
-	// 	node Node
-	// 	hook *testHook
-	// }{
-	// 	{feed, tf},
-	// 	{subscr, ts},
-	// } {
-	// 	x.node.Register(String{})
-	// 	x.hook.Set(x.node)
-	// 	if err := x.node.Start(); err != nil {
-	// 		t.Error(err)
-	// 		return
-	// 	}
-	// 	defer x.node.Close()
-	// }
+// There are two nodes: n1 an n2. The n1 is subscribed to n2.
+// The n2 is subscriberd to n1. Both sends SendRecive message
+// using broadcasting and get response back. That's all
+func TestNode_crossSendReceive(t *testing.T) {
+	sendReceiveStore.Reset() // reset
+	var err error
+	t1, t2 := newTestHook(),
+		newTestHook()
+	n1, n2 := mustCreateNode("feed"),
+		mustCreateNode("subscr")
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{n1, t1},
+		{n2, t2},
+	} {
+		x.node.Register(SendReceive{}) //
+		x.hook.Set(x.node)
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
+	}
+	// subscribe
+	// n1 to n2
+	err = n1.Outgoing().Connect(nodeMustGetAddress(n2, t), cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// n2 to n1
+	err = n2.Outgoing().Connect(nodeMustGetAddress(n1, t), cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-	// // subscribe to feed
-	// if addr, err := feed.Incoming().Address(); err != nil {
-	// 	t.Fatal("can't get listening address of node: ", err)
-	// } else {
-	// 	feed.Debug("[TEST] listening address: ", addr)
-	// 	if err := subscr.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
-	// 		t.Fatal("error conection to remote node: ", err)
-	// 	}
-	// }
+	// waiting connections
+	if !t1.estIncTimeout(1, time.Second, t) ||
+		!t1.estOutTimeout(1, time.Second, t) ||
+		!t2.estIncTimeout(1, time.Second, t) ||
+		!t2.estOutTimeout(1, time.Second, t) {
+		return
+	}
 
-	// // subscribe to subscr
-	// if addr, err := subscr.Incoming().Address(); err != nil {
-	// 	t.Fatal("can't get listening address of node: ", err)
-	// } else {
-	// 	subscr.Debug("[TEST] listening address: ", addr)
-	// 	if err := feed.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
-	// 		t.Fatal("error conection to remote node: ", err)
-	// 	}
-	// }
+	// create messages
+	sr1, sr2 := sendReceiveStore.New(), sendReceiveStore.New()
 
-	// if !tf.estIncTimeout(1, time.Second, t) ||
-	// 	!tf.estOutTimeout(1, time.Second, t) ||
-	// 	!ts.estIncTimeout(1, time.Second, t) ||
-	// 	!ts.estOutTimeout(1, time.Second, t) {
-	// 	return
-	// }
+	// broadcast SendReceive message
+	// n1
+	if err = n1.Incoming().Broadcast(sr1); err != nil {
+		t.Error("broadcasting error: ", err)
+		return
+	}
+	// n2
+	if err = n2.Incoming().Broadcast(sr2); err != nil {
+		t.Error("broadcasting error: ", err)
+		return
+	}
 
-	// gPingPong.reset() // reset global ping-pong counter
+	// waiting receiving
+	if !t1.recvOutTimeout(1, time.Second, t) ||
+		!t1.recvIncTimeout(1, time.Second, t) ||
+		!t2.recvOutTimeout(1, time.Second, t) ||
+		!t2.recvIncTimeout(1, time.Second, t) {
+		return
+	}
 
-	// if err = feed.Incoming().Broadcast(&String{"PING"}); err != nil {
-	// 	t.Error("broadcasting error: ", err)
-	// }
-	// if err = subscr.Incoming().Broadcast(&String{"PING"}); err != nil {
-	// 	t.Error("broadcasting error: ", err)
-	// }
+	result1, ok := sendReceiveStore.Get(sr1.Id)
+	if !ok {
+		t.Error("message n1->n2 hasn't traveled")
+		return
+	}
 
-	// if !(tf.recvIncTimeout(1, time.Second, t) &&
-	// 	tf.recvOutTimeout(1, time.Second, t) &&
-	// 	ts.recvIncTimeout(1, time.Second, t) &&
-	// 	ts.recvOutTimeout(1, time.Second, t)) {
-	// 	return
-	// }
+	result2, ok := sendReceiveStore.Get(sr2.Id)
+	if !ok {
+		t.Error("message n2->n1 hasn't traveled")
+		return
+	}
 
-	// if gPingPong.ping != 2 {
-	// 	t.Error("wrong ping counter: ", gPingPong.ping)
-	// }
+	// =========================================================================
 
-	// if gPingPong.pong != 2 {
-	// 	t.Error("wrong pong counter: ", gPingPong.ping)
-	// }
+	//
+	// TODO: DRY, motherfucker, DRY!
+	//
+
+	//
+	// n1->n2->n1
+	//
+
+	switch lr := len(result1); lr {
+	case 0, 1:
+		t.Error("to few message handlings: ", lr)
+		return
+	case 2: // ok
+	default:
+		t.Error("too many message handlings:", lr)
+		return
+	}
+
+	// position in the slice and point number
+	// order must be 0->1, 1->2
+	if result1[0].Point != 1 || result1[1].Point != 2 {
+		t.Error("invalid handling order")
+		return
+	}
+
+	// first: sent by n1 and handled by n2
+	if result1[0].Outgoing != true {
+		t.Error("firstly the message handled by n1")
+	} else {
+		// remote is n1
+		// local is n2
+		// check out public keys
+		if result1[0].RoutePoint.Remote.Pub != n1.PubKey() {
+			t.Error("invalid public key of remote point")
+		}
+		if result1[0].RoutePoint.Local.Pub != n2.PubKey() {
+			t.Error("invalid public key of local point")
+		}
+	}
+
+	// second: sent by n2 and handled by n1
+	if result1[1].Outgoing != false {
+		t.Error("secondly the message handled by n2")
+	} else {
+		// remote is n2
+		// local is n1
+		// check out public keys
+		if result1[1].RoutePoint.Remote.Pub != n2.PubKey() {
+			t.Error("invalid public key of remote point")
+		}
+		if result1[1].RoutePoint.Local.Pub != n1.PubKey() {
+			t.Error("invalid public key of local point")
+		}
+	}
+
+	//
+	// n2->n1->n1
+	//
+
+	switch lr := len(result2); lr {
+	case 0, 1:
+		t.Error("to few message handlings: ", lr)
+		return
+	case 2: // ok
+	default:
+		t.Error("too many message handlings:", lr)
+		return
+	}
+
+	// position in the slice and point number
+	// order must be 0->1, 1->2
+	if result2[0].Point != 1 || result2[1].Point != 2 {
+		t.Error("invalid handling order")
+		return
+	}
+
+	// first: sent by n2 and handled by n1
+	if result2[0].Outgoing != true {
+		t.Error("firstly the message handled by n2")
+	} else {
+		// remote is n2
+		// local is n1
+		// check out public keys
+		if result2[0].RoutePoint.Remote.Pub != n2.PubKey() {
+			t.Error("invalid public key of remote point")
+		}
+		if result2[0].RoutePoint.Local.Pub != n1.PubKey() {
+			t.Error("invalid public key of local point")
+		}
+	}
+
+	// second: sent by n1 and handled by n2
+	if result2[1].Outgoing != false {
+		t.Error("secondly the message handled by n1")
+	} else {
+		// remote is n1
+		// local is n2
+		// check out public keys
+		if result2[1].RoutePoint.Remote.Pub != n1.PubKey() {
+			t.Error("invalid public key of remote point")
+		}
+		if result2[1].RoutePoint.Local.Pub != n2.PubKey() {
+			t.Error("invalid public key of local point")
+		}
+	}
+
+	// =========================================================================
 
 }
 
