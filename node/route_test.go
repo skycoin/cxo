@@ -8,19 +8,19 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-//
-// TODO: async access for broadcasting without deadlocks
-//
+/* ******************* FROZEN *******************
 
 //
 // go forward from node to node, broadcast itself
 // on each node it handled
 //
 
+
 var forwardStore ForwardStore = ForwardStore{
-	Store:  make(map[int64]Forward),
+	Store:  make(map[int64]*Forward),
 	LastId: 0,
 }
+ ********************************************* */
 
 type RouteSide struct {
 	Pub     cipher.PubKey
@@ -57,6 +57,8 @@ func (r *RoutePoint) VerbosePrint(name string, id int64) {
 		r.Remote.Address, r.Remote.Pub.Hex())
 }
 
+/* ****************** FROZEN ******************
+
 // broadcast itself on each node it handled
 type Forward struct {
 	Id    int64
@@ -66,14 +68,14 @@ type Forward struct {
 // keep last router instance
 type ForwardStore struct {
 	sync.Mutex
-	Store  map[int64]Forward
+	Store  map[int64]*Forward
 	LastId int64
 }
 
 func (f *ForwardStore) Save(x *Forward) {
 	f.Lock()
 	defer f.Unlock()
-	f.Store[x.Id] = *x
+	f.Store[x.Id] = x
 }
 
 func (f *ForwardStore) New() (x *Forward) {
@@ -82,11 +84,11 @@ func (f *ForwardStore) New() (x *Forward) {
 	f.LastId++
 	x = new(Forward)
 	x.Id = f.LastId
-	f.Save(x)
+	f.Store[x.Id] = x // Save without locks
 	return
 }
 
-func (f *ForwardStore) Get(id int64) (x Forward, ok bool) {
+func (f *ForwardStore) Get(id int64) (x *Forward, ok bool) {
 	f.Lock()
 	defer f.Unlock()
 	x, ok = f.Store[id]
@@ -97,17 +99,21 @@ func (f *ForwardStore) Get(id int64) (x Forward, ok bool) {
 func (f *ForwardStore) Reset() {
 	f.Lock()
 	defer f.Unlock()
-	f.Store = make(map[int64]Forward)
+	f.Store = make(map[int64]*Forward)
 	f.LastId = 0
 }
 
-func (f *Forward) HandleIncoming(ic IncomingContext) (terminate error) {
-	point := CreateRoutePoint(ic)
+func (f *Forward) HandleOutgoing(oc OutgoingContext) (terminate error)
+	point := CreateRoutePoint(oc)
 	point.VerbosePrint("Forward", f.Id)
 	f.Route = append(f.Route, point)
 	forwardStore.Save(f)
-	return ic.Broadcast(f) // broadcast itself
+	// TODO: broadcast from outgoing context to forwarding messages
+	// return ic.Broadcast(f) // broadcast itself
+	return
 }
+
+******************************************** */
 
 //
 // send-recive (a'la ping-pong)
@@ -172,7 +178,9 @@ type SendReceive struct {
 }
 
 // handled from outgoing connection (by subscriber)
-func (s *SendReceive) HandleOutgoing(oc OutgoingContext) (terminate error) {
+func (s *SendReceive) HandleOutgoing(oc MsgContext,
+	user interface{}) (terminate error) {
+
 	s.Point++
 	srp := SendReceivePoint{
 		Point:      s.Point,
@@ -185,7 +193,9 @@ func (s *SendReceive) HandleOutgoing(oc OutgoingContext) (terminate error) {
 }
 
 // handled from incoming connection (by feed)
-func (s *SendReceive) HandleIncoming(ic IncomingContext) (terminate error) {
+func (s *SendReceive) HandleIncoming(ic MsgContext,
+	user interface{}) (terminate error) {
+
 	s.Point++
 	srp := SendReceivePoint{
 		Point:      s.Point,

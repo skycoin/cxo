@@ -11,6 +11,7 @@ func init() {
 	gnet.VerifyMessages()
 }
 
+// A ConnectionSide represents connection interface
 type ConnectionSide interface {
 	PubKey() cipher.PubKey
 	Address() string
@@ -40,6 +41,8 @@ func (r localConnectionSide) Address() string {
 	return r.gc.Conn.LocalAddr().String()
 }
 
+// MsgContext represents context that message can
+// use when it handled
 type MsgContext interface {
 	Remote() ConnectionSide            // get information about remote node
 	Local() ConnectionSide             // get information about local node
@@ -75,31 +78,15 @@ func (m *msgContext) Reply(msg interface{}) (err error) {
 	return
 }
 
-func (m *msgContext) Broadcast(msg interface{}) error {
-	return m.n.Incoming().Broadcast(msg)
-}
-
-// IncomingContext is feed-side context
-type IncomingContext interface {
-	MsgContext
-	// Breadcast sends given msg to all subscribers of the feed.
-	// It can return encoding error
-	Broadcast(msg interface{}) (err error)
-}
-
-// OutgoingContext is subscriber side context
-type OutgoingContext interface {
-	MsgContext
-}
-
 // IncomingHandler represents interface that
 // messages that received by incoming connections (by feed)
 // must implement
 type IncomingHandler interface {
 	// HandleIncoming is called when message received. If the method
 	// returns non-nil error then connection will terminated with
-	// the error
-	HandleIncoming(IncomingContext) (terminate error)
+	// the error. The user argument is user-data provided to
+	// node constructor (NewNode)
+	HandleIncoming(cxt MsgContext, user interface{}) (terminate error)
 }
 
 // IncomingHandler represents interface that
@@ -108,11 +95,13 @@ type IncomingHandler interface {
 type OutgoingHndler interface {
 	// HandleOutgoing is called when message received. If the method
 	// returns non-nil error then connection will terminated with
-	// the error
-	HandleOutgoing(OutgoingContext) (terminate error)
+	// the error. The user argument is user-data provided to
+	// node constructor (NewNode)
+	HandleOutgoing(cxt MsgContext, user interface{}) (terminate error)
 }
 
-// A Msg represents any piece of data
+// A Msg represents any piece of data. It used for intrnals.
+// The goal of the Msg is wrapper of messages
 type Msg struct {
 	Body []byte
 }
@@ -120,6 +109,7 @@ type Msg struct {
 func (m *Msg) Handle(ctx *gnet.MessageContext, ni interface{}) (err error) {
 	var (
 		n  Node             = ni.(Node)
+		nd *node            = n.(*node)
 		gc *gnet.Connection = ctx.Conn
 
 		rpk      cipher.PubKey // remote public key
@@ -145,14 +135,14 @@ func (m *Msg) Handle(ctx *gnet.MessageContext, ni interface{}) (err error) {
 			return
 		}
 		// for tests
-		if nd := n.(*node); nd.testHook != nil {
+		if nd.testHook != nil {
 			nd.testHook(nd, testReceivedIncoming)
 		}
 		return inh.HandleIncoming(&msgContext{
 			r:  rpk,
 			gc: gc,
 			n:  n,
-		})
+		}, nd.user)
 	} // else
 	var ogh OutgoingHndler
 	if ogh, ok = msg.(OutgoingHndler); !ok {
@@ -160,12 +150,12 @@ func (m *Msg) Handle(ctx *gnet.MessageContext, ni interface{}) (err error) {
 		return
 	}
 	// for tests
-	if nd := n.(*node); nd.testHook != nil {
+	if nd.testHook != nil {
 		nd.testHook(nd, testReceivedOutgoign)
 	}
 	return ogh.HandleOutgoing(&msgContext{
 		r:  rpk,
 		gc: gc,
 		n:  n,
-	})
+	}, nd.user)
 }

@@ -26,7 +26,7 @@ func newNode(c ...Config) (Node, error) {
 	} else {
 		conf = newConfig()
 	}
-	n, err := NewNode(secretKey(), conf)
+	n, err := NewNode(secretKey(), conf, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func newNode(c ...Config) (Node, error) {
 
 func TestNewNode(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		n, err := NewNode(secretKey(), NewConfig())
+		n, err := NewNode(secretKey(), NewConfig(), nil)
 		if err != nil {
 			t.Error(err)
 			return
@@ -47,12 +47,12 @@ func TestNewNode(t *testing.T) {
 	t.Run("invalid config", func(t *testing.T) {
 		c := NewConfig()
 		c.MaxPendingConnections = 0
-		if _, err := NewNode(secretKey(), c); err == nil {
+		if _, err := NewNode(secretKey(), c, nil); err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("invalid secret key", func(t *testing.T) {
-		if _, err := NewNode(cipher.SecKey{}, newConfig()); err == nil {
+		if _, err := NewNode(cipher.SecKey{}, newConfig(), nil); err == nil {
 			t.Error("missing error")
 		}
 	})
@@ -124,7 +124,7 @@ func TestNode_PubKey(t *testing.T) {
 
 func TestNode_Sign(t *testing.T) {
 	pub, sec := cipher.GenerateKeyPair()
-	n, err := NewNode(sec, newConfig())
+	n, err := NewNode(sec, newConfig(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

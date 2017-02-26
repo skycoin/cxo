@@ -4,10 +4,6 @@ import (
 	"testing"
 	"time"
 
-	// TORM
-	"github.com/kr/pretty"
-	//
-
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
@@ -133,8 +129,8 @@ func TestNode_crossSendReceive(t *testing.T) {
 	var err error
 	t1, t2 := newTestHook(),
 		newTestHook()
-	n1, n2 := mustCreateNode("feed"),
-		mustCreateNode("subscr")
+	n1, n2 := mustCreateNode("n1"),
+		mustCreateNode("n2")
 	for _, x := range []struct {
 		node Node
 		hook *testHook
@@ -317,79 +313,4 @@ func TestNode_crossSendReceive(t *testing.T) {
 
 	// =========================================================================
 
-}
-
-func TestNode_forwarding(t *testing.T) {
-	var err error
-	src, pipe, dst := mustCreateNode("src"),
-		mustCreateNode("pipe"),
-		mustCreateNode("dst")
-	ts, tp, td := newTestHook(),
-		newTestHook(),
-		newTestHook()
-	for _, x := range []struct {
-		node Node
-		hook *testHook
-	}{
-		{src, ts},
-		{pipe, tp},
-		{dst, td},
-	} {
-		x.node.Register(Forward{})
-		x.hook.Set(x.node)
-		if err := x.node.Start(); err != nil {
-			t.Error(err)
-			return
-		}
-		defer x.node.Close()
-	}
-	// src -> pipe -> dst
-	// subscribe pipe to src
-	err = pipe.Outgoing().Connect(
-		nodeMustGetAddress(src, t),
-		cipher.PubKey{})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	// subscribe dst to pipe
-	err = dst.Outgoing().Connect(
-		nodeMustGetAddress(pipe, t),
-		cipher.PubKey{})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	// waiting for handshake
-	if !ts.estIncTimeout(1, time.Second, t) { // incoming to src from pipe
-		return
-	}
-	if !tp.estOutTimeout(1, time.Second, t) { // outgoing from pipe to src
-		return
-	}
-	if !tp.estIncTimeout(1, time.Second, t) { // incoming to pipe from dst
-		return
-	}
-	if !td.estOutTimeout(1, time.Second, t) { // outgoign to pipe from dst
-		return
-	}
-	// forward
-	forward := forwardStore.New()
-	// send forward
-	if err := src.Incoming().Broadcast(forward); err != nil {
-		t.Error(err)
-		return
-	}
-	// waiting for receive (src->pipe)
-	if !tp.recvOutTimeout(1, time.Second, t) {
-		t.Error("tp")
-		//return
-	}
-	// waiting for receive (pipe->dst)
-	if !td.recvOutTimeout(1, time.Second, t) {
-		t.Error("td")
-		//return
-	}
-	// check out routes
-	pretty.Println(forwardStore.Get(forward.Id))
 }

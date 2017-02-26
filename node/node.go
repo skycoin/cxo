@@ -121,6 +121,10 @@ type node struct {
 	pub cipher.PubKey
 	sec cipher.SecKey
 
+	// some data passed to constructor that can
+	// be obtained from messages handlers
+	user interface{}
+
 	pool *gnet.ConnectionPool
 
 	pending map[*gnet.Connection]*pendingConnection
@@ -182,9 +186,13 @@ func (n *node) lookupHandshakeTime() {
 	}
 }
 
-// NewNode creates new Node using given Configs
-// and secret key
-func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
+// NewNode creates new Node using given Configs,
+// secret key and optional user provided data that
+// can be used from handlers of messages
+func NewNode(sec cipher.SecKey,
+	conf Config,
+	user interface{}) (n Node, err error) {
+
 	var (
 		nd *node
 		gc gnet.Config
@@ -226,6 +234,8 @@ func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
 		conf.MaxOutgoingConnections)
 
 	nd.events = make(chan Event, conf.ManageEventsChannelSize)
+
+	nd.user = user
 
 	n = nd
 	return
@@ -400,10 +410,12 @@ func (n *node) start(quit, done chan struct{}) {
 			n.handleEvents(evt)
 		case <-pingIntervalChan:
 			n.Debug("[DBG] send pings")
-			// broadcast returns an error only if given value
-			// can't be encoded
 			if err = n.Incoming().Broadcast(&Ping{}); err != nil {
-				panic("error sending ping: " + err.Error()) // it's BUG
+				// broadcast returns an error only if given value
+				// can't be encoded or it can be ErrClosed
+				if err != ErrClosed {
+					panic("error sending ping: " + err.Error()) // it's BUG
+				}
 			}
 		case <-quit:
 			n.Debug("[DBG] quiting start loop")
@@ -412,6 +424,7 @@ func (n *node) start(quit, done chan struct{}) {
 	}
 }
 
+// srain events channel when node was closed
 func (n *node) drainEvents() {
 	for {
 		select {
