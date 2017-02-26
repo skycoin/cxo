@@ -280,9 +280,11 @@ func ExampleConfig_HumanString() {
 	// 	read timeout:  system default
 	// 	write timeout: system default
 	//
+	// 	ping interval: disabled
+	//
 	// 	handshake timeout: 40s
 	//
 	// 	messages handling rate: 50ms
 	//
-	// 	managing events channel size: 20
+	// 	managing events channel size: 1024
 }

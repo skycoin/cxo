@@ -37,6 +37,17 @@ const (
 	READ_TIMEOUT  time.Duration = 0                // default ReadTimeout
 	WRITE_TIMEOUT time.Duration = 0                // default WriteTimeout
 
+	// PING_INTERVAL is interval for send service PING message to
+	// keep connection alive. If you set it to zero then pinging is
+	// disabled. It's impossible to use disabled ping-interval and
+	// some non-zero read and write timeout. Because if we set some
+	// read timeout and no messages sent - connection is closed. Ping
+	// messages are sent to incoming connections only (i.e. from feed to
+	// subscribers). Thus, every feed can keep alive its subscribers, but
+	// there isn't cross-ping-pong sending, that can't keep connection more
+	// clever but can increase network pressure
+	PING_INTERVAL time.Duration = 0
+
 	// HANDSHAKE_TIMEOUT is default HandshakeTimeout
 	HANDSHAKE_TIMEOUT time.Duration = 40 * time.Second
 
@@ -45,7 +56,7 @@ const (
 
 	// MANAGE_EVENTS_CHANNEL_SIZE size of managing events like
 	// List, Connect, Terminate etc
-	MANAGE_EVENTS_CHANNEL_SIZE = 20
+	MANAGE_EVENTS_CHANNEL_SIZE = 1024
 )
 
 // A Config represents set of configurations of a Node
@@ -80,6 +91,8 @@ type Config struct {
 	DialTimeout  time.Duration // dial timeout, use 0 to ignore timeout
 	ReadTimeout  time.Duration // read timeout, use 0 to system's default
 	WriteTimeout time.Duration // writ timeout, use 0 to system's default
+
+	PingInterval time.Duration // ping interval, use 0 to disable
 
 	// HandshakeTimeout is timeout after which connection will be
 	// closed if handshake is not performed. The hndshake is four-step
@@ -117,6 +130,8 @@ func NewConfig() (c Config) {
 	c.DialTimeout = DIAL_TIMEOUT
 	c.ReadTimeout = READ_TIMEOUT
 	c.WriteTimeout = WRITE_TIMEOUT
+
+	c.PingInterval = PING_INTERVAL
 
 	c.HandshakeTimeout = HANDSHAKE_TIMEOUT
 
@@ -207,6 +222,11 @@ func (c *Config) FromFlags() {
 		WRITE_TIMEOUT,
 		"write timeout (set to zero to use system's default)")
 
+	flag.DurationVar(&c.PingInterval,
+		"ping",
+		PING_INTERVAL,
+		"ping interval (set to zero to disable pinging)")
+
 	flag.DurationVar(&c.HandshakeTimeout,
 		"ht",
 		HANDSHAKE_TIMEOUT,
@@ -272,6 +292,8 @@ func (c *Config) HumanString() (s string) {
 	read timeout:  %s
 	write timeout: %s
 
+	ping interval: %s
+
 	handshake timeout: %s
 
 	messages handling rate: %s
@@ -296,6 +318,8 @@ func (c *Config) HumanString() (s string) {
 		humanDur(c.DialTimeout, "ignore"),
 		humanDur(c.ReadTimeout, "system default"),
 		humanDur(c.WriteTimeout, "system default"),
+
+		humanDur(c.PingInterval, "disabled"),
 
 		humanDur(c.HandshakeTimeout, "ignore"),
 
