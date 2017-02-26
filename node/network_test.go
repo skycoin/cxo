@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,8 +19,28 @@ func wait() {
 }
 
 type pingPongCounter struct {
+	sync.Mutex
 	ping int
 	pong int
+}
+
+func (p *pingPongCounter) Ping() {
+	p.Lock()
+	defer p.Unlock()
+	p.ping++
+}
+
+func (p *pingPongCounter) Pong() {
+	p.Lock()
+	defer p.Unlock()
+	p.pong++
+}
+
+func (p *pingPongCounter) Get() (ping, pong int) {
+	p.Lock()
+	defer p.Unlock()
+	ping, pong = p.ping, p.pong
+	return
 }
 
 func (p *pingPongCounter) reset() {
@@ -35,7 +56,7 @@ type String struct {
 
 // feed side (feed sends PIND)
 func (s *String) HandleIncoming(ic IncomingContext) (terminate error) {
-	gPingPong.pong++
+	gPingPong.Ping()
 	if testing.Verbose() {
 		fmt.Println(s.Value)
 	}
@@ -44,14 +65,14 @@ func (s *String) HandleIncoming(ic IncomingContext) (terminate error) {
 
 // subscriber side (subscriber replies PONG)
 func (s *String) HandleOutgoing(oc OutgoingContext) (terminate error) {
-	gPingPong.ping++
+	gPingPong.Pong()
 	if testing.Verbose() {
 		fmt.Println(s.Value)
 	}
 	return oc.Reply(&String{"PONG"})
 }
 
-func TestNode_ping_pong(t *testing.T) {
+func TestNode_send_receive(t *testing.T) {
 	var (
 		th1, th2 *testHook = newTestHook(), newTestHook()
 		n1, n2   Node
@@ -114,17 +135,19 @@ func TestNode_ping_pong(t *testing.T) {
 		return
 	}
 
-	if gPingPong.ping != 1 {
-		t.Error("wrong ping counter: want 1, got ", gPingPong.ping)
+	ping, pong := gPingPong.Get()
+
+	if ping != 1 {
+		t.Error("wrong ping counter: want 1, got ", ping)
 	}
 
-	if gPingPong.pong != 1 {
-		t.Error("wrong pong counter: want 1, got ", gPingPong.ping)
+	if pong != 1 {
+		t.Error("wrong pong counter: want 1, got ", ping)
 	}
 
 }
 
-func TestNode_cross_ping_pong(t *testing.T) {
+func TestNode_cross_send_receive(t *testing.T) {
 	var (
 		th1, th2 *testHook = newTestHook(), newTestHook()
 		n1, n2   Node

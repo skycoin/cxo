@@ -58,23 +58,7 @@ func TestNewNode(t *testing.T) {
 	})
 }
 
-func TestNode_onConnect(t *testing.T) {
-	// TODO
-}
-
-func TestNode_onGnetConnect(t *testing.T) {
-	// TODO
-}
-
-func TestNode_onGnetDisconnect(t *testing.T) {
-	// TODO
-}
-
-func TestNode_lookupHandshakeTime(t *testing.T) {
-	//
-}
-
-func nodeAddress(n Node, t *testing.T) string {
+func nodeMustGetAddress(n Node, t *testing.T) string {
 	a, err := n.Incoming().Address()
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +83,7 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 		return
 	}
 	defer nd.Close()
-	addr := nodeAddress(n, t)
+	addr := nodeMustGetAddress(n, t)
 	n.Debug("[TEST] listening address: ", addr)
 	if _, err = net.Dial("tcp", addr); err != nil {
 		t.Error("error dialing node: ", err)
@@ -117,7 +101,8 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 	}
 }
 
-func mustNode(name ...string) Node {
+// with optional name
+func mustCreateNode(name ...string) Node {
 	c := newConfig()
 	if len(name) > 0 {
 		c.Name = name[0]
@@ -130,7 +115,7 @@ func mustNode(name ...string) Node {
 }
 
 func TestNode_PubKey(t *testing.T) {
-	n := mustNode()
+	n := mustCreateNode()
 	pub := n.PubKey()
 	if err := pub.Verify(); err != nil {
 		t.Error("empty public key: ", err)
@@ -138,78 +123,111 @@ func TestNode_PubKey(t *testing.T) {
 }
 
 func TestNode_Sign(t *testing.T) {
-	//
-}
-
-func TestNode_pend(t *testing.T) {
-	//
+	pub, sec := cipher.GenerateKeyPair()
+	n, err := NewNode(sec, newConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := cipher.SumSHA256([]byte("some value"))
+	sig := n.Sign(hash)
+	if err := cipher.VerifySignature(pub, sig, hash); err != nil {
+		t.Error("invalid Sign: ", err)
+	}
 }
 
 func TestNode_hasOutgoing(t *testing.T) {
-	//
+	tf, ts := newTestHook(), newTestHook()
+	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{feed, tf},
+		{subscr, ts},
+	} {
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
+		x.hook.Set(x.node)
+	}
+	// connect to feed
+	err := subscr.Outgoing().Connect(
+		nodeMustGetAddress(feed, t),
+		cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !ts.estOutTimeout(1, time.Second, t) {
+		t.Error("can't establish outgoing connection after second")
+		return
+	}
+	if !tf.estIncTimeout(1, time.Second, t) {
+		t.Error("can't establish incoming connecition after second")
+		return
+	}
+	if !subscr.(*node).hasOutgoing(feed.(*node).pub) {
+		t.Error("hasOutgoing() returns false for existed outgoign connection")
+	}
 }
 
 func TestNode_hasIncoming(t *testing.T) {
-	//
+	tf, ts := newTestHook(), newTestHook()
+	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{feed, tf},
+		{subscr, ts},
+	} {
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
+		x.hook.Set(x.node)
+	}
+	// connect to feed
+	err := subscr.Outgoing().Connect(
+		nodeMustGetAddress(feed, t),
+		cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !ts.estOutTimeout(1, time.Second, t) {
+		t.Error("can't establish outgoing connection after second")
+		return
+	}
+	if !tf.estIncTimeout(1, time.Second, t) {
+		t.Error("can't establish incoming connecition after second")
+		return
+	}
+	if !feed.(*node).hasIncoming(subscr.(*node).pub) {
+		t.Error("hasIncoming() returns false for existed incoming connection")
+	}
 }
 
-func TestNode_addOutgoing(t *testing.T) {
-	//
+func TestNode_Incoming(t *testing.T) {
+	if mustCreateNode().Incoming() == nil {
+		t.Error("(Node).Incoming() returns nil")
+	}
 }
 
-func TestNode_addIncoming(t *testing.T) {
-	//
+func TestNode_Outgoing(t *testing.T) {
+	if mustCreateNode().Outgoing() == nil {
+		t.Error("(Node).Outgoign() returns nil")
+	}
 }
 
 func TestNode_Start(t *testing.T) {
 	//
 }
 
-func TestNode_start(t *testing.T) {
-	//
-}
-
-func TestNode_drainEvents(t *testing.T) {
-	//
-}
-
 func TestNode_Close(t *testing.T) {
-	//
-}
-
-func TestNode_Incoming(t *testing.T) {
-	//
-}
-
-func TestNode_Outgoing(t *testing.T) {
-	//
-}
-
-func TestNode_terminate(t *testing.T) {
-	//
-}
-
-func TestNode_terminateByAddress(t *testing.T) {
-	//
-}
-
-func TestNode_list(t *testing.T) {
-	//
-}
-
-func TestNode_handleEvents(t *testing.T) {
-	//
-}
-
-func TestNode_handleMessage(t *testing.T) {
-	//
-}
-
-func TestNode_encode(t *testing.T) {
-	//
-}
-
-func TestNode_decode(t *testing.T) {
 	//
 }
 
