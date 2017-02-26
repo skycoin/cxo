@@ -51,13 +51,18 @@ var (
 		"got mesage that doesn't implements Outgoing")
 )
 
+// A Node represents cxo node that can be used as feed,
+// subscriber or feed and subscriber at the same time.
 type Node interface {
 	Logger
 
 	Incoming() Incoming // manage incoming connections
 	Outgoing() Outgoing // manage outgoing connections
 
+	// PubKey retusn public key of the Node
 	PubKey() cipher.PubKey
+	// Sign implements bss.Signer interface and used to sign
+	// given hash using secret key of the Node
 	Sign(hash cipher.SHA256) cipher.Sig
 
 	// Start launches node and block current goroutine.
@@ -89,6 +94,9 @@ type Node interface {
 
 	encode(msg interface{}) (m *Msg, err error)
 	decode(body []byte) (msg interface{}, err error)
+
+	handlePing(*gnet.Connection) error
+	handlePong(*gnet.Connection) error
 }
 
 type pendingConnection struct {
@@ -319,29 +327,44 @@ func (n *node) start(quit, done chan struct{}) {
 		handleMsgChan        <-chan time.Time
 		handshakeTimeoutChan <-chan time.Time
 
+		pingIntervalTicker *time.Ticker
+		pingIntervalChan   <-chan time.Time
+
 		de gnet.DisconnectEvent
 		sr gnet.SendResult
 
 		ic incomingConnection
 
 		evt Event
+
+		err error
 	)
 
+	// if MessageHandlingRate is zero then we call
+	// pool.HandleMessages as often as possible...
 	if n.conf.MessageHandlingRate == 0 {
 		ct := make(chan time.Time)
 		handleMsgChan = ct
 		close(ct)
 	} else {
+		// ...othervise there is some rate
 		handleMsgTicker = time.NewTicker(n.conf.MessageHandlingRate)
 		defer handleMsgTicker.Stop()
 		handleMsgChan = handleMsgTicker.C
 	}
 
+	// If HandshakeTimeout is zero then we never check it
 	if n.conf.HandshakeTimeout > 0 {
-		handshakeTimeoutTicker = time.NewTicker(
-			n.conf.HandshakeTimeout)
+		handshakeTimeoutTicker = time.NewTicker(n.conf.HandshakeTimeout)
 		defer handshakeTimeoutTicker.Stop()
 		handshakeTimeoutChan = handshakeTimeoutTicker.C
+	}
+
+	// only feed can send pings
+	if n.conf.PingInterval > 0 && n.conf.MaxIncomingConnections > 0 {
+		pingIntervalTicker = time.NewTicker(n.conf.PingInterval)
+		defer pingIntervalTicker.Stop()
+		pingIntervalChan = pingIntervalTicker.C
 	}
 
 	defer close(done)
@@ -372,6 +395,11 @@ func (n *node) start(quit, done chan struct{}) {
 		case evt = <-n.events:
 			n.Debugf("[DBG] got event: %T, %v", evt, evt)
 			n.handleEvents(evt)
+		case <-pingIntervalChan:
+			n.Debug("[DBG] send pings")
+			if err = n.Incoming().Broadcast(&Ping{}); err != nil {
+				panic("error sending ping: " + err.Error()) // it's BUG
+			}
 		case <-quit:
 			n.Debug("[DBG] quiting start loop")
 			return
@@ -513,6 +541,25 @@ func (n *node) handleOutgoingConnection(x outgoingConnection) {
 		Pub:   n.PubKey(),
 	})
 
+}
+
+// ping can be handled by outgoing connections only (by subscribers)
+func (n *node) handlePing(gc *gnet.Connection) (err error) {
+	if _, outgoing := n.outgoing[gc]; !outgoing {
+		err = ErrUnexpectedMessage
+		return
+	}
+	// send reply
+	gc.ConnectionPool.SendMessage(gc, &Pong{})
+	return
+}
+
+// pong can be handled by incoming connections only
+func (n *node) handlePong(gc *gnet.Connection) (err error) {
+	if _, incoming := n.incoming[gc]; !incoming {
+		err = ErrUnexpectedMessage
+	}
+	return
 }
 
 func (n *node) handleMessage(gc *gnet.Connection) (pub cipher.PubKey,

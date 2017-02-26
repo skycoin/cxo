@@ -45,7 +45,9 @@ const (
 	// messages are sent to incoming connections only (i.e. from feed to
 	// subscribers). Thus, every feed can keep alive its subscribers, but
 	// there isn't cross-ping-pong sending, that can't keep connection more
-	// clever but can increase network pressure
+	// clever but can increase network pressure. If node is subscriber
+	// and ping-interval is disabled it sends pong message back to feed
+	// anyway (in response to ping from feed)
 	PING_INTERVAL time.Duration = 0
 
 	// HANDSHAKE_TIMEOUT is default HandshakeTimeout
