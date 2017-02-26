@@ -156,6 +156,23 @@ func (c *Config) Validate() (err error) {
 	if c.MaxMessageLength <= 0 {
 		err = errors.New("max mesage length is zero of below")
 	}
+	// if we accept connections ...
+	if c.MaxIncomingConnections > 0 {
+		// ...and read or write interval is set...
+		if c.ReadTimeout > 0 || c.WriteTimeout > 0 {
+			// .. we must have some ping interval...
+			if c.PingInterval == 0 {
+				err = errors.New("ping interval required")
+				return
+			} else if c.PingInterval > c.ReadTimeout {
+				err = errors.New("ping interval is greater than read timeout")
+				return
+			} else if c.PingInterval > c.WriteTimeout {
+				err = errors.New("ping interval is greater than write timeout")
+				return
+			}
+		}
+	}
 	return
 }
 

@@ -124,6 +124,57 @@ func TestConfig_Validate(t *testing.T) {
 			t.Error("NewConfig return invalid config: ", err)
 		}
 	})
+	t.Run("ping interval no incoming connections", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.MaxIncomingConnections = 0
+		c.ReadTimeout = 100
+		c.WriteTimeout = 100
+		if err := c.Validate(); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
+	t.Run("ping interval no incoming connections", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.MaxIncomingConnections = 0
+		c.ReadTimeout = 100
+		c.WriteTimeout = 100
+		if err := c.Validate(); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
+	t.Run("ping interval zero", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.ReadTimeout = 100
+		c.WriteTimeout = 100
+		if err := c.Validate(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("ping interval greater than write timeout", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.WriteTimeout = 100
+		c.PingInterval = 200
+		if err := c.Validate(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("ping interval greater than read timeout", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.ReadTimeout = 100
+		c.PingInterval = 200
+		if err := c.Validate(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("ping interval valid", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.WriteTimeout = 100
+		c.ReadTimeout = 100
+		c.PingInterval = 99
+		if err := c.Validate(); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
 }
 
 func TestConfig_FromFlags(t *testing.T) {
