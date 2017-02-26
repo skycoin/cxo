@@ -251,7 +251,7 @@ func humanString(s, empty string) string {
 	return s
 }
 
-// HumanString retusn human readable representation of Config
+// HumanString retursn human readable representation of Config
 func (c *Config) HumanString() (s string) {
 	s = fmt.Sprintf(`	name:       %s
 	debug logs: %s
@@ -294,7 +294,7 @@ func (c *Config) HumanString() (s string) {
 		c.ConnectionWriteQueueSize,
 
 		humanDur(c.DialTimeout, "ignore"),
-		humanDur(c.ReadTimeout, "system deafult"),
+		humanDur(c.ReadTimeout, "system default"),
 		humanDur(c.WriteTimeout, "system default"),
 
 		humanDur(c.HandshakeTimeout, "ignore"),

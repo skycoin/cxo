@@ -547,11 +547,24 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 }
 
 func (n *node) Register(msg interface{}) {
-	// TODO: non-pointer values
 	ih := reflect.TypeOf((*IncomingHandler)(nil)).Elem()
 	oh := reflect.TypeOf((*OutgoingHndler)(nil)).Elem()
-	tm := reflect.TypeOf(msg)
-	if tm.Implements(ih) || tm.Implements(oh) {
+	// pointer-type and value-type
+	var ptr, dref reflect.Type
+	ptr = reflect.TypeOf(msg)
+	if ptr.Kind() == reflect.Ptr {
+		dref = ptr.Elem() // ptr is pointer-type, dref is value-type
+	} else {
+		dref = ptr                // ptr is pointer-type
+		ptr = reflect.PtrTo(dref) // dref is value-type
+	}
+	// implements check
+	if ptr.Implements(ih) || ptr.Implements(oh) {
+		// does pointer-type implements one of handlers interfaces?
+		n.registry.Register(msg)
+		return
+	} else if dref.Implements(ih) || dref.Implements(oh) {
+		// does value-type implements one of handlers interfaces?
 		n.registry.Register(msg)
 		return
 	}

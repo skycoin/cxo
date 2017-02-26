@@ -1,6 +1,7 @@
 package node
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -13,26 +14,72 @@ func genPubKey() (pub cipher.PubKey) {
 }
 
 func TestConnection_MarshalJSON(t *testing.T) {
-	pub := genPubKey()
-	a := "127.0.0.1:8970"
-	c := Connection{
-		Addr: a,
-		Pub:  pub,
-	}
-	data, err := c.MarshalJSON()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if data == nil {
-		t.Error("mising data")
-		return
-	}
-	want := fmt.Sprintf(`{"pub":%q,"addr":%q}`, pub.Hex(), a)
-	got := string(data)
-	if got != want {
-		t.Errorf("wrong json-value: want %s, got %s", want, got)
-	}
+	t.Run("MarshalJSON", func(t *testing.T) {
+		pub := genPubKey()
+		a := "127.0.0.1:8970"
+		c := Connection{
+			Addr: a,
+			Pub:  pub,
+		}
+		data, err := c.MarshalJSON()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if data == nil {
+			t.Error("mising data")
+			return
+		}
+		want := fmt.Sprintf(`{"pub":%q,"addr":%q}`, pub.Hex(), a)
+		got := string(data)
+		if got != want {
+			t.Errorf("wrong json-value: want %s, got %s", want, got)
+		}
+	})
+	t.Run("encoding/json pointer", func(t *testing.T) {
+		pub := genPubKey()
+		a := "127.0.0.1:8970"
+		c := &Connection{
+			Addr: a,
+			Pub:  pub,
+		}
+		data, err := json.Marshal(c)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if data == nil {
+			t.Error("mising data")
+			return
+		}
+		want := fmt.Sprintf(`{"pub":%q,"addr":%q}`, pub.Hex(), a)
+		got := string(data)
+		if got != want {
+			t.Errorf("wrong json-value: want %s, got %s", want, got)
+		}
+	})
+	t.Run("encoding/json non-pointer", func(t *testing.T) {
+		pub := genPubKey()
+		a := "127.0.0.1:8970"
+		c := Connection{
+			Addr: a,
+			Pub:  pub,
+		}
+		data, err := json.Marshal(c)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if data == nil {
+			t.Error("mising data")
+			return
+		}
+		want := fmt.Sprintf(`{"pub":%q,"addr":%q}`, pub.Hex(), a)
+		got := string(data)
+		if got != want {
+			t.Errorf("wrong json-value: want %s, got %s", want, got)
+		}
+	})
 }
 
 func TestConnection_UnmarshalJSON(t *testing.T) {

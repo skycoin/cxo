@@ -6,11 +6,19 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+// A Connection represents incoming or outgoing connection:
+// its public key and address. The address can be an IPv6 address.
+// The Connection contains pure pubic key but json-encoded value
+// contain hexadecimal-encode string. See MarshalJSON for details
 type Connection struct {
 	Pub  cipher.PubKey `json:"pub"`
 	Addr string        `json:"addr"`
 }
 
+// MarshalJSON inmplements encoding/json.Marshaler interface.
+// It encodes Connection to json object, in which the Pub field
+// (public key) represented by hexadecimal-encoded string
+// (instead of base64 encoded). For example:
 func (c *Connection) MarshalJSON() (data []byte, _ error) {
 	// hex + {"pub":"","addr":""} + addr
 	data = make([]byte, 0, 66+20+20) // scratch

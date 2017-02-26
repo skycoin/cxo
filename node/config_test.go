@@ -277,8 +277,8 @@ func ExampleConfig_HumanString() {
 	// 	connection write queue size: 32
 	//
 	// 	dial timeout:  20s
-	// 	read timeout:  20s
-	// 	write timeout: 20s
+	// 	read timeout:  system default
+	// 	write timeout: system default
 	//
 	// 	handshake timeout: 40s
 	//
