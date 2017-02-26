@@ -49,6 +49,9 @@ var (
 		"got mesage that doesn't implements IncomingHandler")
 	ErrOutgoingMessageInterface gnet.DisconnectReason = errors.New(
 		"got mesage that doesn't implements Outgoing")
+
+	ErrClosed gnet.DisconnectReason = errors.New(
+		"use of closed node")
 )
 
 // A Node represents cxo node that can be used as feed,
@@ -397,6 +400,8 @@ func (n *node) start(quit, done chan struct{}) {
 			n.handleEvents(evt)
 		case <-pingIntervalChan:
 			n.Debug("[DBG] send pings")
+			// broadcast returns an error only if given value
+			// can't be encoded
 			if err = n.Incoming().Broadcast(&Ping{}); err != nil {
 				panic("error sending ping: " + err.Error()) // it's BUG
 			}
@@ -497,7 +502,10 @@ func (n *node) handleEvents(evt Event) {
 		}
 		n.list(x.reply, n.incoming)
 	case broadcastEvent:
+		val, err := n.decode(x.msg.Body)
+		n.Debug("[DGB] broadcasting value:", val, err)
 		for gc := range n.incoming {
+			n.Debug("[DBG] broadcasting: send to ", gc.Addr())
 			gc.ConnectionPool.SendMessage(gc, x.msg)
 		}
 	case anyEvent:
@@ -648,4 +656,13 @@ func (n *node) handleIncomingConnection(ic incomingConnection) {
 	if n.testHook != nil {
 		n.testHook(n, testNewPending)
 	}
+}
+
+func (n *node) enqueueEvent(e Event) (err error) {
+	select {
+	case n.events <- e:
+	case <-n.quit:
+		err = ErrClosed
+	}
+	return
 }

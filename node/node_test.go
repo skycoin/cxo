@@ -183,12 +183,12 @@ func TestNode_hasIncoming(t *testing.T) {
 		{feed, tf},
 		{subscr, ts},
 	} {
+		x.hook.Set(x.node)
 		if err := x.node.Start(); err != nil {
 			t.Error(err)
 			return
 		}
 		defer x.node.Close()
-		x.hook.Set(x.node)
 	}
 	// connect to feed
 	err := subscr.Outgoing().Connect(

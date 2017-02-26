@@ -1,10 +1,12 @@
 package node
 
 import (
-	"fmt"
-	"sync"
 	"testing"
 	"time"
+
+	// TORM
+	"github.com/kr/pretty"
+	//
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
@@ -14,124 +16,55 @@ func init() {
 	gnet.DebugPrint = testing.Verbose()
 }
 
-func wait() {
-	time.Sleep(500 * time.Millisecond)
-}
-
-type pingPongCounter struct {
-	sync.Mutex
-	ping int
-	pong int
-}
-
-func (p *pingPongCounter) Ping() {
-	p.Lock()
-	defer p.Unlock()
-	p.ping++
-}
-
-func (p *pingPongCounter) Pong() {
-	p.Lock()
-	defer p.Unlock()
-	p.pong++
-}
-
-func (p *pingPongCounter) Get() (ping, pong int) {
-	p.Lock()
-	defer p.Unlock()
-	ping, pong = p.ping, p.pong
-	return
-}
-
-func (p *pingPongCounter) reset() {
-	p.ping = 0
-	p.pong = 0
-}
-
-var gPingPong pingPongCounter
-
-type String struct {
-	Value string
-}
-
-// feed side (feed sends PIND)
-func (s *String) HandleIncoming(ic IncomingContext) (terminate error) {
-	gPingPong.Ping()
-	if testing.Verbose() {
-		fmt.Println(s.Value)
-	}
-	return
-}
-
-// subscriber side (subscriber replies PONG)
-func (s *String) HandleOutgoing(oc OutgoingContext) (terminate error) {
-	gPingPong.Pong()
-	if testing.Verbose() {
-		fmt.Println(s.Value)
-	}
-	return oc.Reply(&String{"PONG"})
-}
-
 func TestNode_send_receive(t *testing.T) {
-	var (
-		th1, th2 *testHook = newTestHook(), newTestHook()
-		n1, n2   Node
-		c        Config = newConfig()
-
-		err error
-	)
-	c.Name = "feed"
-	if n1, err = NewNode(secretKey(), c); err != nil {
-		t.Fatal(err)
+	var err error
+	tf, ts := newTestHook(), newTestHook()
+	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{feed, tf},
+		{subscr, ts},
+	} {
+		x.node.Register(String{})
+		x.hook.Set(x.node)
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
 	}
-	th1.Set(n1) // set test hook to node
-	c.Name = "subsrciber"
-	c.MaxIncomingConnections = 0 // suppress listening
-	if n2, err = NewNode(secretKey(), c); err != nil {
-		t.Fatal(err)
-	}
-	th2.Set(n2) // set test hook to node
-	//
-	n1.Register(String{})
-	if err := n1.Start(); err != nil {
-		t.Error("error staring node: ", err)
+	// subscribe to feed
+	if addr, err := feed.Incoming().Address(); err != nil {
+		t.Error("can't get listening address of node: ", err)
 		return
-	}
-	defer n1.Close()
-	n2.Register(String{})
-	if err := n2.Start(); err != nil {
-		t.Error("error staring node: ", err)
-		return
-	}
-	defer n2.Close()
-	// subscribe n2 to n1
-	if addr, err := n1.Incoming().Address(); err != nil {
-		t.Fatal("can't get listening address of node: ", err)
 	} else {
-		n1.Debug("[TEST] listening address: ", addr)
-		if err := n2.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
-			t.Fatal("error conection to remote node: ", err)
+		feed.Debug("[TEST] listening address: ", addr)
+		if err := subscr.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
+			t.Error("error conection to remote node: ", err)
+			return
 		}
 	}
 
-	if !th1.estIncTimeout(1, time.Second, t) {
+	if !tf.estIncTimeout(1, time.Second, t) {
 		return
 	}
-	if !th2.estOutTimeout(1, time.Second, t) {
+	if !ts.estOutTimeout(1, time.Second, t) {
 		return
 	}
 
 	gPingPong.reset() // reset global ping-pong counter
 
-	if err = n1.Incoming().Broadcast(&String{"PING"}); err != nil {
+	if err = feed.Incoming().Broadcast(&String{"PING"}); err != nil {
 		t.Error("broadcasting error: ", err)
 	}
 
-	if !th2.recvOutTimeout(1, time.Second, t) {
+	if !ts.recvOutTimeout(1, time.Second, t) {
 		return
 	}
 
-	if !th1.recvIncTimeout(1, time.Second, t) {
+	if !tf.recvIncTimeout(1, time.Second, t) {
 		return
 	}
 
@@ -148,79 +81,65 @@ func TestNode_send_receive(t *testing.T) {
 }
 
 func TestNode_cross_send_receive(t *testing.T) {
-	var (
-		th1, th2 *testHook = newTestHook(), newTestHook()
-		n1, n2   Node
-		c        Config = newConfig()
-
-		err error
-	)
-
-	c.Name = "feed"
-	if n1, err = NewNode(secretKey(), c); err != nil {
-		t.Fatal(err)
+	var err error
+	tf, ts := newTestHook(), newTestHook()
+	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{feed, tf},
+		{subscr, ts},
+	} {
+		x.node.Register(String{})
+		x.hook.Set(x.node)
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
 	}
-	th1.Set(n1)
-	c.Name = "subsrciber"
-	if n2, err = NewNode(secretKey(), c); err != nil {
-		t.Fatal(err)
-	}
-	th2.Set(n2)
 
-	//for _, n := range []Node{n1, n2} { // <- stupid, doesn't work
-	n1.Register(String{})
-	if err := n1.Start(); err != nil {
-		t.Error("error staring node: ", err)
-		return
-	}
-	defer n1.Close()
-	n2.Register(String{})
-	if err := n2.Start(); err != nil {
-		t.Error("error staring node: ", err)
-		return
-	}
-	defer n2.Close()
-
-	// subscribe n2 to n1
-	if addr, err := n1.Incoming().Address(); err != nil {
+	// subscribe to feed
+	if addr, err := feed.Incoming().Address(); err != nil {
 		t.Fatal("can't get listening address of node: ", err)
 	} else {
-		n1.Debug("[TEST] listening address: ", addr)
-		if err := n2.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
+		feed.Debug("[TEST] listening address: ", addr)
+		if err := subscr.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
 			t.Fatal("error conection to remote node: ", err)
 		}
 	}
 
-	// subscribe n1 to n2
-	if addr, err := n2.Incoming().Address(); err != nil {
+	// subscribe to subscr
+	if addr, err := subscr.Incoming().Address(); err != nil {
 		t.Fatal("can't get listening address of node: ", err)
 	} else {
-		n2.Debug("[TEST] listening address: ", addr)
-		if err := n1.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
+		subscr.Debug("[TEST] listening address: ", addr)
+		if err := feed.Outgoing().Connect(addr, cipher.PubKey{}); err != nil {
 			t.Fatal("error conection to remote node: ", err)
 		}
 	}
 
-	if !th1.estIncTimeout(1, time.Second, t) ||
-		!th1.estOutTimeout(1, time.Second, t) ||
-		!th2.estIncTimeout(1, time.Second, t) ||
-		!th2.estOutTimeout(1, time.Second, t) {
+	if !tf.estIncTimeout(1, time.Second, t) ||
+		!tf.estOutTimeout(1, time.Second, t) ||
+		!ts.estIncTimeout(1, time.Second, t) ||
+		!ts.estOutTimeout(1, time.Second, t) {
 		return
 	}
 
 	gPingPong.reset() // reset global ping-pong counter
 
-	if err = n1.Incoming().Broadcast(&String{"PING"}); err != nil {
+	if err = feed.Incoming().Broadcast(&String{"PING"}); err != nil {
 		t.Error("broadcasting error: ", err)
 	}
-	if err = n2.Incoming().Broadcast(&String{"PING"}); err != nil {
+	if err = subscr.Incoming().Broadcast(&String{"PING"}); err != nil {
 		t.Error("broadcasting error: ", err)
 	}
 
-	if !(th1.recvIncTimeout(1, time.Second, t) &&
-		th1.recvOutTimeout(1, time.Second, t) &&
-		th2.recvIncTimeout(1, time.Second, t) &&
-		th2.recvOutTimeout(1, time.Second, t)) {
+	if !(tf.recvIncTimeout(1, time.Second, t) &&
+		tf.recvOutTimeout(1, time.Second, t) &&
+		ts.recvIncTimeout(1, time.Second, t) &&
+		ts.recvOutTimeout(1, time.Second, t)) {
 		return
 	}
 
@@ -232,4 +151,79 @@ func TestNode_cross_send_receive(t *testing.T) {
 		t.Error("wrong pong counter: ", gPingPong.ping)
 	}
 
+}
+
+func TestNode_forwarding(t *testing.T) {
+	var err error
+	src, pipe, dst := mustCreateNode("src"),
+		mustCreateNode("pipe"),
+		mustCreateNode("dst")
+	ts, tp, td := newTestHook(),
+		newTestHook(),
+		newTestHook()
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{src, ts},
+		{pipe, tp},
+		{dst, td},
+	} {
+		x.node.Register(Forward{})
+		x.hook.Set(x.node)
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
+	}
+	// src -> pipe -> dst
+	// subscribe pipe to src
+	err = pipe.Outgoing().Connect(
+		nodeMustGetAddress(src, t),
+		cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// subscribe dst to pipe
+	err = dst.Outgoing().Connect(
+		nodeMustGetAddress(pipe, t),
+		cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// waiting for handshake
+	if !ts.estIncTimeout(1, time.Second, t) { // incoming to src from pipe
+		return
+	}
+	if !tp.estOutTimeout(1, time.Second, t) { // outgoing from pipe to src
+		return
+	}
+	if !tp.estIncTimeout(1, time.Second, t) { // incoming to pipe from dst
+		return
+	}
+	if !td.estOutTimeout(1, time.Second, t) { // outgoign to pipe from dst
+		return
+	}
+	// forward
+	forward := forwardStore.New()
+	// send forward
+	if err := src.Incoming().Broadcast(forward); err != nil {
+		t.Error(err)
+		return
+	}
+	// waiting for receive (src->pipe)
+	if !tp.recvOutTimeout(1, time.Second, t) {
+		t.Error("tp")
+		//return
+	}
+	// waiting for receive (pipe->dst)
+	if !td.recvOutTimeout(1, time.Second, t) {
+		t.Error("td")
+		//return
+	}
+	// check out routes
+	pretty.Println(forwardStore.Get(forward.Id))
 }

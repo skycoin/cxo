@@ -21,24 +21,34 @@ type incoming struct {
 
 func (i incoming) List() <-chan Connection {
 	reply := make(chan Connection, i.conf.MaxIncomingConnections)
-	i.events <- listEvent{
+	err := i.enqueueEvent(listEvent{
 		outgoing: false,
 		reply:    reply,
+	})
+	if err != nil {
+		i.Print("[ERR] enqueue event error: ", err)
+		close(reply)
 	}
 	return reply
 }
 
 func (i incoming) Terminate(pub cipher.PubKey) {
-	i.events <- terminateEvent{
+	err := i.enqueueEvent(terminateEvent{
 		outgoing: false,
 		pub:      pub,
+	})
+	if err != nil {
+		i.Print("[ERR] enqueue event error: ", err)
 	}
 }
 
 func (i incoming) TerminateByAddress(address string) {
-	i.events <- terminateByAddressEvent{
+	err := i.enqueueEvent(terminateByAddressEvent{
 		outgoing: false,
 		address:  address,
+	})
+	if err != nil {
+		i.Print("[ERR] enqueue event error: ", err)
 	}
 }
 
@@ -52,20 +62,23 @@ func (i incoming) Broadcast(msg interface{}) (err error) {
 			msg)
 		return
 	}
-	i.events <- broadcastEvent{d}
+	err = i.enqueueEvent(broadcastEvent{d})
 	return
 }
 
 func (i incoming) Address() (addr string, err error) {
 	done := make(chan struct{})
-	i.events <- anyEvent(func(n *node) {
+	err = i.enqueueEvent(anyEvent(func(n *node) {
 		var na net.Addr
 		if na, err = i.pool.ListeningAddress(); err != nil {
 			return
 		}
 		addr = na.String()
 		close(done)
-	})
+	}))
+	if err != nil {
+		return
+	}
 	<-done
 	return
 }
