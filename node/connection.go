@@ -18,7 +18,18 @@ type Connection struct {
 // MarshalJSON inmplements encoding/json.Marshaler interface.
 // It encodes Connection to json object, in which the Pub field
 // (public key) represented by hexadecimal-encoded string
-// (instead of base64 encoded). For example:
+// (instead of array of numbers). For example:
+//
+//     {
+//         "pub": "020d4a52d13c4d218d1d053b9e5f09015b6dfd88bec92e3c2462b59a4a6d34c8bb",
+//         "addr": "127.0.0.1:6482"
+//     }
+//
+// Be careful. The MarshalJSON method has a pointer receiver
+// but if you pass an unaddressabel value to
+// (encoding/json).Marshal such as Connection{someAddr, someKey}
+// then the method will not be used and encoded value will contain
+// array of integers instead of hexadecimal-encoded string
 func (c *Connection) MarshalJSON() (data []byte, _ error) {
 	// hex + {"pub":"","addr":""} + addr
 	data = make([]byte, 0, 66+20+20) // scratch
@@ -30,6 +41,7 @@ func (c *Connection) MarshalJSON() (data []byte, _ error) {
 	return
 }
 
+// UnmarshalJOSN implements (encoding/json).Unmarshaler interface
 func (c *Connection) UnmarshalJSON(data []byte) (err error) {
 	var temp struct {
 		Pub  string
