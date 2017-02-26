@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 //
@@ -34,11 +33,11 @@ type RoutePoint struct {
 
 func CreateRoutePoint(mcx MsgContext) (rp RoutePoint) {
 	rp.Remote = RouteSide{
-		ic.Remote().PubKey(),
-		ic.Remote().Address()}
+		mcx.Remote().PubKey(),
+		mcx.Remote().Address()}
 	rp.Local = RouteSide{
-		ic.Local().PubKey(),
-		ic.Local().Address()}
+		mcx.Local().PubKey(),
+		mcx.Local().Address()}
 	return
 }
 
@@ -53,8 +52,8 @@ func (r *RoutePoint) VerbosePrint(name string, id int64) {
 ---
 `,
 		name, id,
-		point.Local.Address, point.Local.Pub.Hex(),
-		point.Remote.Address, point.Remote.Pub.Hex())
+		r.Local.Address, r.Local.Pub.Hex(),
+		r.Remote.Address, r.Remote.Pub.Hex())
 }
 
 // broadcast itself on each node it handled
@@ -86,6 +85,12 @@ func (f *ForwardStore) Get(id int64) (x Forward, ok bool) {
 	return
 }
 
+// clean up to free memory
+func (f *ForwardStore) Reset() {
+	f.Store = make(map[int64]Forward)
+	f.LastId = 0
+}
+
 func (f *Forward) HandleIncoming(ic IncomingContext) (terminate error) {
 	point := CreateRoutePoint(ic)
 	point.VerbosePrint("Forward", f.Id)
@@ -103,6 +108,14 @@ var sendReceiveStore SendReciveStore = SendReciveStore{
 	Store:  make(map[int64][]SendReceivePoint),
 }
 
+// SendReciveStore opposite to ForwardStore keeps routes from inside
+// the store (not message itself)
+type SendReciveStore struct {
+	LastId int64
+	// id-> []{point, connection_side, route_point}
+	Store map[int64][]SendReceivePoint
+}
+
 func (s *SendReciveStore) New() (x *SendReceive) {
 	s.LastId++
 	x = new(SendReceive)
@@ -111,25 +124,20 @@ func (s *SendReciveStore) New() (x *SendReceive) {
 }
 
 func (s *SendReciveStore) Save(x *SendReceive, srp SendReceivePoint) {
-	stored, ok := s.Store[x.Id]
-	if !ok {
-		panic("can't find SendReceive point")
-	}
+	stored := s.Store[x.Id]
 	stored = append(stored, srp)
 	s.Store[x.Id] = stored
 }
 
-func (s *SendReciveStore) Get(id int64) (x SendReceivePoint, ok bool) {
+func (s *SendReciveStore) Get(id int64) (x []SendReceivePoint, ok bool) {
 	x, ok = s.Store[id]
 	return
 }
 
-// SendReciveStore opposite to ForwardStore keeps routes from inside
-// the store (not message itself)
-type SendReciveStore struct {
-	LastId int64
-	// id-> []{point, connection_side, route_point}
-	Store map[int][]SendReceivePoint
+// clean up to free memory
+func (s *SendReciveStore) Reset() {
+	s.LastId = 0
+	s.Store = make(map[int64][]SendReceivePoint)
 }
 
 // keep information about send-recive handling place
@@ -144,6 +152,7 @@ type SendReceive struct {
 	Point int64 // point incremented each handling
 }
 
+// handled from outgoing connection (by subscriber)
 func (s *SendReceive) HandleOutgoing(oc OutgoingContext) (terminate error) {
 	s.Point++
 	srp := SendReceivePoint{
