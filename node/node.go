@@ -53,6 +53,10 @@ var (
 	ErrClosed gnet.DisconnectReason = errors.New(
 		"use of closed node")
 	ErrNotListening = errors.New("the node is not listening")
+
+	//
+	ErrMalformedMessage gnet.DisconnectReason = errors.New(
+		"got malformed message")
 )
 
 // A Node represents cxo node that can be used as feed,
@@ -619,7 +623,7 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 
 func (n *node) Register(msg interface{}) {
 	ih := reflect.TypeOf((*IncomingHandler)(nil)).Elem()
-	oh := reflect.TypeOf((*OutgoingHndler)(nil)).Elem()
+	oh := reflect.TypeOf((*OutgoingHandler)(nil)).Elem()
 	// pointer-type and value-type
 	var ptr, dref reflect.Type
 	ptr = reflect.TypeOf(msg)

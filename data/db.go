@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"

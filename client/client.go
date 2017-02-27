@@ -1,16 +1,13 @@
 package client
 
 import (
-	"flag"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/bbs"
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/gui"
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/skyobject"
 )
@@ -36,9 +33,7 @@ type Client struct {
 // 	dataProvider skyobject.ISkyObjects
 // }
 
-func NewClient() (c *Client) {
-	var err error
-
+func NewClient() (c *Client, err error) {
 	c = new(Client)
 
 	// configs
@@ -49,6 +44,7 @@ func NewClient() (c *Client) {
 	// generate secret key for node if it is not set
 	{
 		if c.config.SecretKey == "" {
+			logger.Info("secret key is not provided: generate")
 			_, sec := cipher.GenerateKeyPair()
 			c.config.SecretKey = sec.Hex()
 		}
@@ -64,53 +60,92 @@ func NewClient() (c *Client) {
 		c.config.NodeConfig,                    // node configurations
 		c)                                      // pass this to message handlers
 	if err != nil {
-		logger.Fatal("can't create node: ", err)
+		err = fmt.Errorf("can't create node: %v", err)
+		return
 	}
 
-	c.node.Register(&RequestMessage{})
-	c.node.Register(&AnnounceMessage{})
-	c.node.Register(&DataMessage{})
-
-	if err = c.node.Start(); err != nil {
-		logger.Fatal("can't start node: ", err)
-	}
-
-	// boards (TOTH: what the hell is that?)
-	c.skyobject = bbs.CreateBbs(c.db, c.node)
-
-	logger.Info("stat: %s", c.skyobject.Statistic())
+	c.node.Register(&Request{})
+	c.node.Register(&Announce{})
+	c.node.Register(&Data{})
 
 	//
 	// TODO: we need a way to fill up known addresses
 	//
 	c.known = known // temprary solution is useage of hardcoded global variable
 
+	return
+}
+
+//
+func (c *Client) Start() (err error) {
+	// start node
+	if err = c.node.Start(); err != nil {
+		err = fmt.Errorf("can't start node: %v", err)
+		return
+	}
+
+	// boards
+	var boards *bbs.Bbs = bbs.CreateBbs(c.db, c.node)
+	c.skyobject = boards.Container
+
+	logger.Info("stat: %s", c.skyobject.Statistic())
+
 	// subscribe to knonw
 	c.subscribeToKnown()
 
 	// geberate test data
 	if c.config.Testing {
-		go c.generateTestData()
+		go c.generateTestData(boards)
 	}
+
+	// web interface
+	c.launchWebInterface()
+
+	return
 }
 
-func (c *Client) subscribeToKnown() {
-	var err error
-	for _, c := range c.known {
-		err = c.node.Outgoing().Connect(c.Addr, c.Pub)
-		if err != nil {
-			logger.Error("can't connect to known node [%s]: %v", c.Addr, err)
-		}
-	}
+func (c *Client) Close() {
+	logger.Info("closing...")
+	c.node.Close()
 }
 
 // send announce to subscribers
-func (c *Client) Announce(hash cipher.SHA256) (err error) {
+func (c *Client) announce(hash cipher.SHA256) (err error) {
 	err = c.node.Incoming().
 		Broadcast(Announce{
 			Hash: hash,
 		})
 	return
+}
+
+func (c *Client) requestMissing(r Replier, hash cipher.SHA256) {
+	for _, item := range c.skyobject.MissingDependencies(hash) {
+		logger.Debugf("Request message: %v", item.Hex())
+		err := r.Reply(Request{
+			Hash: item,
+		})
+		if err != nil {
+			logger.Error("error sending Request message: %v", err)
+		}
+	}
+}
+
+// hash is valid, and fresly added to the db
+func (c *Client) gotNewData(r Replier, hash cipher.SHA256) {
+	c.requestMissing(r, hash)
+	if err := c.announce(hash); err != nil && err != node.ErrNotListening {
+		logger.Errorf("error sending announce: %v", err)
+	}
+}
+
+func (c *Client) subscribeToKnown() {
+	var err error
+	for _, k := range c.known {
+		err = c.node.Outgoing().Connect(k.Addr, k.Pub)
+		if err != nil {
+			logger.Error("can't connect to known node [%s]: %v", k.Addr, err)
+		}
+	}
 }
 
 func mustParseSecretKey(str string) cipher.SecKey {
@@ -121,36 +156,29 @@ func mustParseSecretKey(str string) cipher.SecKey {
 	return sec
 }
 
-func (c *client) Run() {
-	if c.imTheVertex {
-		api := SkyObjectsAPI(c.dataProvider)
-		RunAPI(c.config, c.node, api)
-	} else {
-		time.Sleep(time.Minute * 120)
-	}
-}
-
 //
-// TODO: refector
+// testing
 //
 
-func (c *Client) generateTestData() {
+func (c *Client) generateTestData(boards *bbs.Bbs) {
 	time.Sleep(20 * time.Second)
 	prepareTestData(boards)
-	refs := skyobject.Href{Ref: boards.Board}
+	refs := skyobject.Href{
+		Ref: boards.Board,
+	}
 	refs.References(boards.Container)
-	time.Sleep(time.Second * 30)
-	c.Announce(boards.Board)
-	r := skyobject.Href{Ref: boards.Board}
+	// send announce to subscribers
+	c.announce(boards.Board)
+	r := skyobject.Href{
+		Ref: boards.Board,
+	}
 	rs := r.References(boards.Container)
 	logger.Info("Total refs: %d %v",
 		len(rs),
 		boards.Container.Statistic())
-	time.Sleep(time.Minute * 120)
 }
 
 func prepareTestData(bs *bbs.Bbs) {
-	boards := []bbs.Board{}
 	for b := 0; b < 1; b++ {
 		threads := []bbs.Thread{}
 		for t := 0; t < 10; t++ {
@@ -167,9 +195,6 @@ func prepareTestData(bs *bbs.Bbs) {
 				posts...,
 			))
 		}
-		boards = append(boards, bs.AddBoard(
-			fmt.Sprintf("Board (board: %d)", b),
-			threads...,
-		))
+		bs.AddBoard(fmt.Sprintf("Board (board: %d)", b), threads...)
 	}
 }

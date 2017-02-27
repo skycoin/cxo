@@ -9,9 +9,9 @@ import (
 func init() {
 	// check implementation of required interfaces
 	var (
-		_ node.IncomingHandler = &Announce{}
-		_ node.OutgoingHndler  = &Request{}
-		_ node.IncomingHandler = &Data{}
+		_ node.OutgoingHandler = &Announce{}
+		_ node.IncomingHandler = &Request{}
+		_ node.OutgoingHandler = &Data{}
 	)
 }
 
@@ -32,11 +32,11 @@ func (ann *Announce) HandleOutgoing(ctx node.MsgContext,
 	var c *Client = client.(*Client)
 
 	if c.db.Has(ann.Hash) {
-		logger.Info("received an announce for data I already have: %v",
+		logger.Info("got announce for data I already have: %v",
 			ann.Hash.Hex())
 		return // nil (keep connection alive)
 	}
-	c.sync.OnRequest(ctx, ann.Hash)
+	c.requestMissing(ctx, ann.Hash)
 	return // nil (keep connection alive)
 }
 
@@ -58,12 +58,12 @@ func (req *Request) HandleIncoming(ctx node.MsgContext,
 	)
 
 	if data, ok = c.db.Get(req.Hash); !ok {
-		logger.Error("received request for data I don't have: %v",
+		logger.Error("got request for data I don't have: %v",
 			req.Hash.Hex())
 		return // keep connection alive
 	}
 	// send back the response with the requested data
-	err := ctx.Reply(DataMessage{
+	err := ctx.Reply(Data{
 		Hash: req.Hash,
 		Data: data,
 	})
@@ -80,10 +80,20 @@ type Data struct {
 }
 
 // sent by feed, handled by subscriber
-func (dat *Data) HandleIncoming(ctx node.MsgContext,
+func (dat *Data) HandleOutgoing(ctx node.MsgContext,
 	client interface{}) (terminate error) {
 
 	var c *Client = client.(*Client)
+
+	// if we got dat.Hash == cipher.SHA256{} (empty hash),
+	// then adding value to database causes panic
+	if dat.Hash == (cipher.SHA256{}) {
+		logger.Errorf("got data with empty hash from %s %s",
+			ctx.Remote().Address(),
+			ctx.Remote().PubKey().Hex())
+		terminate = node.ErrMalformedMessage
+		return // terminate connection
+	}
 
 	// Do we really need it?
 	//
@@ -99,8 +109,10 @@ func (dat *Data) HandleIncoming(ctx node.MsgContext,
 
 	// store the new data in the DB
 	if err := c.db.Add(dat.Hash, dat.Data); err != nil {
+		// error can be "already exists" only, ignore it
 		logger.Error("error adding value to DB: %v, %s", err, dat.Hash.Hex())
+		return // keep connection
 	}
-	Sync.OnRequest(ctx, dat.Hash)
+	c.gotNewData(ctx, dat.Hash)
 	return
 }

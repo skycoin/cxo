@@ -23,6 +23,10 @@ func SkyObjectsAPI(container skyobject.ISkyObjects) *schemaApi {
 	return &schemaApi{container: container}
 }
 
+//
+// TODO: semantically stupid routes
+//
+
 func (api *schemaApi) Register(router *gui.Router) {
 	router.GET("/object1/_stat", api.Statistic)
 	router.GET("/object1/_schemas", api.Schemas)

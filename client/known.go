@@ -1,8 +1,6 @@
 package client
 
 import (
-	"github.com/skycoin/skycoin/src/cipher"
-
 	"github.com/skycoin/cxo/node"
 )
 
