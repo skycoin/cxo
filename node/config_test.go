@@ -124,6 +124,57 @@ func TestConfig_Validate(t *testing.T) {
 			t.Error("NewConfig return invalid config: ", err)
 		}
 	})
+	t.Run("ping interval no incoming connections", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.MaxIncomingConnections = 0
+		c.ReadTimeout = 100
+		c.WriteTimeout = 100
+		if err := c.Validate(); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
+	t.Run("ping interval no incoming connections", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.MaxIncomingConnections = 0
+		c.ReadTimeout = 100
+		c.WriteTimeout = 100
+		if err := c.Validate(); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
+	t.Run("ping interval zero", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.ReadTimeout = 100
+		c.WriteTimeout = 100
+		if err := c.Validate(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("ping interval greater than write timeout", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.WriteTimeout = 100
+		c.PingInterval = 200
+		if err := c.Validate(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("ping interval greater than read timeout", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.ReadTimeout = 100
+		c.PingInterval = 200
+		if err := c.Validate(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("ping interval valid", func(t *testing.T) {
+		var c Config = NewConfig()
+		c.WriteTimeout = 100
+		c.ReadTimeout = 100
+		c.PingInterval = 99
+		if err := c.Validate(); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
 }
 
 func TestConfig_FromFlags(t *testing.T) {
@@ -262,7 +313,7 @@ func ExampleConfig_HumanString() {
 	// Output:
 	//
 	// 	name:       node
-	// 	debug logs: enabled
+	// 	debug logs: disabled
 	//
 	// 	address:    auto
 	// 	port:       auto
@@ -277,12 +328,14 @@ func ExampleConfig_HumanString() {
 	// 	connection write queue size: 32
 	//
 	// 	dial timeout:  20s
-	// 	read timeout:  20s
-	// 	write timeout: 20s
+	// 	read timeout:  system default
+	// 	write timeout: system default
+	//
+	// 	ping interval: disabled
 	//
 	// 	handshake timeout: 40s
 	//
 	// 	messages handling rate: 50ms
 	//
-	// 	managing events channel size: 20
+	// 	managing events channel size: 1024
 }

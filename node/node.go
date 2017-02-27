@@ -49,15 +49,23 @@ var (
 		"got mesage that doesn't implements IncomingHandler")
 	ErrOutgoingMessageInterface gnet.DisconnectReason = errors.New(
 		"got mesage that doesn't implements Outgoing")
+
+	ErrClosed gnet.DisconnectReason = errors.New(
+		"use of closed node")
 )
 
+// A Node represents cxo node that can be used as feed,
+// subscriber or feed and subscriber at the same time.
 type Node interface {
 	Logger
 
 	Incoming() Incoming // manage incoming connections
 	Outgoing() Outgoing // manage outgoing connections
 
+	// PubKey retusn public key of the Node
 	PubKey() cipher.PubKey
+	// Sign implements bss.Signer interface and used to sign
+	// given hash using secret key of the Node
 	Sign(hash cipher.SHA256) cipher.Sig
 
 	// Start launches node and block current goroutine.
@@ -89,6 +97,9 @@ type Node interface {
 
 	encode(msg interface{}) (m *Msg, err error)
 	decode(body []byte) (msg interface{}, err error)
+
+	handlePing(*gnet.Connection) error
+	handlePong(*gnet.Connection) error
 }
 
 type pendingConnection struct {
@@ -109,6 +120,10 @@ type node struct {
 	//
 	pub cipher.PubKey
 	sec cipher.SecKey
+
+	// some data passed to constructor that can
+	// be obtained from messages handlers
+	user interface{}
 
 	pool *gnet.ConnectionPool
 
@@ -171,9 +186,13 @@ func (n *node) lookupHandshakeTime() {
 	}
 }
 
-// NewNode creates new Node using given Configs
-// and secret key
-func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
+// NewNode creates new Node using given Configs,
+// secret key and optional user provided data that
+// can be used from handlers of messages
+func NewNode(sec cipher.SecKey,
+	conf Config,
+	user interface{}) (n Node, err error) {
+
 	var (
 		nd *node
 		gc gnet.Config
@@ -215,6 +234,8 @@ func NewNode(sec cipher.SecKey, conf Config) (n Node, err error) {
 		conf.MaxOutgoingConnections)
 
 	nd.events = make(chan Event, conf.ManageEventsChannelSize)
+
+	nd.user = user
 
 	n = nd
 	return
@@ -319,29 +340,44 @@ func (n *node) start(quit, done chan struct{}) {
 		handleMsgChan        <-chan time.Time
 		handshakeTimeoutChan <-chan time.Time
 
+		pingIntervalTicker *time.Ticker
+		pingIntervalChan   <-chan time.Time
+
 		de gnet.DisconnectEvent
 		sr gnet.SendResult
 
 		ic incomingConnection
 
 		evt Event
+
+		err error
 	)
 
+	// if MessageHandlingRate is zero then we call
+	// pool.HandleMessages as often as possible...
 	if n.conf.MessageHandlingRate == 0 {
 		ct := make(chan time.Time)
 		handleMsgChan = ct
 		close(ct)
 	} else {
+		// ...othervise there is some rate
 		handleMsgTicker = time.NewTicker(n.conf.MessageHandlingRate)
 		defer handleMsgTicker.Stop()
 		handleMsgChan = handleMsgTicker.C
 	}
 
+	// If HandshakeTimeout is zero then we never check it
 	if n.conf.HandshakeTimeout > 0 {
-		handshakeTimeoutTicker = time.NewTicker(
-			n.conf.HandshakeTimeout)
+		handshakeTimeoutTicker = time.NewTicker(n.conf.HandshakeTimeout)
 		defer handshakeTimeoutTicker.Stop()
 		handshakeTimeoutChan = handshakeTimeoutTicker.C
+	}
+
+	// only feed can send pings
+	if n.conf.PingInterval > 0 && n.conf.MaxIncomingConnections > 0 {
+		pingIntervalTicker = time.NewTicker(n.conf.PingInterval)
+		defer pingIntervalTicker.Stop()
+		pingIntervalChan = pingIntervalTicker.C
 	}
 
 	defer close(done)
@@ -372,6 +408,15 @@ func (n *node) start(quit, done chan struct{}) {
 		case evt = <-n.events:
 			n.Debugf("[DBG] got event: %T, %v", evt, evt)
 			n.handleEvents(evt)
+		case <-pingIntervalChan:
+			n.Debug("[DBG] send pings")
+			if err = n.Incoming().Broadcast(&Ping{}); err != nil {
+				// broadcast returns an error only if given value
+				// can't be encoded or it can be ErrClosed
+				if err != ErrClosed {
+					panic("error sending ping: " + err.Error()) // it's BUG
+				}
+			}
 		case <-quit:
 			n.Debug("[DBG] quiting start loop")
 			return
@@ -379,6 +424,7 @@ func (n *node) start(quit, done chan struct{}) {
 	}
 }
 
+// srain events channel when node was closed
 func (n *node) drainEvents() {
 	for {
 		select {
@@ -469,7 +515,10 @@ func (n *node) handleEvents(evt Event) {
 		}
 		n.list(x.reply, n.incoming)
 	case broadcastEvent:
+		val, err := n.decode(x.msg.Body)
+		n.Debug("[DGB] broadcasting value:", val, err)
 		for gc := range n.incoming {
+			n.Debug("[DBG] broadcasting: send to ", gc.Addr())
 			gc.ConnectionPool.SendMessage(gc, x.msg)
 		}
 	case anyEvent:
@@ -515,6 +564,25 @@ func (n *node) handleOutgoingConnection(x outgoingConnection) {
 
 }
 
+// ping can be handled by outgoing connections only (by subscribers)
+func (n *node) handlePing(gc *gnet.Connection) (err error) {
+	if _, outgoing := n.outgoing[gc]; !outgoing {
+		err = ErrUnexpectedMessage
+		return
+	}
+	// send reply
+	gc.ConnectionPool.SendMessage(gc, &Pong{})
+	return
+}
+
+// pong can be handled by incoming connections only
+func (n *node) handlePong(gc *gnet.Connection) (err error) {
+	if _, incoming := n.incoming[gc]; !incoming {
+		err = ErrUnexpectedMessage
+	}
+	return
+}
+
 func (n *node) handleMessage(gc *gnet.Connection) (pub cipher.PubKey,
 	incoming bool,
 	err error) {
@@ -547,11 +615,24 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 }
 
 func (n *node) Register(msg interface{}) {
-	// TODO: non-pointer values
 	ih := reflect.TypeOf((*IncomingHandler)(nil)).Elem()
 	oh := reflect.TypeOf((*OutgoingHndler)(nil)).Elem()
-	tm := reflect.TypeOf(msg)
-	if tm.Implements(ih) || tm.Implements(oh) {
+	// pointer-type and value-type
+	var ptr, dref reflect.Type
+	ptr = reflect.TypeOf(msg)
+	if ptr.Kind() == reflect.Ptr {
+		dref = ptr.Elem() // ptr is pointer-type, dref is value-type
+	} else {
+		dref = ptr                // ptr is pointer-type
+		ptr = reflect.PtrTo(dref) // dref is value-type
+	}
+	// implements check
+	if ptr.Implements(ih) || ptr.Implements(oh) {
+		// does pointer-type implements one of handlers interfaces?
+		n.registry.Register(msg)
+		return
+	} else if dref.Implements(ih) || dref.Implements(oh) {
+		// does value-type implements one of handlers interfaces?
 		n.registry.Register(msg)
 		return
 	}
@@ -588,4 +669,13 @@ func (n *node) handleIncomingConnection(ic incomingConnection) {
 	if n.testHook != nil {
 		n.testHook(n, testNewPending)
 	}
+}
+
+func (n *node) enqueueEvent(e Event) (err error) {
+	select {
+	case n.events <- e:
+	case <-n.quit:
+		err = ErrClosed
+	}
+	return
 }

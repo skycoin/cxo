@@ -19,14 +19,8 @@ func secretKey() (sec cipher.SecKey) {
 	return
 }
 
-func newNode(c ...Config) (Node, error) {
-	var conf Config
-	if len(c) > 0 {
-		conf = c[0]
-	} else {
-		conf = newConfig()
-	}
-	n, err := NewNode(secretKey(), conf)
+func newNode(c Config, user interface{}) (Node, error) {
+	n, err := NewNode(secretKey(), c, user)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +29,7 @@ func newNode(c ...Config) (Node, error) {
 
 func TestNewNode(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		n, err := NewNode(secretKey(), NewConfig())
+		n, err := NewNode(secretKey(), NewConfig(), nil)
 		if err != nil {
 			t.Error(err)
 			return
@@ -47,34 +41,18 @@ func TestNewNode(t *testing.T) {
 	t.Run("invalid config", func(t *testing.T) {
 		c := NewConfig()
 		c.MaxPendingConnections = 0
-		if _, err := NewNode(secretKey(), c); err == nil {
+		if _, err := NewNode(secretKey(), c, nil); err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("invalid secret key", func(t *testing.T) {
-		if _, err := NewNode(cipher.SecKey{}, newConfig()); err == nil {
+		if _, err := NewNode(cipher.SecKey{}, newConfig(), nil); err == nil {
 			t.Error("missing error")
 		}
 	})
 }
 
-func TestNode_onConnect(t *testing.T) {
-	// TODO
-}
-
-func TestNode_onGnetConnect(t *testing.T) {
-	// TODO
-}
-
-func TestNode_onGnetDisconnect(t *testing.T) {
-	// TODO
-}
-
-func TestNode_lookupHandshakeTime(t *testing.T) {
-	//
-}
-
-func nodeAddress(n Node, t *testing.T) string {
+func nodeMustGetAddress(n Node, t *testing.T) string {
 	a, err := n.Incoming().Address()
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +65,7 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 	c := newConfig()
 	c.HandshakeTimeout = 200 * time.Millisecond
 	// after c.HandshakeTimeout x 2 + aroung 100ms for concurrency reason
-	n, err := newNode(c)
+	n, err := newNode(c, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -99,7 +77,7 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 		return
 	}
 	defer nd.Close()
-	addr := nodeAddress(n, t)
+	addr := nodeMustGetAddress(n, t)
 	n.Debug("[TEST] listening address: ", addr)
 	if _, err = net.Dial("tcp", addr); err != nil {
 		t.Error("error dialing node: ", err)
@@ -117,12 +95,11 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 	}
 }
 
-func mustNode(name ...string) Node {
+// with optional name
+func mustCreateNode(name string, user interface{}) Node {
 	c := newConfig()
-	if len(name) > 0 {
-		c.Name = name[0]
-	}
-	n, err := newNode(c)
+	c.Name = name
+	n, err := newNode(c, user)
 	if err != nil {
 		panic(err)
 	}
@@ -130,7 +107,7 @@ func mustNode(name ...string) Node {
 }
 
 func TestNode_PubKey(t *testing.T) {
-	n := mustNode()
+	n := mustCreateNode("node", nil)
 	pub := n.PubKey()
 	if err := pub.Verify(); err != nil {
 		t.Error("empty public key: ", err)
@@ -138,78 +115,111 @@ func TestNode_PubKey(t *testing.T) {
 }
 
 func TestNode_Sign(t *testing.T) {
-	//
-}
-
-func TestNode_pend(t *testing.T) {
-	//
+	pub, sec := cipher.GenerateKeyPair()
+	n, err := NewNode(sec, newConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := cipher.SumSHA256([]byte("some value"))
+	sig := n.Sign(hash)
+	if err := cipher.VerifySignature(pub, sig, hash); err != nil {
+		t.Error("invalid Sign: ", err)
+	}
 }
 
 func TestNode_hasOutgoing(t *testing.T) {
-	//
+	tf, ts := newTestHook(), newTestHook()
+	feed, subscr := mustCreateNode("feed", nil), mustCreateNode("subscr", nil)
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{feed, tf},
+		{subscr, ts},
+	} {
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
+		x.hook.Set(x.node)
+	}
+	// connect to feed
+	err := subscr.Outgoing().Connect(
+		nodeMustGetAddress(feed, t),
+		cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !ts.estOutTimeout(1, time.Second, t) {
+		t.Error("can't establish outgoing connection after second")
+		return
+	}
+	if !tf.estIncTimeout(1, time.Second, t) {
+		t.Error("can't establish incoming connecition after second")
+		return
+	}
+	if !subscr.(*node).hasOutgoing(feed.(*node).pub) {
+		t.Error("hasOutgoing() returns false for existed outgoign connection")
+	}
 }
 
 func TestNode_hasIncoming(t *testing.T) {
-	//
+	tf, ts := newTestHook(), newTestHook()
+	feed, subscr := mustCreateNode("feed", nil), mustCreateNode("subscr", nil)
+	for _, x := range []struct {
+		node Node
+		hook *testHook
+	}{
+		{feed, tf},
+		{subscr, ts},
+	} {
+		x.hook.Set(x.node)
+		if err := x.node.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		defer x.node.Close()
+	}
+	// connect to feed
+	err := subscr.Outgoing().Connect(
+		nodeMustGetAddress(feed, t),
+		cipher.PubKey{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !ts.estOutTimeout(1, time.Second, t) {
+		t.Error("can't establish outgoing connection after second")
+		return
+	}
+	if !tf.estIncTimeout(1, time.Second, t) {
+		t.Error("can't establish incoming connecition after second")
+		return
+	}
+	if !feed.(*node).hasIncoming(subscr.(*node).pub) {
+		t.Error("hasIncoming() returns false for existed incoming connection")
+	}
 }
 
-func TestNode_addOutgoing(t *testing.T) {
-	//
+func TestNode_Incoming(t *testing.T) {
+	if mustCreateNode("node", nil).Incoming() == nil {
+		t.Error("(Node).Incoming() returns nil")
+	}
 }
 
-func TestNode_addIncoming(t *testing.T) {
-	//
+func TestNode_Outgoing(t *testing.T) {
+	if mustCreateNode("node", nil).Outgoing() == nil {
+		t.Error("(Node).Outgoign() returns nil")
+	}
 }
 
 func TestNode_Start(t *testing.T) {
 	//
 }
 
-func TestNode_start(t *testing.T) {
-	//
-}
-
-func TestNode_drainEvents(t *testing.T) {
-	//
-}
-
 func TestNode_Close(t *testing.T) {
-	//
-}
-
-func TestNode_Incoming(t *testing.T) {
-	//
-}
-
-func TestNode_Outgoing(t *testing.T) {
-	//
-}
-
-func TestNode_terminate(t *testing.T) {
-	//
-}
-
-func TestNode_terminateByAddress(t *testing.T) {
-	//
-}
-
-func TestNode_list(t *testing.T) {
-	//
-}
-
-func TestNode_handleEvents(t *testing.T) {
-	//
-}
-
-func TestNode_handleMessage(t *testing.T) {
-	//
-}
-
-func TestNode_encode(t *testing.T) {
-	//
-}
-
-func TestNode_decode(t *testing.T) {
 	//
 }
 
