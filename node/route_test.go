@@ -8,20 +8,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-/* ******************* FROZEN *******************
-
-//
-// go forward from node to node, broadcast itself
-// on each node it handled
-//
-
-
-var forwardStore ForwardStore = ForwardStore{
-	Store:  make(map[int64]*Forward),
-	LastId: 0,
-}
- ********************************************* */
-
 type RouteSide struct {
 	Pub     cipher.PubKey
 	Address string
@@ -57,80 +43,20 @@ func (r *RoutePoint) VerbosePrint(name string, id int64) {
 		r.Remote.Address, r.Remote.Pub.Hex())
 }
 
-/* ****************** FROZEN ******************
-
-// broadcast itself on each node it handled
-type Forward struct {
-	Id    int64
-	Route []RoutePoint
-}
-
-// keep last router instance
-type ForwardStore struct {
-	sync.Mutex
-	Store  map[int64]*Forward
-	LastId int64
-}
-
-func (f *ForwardStore) Save(x *Forward) {
-	f.Lock()
-	defer f.Unlock()
-	f.Store[x.Id] = x
-}
-
-func (f *ForwardStore) New() (x *Forward) {
-	f.Lock()
-	defer f.Unlock()
-	f.LastId++
-	x = new(Forward)
-	x.Id = f.LastId
-	f.Store[x.Id] = x // Save without locks
-	return
-}
-
-func (f *ForwardStore) Get(id int64) (x *Forward, ok bool) {
-	f.Lock()
-	defer f.Unlock()
-	x, ok = f.Store[id]
-	return
-}
-
-// clean up to free memory
-func (f *ForwardStore) Reset() {
-	f.Lock()
-	defer f.Unlock()
-	f.Store = make(map[int64]*Forward)
-	f.LastId = 0
-}
-
-func (f *Forward) HandleOutgoing(oc OutgoingContext) (terminate error)
-	point := CreateRoutePoint(oc)
-	point.VerbosePrint("Forward", f.Id)
-	f.Route = append(f.Route, point)
-	forwardStore.Save(f)
-	// TODO: broadcast from outgoing context to forwarding messages
-	// return ic.Broadcast(f) // broadcast itself
-	return
-}
-
-******************************************** */
-
-//
-// send-recive (a'la ping-pong)
-//
-
-var sendReceiveStore SendReciveStore = SendReciveStore{
-	LastId: 0,
-	Store:  make(map[int64][]SendReceivePoint),
-}
-
-// SendReciveStore opposite to ForwardStore keeps routes from inside
-// the store (not message itself)
+// SendReciveStore keeps routes from inside itself.
+// It designed to use with SendReceive messages
 type SendReciveStore struct {
 	sync.Mutex
 	LastId int64
 	// id-> []{point, connection_side, route_point}
 	Store map[int64][]SendReceivePoint
+}
+
+func NewSendReciveStore() *SendReciveStore {
+	return &SendReciveStore{
+		LastId: 0,
+		Store:  make(map[int64][]SendReceivePoint),
+	}
 }
 
 func (s *SendReciveStore) New() (x *SendReceive) {
@@ -172,6 +98,8 @@ type SendReceivePoint struct {
 	RoutePoint RoutePoint
 }
 
+// SendReceive is message that (1) increments its Point value,
+// (2) store SendRecivePoint in related store (3) recive back once
 type SendReceive struct {
 	Id    int64
 	Point int64 // point incremented each handling
@@ -181,12 +109,14 @@ type SendReceive struct {
 func (s *SendReceive) HandleOutgoing(oc MsgContext,
 	user interface{}) (terminate error) {
 
+	sr := user.(*SendReciveStore)
+
 	s.Point++
 	srp := SendReceivePoint{
 		Point:      s.Point,
 		Outgoing:   true,
 		RoutePoint: CreateRoutePoint(oc)}
-	sendReceiveStore.Save(s, srp)
+	sr.Save(s, srp)
 	srp.RoutePoint.VerbosePrint("SendRecive", s.Id)
 	// send reply
 	return oc.Reply(s)
@@ -196,13 +126,78 @@ func (s *SendReceive) HandleOutgoing(oc MsgContext,
 func (s *SendReceive) HandleIncoming(ic MsgContext,
 	user interface{}) (terminate error) {
 
+	sr := user.(*SendReciveStore)
+
 	s.Point++
 	srp := SendReceivePoint{
 		Point:      s.Point,
 		Outgoing:   false,
 		RoutePoint: CreateRoutePoint(ic)}
-	sendReceiveStore.Save(s, srp)
+	sr.Save(s, srp)
 	srp.RoutePoint.VerbosePrint("SendRecive", s.Id)
 	// dont reply
 	return
+}
+
+//
+// check result (see route points one by one)
+//
+
+type ExpectedPoint struct {
+	Local    cipher.PubKey // expected public key of local point
+	Remote   cipher.PubKey // expected public key of remote point
+	Outgoing bool          // expected handler (feed or subscriber)
+}
+
+func (sr *SendReciveStore) Lookup(id int64, ep []ExpectedPoint, t *testing.T) {
+	result, ok := sr.Get(id)
+	if !ok {
+		t.Error("message hasn't traveled")
+		return
+	}
+
+	switch lr := len(result); {
+	case lr < len(ep):
+		t.Error("to few message handlings: ", lr)
+		return
+	case lr > len(ep):
+		t.Error("too many message handlings:", lr)
+		return
+	default: // ok
+	}
+
+	// points order
+	for i, srp := range result {
+		if srp.Point != int64(i+1) {
+			t.Error("invalid handling order")
+			return
+		}
+	}
+
+	// range over expected points
+	for i, e := range ep {
+		srp := result[i]
+		if e.Outgoing != srp.Outgoing {
+			// check side
+			t.Errorf("point %d: invalid handler: %d",
+				i,
+				sideString(srp.Outgoing))
+		} else {
+			// check publick keys
+			if srp.RoutePoint.Local.Pub != e.Local {
+				t.Error("invalid public key of local point")
+			}
+			if srp.RoutePoint.Remote.Pub != e.Remote {
+				t.Error("invalid public key of remote point")
+			}
+		}
+	}
+
+}
+
+func sideString(outgoing bool) string {
+	if outgoing {
+		return "subscriber"
+	}
+	return "feed"
 }

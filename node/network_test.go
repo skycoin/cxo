@@ -12,17 +12,13 @@ func init() {
 	gnet.DebugPrint = testing.Verbose()
 }
 
-//
-// TODO: DRY
-//
-
 // Send message from feed to single subscriber using broadcsting.
 // The subscriber sends response back. That's all
 func TestNode_sendReceive(t *testing.T) {
-	sendReceiveStore.Reset() // reset
+	srs := NewSendReciveStore()
 	var err error
 	tf, ts := newTestHook(), newTestHook()
-	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	feed, subscr := mustCreateNode("feed", srs), mustCreateNode("subscr", srs)
 	for _, x := range []struct {
 		node Node
 		hook *testHook
@@ -54,7 +50,7 @@ func TestNode_sendReceive(t *testing.T) {
 	}
 
 	// broadcast SendReceive message
-	sr := sendReceiveStore.New()
+	sr := srs.New()
 	if err = feed.Incoming().Broadcast(sr); err != nil {
 		t.Error("broadcasting error: ", err)
 		return
@@ -67,70 +63,23 @@ func TestNode_sendReceive(t *testing.T) {
 		return
 	}
 
-	result, ok := sendReceiveStore.Get(sr.Id)
-	if !ok {
-		t.Error("message hasn't traveled")
-		return
-	}
+	srs.Lookup(sr.Id, []ExpectedPoint{
+		{Outgoing: true, Remote: feed.PubKey(), Local: subscr.PubKey()},
+		{Outgoing: false, Remote: subscr.PubKey(), Local: feed.PubKey()},
+	}, t)
 
-	switch lr := len(result); lr {
-	case 0, 1:
-		t.Error("to few message handlings: ", lr)
-		return
-	case 2: // ok
-	default:
-		t.Error("too many message handlings:", lr)
-		return
-	}
-
-	// position in the slice and point number
-	// order must be 0->1, 1->2
-	if result[0].Point != 1 || result[1].Point != 2 {
-		t.Error("invalid handling order")
-		return
-	}
-
-	// first: sent by feed and handled by subscriber
-	if result[0].Outgoing != true {
-		t.Error("firstly the message handled by feed")
-	} else {
-		// remote is feed
-		// local is subscriber
-		// check out public keys
-		if result[0].RoutePoint.Remote.Pub != feed.PubKey() {
-			t.Error("invalid public key of remote point")
-		}
-		if result[0].RoutePoint.Local.Pub != subscr.PubKey() {
-			t.Error("invalid public key of local point")
-		}
-	}
-
-	// second: sent by subscriber and handled by feed
-	if result[1].Outgoing != false {
-		t.Error("secondly the message handled by subscriber")
-	} else {
-		// remote is subscriber
-		// local is feed
-		// check out public keys
-		if result[1].RoutePoint.Remote.Pub != subscr.PubKey() {
-			t.Error("invalid public key of remote point")
-		}
-		if result[1].RoutePoint.Local.Pub != feed.PubKey() {
-			t.Error("invalid public key of local point")
-		}
-	}
 }
 
 // There are two nodes: n1 an n2. The n1 is subscribed to n2.
 // The n2 is subscriberd to n1. Both sends SendRecive message
 // using broadcasting and get response back. That's all
 func TestNode_crossSendReceive(t *testing.T) {
-	sendReceiveStore.Reset() // reset
+	srs := NewSendReciveStore()
 	var err error
 	t1, t2 := newTestHook(),
 		newTestHook()
-	n1, n2 := mustCreateNode("n1"),
-		mustCreateNode("n2")
+	n1, n2 := mustCreateNode("n1", srs),
+		mustCreateNode("n2", srs)
 	for _, x := range []struct {
 		node Node
 		hook *testHook
@@ -169,7 +118,7 @@ func TestNode_crossSendReceive(t *testing.T) {
 	}
 
 	// create messages
-	sr1, sr2 := sendReceiveStore.New(), sendReceiveStore.New()
+	sr1, sr2 := srs.New(), srs.New()
 
 	// broadcast SendReceive message
 	// n1
@@ -191,126 +140,15 @@ func TestNode_crossSendReceive(t *testing.T) {
 		return
 	}
 
-	result1, ok := sendReceiveStore.Get(sr1.Id)
-	if !ok {
-		t.Error("message n1->n2 hasn't traveled")
-		return
-	}
-
-	result2, ok := sendReceiveStore.Get(sr2.Id)
-	if !ok {
-		t.Error("message n2->n1 hasn't traveled")
-		return
-	}
-
-	// =========================================================================
-
-	//
-	// TODO: DRY, motherfucker, DRY!
-	//
-
-	//
-	// n1->n2->n1
-	//
-
-	switch lr := len(result1); lr {
-	case 0, 1:
-		t.Error("to few message handlings: ", lr)
-		return
-	case 2: // ok
-	default:
-		t.Error("too many message handlings:", lr)
-		return
-	}
-
-	// position in the slice and point number
-	// order must be 0->1, 1->2
-	if result1[0].Point != 1 || result1[1].Point != 2 {
-		t.Error("invalid handling order")
-		return
-	}
-
-	// first: sent by n1 and handled by n2
-	if result1[0].Outgoing != true {
-		t.Error("firstly the message handled by n1")
-	} else {
-		// remote is n1
-		// local is n2
-		// check out public keys
-		if result1[0].RoutePoint.Remote.Pub != n1.PubKey() {
-			t.Error("invalid public key of remote point")
-		}
-		if result1[0].RoutePoint.Local.Pub != n2.PubKey() {
-			t.Error("invalid public key of local point")
-		}
-	}
-
-	// second: sent by n2 and handled by n1
-	if result1[1].Outgoing != false {
-		t.Error("secondly the message handled by n2")
-	} else {
-		// remote is n2
-		// local is n1
-		// check out public keys
-		if result1[1].RoutePoint.Remote.Pub != n2.PubKey() {
-			t.Error("invalid public key of remote point")
-		}
-		if result1[1].RoutePoint.Local.Pub != n1.PubKey() {
-			t.Error("invalid public key of local point")
-		}
-	}
-
-	//
-	// n2->n1->n1
-	//
-
-	switch lr := len(result2); lr {
-	case 0, 1:
-		t.Error("to few message handlings: ", lr)
-		return
-	case 2: // ok
-	default:
-		t.Error("too many message handlings:", lr)
-		return
-	}
-
-	// position in the slice and point number
-	// order must be 0->1, 1->2
-	if result2[0].Point != 1 || result2[1].Point != 2 {
-		t.Error("invalid handling order")
-		return
-	}
-
-	// first: sent by n2 and handled by n1
-	if result2[0].Outgoing != true {
-		t.Error("firstly the message handled by n2")
-	} else {
-		// remote is n2
-		// local is n1
-		// check out public keys
-		if result2[0].RoutePoint.Remote.Pub != n2.PubKey() {
-			t.Error("invalid public key of remote point")
-		}
-		if result2[0].RoutePoint.Local.Pub != n1.PubKey() {
-			t.Error("invalid public key of local point")
-		}
-	}
-
-	// second: sent by n1 and handled by n2
-	if result2[1].Outgoing != false {
-		t.Error("secondly the message handled by n1")
-	} else {
-		// remote is n1
-		// local is n2
-		// check out public keys
-		if result2[1].RoutePoint.Remote.Pub != n1.PubKey() {
-			t.Error("invalid public key of remote point")
-		}
-		if result2[1].RoutePoint.Local.Pub != n2.PubKey() {
-			t.Error("invalid public key of local point")
-		}
-	}
-
-	// =========================================================================
+	// lookup sr1 (n1->n2->n1)
+	srs.Lookup(sr1.Id, []ExpectedPoint{
+		{Outgoing: true, Remote: n1.PubKey(), Local: n2.PubKey()},
+		{Outgoing: false, Remote: n2.PubKey(), Local: n1.PubKey()},
+	}, t)
+	// lookup sr2 (n2->n1->n1)
+	srs.Lookup(sr2.Id, []ExpectedPoint{
+		{Outgoing: true, Remote: n2.PubKey(), Local: n1.PubKey()},
+		{Outgoing: false, Remote: n1.PubKey(), Local: n2.PubKey()},
+	}, t)
 
 }

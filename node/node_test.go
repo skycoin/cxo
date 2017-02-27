@@ -19,14 +19,8 @@ func secretKey() (sec cipher.SecKey) {
 	return
 }
 
-func newNode(c ...Config) (Node, error) {
-	var conf Config
-	if len(c) > 0 {
-		conf = c[0]
-	} else {
-		conf = newConfig()
-	}
-	n, err := NewNode(secretKey(), conf, nil)
+func newNode(c Config, user interface{}) (Node, error) {
+	n, err := NewNode(secretKey(), c, user)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +65,7 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 	c := newConfig()
 	c.HandshakeTimeout = 200 * time.Millisecond
 	// after c.HandshakeTimeout x 2 + aroung 100ms for concurrency reason
-	n, err := newNode(c)
+	n, err := newNode(c, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -102,12 +96,10 @@ func TestNode_handshakeTimeoutRemoving(t *testing.T) {
 }
 
 // with optional name
-func mustCreateNode(name ...string) Node {
+func mustCreateNode(name string, user interface{}) Node {
 	c := newConfig()
-	if len(name) > 0 {
-		c.Name = name[0]
-	}
-	n, err := newNode(c)
+	c.Name = name
+	n, err := newNode(c, user)
 	if err != nil {
 		panic(err)
 	}
@@ -115,7 +107,7 @@ func mustCreateNode(name ...string) Node {
 }
 
 func TestNode_PubKey(t *testing.T) {
-	n := mustCreateNode()
+	n := mustCreateNode("node", nil)
 	pub := n.PubKey()
 	if err := pub.Verify(); err != nil {
 		t.Error("empty public key: ", err)
@@ -137,7 +129,7 @@ func TestNode_Sign(t *testing.T) {
 
 func TestNode_hasOutgoing(t *testing.T) {
 	tf, ts := newTestHook(), newTestHook()
-	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	feed, subscr := mustCreateNode("feed", nil), mustCreateNode("subscr", nil)
 	for _, x := range []struct {
 		node Node
 		hook *testHook
@@ -175,7 +167,7 @@ func TestNode_hasOutgoing(t *testing.T) {
 
 func TestNode_hasIncoming(t *testing.T) {
 	tf, ts := newTestHook(), newTestHook()
-	feed, subscr := mustCreateNode("feed"), mustCreateNode("subscr")
+	feed, subscr := mustCreateNode("feed", nil), mustCreateNode("subscr", nil)
 	for _, x := range []struct {
 		node Node
 		hook *testHook
@@ -212,13 +204,13 @@ func TestNode_hasIncoming(t *testing.T) {
 }
 
 func TestNode_Incoming(t *testing.T) {
-	if mustCreateNode().Incoming() == nil {
+	if mustCreateNode("node", nil).Incoming() == nil {
 		t.Error("(Node).Incoming() returns nil")
 	}
 }
 
 func TestNode_Outgoing(t *testing.T) {
-	if mustCreateNode().Outgoing() == nil {
+	if mustCreateNode("node", nil).Outgoing() == nil {
 		t.Error("(Node).Outgoign() returns nil")
 	}
 }
