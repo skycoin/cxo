@@ -2,6 +2,7 @@ package client
 
 import (
 	"flag"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -14,37 +15,35 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-//TODO: Refactor - avoid global var.
-// The problem now in HandleFromUpstream/HandleFromDownstream.
-// No way to provide Dataprovider into the handler
-var DB *data.DB
-var Sync *syncContext
-var Syncronizer syncContext
+type Client struct {
+	db *data.DB
 
-type client struct {
-	//db          *DataBase
-	imTheVertex  bool
-	subscribeTo  string
-	config       *Config
-	node         node.Node
-	messanger    *gui.Messenger
-	dataProvider skyobject.ISkyObjects
+	config    *Config
+	node      node.Node
+	skyobject skyobject.ISkyObjects
+
+	// list of known feeds to subscribe to
+	known []node.Connection
 }
 
-func Client() *client {
+// type client struct {
+// 	//db          *DataBase
+// 	imTheVertex  bool
+// 	subscribeTo  string
+// 	config       *Config
+// 	node         node.Node
+// 	messenger    *gui.Messenger
+// 	dataProvider skyobject.ISkyObjects
+// }
 
-	c := &client{}
-	//1. Create Hash Database
-	DB = data.NewDB()
-	//2. Create schema provider.
-	//   Integrate Hash Database to schema provider(schema store)
+func NewClient() (c *Client) {
+	var err error
 
-	//3. Pass SchemaProvider into LaunchWebInterfaceAPI and route handdler
-	flag.StringVar(&c.subscribeTo, "subscribe-to", "",
-		"Address of the node to subscribe to")
+	c = new(Client)
+
+	// configs
 	c.config = defaultConfig()
 	c.config.Parse()
-
 	// DEVELOPMENT:
 	// =========================================================================
 	// generate secret key for node if it is not set
@@ -56,68 +55,62 @@ func Client() *client {
 	}
 	// =========================================================================
 
-	nd, err := node.NewNode(mustParseSecretKey(c.config.SecretKey),
-		c.config.NodeConfig)
+	// data base
+	c.db = data.NewDB()
+
+	// node
+	c.node, err = node.NewNode(
+		mustParseSecretKey(c.config.SecretKey), // secret key
+		c.config.NodeConfig,                    // node configurations
+		c)                                      // pass this to message handlers
 	if err != nil {
 		logger.Fatal("can't create node: ", err)
 	}
-	c.node = nd
 
-	// check interfaces implementation
-	var (
-		_ node.IncomingHandler = &AnnounceMessage{}
-		_ node.OutgoingHndler  = &RequestMessage{}
-		_ node.IncomingHandler = &DataMessage{}
-	)
+	c.node.Register(&RequestMessage{})
+	c.node.Register(&AnnounceMessage{})
+	c.node.Register(&DataMessage{})
 
-	nd.Register(&RequestMessage{})
-	nd.Register(&AnnounceMessage{})
-	nd.Register(&DataMessage{})
-
-	err = nd.Start()
-	if err != nil {
+	if err = c.node.Start(); err != nil {
 		logger.Fatal("can't start node: ", err)
 	}
 
-	c.messanger = NodeMessanger(nd)
+	// boards (TOTH: what the hell is that?)
+	c.skyobject = bbs.CreateBbs(c.db, c.node)
 
-	c.imTheVertex = c.subscribeTo == ""
-	boards := bbs.CreateBbs(DB, nd)
+	logger.Info("stat: %s", c.skyobject.Statistic())
 
-	Sync = SyncContext(boards.Container)
+	//
+	// TODO: we need a way to fill up known addresses
+	//
+	c.known = known // temprary solution is useage of hardcoded global variable
 
-	if !c.imTheVertex {
-		logger.Info("Stat: %v", boards.Container.Statistic())
-		err = nd.Outgoing().Connect(c.subscribeTo, cipher.PubKey{})
-		if err != nil {
-			logger.Fatal("can't connect to remote node: ", err)
-		}
-	} else {
-		go func() {
-			prepareTestData(boards)
-			// give time for nodes to subscribe to this node before broadcasting
-			// that it has new data
+	// subscribe to knonw
+	c.subscribeToKnown()
 
-			refs := skyobject.Href{Ref: boards.Board}
-
-			refs.References(boards.Container)
-
-			time.Sleep(time.Second * 30)
-
-			c.messanger.Announce(boards.Board)
-
-			r := skyobject.Href{Ref: boards.Board}
-			rs := r.References(boards.Container)
-			logger.Info("Total refs: %d %v",
-				len(rs),
-				boards.Container.Statistic())
-			time.Sleep(time.Minute * 120)
-		}()
+	// geberate test data
+	if c.config.Testing {
+		go c.generateTestData()
 	}
-	//}
-	//fmt.Println("boards.Container", boards.Container)
-	c.dataProvider = boards.Container
-	return c
+}
+
+func (c *Client) subscribeToKnown() {
+	var err error
+	for _, c := range c.known {
+		err = c.node.Outgoing().Connect(c.Addr, c.Pub)
+		if err != nil {
+			logger.Error("can't connect to known node [%s]: %v", c.Addr, err)
+		}
+	}
+}
+
+// send announce to subscribers
+func (c *Client) Announce(hash cipher.SHA256) (err error) {
+	err = c.node.Incoming().
+		Broadcast(Announce{
+			Hash: hash,
+		})
+	return
 }
 
 func mustParseSecretKey(str string) cipher.SecKey {
@@ -137,6 +130,25 @@ func (c *client) Run() {
 	}
 }
 
+//
+// TODO: refector
+//
+
+func (c *Client) generateTestData() {
+	time.Sleep(20 * time.Second)
+	prepareTestData(boards)
+	refs := skyobject.Href{Ref: boards.Board}
+	refs.References(boards.Container)
+	time.Sleep(time.Second * 30)
+	c.Announce(boards.Board)
+	r := skyobject.Href{Ref: boards.Board}
+	rs := r.References(boards.Container)
+	logger.Info("Total refs: %d %v",
+		len(rs),
+		boards.Container.Statistic())
+	time.Sleep(time.Minute * 120)
+}
+
 func prepareTestData(bs *bbs.Bbs) {
 	boards := []bbs.Board{}
 	for b := 0; b < 1; b++ {
@@ -145,45 +157,19 @@ func prepareTestData(bs *bbs.Bbs) {
 			posts := []bbs.Post{}
 			for p := 0; p < 200; p++ {
 				posts = append(posts, bs.CreatePost(
-					"Post_"+generateString(15),
+					fmt.Sprintf("Post (board: %d, thread: %d, post:%d)",
+						b, t, p),
 					"Some text",
 				))
 			}
 			threads = append(threads, bs.CreateThread(
-				"Thread_"+generateString(15), posts...,
+				fmt.Sprintf("Thread (board: %d, thread: %d)", b, t),
+				posts...,
 			))
 		}
 		boards = append(boards, bs.AddBoard(
-			"Board_"+generateString(15), threads...,
+			fmt.Sprintf("Board (board: %d)", b),
+			threads...,
 		))
 	}
-}
-
-const (
-	letterBytes = "0123456789" +
-		"abcdefghijklmnopqrstuvwxyz" +
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	letterIdxBits = 6                    // 6 bits to represent a letter index
-	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
-)
-
-var src = rand.NewSource(time.Now().UnixNano())
-
-func generateString(n int) string {
-	b := make([]byte, n)
-	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
-	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
-		if remain == 0 {
-			cache, remain = src.Int63(), letterIdxMax
-		}
-		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
-			b[i] = letterBytes[idx]
-			i--
-		}
-		cache >>= letterIdxBits
-		remain--
-	}
-
-	return string(b)
 }

@@ -52,6 +52,7 @@ var (
 
 	ErrClosed gnet.DisconnectReason = errors.New(
 		"use of closed node")
+	ErrNotListening = errors.New("the node is not listening")
 )
 
 // A Node represents cxo node that can be used as feed,
@@ -412,7 +413,9 @@ func (n *node) start(quit, done chan struct{}) {
 			n.Debug("[DBG] send pings")
 			if err = n.Incoming().Broadcast(&Ping{}); err != nil {
 				// broadcast returns an error only if given value
-				// can't be encoded or it can be ErrClosed
+				// can't be encoded or it can be ErrClosed or ErrNotListening.
+				// But if we shouldn't send PING messages if we are not
+				// listening
 				if err != ErrClosed {
 					panic("error sending ping: " + err.Error()) // it's BUG
 				}

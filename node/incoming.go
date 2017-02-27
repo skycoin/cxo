@@ -53,6 +53,10 @@ func (i incoming) TerminateByAddress(address string) {
 }
 
 func (i incoming) Broadcast(msg interface{}) (err error) {
+	if i.conf.MaxIncomingConnections == 0 {
+		err = ErrNotListening
+		return
+	}
 	i.Debug("[DBG] broadcast: ", msg)
 	var d *Msg
 	if d, err = i.encode(msg); err != nil {
