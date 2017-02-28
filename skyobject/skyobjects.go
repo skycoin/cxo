@@ -278,7 +278,7 @@ func (c *skyObjects) Inspect() {
 			shr := href{}
 			encoder.DeserializeRaw(schemaData, &shr)
 			if shr.Type != _schemaType {
-				panic("Reference mast be an schema type")
+				panic("Reference must be an schema type")
 			}
 			encoder.DeserializeRaw(shr.Data, &sm)
 			fmt.Println("Object type", sm)

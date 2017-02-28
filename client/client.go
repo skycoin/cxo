@@ -12,10 +12,6 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-//
-// TODO: empty request on connected
-//
-
 // A Client repesents client that is node with web-interface, database and bss
 type Client struct {
 	db *data.DB
@@ -23,6 +19,9 @@ type Client struct {
 	config    *Config
 	node      node.Node
 	skyobject skyobject.ISkyObjects
+
+	// hash of root object
+	root cipher.SHA256
 
 	// list of known feeds to subscribe to
 	known []node.Connection
@@ -53,6 +52,7 @@ func NewClient() (c *Client, err error) {
 	c.db = data.NewDB()
 
 	// node
+	c.config.NodeConfig.ConnectCallback = c.connectCallback
 	c.node, err = node.NewNode(
 		mustParseSecretKey(c.config.SecretKey), // secret key
 		c.config.NodeConfig,                    // node configurations
@@ -91,7 +91,7 @@ func (c *Client) Start() (err error) {
 	// subscribe to knonw
 	c.subscribeToKnown()
 
-	// geberate test data
+	// generate test data
 	if c.config.Testing {
 		go c.generateTestData(boards)
 	}
@@ -111,6 +111,13 @@ func (c *Client) Start() (err error) {
 func (c *Client) Close() {
 	logger.Info("closing...")
 	c.node.Close()
+}
+
+func (c *Client) connectCallback(conn node.Sender, outgoign bool) {
+	if outgoign {
+		// send empty request to get root object
+		conn.Send(Request{})
+	}
 }
 
 // send announce to subscribers

@@ -7,6 +7,10 @@ import (
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
+type Sender interface {
+	Send(msg interface{}) (err error)
+}
+
 type sender struct {
 	node Node
 	*gnet.Connection

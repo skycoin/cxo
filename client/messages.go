@@ -1,6 +1,8 @@
 package client
 
 import (
+	"fmt"
+
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
@@ -57,6 +59,13 @@ func (req *Request) HandleIncoming(ctx node.MsgContext,
 		ok   bool
 	)
 
+	// if req.Hash == (cipher.SHA256{}) {
+	// 	// we've got request for root object
+	// 	return ctx.Reply(Announce{
+	// 		Hash: xxx, // hash of root object
+	// 	})
+	// }
+
 	if data, ok = c.db.Get(req.Hash); !ok {
 		logger.Error("got request for data I don't have: %v",
 			req.Hash.Hex())
@@ -73,7 +82,7 @@ func (req *Request) HandleIncoming(ctx node.MsgContext,
 	return // keep alive
 }
 
-// Data is response fro request. It sent by feed to subscriber
+// Data is response for request. It sent by feed to subscriber
 type Data struct {
 	Hash cipher.SHA256
 	Data []byte
@@ -95,17 +104,14 @@ func (dat *Data) HandleOutgoing(ctx node.MsgContext,
 		return // terminate connection
 	}
 
-	// Do we really need it?
-	//
-	// hashDoneLocally := cipher.SumSHA256(msg.Data)
-	// // that the hashes match
-	// if msg.Hash != hashDoneLocally {
-	// 	terminate = fmt.Errorf(
-	// 		"received data and it's hash are different: want %v, got %v",
-	// 		msg.Hash,
-	// 		hashDoneLocally)
-	// 	return // terminate connection
-	// }
+	hashDoneLocally := cipher.SumSHA256(dat.Data)
+	if dat.Hash != hashDoneLocally {
+		terminate = fmt.Errorf(
+			"received hash is not hash of received data: want %v, got %v",
+			dat.Hash,
+			hashDoneLocally)
+		return // terminate connection
+	}
 
 	// store the new data in the DB
 	if err := c.db.Add(dat.Hash, dat.Data); err != nil {
