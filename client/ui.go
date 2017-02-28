@@ -25,7 +25,8 @@ func (c *Client) launchWebInterface() {
 			err = gui.LaunchWebInterfaceAPI(c.config.address(),
 				c.config.WebInterface.GUIDirectory,
 				c.node,
-				SkyObjectsAPI(c.skyobject))
+				SkyObjectsAPI(c.skyobject),
+				clientApi{c})
 		}
 
 		if err != nil {
@@ -43,10 +44,15 @@ func (c *Client) launchWebInterface() {
 // utility
 //
 
-// Waiting for SIGINT to shutdown. You need to
+// WaitInterrupt waits for SIGINT to shutdown. You need to
 // call (*Client).Close separately
-func WaitInterrupt() {
+func (c *Client) WaitInterrupt() {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt)
-	logger.Info("Got signal %q, shutting down...", <-sigint)
+	select {
+	case s := <-sigint:
+		logger.Infof("got signal %q, shutting down...", s)
+	case <-c.quit:
+		logger.Info("terminate daemon from command line")
+	}
 }

@@ -1,8 +1,21 @@
 package main
 
-import "github.com/skycoin/cxo/client"
+import (
+	"log"
+
+	"github.com/skycoin/cxo/client"
+)
 
 func main() {
-	client := client.Client()
-	client.Run()
+	c, err := client.NewClient()
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	if err = c.Start(); err != nil {
+		log.Print(err)
+		return
+	}
+	defer c.Close()
+	c.WaitInterrupt()
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+// A Client repesents client that is node with web-interface, database and bss
 type Client struct {
 	db *data.DB
 
@@ -21,18 +22,11 @@ type Client struct {
 
 	// list of known feeds to subscribe to
 	known []node.Connection
+
+	quit chan struct{}
 }
 
-// type client struct {
-// 	//db          *DataBase
-// 	imTheVertex  bool
-// 	subscribeTo  string
-// 	config       *Config
-// 	node         node.Node
-// 	messenger    *gui.Messenger
-// 	dataProvider skyobject.ISkyObjects
-// }
-
+// NewClient creates new client or returns error
 func NewClient() (c *Client, err error) {
 	c = new(Client)
 
@@ -76,7 +70,7 @@ func NewClient() (c *Client, err error) {
 	return
 }
 
-//
+// Start launches client or return error
 func (c *Client) Start() (err error) {
 	// start node
 	if err = c.node.Start(); err != nil {
@@ -101,9 +95,15 @@ func (c *Client) Start() (err error) {
 	// web interface
 	c.launchWebInterface()
 
+	if c.config.RemoteTermination == true {
+		c.quit = make(chan struct{})
+	}
+
 	return
 }
 
+// Close is used to shutdown client. Unfortunately, there's no way to
+// shutdown web-interface. Thus, we can't reuse closed client
 func (c *Client) Close() {
 	logger.Info("closing...")
 	c.node.Close()

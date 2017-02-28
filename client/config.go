@@ -26,7 +26,7 @@ const (
 
 var logger = util.MustGetLogger(logModuleName)
 
-// Remote web interface
+// WebInterfaceConfig contains configurations of web-interface
 type WebInterfaceConfig struct {
 	Enable bool
 	Port   int
@@ -40,6 +40,7 @@ type WebInterfaceConfig struct {
 	GUIDirectory string
 }
 
+// Config is main config of the client
 type Config struct {
 	// testing is used to generate some test data for testing
 	// the node with this flag enabled will generate test data
@@ -48,6 +49,8 @@ type Config struct {
 	Testing bool
 	// secret key
 	SecretKey string
+	// allow terminate from command line tool
+	RemoteTermination bool
 	// node configs
 	NodeConfig node.Config
 	// WebInterface configs
@@ -78,6 +81,7 @@ func defaultConfig() (c *Config) {
 	return
 }
 
+// Parse gives configurations from command line flags
 func (c *Config) Parse() {
 	// obtain values from flags
 	c.fromFlags()
@@ -109,6 +113,11 @@ func (c *Config) fromFlags() {
 		"secret-key",
 		"",
 		"secret key of node")
+
+	flag.BoolVar(&c.RemoteTermination,
+		"remote-term",
+		false,
+		"allow to terminate daemon using commandl ine tool")
 
 	flag.BoolVar(&c.WebInterface.Enable,
 		"web-interface",
