@@ -12,5 +12,5 @@ func Example_usage() {
 	}
 	defer c.Close()
 	// waiting for SIGINT (Ctrl+C)
-	WaitInterrupt()
+	c.WaitInterrupt()
 }
