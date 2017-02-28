@@ -109,6 +109,9 @@ type Config struct {
 	// ManageEventsChannelSize is csize of channel for managing events
 	// such as list connections, connect, terminate connection, etc
 	ManageEventsChannelSize int
+
+	// callbacks for new connections
+	ConnectCallback func(s Sender, outgoing bool)
 }
 
 // NewConfig returns Config filled down with default values

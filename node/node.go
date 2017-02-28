@@ -52,6 +52,11 @@ var (
 
 	ErrClosed gnet.DisconnectReason = errors.New(
 		"use of closed node")
+	ErrNotListening = errors.New("the node is not listening")
+
+	//
+	ErrMalformedMessage gnet.DisconnectReason = errors.New(
+		"got malformed message")
 )
 
 // A Node represents cxo node that can be used as feed,
@@ -285,6 +290,11 @@ func (n *node) addOutgoing(gc *gnet.Connection, pub cipher.PubKey) error {
 	if n.testHook != nil {
 		n.testHook(n, testOutgoingEstablished)
 	}
+	// connect callback
+	if n.conf.ConnectCallback != nil {
+		s := &sender{n, gc}
+		n.conf.ConnectCallback(s, true)
+	}
 	return nil
 }
 
@@ -301,6 +311,11 @@ func (n *node) addIncoming(gc *gnet.Connection, pub cipher.PubKey) error {
 	if n.testHook != nil {
 		n.testHook(n, testIncomingEstablished)
 	}
+	// connect callback
+	if n.conf.ConnectCallback != nil {
+		s := &sender{n, gc}
+		n.conf.ConnectCallback(s, false)
+	}
 	return nil
 }
 
@@ -308,6 +323,8 @@ func (n *node) addIncoming(gc *gnet.Connection, pub cipher.PubKey) error {
 func (n *node) Start() (err error) {
 	n.Print("[INF] start node")
 	n.Debug("[DBG] ", n.conf.HumanString())
+
+	gnet.DebugPrint = n.conf.Debug
 
 	n.quit = make(chan struct{})
 	n.done = make(chan struct{})
@@ -412,7 +429,9 @@ func (n *node) start(quit, done chan struct{}) {
 			n.Debug("[DBG] send pings")
 			if err = n.Incoming().Broadcast(&Ping{}); err != nil {
 				// broadcast returns an error only if given value
-				// can't be encoded or it can be ErrClosed
+				// can't be encoded or it can be ErrClosed or ErrNotListening.
+				// But if we shouldn't send PING messages if we are not
+				// listening
 				if err != ErrClosed {
 					panic("error sending ping: " + err.Error()) // it's BUG
 				}
@@ -616,7 +635,7 @@ func (n *node) decode(body []byte) (msg interface{}, err error) {
 
 func (n *node) Register(msg interface{}) {
 	ih := reflect.TypeOf((*IncomingHandler)(nil)).Elem()
-	oh := reflect.TypeOf((*OutgoingHndler)(nil)).Elem()
+	oh := reflect.TypeOf((*OutgoingHandler)(nil)).Elem()
 	// pointer-type and value-type
 	var ptr, dref reflect.Type
 	ptr = reflect.TypeOf(msg)

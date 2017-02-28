@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -16,6 +17,35 @@ type DB struct {
 type Statistic struct {
 	Total  int `json:"total"`
 	Memory int `json:"memory"`
+}
+
+func (s Statistic) String() string {
+	return fmt.Sprintf("{total: %d, memory: %s}",
+		s.Total,
+		humanMemory(s.Memory))
+}
+
+// humanMemory returns human readable memory string
+func humanMemory(bytes int) string {
+	var fb float64 = float64(bytes)
+	var ms string = "B"
+	for _, m := range []string{"KiB", "MiB", "GiB"} {
+		if fb > 1024.0 {
+			fb = fb / 1024.0
+			ms = m
+			continue
+		}
+		break
+	}
+	if ms == "B" {
+		return fmt.Sprintf("%.0fB", fb)
+	}
+	// 2.00 => 2
+	// 2.10 => 2.1
+	// 2.53 => 2.53
+	return strings.TrimRight(
+		strings.TrimRight(fmt.Sprintf("%.2f", fb), "0"),
+		".") + ms
 }
 
 type QueryFunc func(key cipher.SHA256, data []byte) bool

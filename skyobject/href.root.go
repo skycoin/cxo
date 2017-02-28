@@ -16,7 +16,14 @@ type rootObject struct {
 type HashRoot Href
 
 func newRoot(ref Href, sign cipher.Sig) HashRoot {
-	res := HashRoot{value: rootObject{Root: HashObject{Ref: ref.Ref}, Sign: sign}}
+	res := HashRoot{
+		value: rootObject{
+			Root: HashObject{
+				Ref: ref.Ref,
+			},
+			Sign: sign,
+		},
+	}
 	return res
 }
 

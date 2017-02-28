@@ -1,9 +1,6 @@
 package skyobject
 
 import (
-
-	"bytes"
-
 	"reflect"
 	"strings"
 
@@ -31,7 +28,7 @@ func ReadSchema(data interface{}) (sch Schema) {
 }
 
 func (s *Schema) String() string {
-	var b []byte = make([]byte, 0, 96) // scratch
+	var b []byte = make([]byte, 0, 128) // scratch
 	b = append(b, "struct "...)
 	b = append(b, s.Name...)
 	b = append(b, '\n')

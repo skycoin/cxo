@@ -31,3 +31,4 @@ gui/static/dev/
 
 cmd/cli/cli
 cmd/cxod/cxod
+cmd/*.out

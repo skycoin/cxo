@@ -92,7 +92,7 @@ type IncomingHandler interface {
 // IncomingHandler represents interface that
 // messages that received by outgoing connections (by subscriber)
 // must implement
-type OutgoingHndler interface {
+type OutgoingHandler interface {
 	// HandleOutgoing is called when message received. If the method
 	// returns non-nil error then connection will terminated with
 	// the error. The user argument is user-data provided to
@@ -144,8 +144,8 @@ func (m *Msg) Handle(ctx *gnet.MessageContext, ni interface{}) (err error) {
 			n:  n,
 		}, nd.user)
 	} // else
-	var ogh OutgoingHndler
-	if ogh, ok = msg.(OutgoingHndler); !ok {
+	var ogh OutgoingHandler
+	if ogh, ok = msg.(OutgoingHandler); !ok {
 		err = ErrOutgoingMessageInterface
 		return
 	}

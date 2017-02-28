@@ -7,11 +7,10 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// developer note:
-// this is replacemant for obsolete cxo/nodeManager.INodeSecurity { Sign(blah) }
-// Because of Golang naming convention, now it called Signer and placed here
+// A Signer is an interface for security
 type Signer interface {
-	Sign(hash cipher.SHA256) cipher.Sig //
+	// Sign signs given hash with underlying secret key
+	Sign(hash cipher.SHA256) cipher.Sig
 }
 
 type Bbs struct {
