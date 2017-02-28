@@ -57,7 +57,7 @@ subscribe: inspect
 .PHONY: waiting
 waiting:
 	@echo "waiting..."
-	sleep 30
+	sleep 20
 
 .PHONY: terminate
 terminate: waiting inspect_again

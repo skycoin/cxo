@@ -110,6 +110,10 @@ func (c *Client) Start() (err error) {
 // Close is used to shutdown client. Unfortunately, there's no way to
 // shutdown web-interface. Thus, we can't reuse closed client
 func (c *Client) Close() {
+	if c.config.Log.Level == "debug" {
+		logger.Debug("\n\nINSPECT\n\n")
+		c.skyobject.Inspect()
+	}
 	logger.Info("closing...")
 	c.node.Close()
 }
@@ -190,15 +194,11 @@ func mustParseSecretKey(str string) cipher.SecKey {
 //
 
 func (c *Client) generateTestData(boards *bbs.Bbs) {
-	time.Sleep(20 * time.Second)
 	prepareTestData(boards)
+	time.Sleep(10 * time.Second)
 	// boards is root
 	c.Publish(boards.Board)
 	//
-	refs := skyobject.Href{
-		Ref: boards.Board,
-	}
-	refs.References(boards.Container)
 	r := skyobject.Href{
 		Ref: boards.Board,
 	}
@@ -211,6 +211,7 @@ func (c *Client) generateTestData(boards *bbs.Bbs) {
 func prepareTestData(bs *bbs.Bbs) {
 	// TOTH: many boards?
 	// for b := 0; b < 1; b++ {
+	b := 0
 	threads := []bbs.Thread{}
 	for t := 0; t < 10; t++ {
 		posts := []bbs.Post{}
