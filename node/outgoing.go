@@ -7,6 +7,20 @@ import (
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
+type sender struct {
+	node Node
+	*gnet.Connection
+}
+
+func (r *sender) Send(msg interface{}) (err error) {
+	var m *Msg
+	if m, err = r.node.encode(msg); err != nil {
+		return
+	}
+	r.ConnectionPool.SendMessage(r.Connection, m)
+	return
+}
+
 type Outgoing interface {
 	// Connect creates new outgoing connection to given address.
 	// The 'desired' argument is desired public key of

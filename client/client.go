@@ -12,6 +12,10 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+//
+// TODO: empty request on connected
+//
+
 // A Client repesents client that is node with web-interface, database and bss
 type Client struct {
 	db *data.DB

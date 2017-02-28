@@ -226,10 +226,10 @@ func (c *Client) addSubscription(args string) error {
 	case 0:
 		return errors.New("to few arguments, want <host:port> [pub key]")
 	case 1:
-		reqp = c.addr + "/manager/nodes/stub/subscriptions"
+		reqp = "/manager/nodes/stub/subscriptions"
 		reqb = fmt.Sprintf(`{"ip":%q,"pubKey":""}`, ss[0])
 	case 2:
-		reqp = c.addr + "/manager/nodes/stub/subscriptions"
+		reqp = "/manager/nodes/stub/subscriptions"
 		reqb = fmt.Sprintf(`{"ip":%q,"pubKey":%q}`, ss[0], ss[1])
 	default:
 		return errors.New("to many arguments, want <host:port> [pub key]")
@@ -270,7 +270,7 @@ func (c *Client) removeSubscription(args string) error {
 			address = ss[0]
 			break
 		}
-		reqs = c.addr + "/manager/nodes/stub/subscriptions/" +
+		reqs = "/manager/nodes/stub/subscriptions/" +
 			url.QueryEscape(ss[0])
 	default:
 		return errors.New("to many argumets, want: <id or ip:port>")
@@ -285,7 +285,7 @@ func (c *Client) removeSubscription(args string) error {
 		}
 		for _, s := range subscriptions {
 			if s.Address == address {
-				reqs = c.addr + "/manager/nodes/stub/subscriptions/" +
+				reqs = "/manager/nodes/stub/subscriptions/" +
 					s.PubKey
 				goto Request
 			}
@@ -326,7 +326,7 @@ func (c *Client) removeSubscriber(args string) error {
 			address = ss[0]
 			break
 		}
-		reqs = c.addr + "/manager/nodes/stub/subscribers/" +
+		reqs = "/manager/nodes/stub/subscribers/" +
 			url.QueryEscape(ss[0])
 	default:
 		return errors.New("to many argumets, want: <id or ip:port>")
@@ -341,7 +341,7 @@ func (c *Client) removeSubscriber(args string) error {
 		}
 		for _, s := range subscribers {
 			if s.Address == address {
-				reqs = c.addr + "/manager/nodes/stub/subscribers/" + s.PubKey
+				reqs = "/manager/nodes/stub/subscribers/" + s.PubKey
 				goto Request
 			}
 		}

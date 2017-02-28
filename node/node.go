@@ -13,6 +13,10 @@ import (
 	"github.com/logrusorgru/cxo/typereg"
 )
 
+//
+// TODO: on connected  events
+//
+
 var (
 	//
 	// disconnect reasons
@@ -290,6 +294,7 @@ func (n *node) addOutgoing(gc *gnet.Connection, pub cipher.PubKey) error {
 	if n.testHook != nil {
 		n.testHook(n, testOutgoingEstablished)
 	}
+	// TODO
 	return nil
 }
 
@@ -306,6 +311,7 @@ func (n *node) addIncoming(gc *gnet.Connection, pub cipher.PubKey) error {
 	if n.testHook != nil {
 		n.testHook(n, testIncomingEstablished)
 	}
+	// TODO
 	return nil
 }
 
