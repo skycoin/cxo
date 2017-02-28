@@ -65,6 +65,7 @@ func NewClient() (c *Client, err error) {
 	c.node.Register(&Request{})
 	c.node.Register(&Announce{})
 	c.node.Register(&Data{})
+	c.node.Register(&Root{})
 
 	//
 	// TODO: we need a way to fill up known addresses
@@ -113,15 +114,32 @@ func (c *Client) Close() {
 	c.node.Close()
 }
 
+// Set the given hash as root object of the node and
+// send announce for all subscribers
+func (c *Client) Publish(root cipher.SHA256) {
+	c.setRoot(root)
+	c.announce(root)
+}
+
+//
+func (c *Client) setRoot(root cipher.SHA256) {
+	c.root = root
+}
+
 func (c *Client) connectCallback(conn node.Sender, outgoign bool) {
 	if outgoign {
-		// send empty request to get root object
-		conn.Send(Request{})
+		// if we've not root
+		if c.root == (cipher.SHA256{}) {
+			// send empty request to get root object
+			logger.Debug("send request for root")
+			conn.Send(Request{})
+		}
 	}
 }
 
 // send announce to subscribers
 func (c *Client) announce(hash cipher.SHA256) (err error) {
+	logger.Debugf("broadcast announce %s", hash.Hex())
 	err = c.node.Incoming().
 		Broadcast(Announce{
 			Hash: hash,
@@ -131,12 +149,12 @@ func (c *Client) announce(hash cipher.SHA256) (err error) {
 
 func (c *Client) requestMissing(r Replier, hash cipher.SHA256) {
 	for _, item := range c.skyobject.MissingDependencies(hash) {
-		logger.Debugf("Request message: %v", item.Hex())
+		logger.Debugf("send request %s", item.Hex())
 		err := r.Reply(Request{
 			Hash: item,
 		})
 		if err != nil {
-			logger.Error("error sending Request message: %v", err)
+			logger.Error("error sending request: %v", err)
 		}
 	}
 }
@@ -174,12 +192,13 @@ func mustParseSecretKey(str string) cipher.SecKey {
 func (c *Client) generateTestData(boards *bbs.Bbs) {
 	time.Sleep(20 * time.Second)
 	prepareTestData(boards)
+	// boards is root
+	c.Publish(boards.Board)
+	//
 	refs := skyobject.Href{
 		Ref: boards.Board,
 	}
 	refs.References(boards.Container)
-	// send announce to subscribers
-	c.announce(boards.Board)
 	r := skyobject.Href{
 		Ref: boards.Board,
 	}
@@ -190,22 +209,23 @@ func (c *Client) generateTestData(boards *bbs.Bbs) {
 }
 
 func prepareTestData(bs *bbs.Bbs) {
-	for b := 0; b < 1; b++ {
-		threads := []bbs.Thread{}
-		for t := 0; t < 10; t++ {
-			posts := []bbs.Post{}
-			for p := 0; p < 200; p++ {
-				posts = append(posts, bs.CreatePost(
-					fmt.Sprintf("Post (board: %d, thread: %d, post:%d)",
-						b, t, p),
-					"Some text",
-				))
-			}
-			threads = append(threads, bs.CreateThread(
-				fmt.Sprintf("Thread (board: %d, thread: %d)", b, t),
-				posts...,
+	// TOTH: many boards?
+	// for b := 0; b < 1; b++ {
+	threads := []bbs.Thread{}
+	for t := 0; t < 10; t++ {
+		posts := []bbs.Post{}
+		for p := 0; p < 200; p++ {
+			posts = append(posts, bs.CreatePost(
+				fmt.Sprintf("Post (board: %d, thread: %d, post:%d)",
+					b, t, p),
+				"Some text",
 			))
 		}
-		bs.AddBoard(fmt.Sprintf("Board (board: %d)", b), threads...)
+		threads = append(threads, bs.CreateThread(
+			fmt.Sprintf("Thread (board: %d, thread: %d)", b, t),
+			posts...,
+		))
 	}
+	bs.AddBoard(fmt.Sprintf("Board (board: %d)", b), threads...)
+	// }
 }

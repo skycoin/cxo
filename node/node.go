@@ -324,6 +324,8 @@ func (n *node) Start() (err error) {
 	n.Print("[INF] start node")
 	n.Debug("[DBG] ", n.conf.HumanString())
 
+	gnet.DebugPrint = n.conf.Debug
+
 	n.quit = make(chan struct{})
 	n.done = make(chan struct{})
 

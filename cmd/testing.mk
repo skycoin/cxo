@@ -21,25 +21,25 @@ launch:
 	                  -a 127.0.0.1             \
 	                  -p 7481                  \
 	                  -launch-browser=f        \
-	                  -log-level=critical      \
+	                  -log-level=debug         \
 	                  -name n1                 \
-	                  -testing &
+	                  -testing > n1.out 2>&1 &
 	@echo "==== n2 ===="
 	nohup ./cxod/cxod -web-interface-port 6482 \
 	                  -remote-term             \
 	                  -a 127.0.0.1             \
 	                  -p 7482                  \
 	                  -launch-browser=f        \
-	                  -log-level=critical      \
-	                  -name n2 &
+	                  -log-level=debug         \
+	                  -name n2 > n2.out 2>&1 &
 	@echo "==== n3 ===="
 	nohup ./cxod/cxod -web-interface-port 6483 \
 	                  -remote-term             \
 	                  -a 127.0.0.1             \
 	                  -p 7483                  \
 	                  -launch-browser=f        \
-	                  -log-level=critical      \
-	                  -name n3 &
+	                  -log-level=debug         \
+	                  -name n3 > n3.out 2>&1 &
 	sleep 5
 
 .PHONY: subscribe
@@ -72,7 +72,7 @@ terminate: waiting inspect_again
 	./cli/cli -a http://127.0.0.1:6483 -e close
 
 .PHONY: inspect
-inspect:
+inspect inspect_again:
 	@echo
 	@echo "Inspect"
 	@echo
@@ -83,17 +83,17 @@ inspect:
 	@echo "==== n3 ===="
 	./cli/cli -a http://127.0.0.1:6483 -e stat
 
-.PHONY: inspect_again
-inspect_again:
-	@echo
-	@echo "Inspect"
-	@echo
-	@echo "==== n1 ===="
-	./cli/cli -a http://127.0.0.1:6481 -e stat
-	@echo "==== n2 ===="
-	./cli/cli -a http://127.0.0.1:6482 -e stat
-	@echo "==== n3 ===="
-	./cli/cli -a http://127.0.0.1:6483 -e stat
+#.PHONY: inspect_again
+#inspect_again:
+#	@echo
+#	@echo "Inspect"
+#	@echo
+#	@echo "==== n1 ===="
+#	./cli/cli -a http://127.0.0.1:6481 -e stat
+#	@echo "==== n2 ===="
+#	./cli/cli -a http://127.0.0.1:6482 -e stat
+#	@echo "==== n3 ===="
+#	./cli/cli -a http://127.0.0.1:6483 -e stat
 
 $(CXOD):
 	go build -o ./cxod/cxod ./cxod/
