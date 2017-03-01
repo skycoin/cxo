@@ -37,6 +37,19 @@ const (
 	READ_TIMEOUT  time.Duration = 0                // default ReadTimeout
 	WRITE_TIMEOUT time.Duration = 0                // default WriteTimeout
 
+	// PING_INTERVAL is interval for send service PING message to
+	// keep connection alive. If you set it to zero then pinging is
+	// disabled. It's impossible to use disabled ping-interval and
+	// some non-zero read and write timeout. Because if we set some
+	// read timeout and no messages sent - connection is closed. Ping
+	// messages are sent to incoming connections only (i.e. from feed to
+	// subscribers). Thus, every feed can keep alive its subscribers, but
+	// there isn't cross-ping-pong sending, that can't keep connection more
+	// clever but can increase network pressure. If node is subscriber
+	// and ping-interval is disabled it sends pong message back to feed
+	// anyway (in response to ping from feed)
+	PING_INTERVAL time.Duration = 0
+
 	// HANDSHAKE_TIMEOUT is default HandshakeTimeout
 	HANDSHAKE_TIMEOUT time.Duration = 40 * time.Second
 
@@ -45,7 +58,7 @@ const (
 
 	// MANAGE_EVENTS_CHANNEL_SIZE size of managing events like
 	// List, Connect, Terminate etc
-	MANAGE_EVENTS_CHANNEL_SIZE = 20
+	MANAGE_EVENTS_CHANNEL_SIZE = 1024
 )
 
 // A Config represents set of configurations of a Node
@@ -81,6 +94,8 @@ type Config struct {
 	ReadTimeout  time.Duration // read timeout, use 0 to system's default
 	WriteTimeout time.Duration // writ timeout, use 0 to system's default
 
+	PingInterval time.Duration // ping interval, use 0 to disable
+
 	// HandshakeTimeout is timeout after which connection will be
 	// closed if handshake is not performed. The hndshake is four-step
 	// procedure (send->receive->send->receive or receive->send->receive->send).
@@ -94,6 +109,9 @@ type Config struct {
 	// ManageEventsChannelSize is csize of channel for managing events
 	// such as list connections, connect, terminate connection, etc
 	ManageEventsChannelSize int
+
+	// callbacks for new connections
+	ConnectCallback func(s Sender, outgoing bool)
 }
 
 // NewConfig returns Config filled down with default values
@@ -118,6 +136,8 @@ func NewConfig() (c Config) {
 	c.ReadTimeout = READ_TIMEOUT
 	c.WriteTimeout = WRITE_TIMEOUT
 
+	c.PingInterval = PING_INTERVAL
+
 	c.HandshakeTimeout = HANDSHAKE_TIMEOUT
 
 	c.MessageHandlingRate = MESSAGE_HANDLING_RATE
@@ -138,6 +158,23 @@ func (c *Config) Validate() (err error) {
 	}
 	if c.MaxMessageLength <= 0 {
 		err = errors.New("max mesage length is zero of below")
+	}
+	// if we accept connections ...
+	if c.MaxIncomingConnections > 0 {
+		// ...and read or write interval is set...
+		if c.ReadTimeout > 0 || c.WriteTimeout > 0 {
+			// .. we must have some ping interval...
+			if c.PingInterval == 0 {
+				err = errors.New("ping interval required")
+				return
+			} else if c.PingInterval > c.ReadTimeout {
+				err = errors.New("ping interval is greater than read timeout")
+				return
+			} else if c.PingInterval > c.WriteTimeout {
+				err = errors.New("ping interval is greater than write timeout")
+				return
+			}
+		}
 	}
 	return
 }
@@ -207,6 +244,11 @@ func (c *Config) FromFlags() {
 		WRITE_TIMEOUT,
 		"write timeout (set to zero to use system's default)")
 
+	flag.DurationVar(&c.PingInterval,
+		"ping",
+		PING_INTERVAL,
+		"ping interval (set to zero to disable pinging)")
+
 	flag.DurationVar(&c.HandshakeTimeout,
 		"ht",
 		HANDSHAKE_TIMEOUT,
@@ -251,7 +293,7 @@ func humanString(s, empty string) string {
 	return s
 }
 
-// HumanString retusn human readable representation of Config
+// HumanString retursn human readable representation of Config
 func (c *Config) HumanString() (s string) {
 	s = fmt.Sprintf(`	name:       %s
 	debug logs: %s
@@ -271,6 +313,8 @@ func (c *Config) HumanString() (s string) {
 	dial timeout:  %s
 	read timeout:  %s
 	write timeout: %s
+
+	ping interval: %s
 
 	handshake timeout: %s
 
@@ -294,8 +338,10 @@ func (c *Config) HumanString() (s string) {
 		c.ConnectionWriteQueueSize,
 
 		humanDur(c.DialTimeout, "ignore"),
-		humanDur(c.ReadTimeout, "system deafult"),
+		humanDur(c.ReadTimeout, "system default"),
 		humanDur(c.WriteTimeout, "system default"),
+
+		humanDur(c.PingInterval, "disabled"),
 
 		humanDur(c.HandshakeTimeout, "ignore"),
 

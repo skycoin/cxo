@@ -278,7 +278,7 @@ func (c *skyObjects) Inspect() {
 			shr := href{}
 			encoder.DeserializeRaw(schemaData, &shr)
 			if shr.Type != _schemaType {
-				panic("Reference mast be an schema type")
+				panic("Reference must be an schema type")
 			}
 			encoder.DeserializeRaw(shr.Data, &sm)
 			fmt.Println("Object type", sm)
@@ -299,11 +299,11 @@ func (c *skyObjects) MissingDependencies(key cipher.SHA256) []cipher.SHA256 {
 	typeKey.Set(data[:32])
 	if typeKey != _schemaType {
 		result = append(result, c.MissingDependencies(typeKey)...)
-		r := Href{Ref: key}
 		if len(result) > 0 {
 			result = append(result, key)
 		}
 
+		r := Href{Ref: key}
 		for k := range r.References(c) {
 			if k != key {
 				result = append(result, c.MissingDependencies(k)...)

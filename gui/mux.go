@@ -67,7 +67,8 @@ func (r *Router) ServeHTTP(ww http.ResponseWriter, rr *http.Request) {
 		ww.Header().Set("Access-Control-Allow-Origin", origin)
 		ww.Header().Set("Access-Control-Allow-Methods", "POST")
 		ww.Header().Set("Access-Control-Allow-Headers",
-			"Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+			"Accept, Content-Type, Content-Length,"+
+				" Accept-Encoding, X-CSRF-Token, Authorization")
 	}
 
 	if rr.Method == "OPTIONS" {
