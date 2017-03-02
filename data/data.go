@@ -55,6 +55,7 @@ func NewDB() *DB {
 	}
 }
 
+//
 func (d *DB) Has(key cipher.SHA256) (ok bool) {
 	d.RLock()
 	defer d.RUnlock()
@@ -62,6 +63,7 @@ func (d *DB) Has(key cipher.SHA256) (ok bool) {
 	return
 }
 
+// Get value by key
 func (d *DB) Get(key cipher.SHA256) (v []byte, ok bool) {
 	d.RLock()
 	defer d.RUnlock()
@@ -69,12 +71,23 @@ func (d *DB) Get(key cipher.SHA256) (v []byte, ok bool) {
 	return
 }
 
+// Set or overwrite key-value pair
 func (d *DB) Set(key cipher.SHA256, data []byte) {
 	d.Lock()
 	defer d.Unlock()
 	d.data[key] = data
 }
 
+// Range over keys of DB, fn must not be nil
+func (d *DB) Range(fn func(key cipher.SHA256)) {
+	d.RLock()
+	defer d.RUnlock()
+	for k := range d.data {
+		fn(k)
+	}
+}
+
+// Stat return statistic of the DB
 func (d *DB) Stat() (s Stat) {
 	d.RLock()
 	d.RUnlock()

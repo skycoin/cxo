@@ -1,13 +1,18 @@
 package node
 
 import (
-	"time"
-
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
-
-	"github.com/skycoin/cxo/data"
 )
+
+func init() {
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("PING"), Ping{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("PONG"), Pong{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("REQT"), Request{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
+	gnet.VerifyMessages()
+}
 
 type Ping struct{}
 
@@ -45,7 +50,7 @@ func (r *Request) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
 	n := node.(*Node)
-	if data, ok := n.db.Get(a.Hash); ok {
+	if data, ok := n.db.Get(r.Hash); ok {
 		ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Data{data})
 	}
 	return
@@ -66,7 +71,7 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 	// Broadcast
 	for _, gc := range n.pool.Pool {
 		if gc != ctx.Conn {
-			n.pool.SendMessage(gc, Announce{hash})
+			n.pool.SendMessage(gc, &Announce{hash})
 		}
 	}
 	return

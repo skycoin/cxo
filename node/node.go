@@ -25,21 +25,12 @@ type Config struct {
 	Debug bool
 	Name  string
 	Ping  time.Duration
-
-	// rpc config
-	RPCEnalbe         bool
-	RPCAddress        string
-	RPCEventsChanSize int
 }
 
 func NewConfig() Config {
 	return Config{
 		Config: gnet.NewConfig(),
-		Known:  known,
 		Ping:   time.Second,
-
-		RPCEnalbe:         true,
-		RPCEventsChanSize: 10,
 	}
 }
 
@@ -48,7 +39,6 @@ type Node struct {
 	conf Config
 	db   *data.DB
 	pool *gnet.ConnectionPool
-	rpc  *rpc
 	quit chan struct{}
 	done chan struct{}
 }
@@ -59,6 +49,9 @@ func NewNode(conf Config, db *data.DB) *Node {
 	}
 	if conf.Name == "" {
 		conf.Name = "node"
+	}
+	if conf.Debug == false {
+		gnet.DebugPrint = false
 	}
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
@@ -80,29 +73,23 @@ func (n *Node) Start() (err error) {
 	if err = n.pool.StartListen(); err != nil {
 		return
 	}
-	if n.conf.RPCEnalbe {
-		n.rpc = newRpc(&n.conf, n)
-		if err = n.startRPC(); err != nil {
-			n.pool.StopListen()
-			return
-		}
-	}
 	go n.pool.AcceptConnections()
-	go n.handle(n.quit)
+	go n.handle(n.quit, n.done)
 	go n.connectToKnown(n.quit)
+	return
 }
 
 func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
 	n.Debug("[DBG] send everything we have to ", gc.Addr())
-	for k := range n.db {
-		gc.ConnectionPool.SendMessage(gc, Announce{k})
-	}
+	n.db.Range(func(k cipher.SHA256) {
+		gc.ConnectionPool.SendMessage(gc, &Announce{k})
+	})
 }
 
 func (n *Node) handle(quit, done chan struct{}) {
 	n.Debug("[DBG] start handling events")
 	var (
-		tk   time.Ticker
+		tk   *time.Ticker
 		ping <-chan time.Time
 	)
 	if n.conf.Ping > 0 {
@@ -147,18 +134,9 @@ func (n *Node) connectToKnown(quit chan struct{}) {
 	}
 }
 
-func (n *Node) startRPC() error {
-	n.Debug("[DBG] starting RPC")
-	n.rpc.events = make(chan interface{}, n.conf.RPCEventsChanSize)
-	return n.rpc.Start(n.conf.RPCAddress, n.quit)
-}
-
 func (n *Node) Close() {
 	n.Debug("[DBG] cling node...")
 	close(n.quit)
 	<-n.done
-	if n.conf.RPCEnalbe {
-		<-n.rpc.done
-	}
 	n.Debug("[DBG] node was closed")
 }

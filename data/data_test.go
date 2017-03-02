@@ -69,6 +69,27 @@ func TestDB_Set(t *testing.T) {
 	}
 }
 
+func TestDB_Range(t *testing.T) {
+	d := NewDB()
+	for _, v := range []string{"a", "b", "c"} {
+		data := []byte(v)
+		key := cipher.SumSHA256(data)
+		d.Set(key, data)
+	}
+	got := []string{}
+	d.Range(func(key cipher.SHA256) {
+		val, ok := d.Get(key)
+		if !ok {
+			t.Error("missing data")
+			return
+		}
+		got = append(got, string(val))
+	})
+	if len(got) != 3 {
+		t.Error("wrong range")
+	}
+}
+
 func TestDB_Stat(t *testing.T) {
 	d := NewDB()
 	if d.Stat() != (Stat{}) {
