@@ -30,7 +30,7 @@ type Config struct {
 func NewConfig() Config {
 	return Config{
 		Config: gnet.NewConfig(),
-		Ping:   time.Second,
+		Ping:   5 * time.Second,
 	}
 }
 
