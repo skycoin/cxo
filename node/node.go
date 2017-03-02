@@ -1,12 +1,19 @@
 package node
 
 import (
+	"errors"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
+)
+
+var (
+	ErrClosed                                 = errors.New("use of closed node")
+	ErrManualDisconnect gnet.DisconnectReason = errors.New(
+		"manual disconnect")
 )
 
 // A Config represents configurations of Node
@@ -18,6 +25,22 @@ type Config struct {
 	Debug bool
 	Name  string
 	Ping  time.Duration
+
+	// rpc config
+	RPCEnalbe         bool
+	RPCAddress        string
+	RPCEventsChanSize int
+}
+
+func NewConfig() Config {
+	return Config{
+		Config: gnet.NewConfig(),
+		Known:  known,
+		Ping:   time.Second,
+
+		RPCEnalbe:         true,
+		RPCEventsChanSize: 10,
+	}
 }
 
 type Node struct {
@@ -25,6 +48,7 @@ type Node struct {
 	conf Config
 	db   *data.DB
 	pool *gnet.ConnectionPool
+	rpc  *rpc
 	quit chan struct{}
 	done chan struct{}
 }
@@ -56,8 +80,16 @@ func (n *Node) Start() (err error) {
 	if err = n.pool.StartListen(); err != nil {
 		return
 	}
+	if n.conf.RPCEnalbe {
+		n.rpc = newRpc(&n.conf, n)
+		if err = n.startRPC(); err != nil {
+			n.pool.StopListen()
+			return
+		}
+	}
 	go n.pool.AcceptConnections()
 	go n.handle(n.quit)
+	go n.connectToKnown(n.quit)
 }
 
 func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
@@ -68,6 +100,7 @@ func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
 }
 
 func (n *Node) handle(quit, done chan struct{}) {
+	n.Debug("[DBG] start handling events")
 	var (
 		tk   time.Ticker
 		ping <-chan time.Time
@@ -89,8 +122,12 @@ func (n *Node) handle(quit, done chan struct{}) {
 					sr.Error)
 			}
 		case de := <-n.pool.DisconnectQueue:
+			n.Debug("[DBG] disconnet %s because: ",
+				n.pool.Pool[de.ConnId].Addr(),
+				de.Reason)
 			n.pool.HandleDisconnectEvent(de)
 		case <-ping:
+			n.Debug("[DBG] send pings")
 			n.pool.BroadcastMessage(&Ping{})
 		case <-quit:
 			return
@@ -100,7 +137,28 @@ func (n *Node) handle(quit, done chan struct{}) {
 	}
 }
 
+func (n *Node) connectToKnown(quit chan struct{}) {
+	n.Debug("[DBG] connecting to know hosts")
+	for _, a := range n.conf.Known {
+		n.Debug("[DBG] connecting to ", a)
+		if _, err := n.pool.Connect(a); err != nil {
+			n.Printf("[ERR] error connection to known host %s: %v", a, err)
+		}
+	}
+}
+
+func (n *Node) startRPC() error {
+	n.Debug("[DBG] starting RPC")
+	n.rpc.events = make(chan interface{}, n.conf.RPCEventsChanSize)
+	return n.rpc.Start(n.conf.RPCAddress, n.quit)
+}
+
 func (n *Node) Close() {
+	n.Debug("[DBG] cling node...")
 	close(n.quit)
 	<-n.done
+	if n.conf.RPCEnalbe {
+		<-n.rpc.done
+	}
+	n.Debug("[DBG] node was closed")
 }
