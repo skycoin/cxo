@@ -99,7 +99,7 @@ func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e e
 }
 
 // GetAllOfSchema gets all keys of objects with specified schemaKey.
-func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) (objKeys []cipher.SHA256) {
+func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
 		return bytes.Compare(schemaKey[:32], data[:32]) == 0
 	}
@@ -140,11 +140,7 @@ func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]boo
 		}
 		// Recursively find more references.
 		var keyArray []cipher.SHA256
-		e := encoder.DeserializeField(data, sch.Fields, field.Name, &keyArray)
-		if e != nil {
-			fmt.Println(e)
-			return
-		}
+		encoder.DeserializeField(data, sch.Fields, field.Name, &keyArray)
 		for _, k := range keyArray {
 			c.getDescendants(k, dMap)
 		}
@@ -152,12 +148,29 @@ func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]boo
 }
 
 // GetReferencesFor gets a list of objects that reference the specified object.
-// Returns a map of:
-// * Key: key of object stored
-// * Value: schemaKey of object stored
-func (c *Container) GetReferencesFor(key cipher.SHA256) (refMap map[cipher.SHA256]cipher.SHA256) {
-	refMap = make(map[cipher.SHA256]cipher.SHA256)
-	// TODO: Implement.
+func (c *Container) GetReferencesFor(key cipher.SHA256) []cipher.SHA256 {
+	query := func(key cipher.SHA256, data []byte) bool {
+		var h href
+		encoder.DeserializeRaw(data, &h)
+		schema, e := c.GetSchemaOfKey(h.SchemaKey)
+		if e != nil {
+			fmt.Println(e)
+			return false
+		}
+		for _, field := range schema.Fields {
+			if field.Type != "HashArray" && field.Type != "hasharray" {
+				continue
+			}
+			var keyArray []cipher.SHA256
+			encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
+			for _, k := range keyArray {
+				if k == key {
+					return true
+				}
+			}
 
-	return
+		}
+		return false
+	}
+	return c.ds.Where(query)
 }
