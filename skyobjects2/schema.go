@@ -4,12 +4,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
-
-// cipher.SHA256 <-- Used for storing schemas in container.
-var _schemaType = cipher.SumSHA256(encoder.Serialize(Schema{}))
 
 // Schema represents the type of SkyObject.
 type Schema struct {

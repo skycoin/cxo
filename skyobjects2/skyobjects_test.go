@@ -43,3 +43,38 @@ func TestGetAllOfSchema(t *testing.T) {
 		t.Logf("i : %d, object: %v", i, test)
 	}
 }
+
+type Node struct {
+	A string
+}
+
+type Ref struct {
+	A HashArray
+}
+
+func TestReferencing(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	nodeSchKey := c.SaveSchema(Node{})
+	refSchKey := c.SaveSchema(Ref{})
+
+	node := Node{"main"}
+	nodeDat := encoder.Serialize(node)
+	nodeKey := c.Save(nodeSchKey, nodeDat)
+	t.Log(nodeKey)
+
+	ref1 := Ref{HashArray{nodeKey}}
+	ref1Dat := encoder.Serialize(ref1)
+	ref1Key := c.Save(refSchKey, ref1Dat)
+	t.Log(ref1Key)
+
+	ref2 := Ref{HashArray{nodeKey}}
+	ref2Dat := encoder.Serialize(ref2)
+	ref2Key := c.Save(refSchKey, ref2Dat)
+	t.Log(ref2Key)
+
+	ref3 := Ref{HashArray{nodeKey}}
+	ref3Dat := encoder.Serialize(ref3)
+	ref3Key := c.Save(refSchKey, ref3Dat)
+	t.Log(ref3Key)
+
+}

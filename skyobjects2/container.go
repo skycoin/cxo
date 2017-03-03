@@ -11,10 +11,15 @@ import (
 
 // Container contains skyobjects.
 type Container struct {
-	ds      *data.DB
-	rootKey cipher.SHA256
-	rootSeq uint64
-	schemas map[cipher.SHA256]string
+	ds      *data.DB                 // Data source.
+	rootKey cipher.SHA256            // Key of latest root object.
+	rootSeq uint64                   // Sequence number of latest root object.
+	schemas map[cipher.SHA256]string // List of avaliable schemas.
+
+	// Keys used for storing/retrieving specific object types.
+	// NO NOT MODIFY.
+	_rootType   cipher.SHA256
+	_schemaType cipher.SHA256
 }
 
 // NewContainer creates a new skyobjects container.
@@ -23,20 +28,22 @@ func NewContainer(ds *data.DB) (c *Container) {
 		ds:      ds,
 		schemas: make(map[cipher.SHA256]string),
 	}
-	// TODO: Register default schemas in container.
+	c._rootType = cipher.SumSHA256(encoder.Serialize(RootObject{}))
+	c._schemaType = cipher.SumSHA256(encoder.Serialize(Schema{}))
 	return
 }
 
 // SetDB sets a new DB for container.
 // Member values of the container will be changed appropriately.
-func (c *Container) SetDB(*data.DB) error {
-	// TODO: Implement.
+func (c *Container) SetDB(ds *data.DB) error {
+	// TODO: Implement and complete!!!!!!!!!!
+	c.ds = ds
 	return nil
 }
 
 // Save saves an object into container.
 func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
-	// TODO: Special cases for RootObject and HashArray.
+	// TODO: Special cases for RootObject.
 	h := href{SchemaKey: schemaKey, Data: data}
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
 	return
@@ -46,7 +53,7 @@ func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA25
 func (c *Container) SaveSchema(object interface{}) (schemaKey cipher.SHA256) {
 	schema := ReadSchema(object)
 	schemaData := encoder.Serialize(schema)
-	h := href{SchemaKey: _schemaType, Data: schemaData}
+	h := href{SchemaKey: c._schemaType, Data: schemaData}
 	schemaKey = c.ds.AddAutoKey(encoder.Serialize(h))
 
 	// Append data to c.schemas
@@ -82,7 +89,7 @@ func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e e
 	if e != nil {
 		return
 	}
-	if dbSchemaKey != _schemaType {
+	if dbSchemaKey != c._schemaType {
 		e = fmt.Errorf("is not Schema type")
 		return
 	}
@@ -99,11 +106,56 @@ func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) (objKeys []cipher.SH
 	return c.ds.Where(query)
 }
 
+// GetDescendants gets all keys of descendants of object with specified key.
+// Boolean value:
+// * TRUE: We have a copy of this object in container.
+// * FALSE: We don't have a copy of this object in container.
+func (c *Container) GetDescendants(key cipher.SHA256) (dMap map[cipher.SHA256]bool) {
+	dMap = make(map[cipher.SHA256]bool)
+	c.getDescendants(key, dMap)
+	return
+}
+
+func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]bool) {
+	// Get object from container.
+	schKey, data, e := c.Get(key)
+	if e != nil {
+		fmt.Println(e)
+		dMap[key] = false
+		return
+	}
+	dMap[key] = true
+	// Get schema of object.
+	sch, e := c.GetSchemaOfKey(schKey)
+	if e != nil {
+		fmt.Println(e)
+		dMap[key] = false
+		return
+	}
+	// Iterate through fields of object.
+	for _, field := range sch.Fields {
+		// Continue if no references in field.
+		if field.Type != "HashArray" && field.Type != "hasharray" {
+			continue
+		}
+		// Recursively find more references.
+		var keyArray []cipher.SHA256
+		e := encoder.DeserializeField(data, sch.Fields, field.Name, &keyArray)
+		if e != nil {
+			fmt.Println(e)
+			return
+		}
+		for _, k := range keyArray {
+			c.getDescendants(k, dMap)
+		}
+	}
+}
+
 // GetReferencesFor gets a list of objects that reference the specified object.
 // Returns a map of:
 // * Key: key of object stored
 // * Value: schemaKey of object stored
-func (c *Container) GetReferencesFor(schemaKey cipher.SHA256, objData []byte) (refMap map[cipher.SHA256]cipher.SHA256) {
+func (c *Container) GetReferencesFor(key cipher.SHA256) (refMap map[cipher.SHA256]cipher.SHA256) {
 	refMap = make(map[cipher.SHA256]cipher.SHA256)
 	// TODO: Implement.
 	return

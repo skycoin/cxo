@@ -13,8 +13,11 @@ type RootObject struct {
 // Boolean value:
 // * TRUE: We have a copy of this object in container.
 // * FALSE: We don't have a copy of this object in container.
-func (r *RootObject) GetDescendants(c *Container) (desMap map[cipher.SHA256]bool) {
-	desMap = make(map[cipher.SHA256]bool)
+func (r *RootObject) GetDescendants(c *Container) (dMap map[cipher.SHA256]bool) {
+	dMap = make(map[cipher.SHA256]bool)
 	// TODO: Implement.
+	for _, key := range r.Children {
+		c.getDescendants(key, dMap)
+	}
 	return
 }
