@@ -25,9 +25,9 @@ type Config struct {
 
 	// Known is a list of known addresses to subscribe to
 	Known []string
-	Debug bool
-	Name  string
-	Ping  time.Duration
+	Debug bool          //show debug logs
+	Name  string        // name of the node, that used as log prefix
+	Ping  time.Duration // ping interval
 
 	// RPC
 	RPC        bool   // enable/disabel rpc
@@ -36,6 +36,7 @@ type Config struct {
 	RPCMax     int    // max RPC connections
 }
 
+// NewConfig creates Config filled down with default values
 func NewConfig() Config {
 	return Config{
 		Config: gnet.NewConfig(),
@@ -48,6 +49,9 @@ func NewConfig() Config {
 	}
 }
 
+// A Node represents P2P connections pool with RPC and list of known
+// hosts to connect to. It automatically fetch latest root object,
+// accept connections and send/receive objects
 type Node struct {
 	Logger
 	conf Config
@@ -59,6 +63,8 @@ type Node struct {
 	done chan struct{}
 }
 
+// NewNode creates Node with given config and DB. I given database is nil
+// then it panics
 func NewNode(conf Config, db *data.DB) *Node {
 	if db == nil {
 		panic("NewNode has got nil database")
@@ -76,6 +82,7 @@ func NewNode(conf Config, db *data.DB) *Node {
 	}
 }
 
+// Start is used to launch the Node. The Start is non-blocking
 func (n *Node) Start() (err error) {
 	n.Debug("[DBG] starting node")
 	n.quit, n.done = make(chan struct{}), make(chan struct{})
@@ -110,6 +117,7 @@ func (n *Node) Start() (err error) {
 	return
 }
 
+// sned all hashes from db we have to given connection
 func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
 	n.Debug("[DBG] send everything we have to ", gc.Addr())
 	n.db.Range(func(k cipher.SHA256) {
@@ -117,6 +125,7 @@ func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
 	})
 }
 
+// handling loop
 func (n *Node) handle(quit, done chan struct{}) {
 	n.Debug("[DBG] start handling events")
 	var (
@@ -157,6 +166,7 @@ func (n *Node) handle(quit, done chan struct{}) {
 	}
 }
 
+// connect to list of known hosts
 func (n *Node) connectToKnown(quit chan struct{}) {
 	n.Debug("[DBG] connecting to know hosts")
 	for _, a := range n.conf.Known {
@@ -167,6 +177,7 @@ func (n *Node) connectToKnown(quit chan struct{}) {
 	}
 }
 
+// Close is used to shutdown the Node
 func (n *Node) Close() {
 	n.Debug("[DBG] closing node...")
 	close(n.quit)

@@ -23,6 +23,7 @@ import (
 //                                      }
 //
 
+// A RPC is used for Node internals
 type RPC struct {
 	log    Logger
 	events chan func(*Node)
@@ -31,6 +32,7 @@ type RPC struct {
 	done chan struct{}
 }
 
+// NewRPC is used for Node internals
 func NewRPC(chanSize int, log Logger) *RPC {
 	return &RPC{
 		log:    log,
@@ -79,6 +81,7 @@ func (r *RPC) close() {
 	r.log.Debug("[DBG] RPC was closed")
 }
 
+// Connect is remote procedure
 func (r *RPC) Connect(address string, _ *struct{}) error {
 	err := make(chan error)
 	r.events <- func(node *Node) {
@@ -92,6 +95,7 @@ func (r *RPC) Connect(address string, _ *struct{}) error {
 	return <-err
 }
 
+// Disconnect is remote procedure
 func (r *RPC) Disconnect(address string, _ *struct{}) error {
 	err := make(chan error)
 	r.events <- func(node *Node) {
@@ -109,11 +113,13 @@ func (r *RPC) Disconnect(address string, _ *struct{}) error {
 	return <-err
 }
 
+// A ListReply is reply to RPC-client when he calls List
 type ListReply struct {
 	List []string
-	Err  error
+	Err  error // always nil and used for internals
 }
 
+// List in remote procedure
 func (r *RPC) List(_ struct{}, reply *ListReply) error {
 	result := make(chan ListReply)
 	r.events <- func(node *Node) {
@@ -135,12 +141,14 @@ func (r *RPC) List(_ struct{}, reply *ListReply) error {
 	return nil
 }
 
+// InfoReplry is reply to RPC-client when he calls Info
 type InfoReply struct {
 	Address string
 	Stat    data.Stat
 	Err     error
 }
 
+// Info is a remote procedure
 func (r *RPC) Info(_ struct{}, reply *InfoReply) error {
 	result := make(chan InfoReply)
 	r.events <- func(node *Node) {
