@@ -9,11 +9,17 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+type href struct {
+	SchemaKey cipher.SHA256
+	Data      []byte
+}
+
 // Container contains skyobjects.
 type Container struct {
 	ds      *data.DB                 // Data source.
 	rootKey cipher.SHA256            // Key of latest root object.
 	rootSeq uint64                   // Sequence number of latest root object.
+	rootTS  int64                    // Timestamp of latest root object.
 	schemas map[cipher.SHA256]string // List of avaliable schemas.
 
 	// Keys used for storing/retrieving specific object types.
@@ -47,6 +53,25 @@ func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA25
 	h := href{SchemaKey: schemaKey, Data: data}
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
 	return
+}
+
+// SaveObject also saves an object into container, but Serialises for you.
+func (c *Container) SaveObject(schemaKey cipher.SHA256, obj interface{}) (key cipher.SHA256) {
+	data := encoder.Serialize(obj)
+	h := href{SchemaKey: schemaKey, Data: data}
+	key = c.ds.AddAutoKey(encoder.Serialize(h))
+	return
+}
+
+// SaveRoot saves a root object (if latest).
+func (c *Container) SaveRoot(newRoot RootObject) bool {
+	if newRoot.TimeStamp < c.rootTS {
+		return false
+	}
+	c.rootTS = newRoot.TimeStamp
+	c.rootSeq = newRoot.Sequence
+	c.rootKey = c.SaveObject(c._rootType, newRoot)
+	return true
 }
 
 // SaveSchema saves a schema to container.
@@ -135,11 +160,11 @@ func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]boo
 	// Iterate through fields of object.
 	for _, field := range sch.Fields {
 		// Continue if no references in field.
-		if field.Type != "HashArray" && field.Type != "hasharray" {
+		if field.Type != "hasharray" {
 			continue
 		}
 		// Recursively find more references.
-		var keyArray []cipher.SHA256
+		var keyArray HashArray
 		encoder.DeserializeField(data, sch.Fields, field.Name, &keyArray)
 		for _, k := range keyArray {
 			c.getDescendants(k, dMap)

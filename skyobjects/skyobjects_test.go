@@ -1,10 +1,10 @@
 package skyobjects
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -63,15 +63,15 @@ func TestReferencing(t *testing.T) {
 	nodeDat := encoder.Serialize(node)
 	nodeKey := c.Save(nodeSchKey, nodeDat)
 
-	ref1 := Ref{"1", []cipher.SHA256{nodeKey}}
+	ref1 := Ref{"1", NewArray(nodeKey)}
 	ref1Dat := encoder.Serialize(ref1)
 	c.Save(refSchKey, ref1Dat)
 
-	ref2 := Ref{"2", []cipher.SHA256{nodeKey}}
+	ref2 := Ref{"2", NewArray(nodeKey)}
 	ref2Dat := encoder.Serialize(ref2)
 	c.Save(refSchKey, ref2Dat)
 
-	ref3 := Ref{"3", []cipher.SHA256{nodeKey}}
+	ref3 := Ref{"3", NewArray(nodeKey)}
 	ref3Dat := encoder.Serialize(ref3)
 	c.Save(refSchKey, ref3Dat)
 
@@ -91,5 +91,41 @@ type Child struct {
 }
 
 func TestGetDescendants(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	_childType := c.SaveSchema(Child{})
 
+	// Make some grandchildren.
+	var grandchildrenKeys HashArray
+	for i := 0; i < 20; i++ {
+		grandchild := Child{Name: "Grandchild" + strconv.Itoa(i), Age: 20}
+		grandchildrenKeys = append(grandchildrenKeys, c.SaveObject(_childType, grandchild))
+	}
+
+	// Make some children.
+	var childrenKeys HashArray
+	for i := 0; i < 5; i++ {
+		child := Child{Name: "Child" + strconv.Itoa(i), Age: 40}
+		for j := i * 4; j < i*4+4; j++ {
+			child.Children = append(child.Children, grandchildrenKeys[j])
+		}
+		childrenKeys = append(childrenKeys, c.SaveObject(_childType, child))
+	}
+
+	// Make root.
+	root := NewRoot(0)
+	root.AddChildren(childrenKeys...)
+	c.SaveRoot(root)
+
+	dMap := root.GetDescendants(c)
+	t.Logf("Number of root Descendants: %d", len(dMap))
+	if n := len(dMap); n != 25 {
+		t.Errorf("expected number of descendants: %d, I got: %d", 25, n)
+	}
+
+	for k, v := range dMap {
+		if v == false {
+			t.Errorf("object of key '%s' should exist.", k.Hex())
+		}
+		t.Logf("key = %s, exist = %v", k.Hex(), v)
+	}
 }
