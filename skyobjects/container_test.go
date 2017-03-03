@@ -9,7 +9,7 @@ import (
 // TestItem represents a test item.
 type TestItem struct {
 	A string
-	B int
+	B int64
 }
 
 func TestStoreAndRetrieve(t *testing.T) {
