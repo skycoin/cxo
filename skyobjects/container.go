@@ -12,15 +12,14 @@ import (
 
 // Container represents a SkyObjects container.
 type Container struct {
-	// Schema  ISchemaManager
-	ds      data.IDataSource
+	ds      *data.DB
 	schemas []schemaRef
 	root    cipher.SHA256
 	rootSeq uint64
 }
 
 // NewContainer creates a new SkyObjects container.
-func NewContainer(ds data.IDataSource) (c *Container) {
+func NewContainer(ds *data.DB) (c *Container) {
 	c = &Container{ds: ds}
 	c.RegisterSchema(RootReference{}, ObjectReference{}, ArrayReference{})
 	newRootReference([]cipher.SHA256{}, []cipher.SHA256{}, 1).save(c)
@@ -83,7 +82,7 @@ func (c *Container) Get(key cipher.SHA256) IReference {
 	if len(ref.Data) == 0 {
 		return nil
 	}
-	switch c.Schema.GetOfKey(ref.Type).Name {
+	switch c.GetSchemaOfKey(ref.Type).Name {
 	case "ArrayReference":
 		return &ArrayReference{key, ref.Type, ref.Data, nil}
 	case "ArrayRoot":
@@ -199,18 +198,18 @@ func (c *Container) getRootRemoved() (values []IReference) {
 	return
 }
 
-func (c *Container) dbSave(ds data.IDataSource, schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
+func (c *Container) dbSave(ds *data.DB, schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
 	h := href{Type: schemaKey, Data: data}
 	key = ds.AddAutoKey(encoder.Serialize(h))
 	return
 }
 
-func (c *Container) dbSaveSchema(ds data.IDataSource, data []byte) (schemaKey cipher.SHA256) {
+func (c *Container) dbSaveSchema(ds *data.DB, data []byte) (schemaKey cipher.SHA256) {
 	h := href{Type: _schemaType, Data: data}
 	return ds.AddAutoKey(encoder.Serialize(h))
 }
 
-func (c *Container) dbGet(ds data.IDataSource, key cipher.SHA256) (ref *href) {
+func (c *Container) dbGet(ds *data.DB, key cipher.SHA256) (ref *href) {
 	ref = &href{}
 	data, ok := ds.Get(key)
 	if ok == false {

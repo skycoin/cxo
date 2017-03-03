@@ -4,301 +4,270 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"net/rpc"
 	"os"
-	"os/user"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/peterh/liner"
 )
 
-const (
-	DEFAULT_CXOD_ADDR = "http://127.0.0.1:6481"
-	DEFAULT_TIMEOUT   = 0
+//
+// "rpc.Connect",    "127.0.0.1:9090", *error
+// "rpc.Disconnect", "127.0.0.1:9090", *error
+// "rpc.List",       struct{}{},       *struct{List []string, Err error}
+// "rpc.Info",       struct{}{}.       *struct{
+//                                         Address string,
+//                                         Stat    struct{
+//                                             Total  int
+//                                             Memory int
+//                                         },
+//                                         Err error,
+//                                      }
+//
 
-	HISTORY_FILE   = ".cxo_cli_history"
-	ERROR_BODY_LEN = 500
+var (
+	ErrUnknowCommand    = errors.New("unknown command")
+	ErrMisisngArgument  = errors.New("missing argument")
+	ErrTooManyArguments = errors.New("too many arguments")
+
+	commands = []string{
+		"list",
+		"connect",
+		"disconnect",
+		"info",
+		"quit",
+		"exit",
+	}
 )
 
-var ErrUnknownCommand = errors.New("unknown command")
-
 func main() {
-	// initialize logger
-	log.SetFlags(log.LstdFlags)
+	var (
+		address string
+		execute string
 
-	// exit code
-	var code int = 0
+		client *rpc.Client
+		err    error
+
+		line      *liner.State
+		cmd       string
+		terminate bool
+
+		help bool
+		code int
+	)
+
 	defer func() { os.Exit(code) }()
 
-	// flags
-	var (
-		addr    string
-		timeout time.Duration
-		help    bool
-		debug   bool
-		execute string
-	)
-	// parse command line flags
-	flag.StringVar(&addr,
+	flag.StringVar(&address,
 		"a",
-		DEFAULT_CXOD_ADDR,
-		"server address")
-	flag.DurationVar(&timeout,
-		"t",
-		DEFAULT_TIMEOUT,
-		"request/response timeout")
+		"",
+		"rpc address")
+	flag.StringVar(&execute,
+		"e",
+		"",
+		"execute commant and exit")
+
 	flag.BoolVar(&help,
 		"h",
 		false,
 		"show help")
-	flag.BoolVar(&debug,
-		"d",
-		false,
-		"print debug logs")
-	flag.StringVar(&execute,
-		"e",
-		"",
-		"execute given command and exit")
+
 	flag.Parse()
 
-	// take a look at the flags
 	if help {
+		fmt.Printf("Usage %s <flags>\n", os.Args[0])
 		flag.PrintDefaults()
 		return
 	}
 
-	var (
-		client *Client
-		err    error
-	)
+	if address == "" {
+		fmt.Fprintln(os.Stderr, "empty address")
+		code = 1
+		return
+	}
 
-	// http client
-	client = NewClient(addr, debug, timeout)
+	if client, err = rpc.Dial("tcp", address); err != nil {
+		fmt.Fprintln(os.Stderr, "error creating rpc-clinet:", err)
+		code = 1
+		return
+	}
+	defer client.Close()
 
 	if execute != "" {
-		if _, err = client.executeCommand(execute, nil); err != nil {
-			log.Print(err)
+		_, err = executeCommand(execute, client, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			code = 1
 		}
 		return
 	}
 
-	// liner
-	var line = liner.NewLiner()
+	line = liner.NewLiner()
 	defer line.Close()
 
-	readHistory(line)
-	defer storeHistory(line)
-
 	line.SetCtrlCAborts(true)
-	line.SetCompleter(autoComplite)
-	line.SetTabCompletionStyle(liner.TabPrints)
 
-	log.Print("starting client")
-	log.Print("address:    ", addr)
-	log.Print("timeout:    ", humanDuration(timeout, "no limits"))
-	log.Print("debug logs: ", debug)
+	line.SetCompleter(func(line string) (c []string) {
+		for _, n := range commands {
+			if strings.HasPrefix(n, strings.ToLower(line)) {
+				c = append(c, n)
+			}
+		}
+		return
+	})
+
+	// rpompt loop
 
 	fmt.Println("enter 'help' to get help")
-
-	var inpt string
-	var terminate bool
-
-	// prompt loop
 	for {
-		inpt, err = line.Prompt("> ")
-		if err != nil {
-			log.Print("fatal: ", err)
+		cmd, err = line.Prompt("> ")
+		if err != nil && err != liner.ErrPromptAborted {
+			fmt.Fprintln(os.Stderr, "fatal error:", err)
 			code = 1
 			return
 		}
-		// TODO
-		terminate, err = client.executeCommand(inpt, line)
-		if err != nil && err != ErrUnknownCommand {
-			log.Println(err)
+		terminate, err = executeCommand(cmd, client, line)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
 		}
 		if terminate {
 			return
 		}
+		line.AppendHistory(cmd)
 	}
+
 }
 
-func (client *Client) executeCommand(inpt string,
+func args(ss []string) (string, error) {
+	switch len(ss) {
+	case 0, 1:
+		return "", ErrMisisngArgument
+	case 2:
+		return ss[1], nil
+	default:
+	}
+	return "", ErrTooManyArguments
+}
+
+func executeCommand(command string, client *rpc.Client,
 	line *liner.State) (terminate bool, err error) {
 
-	inpt = strings.TrimSpace(strings.ToLower(inpt))
-	switch {
-
-	case strings.HasPrefix(inpt, "list subscriptions"):
-		err = client.listSubscriptions()
-
-	case strings.HasPrefix(inpt, "list subscribers"):
-		err = client.listSubscribers()
-
-	case strings.HasPrefix(inpt, "list"):
-		fmt.Println(`list what?
-	- list subscriptions
-	- list subscribers`)
-		err = ErrUnknownCommand
+	ss := strings.Fields(command)
+	if len(ss) == 0 {
 		return
-
-	case strings.HasPrefix(inpt, "add subscription"):
-		err = client.addSubscription(trim(inpt, "add subscription"))
-
-	case strings.HasPrefix(inpt, "add"):
-		fmt.Println(`do you mean 'add subscription'?`)
-		err = ErrUnknownCommand
-		return
-
-	case strings.HasPrefix(inpt, "remove subscription"):
-		err = client.removeSubscription(trim(inpt, "remove subscription"))
-
-	case strings.HasPrefix(inpt, "remove subscriber"):
-		err = client.removeSubscriber(trim(inpt, "remove subscriber"))
-
-	case strings.HasPrefix(inpt, "remove"):
-		fmt.Println(`remove what?
-	- remove subscription
-	- remove subscriber`)
-		err = ErrUnknownCommand
-		return
-
-	case strings.HasPrefix(inpt, "stat"):
-		err = client.getStat()
-
-	case strings.HasPrefix(inpt, "info"):
-		err = client.getNodeInfo()
-
-	case strings.HasPrefix(inpt, "close"):
-		err = client.closeDaemon()
-
-	case strings.HasPrefix(inpt, "help"):
-		printHelp()
-
-	case strings.HasPrefix(inpt, "exit"):
+	}
+	switch ss[0] {
+	case "list":
+		err = list(client)
+	case "connect":
+		err = connect(client, ss)
+	case "disconnect":
+		err = disconnect(client, ss)
+	case "info":
+		err = info(client)
+	case "help":
+		showHelp()
+	case "quit":
 		fallthrough
-
-	case strings.HasPrefix(inpt, "quit"):
-		fmt.Println("cya")
+	case "exit":
 		terminate = true
+		fmt.Println("cya")
 		return
-
-	case inpt == "":
-		return // do noting properly
-
 	default:
-		fmt.Println("unknown command:", inpt)
-		err = ErrUnknownCommand
-		return // no history
-
-	}
-	if line != nil {
-		line.AppendHistory(inpt)
+		err = ErrUnknowCommand
+		return
 	}
 	return
 }
 
-// utility, printf and break line
-func printf(format string, args ...interface{}) {
-	fmt.Println(fmt.Sprintf(format, args...))
-}
+func showHelp() {
+	fmt.Println(`
 
-// historyFilePath returns path to ~/HISTORY_FILE or error if any
-func historyFilePath() (string, error) {
-	usr, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(usr.HomeDir, HISTORY_FILE), nil
-}
-
-// readHistory from history file
-func readHistory(line *liner.State) {
-	// don't report errors
-	pth, err := historyFilePath()
-	if err != nil {
-		return
-	}
-	if fl, err := os.Open(pth); err == nil {
-		line.ReadHistory(fl)
-		fl.Close()
-	}
-}
-
-// storeHistory to history file
-func storeHistory(line *liner.State) {
-	pth, err := historyFilePath()
-	if err != nil {
-		log.Print("error obtaining history file path: ", err)
-		return
-	}
-	fl, err := os.Create(pth)
-	if err != nil {
-		log.Print("error creating histrory file: ", err)
-		return
-	}
-	defer fl.Close()
-	line.WriteHistory(fl)
-}
-
-var complets = []string{
-	"list subscriptions ",
-	"list subscribers ",
-	"list ",
-	"add subscription ",
-	"remove subscription ",
-	"remove subscriber",
-	"stat ",
-	"info",
-	"close",
-	"help ",
-	"exit ",
-	"quit ",
-}
-
-func autoComplite(line string) (cm []string) {
-	if line == "" {
-		return complets
-	}
-	for _, c := range complets {
-		if strings.HasPrefix(c, strings.ToLower(line)) {
-			cm = append(cm, c)
-		}
-	}
-	return
-}
-
-func printHelp() {
-	fmt.Print(`Available commands:
-
-	list subscriptions
-		list all subscriptions
-	list subscribers
-		list all subscribers
-	add subscription <address> [desired public key]
-		add subscription to given address, the public key is optional
-	remove subscription <id or address>
-		remove subscription by id or address
-	remove subscriber <id or address>
-		remove subscriber by id or address
-	stat
-		get statistic (total objects, memory) of all objects
+	list
+		list connections
+	connect <address>
+		add connection to given address
+	disconnect	<address>
+		disconnect from given address
 	info
-		print node id and address
-	close
-		terminate daemon
+		obtain information and statistic about node
 	help
 		show this help message
-	exit or
-	quit
-		quit cli
+	quit or exit
+		leave the cli
+
 `)
 }
 
-// trim cmd prefix from inpt and trim spaces
-func trim(inpt string, cmd string) string {
-	return strings.TrimSpace(strings.TrimPrefix(inpt, cmd))
+func list(client *rpc.Client) (err error) {
+	var reply = new(ListReply)
+	if err = client.Call("rpc.List", struct{}{}, reply); err != nil {
+		return
+	}
+	if len(reply.List) == 0 {
+		fmt.Println("  there aren't connections")
+		return
+	}
+	for _, c := range reply.List {
+		fmt.Println("  -", c)
+	}
+	return
+}
 
+func info(client *rpc.Client) (err error) {
+	var reply = new(InfoReply)
+	if err = client.Call("rpc.Info", struct{}{}, reply); err != nil {
+		return
+	}
+	fmt.Printf(`  Address:       %s
+  Total objects: %d
+  Memory:        %d
+`,
+		reply.Address,
+		reply.Stat.Total,
+		reply.Stat.Memory)
+	return
+
+}
+
+func connect(client *rpc.Client, ss []string) (err error) {
+	var address string
+	if address, err = args(ss); err != nil {
+		return
+	}
+	if err = client.Call("rpc.Connect", address, &struct{}{}); err != nil {
+		return
+	}
+	fmt.Println("connected")
+	return
+}
+
+func disconnect(client *rpc.Client, ss []string) (err error) {
+	var address string
+	if address, err = args(ss); err != nil {
+		return
+	}
+	if err = client.Call("rpc.Disconnect", address, &struct{}{}); err != nil {
+		return
+	}
+	fmt.Println("disconnected")
+	return
+}
+
+//
+// types
+//
+
+type ListReply struct {
+	List []string
+	Err  error
+}
+
+type InfoReply struct {
+	Address string
+	Stat    struct {
+		Total  int
+		Memory int
+	}
+	Err error
 }
