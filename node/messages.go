@@ -14,6 +14,7 @@ func init() {
 	gnet.VerifyMessages()
 }
 
+// A Ping is used to keep conections alive
 type Ping struct{}
 
 func (p *Ping) Handle(ctx *gnet.MessageContext, _ interface{}) (_ error) {
@@ -21,12 +22,14 @@ func (p *Ping) Handle(ctx *gnet.MessageContext, _ interface{}) (_ error) {
 	return
 }
 
+// A Pong is just reply for Ping
 type Pong struct{}
 
 func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
 	return
 }
 
+// Announce is used to notify remote node about data the node has got
 type Announce struct {
 	Hash cipher.SHA256
 }
@@ -42,6 +45,7 @@ func (a *Announce) Handle(ctx *gnet.MessageContext,
 	return
 }
 
+// Request is used to request data
 type Request struct {
 	Hash cipher.SHA256
 }
@@ -56,6 +60,7 @@ func (r *Request) Handle(ctx *gnet.MessageContext,
 	return
 }
 
+// Data is a pice of data
 type Data struct {
 	Data []byte
 }
