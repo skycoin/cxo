@@ -9,87 +9,96 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// Container represents a SkyObjects container.
+// Container contains skyobjects.
 type Container struct {
-	ds      *data.DB
-	schemas []schemaRef
-	root    cipher.SHA256
-	rootSeq uint64
+	ds      *data.DB                 // Data source.
+	rootKey cipher.SHA256            // Key of latest root object.
+	rootSeq uint64                   // Sequence number of latest root object.
+	schemas map[cipher.SHA256]string // List of avaliable schemas.
+
+	// Keys used for storing/retrieving specific object types.
+	// NO NOT MODIFY.
+	_rootType   cipher.SHA256
+	_schemaType cipher.SHA256
 }
 
-// NewContainer creates a new SkyObjects container.
+// NewContainer creates a new skyobjects container.
 func NewContainer(ds *data.DB) (c *Container) {
-	c = &Container{ds: ds}
-	c.RegisterSchema(RootReference{}, ObjectReference{}, ArrayReference{})
-	newRootReference([]cipher.SHA256{}, []cipher.SHA256{}, 1).save(c)
+	c = &Container{
+		ds:      ds,
+		schemas: make(map[cipher.SHA256]string),
+	}
+	c._rootType = cipher.SumSHA256(encoder.Serialize(RootObject{}))
+	c._schemaType = cipher.SumSHA256(encoder.Serialize(Schema{}))
 	return
 }
 
-// Store stores an item.
-func (c *Container) Store(ref IReference) IReference {
-	ref.save(c)
-	return ref
+// SetDB sets a new DB for container.
+// Member values of the container will be changed appropriately.
+func (c *Container) SetDB(ds *data.DB) error {
+	// TODO: Implement and complete!!!!!!!!!!
+	c.ds = ds
+	return nil
 }
 
-// StoreToRoot stores item, and sets it as child of root.
-func (c *Container) StoreToRoot(ref IReference) IReference {
-	ref.save(c)
-	keys, deletedKeys := []cipher.SHA256{}, []cipher.SHA256{}
-	if c.rootSeq > 0 {
-		var prevRoot rootObject
-		c.Get(c.root).Deserialize(&prevRoot)
-		keys = prevRoot.Keys
-		deletedKeys = prevRoot.DeletedKeys
-	}
-	keys = append(keys, ref.GetKey())
-	rootRef := newRootReference(keys, deletedKeys, c.rootSeq+1)
-	rootRef.save(c)
-	return ref
+// Save saves an object into container.
+func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
+	// TODO: Special cases for RootObject.
+	h := href{SchemaKey: schemaKey, Data: data}
+	key = c.ds.AddAutoKey(encoder.Serialize(h))
+	return
 }
 
-// RemoveFromRoot removes an item from root.
-func (c *Container) RemoveFromRoot(key cipher.SHA256) error {
-	if c.rootSeq == 0 {
-		return fmt.Errorf("no root avaliable")
-	}
-	var root rootObject
-	c.Get(c.root).Deserialize(&root)
+// SaveSchema saves a schema to container.
+func (c *Container) SaveSchema(object interface{}) (schemaKey cipher.SHA256) {
+	schema := ReadSchema(object)
+	schemaData := encoder.Serialize(schema)
+	h := href{SchemaKey: c._schemaType, Data: schemaData}
+	schemaKey = c.ds.AddAutoKey(encoder.Serialize(h))
 
-	for i, prevKey := range root.Keys {
-		if prevKey == key {
-			// Delete algorithm.
-			root.Keys[len(root.Keys)-1], root.Keys[i] = root.Keys[i], root.Keys[len(root.Keys)-1]
-			root.Keys = root.Keys[:len(root.Keys)-1]
-			root.DeletedKeys = append(root.DeletedKeys, key)
-
-			rootRef := newRootReference(root.Keys, root.DeletedKeys, c.rootSeq+1)
-			rootRef.save(c)
-			return nil
-		}
-	}
-	return fmt.Errorf("item of key '%s' is not a child of root, or is already deleted", key.Hex())
+	// Append data to c.schemas
+	c.schemas[schemaKey] = schema.Name
+	return
 }
 
-// Delete deletes an item from container.
-func (c *Container) Delete(key cipher.SHA256) {
-	c.ds.Remove(key)
+// Get retrieves a stored object.
+func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte, e error) {
+	hrefData, ok := c.ds.Get(key)
+	if ok == false {
+		e = fmt.Errorf("no object found with key '%s'", key.Hex())
+		return
+	}
+	var h href
+	encoder.DeserializeRaw(hrefData, &h) // Shouldn't create an error, everything stored in db is of type href.
+	schemaKey, data = h.SchemaKey, h.Data
+	return
 }
 
-// Get gets an item using a key.
-func (c *Container) Get(key cipher.SHA256) IReference {
-	ref := c.dbGet(c.ds, key)
-	if len(ref.Data) == 0 {
-		return nil
+// GetAllSchemas returns a list of all schemas in container.
+func (c *Container) GetAllSchemas() (schemas []*Schema) {
+	for k := range c.schemas {
+		schema, _ := c.GetSchemaOfKey(k)
+		schemas = append(schemas, schema)
 	}
-	switch c.GetSchemaOfKey(ref.Type).Name {
-	case "ArrayReference":
-		return &ArrayReference{key, ref.Type, ref.Data, nil}
-	case "ArrayRoot":
-	}
-	return &ObjectReference{key, ref.Type, ref.Data, nil}
+	return
 }
 
-// GetAllOfSchema gets all keys of objects of specified schemaKey.
+// GetSchemaOfKey gets the schema from schemaKey.
+func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e error) {
+	dbSchemaKey, data, e := c.Get(schemaKey)
+	if e != nil {
+		return
+	}
+	if dbSchemaKey != c._schemaType {
+		e = fmt.Errorf("is not Schema type")
+		return
+	}
+	schema = &Schema{}
+	e = encoder.DeserializeRaw(data, schema)
+	return
+}
+
+// GetAllOfSchema gets all keys of objects with specified schemaKey.
 func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
 		return bytes.Compare(schemaKey[:32], data[:32]) == 0
@@ -97,56 +106,70 @@ func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	return c.ds.Where(query)
 }
 
-// GetRootChildren gets all the keys of the current root's children.
-func (c *Container) GetRootChildren() (values []IReference) {
-	var prevRoot rootObject
-	c.Get(c.root).Deserialize(&prevRoot)
-	for _, key := range prevRoot.Keys {
-		values = append(values, c.Get(key))
-	}
+// GetDescendants gets all keys of descendants of object with specified key.
+// Boolean value:
+// * TRUE: We have a copy of this object in container.
+// * FALSE: We don't have a copy of this object in container.
+func (c *Container) GetDescendants(key cipher.SHA256) (dMap map[cipher.SHA256]bool) {
+	dMap = make(map[cipher.SHA256]bool)
+	c.getDescendants(key, dMap)
 	return
 }
 
-// GetRootDescendants gets all the root descendants into a map.
-// The map value is a boolean of whether we have the referenced object or not.
-func (c *Container) GetRootDescendants() (descendants map[cipher.SHA256]IReference) {
-	descendants = make(map[cipher.SHA256]IReference)
-	for _, ref := range c.GetRootChildren() {
-		ref.GetDescendants(c, descendants)
+func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]bool) {
+	// Get object from container.
+	schKey, data, e := c.Get(key)
+	if e != nil {
+		fmt.Println(e)
+		dMap[key] = false
+		return
 	}
-	return
+	dMap[key] = true
+	// Get schema of object.
+	sch, e := c.GetSchemaOfKey(schKey)
+	if e != nil {
+		fmt.Println(e)
+		dMap[key] = false
+		return
+	}
+	// Iterate through fields of object.
+	for _, field := range sch.Fields {
+		// Continue if no references in field.
+		if field.Type != "HashArray" && field.Type != "hasharray" {
+			continue
+		}
+		// Recursively find more references.
+		var keyArray []cipher.SHA256
+		encoder.DeserializeField(data, sch.Fields, field.Name, &keyArray)
+		for _, k := range keyArray {
+			c.getDescendants(k, dMap)
+		}
+	}
 }
 
-// GetRootTimestamp returns the time the root object was updated.
-func (c *Container) GetRootTimestamp() int64 {
-	var root rootObject
-	c.Get(c.root).Deserialize(&root)
-	return root.Timestamp
-}
-
-// Inspect prints information about the container.
-func (c *Container) Inspect() {
+// GetReferencesFor gets a list of objects that reference the specified object.
+func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
-		hr := href{}
-		encoder.DeserializeRaw(data, &hr)
-		smKey := hr.Type
-		smKey.Set(data[:32])
-
-		var sm = Schema{}
-		if smKey == _schemaType {
-			encoder.DeserializeRaw(hr.Data, &sm)
-			fmt.Println("[Schema] ", sm)
-		} else {
-			schemaData, _ := c.ds.Get(smKey)
-			shr := href{}
-			encoder.DeserializeRaw(schemaData, &shr)
-			if shr.Type != _schemaType {
-				panic("Reference mast be an schema type")
+		var h href
+		encoder.DeserializeRaw(data, &h)
+		schema, e := c.GetSchemaOfKey(h.SchemaKey)
+		if e != nil {
+			fmt.Println(e)
+			return false
+		}
+		for _, field := range schema.Fields {
+			if field.Type != "hasharray" {
+				continue
 			}
-			encoder.DeserializeRaw(shr.Data, &sm)
-			fmt.Println("\t\t\t\t\t\t\t\tObject: ", sm)
+			var keyArray HashArray
+			encoder.DeserializeField(h.Data, schema.Fields, field.Name, &keyArray)
+			for _, k := range keyArray {
+				if k == objKey {
+					return true
+				}
+			}
 		}
 		return false
 	}
-	c.ds.Where(query)
+	return c.ds.Where(query)
 }

@@ -1,9 +1,6 @@
 package skyobjects
 
 import (
-
-	// "bytes"
-
 	"reflect"
 	"strings"
 
@@ -11,8 +8,10 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// cipher.SHA256 <-- Used for storing schemas in container.
-var _schemaType = cipher.SumSHA256(encoder.Serialize(Schema{}))
+type schemaType struct {
+	Name string
+	Key  cipher.SHA256
+}
 
 // Schema represents the type of SkyObject.
 type Schema struct {
@@ -55,5 +54,4 @@ func getField(field reflect.StructField, fieldValue reflect.Value) encoder.Struc
 		Tag:  string(field.Tag),
 		Kind: uint32(fieldValue.Type().Kind()),
 	}
-
 }
