@@ -2,166 +2,111 @@ package node
 
 import (
 	"net"
-	"net/rpc"
-
-	"golang.org/x/net/netutil"
 
 	"github.com/skycoin/cxo/data"
 )
 
-//
-// "rpc.Connect",    "127.0.0.1:9090", *struct{}
-// "rpc.Disconnect", "127.0.0.1:9090", *struct{}
-// "rpc.List",       struct{}{},       *struct{List []string, Err error}
-// "rpc.Info",       struct{}{}.       *struct{
-//                                         Address string,
-//                                         Stat    struct{
-//                                             Total  int
-//                                             Memory int
-//                                         },
-//                                         Err error,
-//                                      }
-//
+// An Event represent RPC event
+type Event func()
 
-type RPC struct {
-	log    Logger
-	events chan func(*Node)
-
-	quit chan struct{}
-	done chan struct{}
-}
-
-func NewRPC(chanSize int, log Logger) *RPC {
-	return &RPC{
-		log:    log,
-		events: make(chan func(*Node), chanSize),
-		quit:   make(chan struct{}),
-		done:   make(chan struct{}),
-	}
-}
-
-func (r *RPC) start(address string, max int) (err error) {
-	r.log.Debug("[DBG] start RPC")
-	var l net.Listener
-	if l, err = net.Listen("tcp", address); err != nil {
+// enqueue rpc event
+func (n *Node) enqueueEvent(done <-chan struct{}, evt Event) (err error) {
+	// enquue
+	select {
+	case n.rpce <- evt:
+	case <-n.quit:
+		err = ErrClosed
 		return
 	}
-	r.log.Print("[INF] RPC is listening on ", l.Addr())
-	if max > 0 {
-		l = netutil.LimitListener(l, max)
+	// wait
+	select {
+	case <-done:
+	case <-n.quit:
+		err = ErrClosed
 	}
-	rpc.RegisterName("rpc", r)
-	go rpc.Accept(l)
-	go r.handleQuit(r.quit, r.done, l)
 	return
 }
 
-func (r *RPC) handleQuit(quit, done chan struct{}, l net.Listener) {
-	<-quit
-	l.Close()
-	// drain evenst
-	for {
-		select {
-		case evt := <-r.events:
-			evt(nil)
-		default:
-			close(done)
+// Connect should be called from RPC server. It trying
+// to connect to given address
+func (n *Node) Connect(address string) (err error) {
+	done := make(chan struct{})
+	err = n.enqueueEvent(done, func() {
+		defer close(done)
+		_, err = n.pool.Connect(address)
+	})
+	return
+}
+
+// Disconnect should be called from RPC server. It trying to
+// disconnect from given address
+func (n *Node) Disconnect(address string) (err error) {
+	done := make(chan struct{})
+	err = n.enqueueEvent(done, func() {
+		defer close(done)
+		if gc, ok := n.pool.Addresses[address]; ok {
+			n.pool.Disconnect(gc, ErrManualDisconnect)
 			return
 		}
-	}
+		err = ErrNotFound
+	})
+	return
 }
 
-func (r *RPC) close() {
-	r.log.Debug("[DBG] closing RPC...")
-	close(r.quit)
-	<-r.done
-	r.log.Debug("[DBG] RPC was closed")
+// List should be called from RPC server. The List returns all
+// connections
+func (n *Node) List() (list []string, err error) {
+	done := make(chan struct{})
+	err = n.enqueueEvent(done, func() {
+		close(done)
+		list = make([]string, 0, len(n.pool.Addresses))
+		for a := range n.pool.Addresses {
+			list = append(list, a)
+		}
+	})
+	return
 }
 
-func (r *RPC) Connect(address string, _ *struct{}) error {
-	err := make(chan error)
-	r.events <- func(node *Node) {
-		if node == nil { // for drain
-			err <- ErrClosed
+// Info is for RPC. It returns all useful inforamtions about the node
+// except statistic. I.e. it returns listening address
+func (n *Node) Info() (address string, err error) {
+	done := make(chan struct{})
+	err = n.enqueueEvent(done, func() {
+		defer close(done)
+		var a net.Addr
+		if a, err = n.pool.ListeningAddress(); err != nil {
 			return
 		}
-		_, e := node.pool.Connect(address)
-		err <- e
-	}
-	return <-err
+		address = a.String()
+	})
+	return
 }
 
-func (r *RPC) Disconnect(address string, _ *struct{}) error {
-	err := make(chan error)
-	r.events <- func(node *Node) {
-		if node == nil { // for drain
-			err <- ErrClosed
-			return
-		}
-		if gc, ok := node.pool.Addresses[address]; ok {
-			node.pool.Disconnect(gc, ErrManualDisconnect)
-			err <- nil
-			return
-		}
-		err <- ErrNotFound
-	}
-	return <-err
+// Stat is for RPC. It returns database statistic
+func (n *Node) Stat() (stat data.Stat, err error) {
+	done := make(chan struct{})
+	err = n.enqueueEvent(done, func() {
+		defer close(done)
+		stat = n.db.Stat()
+	})
+	return
 }
 
-type ListReply struct {
-	List []string
-	Err  error
-}
-
-func (r *RPC) List(_ struct{}, reply *ListReply) error {
-	result := make(chan ListReply)
-	r.events <- func(node *Node) {
-		var r ListReply
-		if node == nil { // for drain
-			r.Err = ErrClosed
-		} else {
-			r.List = make([]string, 0, len(node.pool.Addresses))
-			for a := range node.pool.Addresses {
-				r.List = append(r.List, a)
-			}
-		}
-		result <- r
+// Terminate is the same as Close but designed for RPC
+func (n *Node) Terminate() (err error) {
+	if !n.conf.RemoteClose {
+		err = ErrNotAllowed
+		return
 	}
-	*reply = <-result
-	if reply.Err != nil {
-		return reply.Err
+	done := make(chan struct{})
+	err = n.enqueueEvent(done, func() {
+		defer close(done)
+		n.close()
+	})
+	// we will have got ErrClosed from enqueueEvent that
+	// is not actual error
+	if err == ErrClosed {
+		err = nil
 	}
-	return nil
-}
-
-type InfoReply struct {
-	Address string
-	Stat    data.Stat
-	Err     error
-}
-
-func (r *RPC) Info(_ struct{}, reply *InfoReply) error {
-	result := make(chan InfoReply)
-	r.events <- func(node *Node) {
-		var r InfoReply
-		if node == nil { // for drain
-			r.Err = ErrClosed
-		} else {
-			r.Stat = node.db.Stat()
-			if a, e := node.pool.ListeningAddress(); e != nil {
-				r.Err = e
-			} else {
-				r.Address = a.String()
-			}
-		}
-		result <- r
-	}
-	*reply = <-result
-	if reply.Err != nil {
-		if reply.Err == ErrClosed {
-			return ErrClosed
-		}
-		reply.Err = nil
-	}
-	return nil
+	return
 }

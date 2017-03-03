@@ -8,11 +8,13 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
+	"github.com/skycoin/cxo/node/rpc/server"
 )
 
-func getConfig() (nc node.Config) {
+func getConfigs() (nc node.Config, rc server.Config) {
 	// get defaults
 	nc = node.NewConfig()
+	rc = server.NewConfig()
 	//
 	flag.StringVar(&nc.Address,
 		"address",
@@ -73,21 +75,26 @@ func getConfig() (nc node.Config) {
 		nc.Ping,
 		"ping interval (0 = disabled)")
 
-	flag.BoolVar(&nc.RPC,
+	flag.BoolVar(&nc.RemoteClose,
+		"remote-close",
+		nc.RemoteClose,
+		"allow close the node using RPC client")
+
+	flag.BoolVar(&rc.Enable,
 		"rpc",
-		nc.RPC,
+		rc.Enable,
 		"use rpc")
-	flag.IntVar(&nc.RPCEvents,
-		"rpc-events",
-		nc.RPCEvents,
-		"rpc events chan size")
-	flag.StringVar(&nc.RPCAddress,
+	flag.IntVar(&nc.Events, //////////
+		"rpc-events",           /////
+		nc.Events,              ////
+		"rpc events chan size") ///
+	flag.StringVar(&rc.Address,
 		"rpc-address",
-		nc.RPCAddress,
+		rc.Address,
 		"address for rpc")
-	flag.IntVar(&nc.RPCMax,
+	flag.IntVar(&rc.Max,
 		"rpc-max",
-		nc.RPCMax,
+		rc.Max,
 		"maximum rpc-connections")
 
 	flag.Usage = func() {
@@ -113,26 +120,75 @@ func getConfig() (nc node.Config) {
 	return
 }
 
-func waitInterrupt() {
+func waitInterrupt(quit <-chan struct{}) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
-	<-sig
+	select {
+	case <-sig:
+	case <-quit:
+	}
 }
 
 func main() {
 
-	db := data.NewDB()
+	// exit code
+	var code int
+	defer func() { os.Exit(code) }()
 
+	var err error
+
+	var (
+		db  *data.DB
+		n   *node.Node
+		rpc *server.Server
+
+		nc node.Config
+		rc server.Config
+	)
+
+	db = data.NewDB()
+
+	// =========================================================================
+	//
 	// TODO: skyobject stuff
+	//
+	// =========================================================================
 
-	n := node.NewNode(getConfig(), db)
+	//
+	// Get configurations from flags
+	//
 
-	if err := n.Start(); err != nil {
+	nc, rc = getConfigs() // node config, rpc config
+
+	//
+	// Node
+	//
+
+	n = node.NewNode(nc, db)
+
+	if err = n.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, "error starting node:", err)
-		os.Exit(1)
+		code = 1
+		return
 	}
 	defer n.Close()
 
-	waitInterrupt()
+	//
+	// RPC
+	//
+
+	if rc.Enable {
+		rpc = server.NewServer(rc, n)
+		if err = rpc.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, "error starting RPC:", err)
+			code = 1
+			return
+		}
+		defer rpc.Close()
+	}
+
+	// waiting for SIGING or termination using RPC
+
+	waitInterrupt(n.Quiting())
 
 }

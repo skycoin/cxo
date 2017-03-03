@@ -4,26 +4,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/rpc"
 	"os"
 	"strings"
 
 	"github.com/peterh/liner"
-)
 
-//
-// "rpc.Connect",    "127.0.0.1:9090", *error
-// "rpc.Disconnect", "127.0.0.1:9090", *error
-// "rpc.List",       struct{}{},       *struct{List []string, Err error}
-// "rpc.Info",       struct{}{}.       *struct{
-//                                         Address string,
-//                                         Stat    struct{
-//                                             Total  int
-//                                             Memory int
-//                                         },
-//                                         Err error,
-//                                      }
-//
+	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/rpc/client"
+)
 
 var (
 	ErrUnknowCommand    = errors.New("unknown command")
@@ -35,6 +23,8 @@ var (
 		"connect",
 		"disconnect",
 		"info",
+		"stat",
+		"terminate",
 		"quit",
 		"exit",
 	}
@@ -45,8 +35,8 @@ func main() {
 		address string
 		execute string
 
-		client *rpc.Client
-		err    error
+		rpc *client.Client
+		err error
 
 		line      *liner.State
 		cmd       string
@@ -86,15 +76,15 @@ func main() {
 		return
 	}
 
-	if client, err = rpc.Dial("tcp", address); err != nil {
+	if rpc, err = client.Dial("tcp", address); err != nil {
 		fmt.Fprintln(os.Stderr, "error creating rpc-clinet:", err)
 		code = 1
 		return
 	}
-	defer client.Close()
+	defer rpc.Close()
 
 	if execute != "" {
-		_, err = executeCommand(execute, client, nil)
+		_, err = executeCommand(execute, rpc, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			code = 1
@@ -126,7 +116,7 @@ func main() {
 			code = 1
 			return
 		}
-		terminate, err = executeCommand(cmd, client, line)
+		terminate, err = executeCommand(cmd, rpc, line)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
@@ -149,7 +139,7 @@ func args(ss []string) (string, error) {
 	return "", ErrTooManyArguments
 }
 
-func executeCommand(command string, client *rpc.Client,
+func executeCommand(command string, rpc *client.Client,
 	line *liner.State) (terminate bool, err error) {
 
 	ss := strings.Fields(command)
@@ -158,13 +148,17 @@ func executeCommand(command string, client *rpc.Client,
 	}
 	switch ss[0] {
 	case "list":
-		err = list(client)
+		err = list(rpc)
 	case "connect":
-		err = connect(client, ss)
+		err = connect(rpc, ss)
 	case "disconnect":
-		err = disconnect(client, ss)
+		err = disconnect(rpc, ss)
 	case "info":
-		err = info(client)
+		err = info(rpc)
+	case "stat":
+		err = stat(rpc)
+	case "terminate":
+		err = term(rpc)
 	case "help":
 		showHelp()
 	case "quit":
@@ -190,7 +184,11 @@ func showHelp() {
 	disconnect	<address>
 		disconnect from given address
 	info
-		obtain information and statistic about node
+		obtain information about the node
+	stat
+		obtain database statistic
+	terminate
+		close the node
 	help
 		show this help message
 	quit or exit
@@ -199,75 +197,69 @@ func showHelp() {
 `)
 }
 
-func list(client *rpc.Client) (err error) {
-	var reply = new(ListReply)
-	if err = client.Call("rpc.List", struct{}{}, reply); err != nil {
+func list(rpc *client.Client) (err error) {
+	var list []string
+	if list, err = rpc.List(); err != nil {
 		return
 	}
-	if len(reply.List) == 0 {
+	if len(list) == 0 {
 		fmt.Println("  there aren't connections")
 		return
 	}
-	for _, c := range reply.List {
+	for _, c := range list {
 		fmt.Println("  -", c)
 	}
 	return
 }
 
-func info(client *rpc.Client) (err error) {
-	var reply = new(InfoReply)
-	if err = client.Call("rpc.Info", struct{}{}, reply); err != nil {
+func info(rpc *client.Client) (err error) {
+	var address string
+	if address, err = rpc.Info(); err != nil {
 		return
 	}
-	fmt.Printf(`  Address:       %s
-  Total objects: %d
-  Memory:        %d
-`,
-		reply.Address,
-		reply.Stat.Total,
-		reply.Stat.Memory)
+	fmt.Println("  Listening address:", address)
 	return
 
 }
 
-func connect(client *rpc.Client, ss []string) (err error) {
+func connect(rpc *client.Client, ss []string) (err error) {
 	var address string
 	if address, err = args(ss); err != nil {
 		return
 	}
-	if err = client.Call("rpc.Connect", address, &struct{}{}); err != nil {
+	if err = rpc.Connect(address); err != nil {
 		return
 	}
-	fmt.Println("connected")
+	fmt.Println("  connected")
 	return
 }
 
-func disconnect(client *rpc.Client, ss []string) (err error) {
+func disconnect(rpc *client.Client, ss []string) (err error) {
 	var address string
 	if address, err = args(ss); err != nil {
 		return
 	}
-	if err = client.Call("rpc.Disconnect", address, &struct{}{}); err != nil {
+	if err = rpc.Disconnect(address); err != nil {
 		return
 	}
-	fmt.Println("disconnected")
+	fmt.Println("  disconnected")
 	return
 }
 
-//
-// types
-//
-
-type ListReply struct {
-	List []string
-	Err  error
+func stat(rpc *client.Client) (err error) {
+	var stat data.Stat
+	if stat, err = rpc.Stat(); err != nil {
+		return
+	}
+	fmt.Println("  Total objects:", stat.Total)
+	fmt.Println("  Memory:       ", data.HumanMemory(stat.Memory))
+	return
 }
 
-type InfoReply struct {
-	Address string
-	Stat    struct {
-		Total  int
-		Memory int
+func term(rpc *client.Client) (err error) {
+	if err = rpc.Terminate(); err != nil {
+		return
 	}
-	Err error
+	fmt.Println("  terminated")
+	return
 }

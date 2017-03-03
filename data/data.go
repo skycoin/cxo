@@ -23,11 +23,11 @@ type Stat struct {
 func (s Stat) String() string {
 	return fmt.Sprintf("{total: %d, memory: %s}",
 		s.Total,
-		humanMemory(s.Memory))
+		HumanMemory(s.Memory))
 }
 
-// humanMemory returns human readable memory string
-func humanMemory(bytes int) string {
+// HumanMemory returns human readable memory string
+func HumanMemory(bytes int) string {
 	var fb float64 = float64(bytes)
 	var ms string = "B"
 	for _, m := range []string{"KiB", "MiB", "GiB"} {
