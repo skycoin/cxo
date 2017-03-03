@@ -107,6 +107,16 @@ func (c *Container) GetRootChildren() (values []IReference) {
 	return
 }
 
+// GetRootDescendants gets all the root descendants into a map.
+// The map value is a boolean of whether we have the referenced object or not.
+func (c *Container) GetRootDescendants() (descendants map[cipher.SHA256]IReference) {
+	descendants = make(map[cipher.SHA256]IReference)
+	for _, ref := range c.GetRootChildren() {
+		ref.GetDescendants(c, descendants)
+	}
+	return
+}
+
 // GetRootTimestamp returns the time the root object was updated.
 func (c *Container) GetRootTimestamp() int64 {
 	var root rootObject
