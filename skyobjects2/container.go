@@ -67,6 +67,30 @@ func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte
 	return
 }
 
+// GetAllSchemas returns a list of all schemas in container.
+func (c *Container) GetAllSchemas() (schemas []*Schema) {
+	for k := range c.schemas {
+		schema, _ := c.GetSchemaOfKey(k)
+		schemas = append(schemas, schema)
+	}
+	return
+}
+
+// GetSchemaOfKey gets the schema from schemaKey.
+func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e error) {
+	dbSchemaKey, data, e := c.Get(schemaKey)
+	if e != nil {
+		return
+	}
+	if dbSchemaKey != _schemaType {
+		e = fmt.Errorf("is not Schema type")
+		return
+	}
+	schema = &Schema{}
+	e = encoder.DeserializeRaw(data, schema)
+	return
+}
+
 // GetAllOfSchema gets all keys of objects with specified schemaKey.
 func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) (objKeys []cipher.SHA256) {
 	query := func(key cipher.SHA256, data []byte) bool {
