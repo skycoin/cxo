@@ -18,7 +18,7 @@ type ISchemaManager interface {
 
 type schemaManager struct {
 	c       *Container
-	ds      data.IDataSource
+	ds      *data.DB
 	schemas []schemaRef
 }
 
