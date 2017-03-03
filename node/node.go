@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/gnet"
 )
 
 var (
@@ -63,7 +63,7 @@ type Node struct {
 	done chan struct{}
 }
 
-// NewNode creates Node with given config and DB. I given database is nil
+// NewNode creates Node with given config and DB. If given database is nil
 // then it panics
 func NewNode(conf Config, db *data.DB) *Node {
 	if db == nil {
@@ -111,6 +111,7 @@ func (n *Node) Start() (err error) {
 	return
 }
 
+// TODO: remade to send root
 // sned all hashes from db we have to given connection
 func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
 	n.Debug("[DBG] send everything we have to ", gc.Addr())
