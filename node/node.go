@@ -162,13 +162,13 @@ func (n *Node) connectToKnown(quit chan struct{}) {
 	for _, a := range n.conf.Known {
 		n.Debug("[DBG] connecting to ", a)
 		if _, err := n.pool.Connect(a); err != nil {
-			n.Printf("[ERR] error connection to known host %s: %v", a, err)
+			n.Printf("[ERR] error connecting to known host %s: %v", a, err)
 		}
 	}
 }
 
 func (n *Node) Close() {
-	n.Debug("[DBG] cling node...")
+	n.Debug("[DBG] closing node...")
 	close(n.quit)
 	if n.conf.RPC {
 		n.rpc.close()
