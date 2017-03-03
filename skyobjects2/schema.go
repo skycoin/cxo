@@ -4,8 +4,14 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
+
+type schemaType struct {
+	Name string
+	Key  cipher.SHA256
+}
 
 // Schema represents the type of SkyObject.
 type Schema struct {
