@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -40,7 +41,7 @@ func TestGetAllOfSchema(t *testing.T) {
 		if e != nil || test.A == "" && test.B == 0 {
 			t.Error("deserialize failed")
 		}
-		t.Logf("i : %d, object: %v", i, test)
+		t.Logf("i = %d, object = %v", i, test)
 	}
 }
 
@@ -49,7 +50,8 @@ type Node struct {
 }
 
 type Ref struct {
-	A HashArray
+	A string
+	B HashArray
 }
 
 func TestReferencing(t *testing.T) {
@@ -60,21 +62,24 @@ func TestReferencing(t *testing.T) {
 	node := Node{"main"}
 	nodeDat := encoder.Serialize(node)
 	nodeKey := c.Save(nodeSchKey, nodeDat)
-	t.Log(nodeKey)
 
-	ref1 := Ref{HashArray{nodeKey}}
+	ref1 := Ref{"1", []cipher.SHA256{nodeKey}}
 	ref1Dat := encoder.Serialize(ref1)
-	ref1Key := c.Save(refSchKey, ref1Dat)
-	t.Log(ref1Key)
+	c.Save(refSchKey, ref1Dat)
 
-	ref2 := Ref{HashArray{nodeKey}}
+	ref2 := Ref{"2", []cipher.SHA256{nodeKey}}
 	ref2Dat := encoder.Serialize(ref2)
-	ref2Key := c.Save(refSchKey, ref2Dat)
-	t.Log(ref2Key)
+	c.Save(refSchKey, ref2Dat)
 
-	ref3 := Ref{HashArray{nodeKey}}
+	ref3 := Ref{"3", []cipher.SHA256{nodeKey}}
 	ref3Dat := encoder.Serialize(ref3)
-	ref3Key := c.Save(refSchKey, ref3Dat)
-	t.Log(ref3Key)
+	c.Save(refSchKey, ref3Dat)
 
+	t.Log("Finding objects that reference 'node':")
+	refsToNode := c.GetReferencesFor(nodeKey)
+	if n := len(refsToNode); n != 3 {
+		t.Errorf("expected 3, got %d", n)
+	} else {
+		t.Log("OK")
+	}
 }

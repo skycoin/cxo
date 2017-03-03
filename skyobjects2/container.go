@@ -148,7 +148,7 @@ func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]boo
 }
 
 // GetReferencesFor gets a list of objects that reference the specified object.
-func (c *Container) GetReferencesFor(key cipher.SHA256) []cipher.SHA256 {
+func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
 		var h href
 		encoder.DeserializeRaw(data, &h)
@@ -157,18 +157,18 @@ func (c *Container) GetReferencesFor(key cipher.SHA256) []cipher.SHA256 {
 			fmt.Println(e)
 			return false
 		}
+
 		for _, field := range schema.Fields {
-			if field.Type != "HashArray" && field.Type != "hasharray" {
+			if field.Type != "hasharray" {
 				continue
 			}
-			var keyArray []cipher.SHA256
-			encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
+			var keyArray HashArray
+			encoder.DeserializeField(h.Data, schema.Fields, field.Name, &keyArray)
 			for _, k := range keyArray {
-				if k == key {
+				if k == objKey {
 					return true
 				}
 			}
-
 		}
 		return false
 	}
