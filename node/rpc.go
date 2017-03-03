@@ -63,6 +63,7 @@ func (r *RPC) handleQuit(quit, done chan struct{}, l net.Listener) {
 	for {
 		select {
 		case evt := <-r.events:
+			// we need to call events to release pending requests
 			evt(nil)
 		default:
 			close(done)
@@ -148,9 +149,7 @@ func (r *RPC) Info(_ struct{}, reply *InfoReply) error {
 			r.Err = ErrClosed
 		} else {
 			r.Stat = node.db.Stat()
-			if a, e := node.pool.ListeningAddress(); e != nil {
-				r.Err = e
-			} else {
+			if a, e := node.pool.ListeningAddress(); e == nil {
 				r.Address = a.String()
 			}
 		}
@@ -158,10 +157,7 @@ func (r *RPC) Info(_ struct{}, reply *InfoReply) error {
 	}
 	*reply = <-result
 	if reply.Err != nil {
-		if reply.Err == ErrClosed {
-			return ErrClosed
-		}
-		reply.Err = nil
+		return reply.Err
 	}
 	return nil
 }

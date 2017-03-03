@@ -104,3 +104,54 @@ func TestDB_Stat(t *testing.T) {
 		t.Error("missmatch memory")
 	}
 }
+
+func TestDB_Where(t *testing.T) {
+	d := NewDB()
+	for _, v := range []string{"a", "b", "c"} {
+		data := []byte(v)
+		key := cipher.SumSHA256(data)
+		d.Set(key, data)
+	}
+	result := d.Where(func(key cipher.SHA256, data []byte) bool {
+		if string(data) == "b" {
+			return true
+		}
+		return false
+	})
+	if len(result) != 1 {
+		t.Error("wrong result")
+		return
+	}
+	if data, ok := d.Get(result[0]); !ok {
+		t.Error("wrong Where result")
+	} else if string(data) != "b" {
+		t.Error("wrong Where result")
+	}
+}
+
+func TestDB_AddAutoKey(t *testing.T) {
+	d := NewDB()
+	data := []byte("x")
+	key := cipher.SumSHA256(data)
+	k2 := d.AddAutoKey(data)
+	if k2 != key {
+		t.Error("wrong auto key")
+		return
+	}
+	if v, ok := d.data[key]; !ok {
+		t.Error("can't get existed value")
+	} else if string(v) != string(data) {
+		t.Error("wrong value")
+	}
+}
+
+func TestDB_Remove(t *testing.T) {
+	d := NewDB()
+	data := []byte("x")
+	key := cipher.SumSHA256(data)
+	d.Set(key, data)
+	d.Remove(key)
+	if d.Has(key) {
+		t.Error("has unexisted value")
+	}
+}
