@@ -27,9 +27,16 @@ func NewContainer(ds *data.DB) (c *Container) {
 	return
 }
 
+// SetDB sets a new DB for container.
+// Member values of the container will be changed appropriately.
+func (c *Container) SetDB(*data.DB) error {
+	// TODO: Implement.
+	return nil
+}
+
 // Save saves an object into container.
 func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
-	// TODO: Special cases for HashRoot and HashArray.
+	// TODO: Special cases for RootObject and HashArray.
 	h := href{SchemaKey: schemaKey, Data: data}
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
 	return
@@ -66,4 +73,14 @@ func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) (objKeys []cipher.SH
 		return bytes.Compare(schemaKey[:32], data[:32]) == 0
 	}
 	return c.ds.Where(query)
+}
+
+// GetReferencesFor gets a list of objects that reference the specified object.
+// Returns a map of:
+// * Key: key of object stored
+// * Value: schemaKey of object stored
+func (c *Container) GetReferencesFor(schemaKey cipher.SHA256, objData []byte) (refMap map[cipher.SHA256]cipher.SHA256) {
+	refMap = make(map[cipher.SHA256]cipher.SHA256)
+	// TODO: Implement.
+	return
 }
