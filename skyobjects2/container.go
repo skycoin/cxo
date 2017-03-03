@@ -157,6 +157,7 @@ func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 			fmt.Println(e)
 			return false
 		}
+
 		for _, field := range schema.Fields {
 			if field.Type != "hasharray" {
 				continue

@@ -48,7 +48,7 @@ func (r *RootReference) GetType() cipher.SHA256 {
 
 // GetSchema gets the Schema.
 func (r *RootReference) GetSchema(c *Container) *Schema {
-	return c.Schema.GetOfKey(r.schemaKey)
+	return c.GetSchemaOfKey(r.schemaKey)
 }
 
 // GetField gets a field as key.
