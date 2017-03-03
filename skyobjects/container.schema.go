@@ -3,36 +3,39 @@ package skyobjects
 import (
 	"strings"
 
-	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// ISchemaManager represents the schema manager for container.
-type ISchemaManager interface {
-	GetAll() []Schema
-	GetOfType(typeName string) (cipher.SHA256, *Schema)
-	GetOfKey(schemaKey cipher.SHA256) *Schema
-	Register(types ...interface{})
+type schemaRef struct {
+	Name string
+	Key  cipher.SHA256
 }
 
-type schemaManager struct {
-	c       *Container
-	ds      data.IDataSource
-	schemas []schemaRef
-}
-
-func (m *schemaManager) GetAll() (schemas []Schema) {
-	for _, schemaRef := range m.schemas {
-		schemas = append(schemas, *m.GetOfKey(schemaRef.Key))
+// GetAllSchemas returns a list of all schemas in container.
+func (c *Container) GetAllSchemas(schemas []Schema) {
+	for _, ref := range c.schemas {
+		schema := c.GetSchemaOfKey(ref.Key)
+		schemas = append(schemas, *schema)
 	}
 	return
 }
 
-func (m *schemaManager) GetOfType(typeName string) (schemaKey cipher.SHA256, schema *Schema) {
+// GetSchemaOfKey returns the schema of specified key.
+func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema) {
+	schema = &Schema{}
+	ref := c.dbGet(c.ds, schemaKey)
+	if ref.Type == _schemaType {
+		encoder.DeserializeRaw(ref.Data, schema)
+	}
+	return
+}
+
+// GetSchemaOfTypeName gets schema of specified type name.
+func (c *Container) GetSchemaOfTypeName(typeName string) (schemaKey cipher.SHA256, schema *Schema) {
 	schema = &Schema{}
 	query := func(key cipher.SHA256, data []byte) bool {
-		if ref := m.c.dbGet(m.ds, key); ref.Type == _schemaType {
+		if ref := c.dbGet(c.ds, key); ref.Type == _schemaType {
 			tempSchema := Schema{}
 			encoder.DeserializeRaw(ref.Data, &tempSchema)
 			if strings.ToLower(tempSchema.Name) == strings.ToLower(typeName) {
@@ -43,35 +46,22 @@ func (m *schemaManager) GetOfType(typeName string) (schemaKey cipher.SHA256, sch
 		}
 		return false
 	}
-	if len(m.ds.Where(query)) != 1 {
+	if len(c.ds.Where(query)) != 1 {
 		schema = &Schema{}
 		schemaKey = cipher.SHA256{}
 	}
 	return
 }
 
-func (m *schemaManager) GetOfKey(schemaKey cipher.SHA256) (schema *Schema) {
-	schema = &Schema{}
-	ref := m.c.dbGet(m.ds, schemaKey)
-	if ref.Type == _schemaType {
-		encoder.DeserializeRaw(ref.Data, schema)
-	}
-	return
-}
-
-func (m *schemaManager) Register(objects ...interface{}) {
+// RegisterSchema registers a schema.
+func (c *Container) RegisterSchema(objects ...interface{}) {
 	for _, obj := range objects {
 		schema := ReadSchema(obj)
 		schemaData := encoder.Serialize(schema)
-		schemaKey := m.c.dbSaveSchema(m.ds, schemaData)
-		m.schemas = append(m.schemas, schemaRef{
+		schemaKey := c.dbSaveSchema(c.ds, schemaData)
+		c.schemas = append(c.schemas, schemaRef{
 			Name: schema.Name,
 			Key:  schemaKey,
 		})
 	}
-}
-
-type schemaRef struct {
-	Name string
-	Key  cipher.SHA256
 }

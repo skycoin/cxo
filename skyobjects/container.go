@@ -12,19 +12,17 @@ import (
 
 // Container represents a SkyObjects container.
 type Container struct {
-	Schema  ISchemaManager
+	// Schema  ISchemaManager
 	ds      data.IDataSource
+	schemas []schemaRef
 	root    cipher.SHA256
 	rootSeq uint64
 }
 
 // NewContainer creates a new SkyObjects container.
 func NewContainer(ds data.IDataSource) (c *Container) {
-	c = &Container{
-		Schema: &schemaManager{c: c, ds: ds},
-		ds:     ds,
-	}
-	c.Schema.Register(RootReference{}, ObjectReference{}, ArrayReference{})
+	c = &Container{ds: ds}
+	c.RegisterSchema(RootReference{}, ObjectReference{}, ArrayReference{})
 	newRootReference([]cipher.SHA256{}, []cipher.SHA256{}, 1).save(c)
 	return
 }
@@ -136,7 +134,7 @@ func (c *Container) ClearRoot() {
 	var oldRoot rootObject
 	c.Get(c.root).Deserialize(&oldRoot)
 
-	schemaKey, _ := c.Schema.GetOfType("RootReference")
+	schemaKey, _ := c.GetSchemaOfTypeName("RootReference")
 	for _, key := range c.GetAllOfSchema(schemaKey) {
 		c.Delete(key)
 	}
@@ -149,7 +147,7 @@ func (c *Container) ClearRoot() {
 func (c *Container) CollectGarbage(duration int64) {
 	var timeFrom = time.Now().UnixNano() - duration
 	var toDelete = make(map[cipher.SHA256]IReference)
-	schemaKey, _ := c.Schema.GetOfType("RootReference")
+	schemaKey, _ := c.GetSchemaOfTypeName("RootReference")
 	// Loop through all root objects and descendants. Add to toDelete map.
 	for _, key := range c.GetAllOfSchema(schemaKey) {
 		var root rootObject
