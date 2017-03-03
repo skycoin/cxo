@@ -73,6 +73,23 @@ func getConfig() (nc node.Config) {
 		nc.Ping,
 		"ping interval (0 = disabled)")
 
+	flag.BoolVar(&nc.RPC,
+		"rpc",
+		nc.RPC,
+		"use rpc")
+	flag.IntVar(&nc.RPCEvents,
+		"rpc-events",
+		nc.RPCEvents,
+		"rpc events chan size")
+	flag.StringVar(&nc.RPCAddress,
+		"rpc-address",
+		nc.RPCAddress,
+		"address for rpc")
+	flag.IntVar(&nc.RPCMax,
+		"rpc-max",
+		nc.RPCMax,
+		"maximum rpc-connections")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s <flags> [known hosts]\n", os.Args[0])
 		flag.PrintDefaults()

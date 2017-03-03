@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"net"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -11,7 +12,9 @@ import (
 )
 
 var (
-	ErrClosed                                 = errors.New("use of closed node")
+	ErrClosed   = errors.New("use of closed node")
+	ErrNotFound = errors.New("not found")
+
 	ErrManualDisconnect gnet.DisconnectReason = errors.New(
 		"manual disconnect")
 )
@@ -25,12 +28,23 @@ type Config struct {
 	Debug bool
 	Name  string
 	Ping  time.Duration
+
+	// RPC
+	RPC        bool   // enable/disabel rpc
+	RPCEvents  int    // evets channel size
+	RPCAddress string // listen on (empty to auto)
+	RPCMax     int    // max RPC connections
 }
 
 func NewConfig() Config {
 	return Config{
 		Config: gnet.NewConfig(),
 		Ping:   5 * time.Second,
+
+		RPC:        true,
+		RPCEvents:  10,
+		RPCAddress: "",
+		RPCMax:     10,
 	}
 }
 
@@ -39,6 +53,8 @@ type Node struct {
 	conf Config
 	db   *data.DB
 	pool *gnet.ConnectionPool
+	rpc  *RPC
+	rpce chan func(*Node)
 	quit chan struct{}
 	done chan struct{}
 }
@@ -72,6 +88,21 @@ func (n *Node) Start() (err error) {
 	n.pool = gnet.NewConnectionPool(n.conf.Config, n)
 	if err = n.pool.StartListen(); err != nil {
 		return
+	}
+	var addr net.Addr
+	if addr, err = n.pool.ListeningAddress(); err != nil {
+		n.Panic("[CRITICAL] can't obtain lisening address: ", err)
+		return // never happens
+	} else {
+		n.Print("[INF] listening on ", addr)
+	}
+	if n.conf.RPC {
+		n.rpc = NewRPC(n.conf.RPCEvents, n)
+		if err = n.rpc.start(n.conf.RPCAddress, n.conf.RPCMax); err != nil {
+			n.Print("[ERR] failed to start RPC: ", err)
+		} else {
+			n.rpce = n.rpc.events
+		}
 	}
 	go n.pool.AcceptConnections()
 	go n.handle(n.quit, n.done)
@@ -116,6 +147,8 @@ func (n *Node) handle(quit, done chan struct{}) {
 		case <-ping:
 			n.Debug("[DBG] send pings")
 			n.pool.BroadcastMessage(&Ping{})
+		case rpce := <-n.rpce:
+			rpce(n)
 		case <-quit:
 			return
 		default:
@@ -137,6 +170,9 @@ func (n *Node) connectToKnown(quit chan struct{}) {
 func (n *Node) Close() {
 	n.Debug("[DBG] cling node...")
 	close(n.quit)
+	if n.conf.RPC {
+		n.rpc.close()
+	}
 	<-n.done
 	n.Debug("[DBG] node was closed")
 }
