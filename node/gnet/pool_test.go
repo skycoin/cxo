@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
@@ -501,10 +500,7 @@ func TestConnectionClose(t *testing.T) {
 		WriteQueue:    make(chan Message),
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.readLoopDone <- false
 	c.writeLoopDone <- false
 	p := NewConnectionPool(newConfig(), nil)
@@ -645,10 +641,7 @@ func TestConnectionReadLoop(t *testing.T) {
 		WriteQueue:    make(chan Message),
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.writeLoopDone <- false
 	c.readLoopDone <- false
 	p.Pool[1] = c
@@ -676,10 +669,7 @@ func TestConnectionReadLoop(t *testing.T) {
 		WriteQueue:    make(chan Message),
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.writeLoopDone <- false
 	c.readLoopDone <- false
 	p.Pool[2] = c
@@ -707,10 +697,7 @@ func TestConnectionReadLoop(t *testing.T) {
 		WriteQueue:    make(chan Message),
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.writeLoopDone <- false
 	c.readLoopDone <- false
 	p.Pool[3] = c
@@ -745,10 +732,7 @@ func TestConnectionReadLoop(t *testing.T) {
 		WriteQueue:    make(chan Message),
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.writeLoopDone <- false
 	c.readLoopDone <- false
 	p.Pool[4] = c
@@ -846,10 +830,7 @@ func TestProcessConnectionBuffers(t *testing.T) {
 		LastReceived:  time.Time{},
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.readLoopDone <- false
 	c.writeLoopDone <- false
 	p.Pool[1] = c
@@ -1075,53 +1056,6 @@ func TestPoolReceiveMessage(t *testing.T) {
 	assert.Equal(t, reason.Error(), "Bad")
 }
 
-func TestConnection_Acquire_Release(t *testing.T) {
-	release := make(chan struct{})
-	cleanupNet()
-	cfg := newConfig()
-	cfg.Port = uint16(port)
-	cfg.Address = address
-	cfg.ConnectCallback = func(gc *Connection, outgoing bool) {
-		gc.Acquire()
-		go func() {
-			defer gc.Release()
-			<-release // do some work
-		}()
-	}
-	p := NewConnectionPool(cfg, nil)
-	defer p.StopListen()
-	//go func() {
-	assert.Nil(t, p.StartListen())
-	assert.NotNil(t, p.listener)
-	//}()
-	go handleXConnections(p, 1)
-	go p.AcceptConnections()
-	// Make a successful connection
-	wait()
-	assert.NotNil(t, p.listener)
-	c, err := net.Dial("tcp", addr)
-	assert.Nil(t, err)
-	defer c.Close()
-	if err != nil {
-		t.Fatalf("Dialing pool failed: %v", err)
-	}
-	wait()
-	assert.NotNil(t, p.listener)
-	assert.Equal(t, len(p.Addresses), 1)
-	assert.Equal(t, len(p.Pool), 1)
-	if len(p.Pool) == 0 {
-		t.Fatalf("Pool empty, would crash")
-	}
-	// until we release the readLoopDone and
-	// writeLoopDone will kee <false>
-	assert.Equal(t, 1, len(p.Pool[1].readLoopDone))
-	assert.Equal(t, 1, len(p.Pool[1].writeLoopDone))
-	close(release) // we done with our work, call Release
-	wait()         // waiting for release
-	assert.Equal(t, 0, len(p.Pool[1].readLoopDone))
-	assert.Equal(t, 0, len(p.Pool[1].writeLoopDone))
-}
-
 /* Helpers */
 
 func wait() {
@@ -1327,10 +1261,7 @@ func makeConnection(id int, addr string) *Connection {
 		WriteQueue:    make(chan Message, 10),
 		readLoopDone:  make(chan bool, 1),
 		writeLoopDone: make(chan bool, 1),
-		acquire:       make(chan struct{}),
-		acquireClose:  new(sync.Once),
 	}
-	c.Release()
 	c.readLoopDone <- false
 	c.writeLoopDone <- false
 	return c
