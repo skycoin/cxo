@@ -8,7 +8,7 @@ import (
 
 // RootObject represents a root object in container.
 type RootObject struct {
-	Children  []cipher.SHA256
+	Children  HashArray
 	Sequence  uint64
 	TimeStamp int64
 }

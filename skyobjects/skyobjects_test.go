@@ -51,7 +51,7 @@ type Node struct {
 
 type Ref struct {
 	A string
-	B HashArray
+	B HashArray `skyobjects:"href"`
 }
 
 func TestReferencing(t *testing.T) {
@@ -84,10 +84,46 @@ func TestReferencing(t *testing.T) {
 	}
 }
 
+type Ref2 struct {
+	A string
+	B HashObject `skyobjects:"href"`
+}
+
+func TestReferencing2(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	nodeSchKey := c.SaveSchema(Node{})
+	refSchKey := c.SaveSchema(Ref2{})
+
+	node := Node{"main"}
+	nodeDat := encoder.Serialize(node)
+	nodeKey := c.Save(nodeSchKey, nodeDat)
+	nkey := HashObject(nodeKey)
+
+	ref1 := Ref2{"1", nkey}
+	ref1Dat := encoder.Serialize(ref1)
+	c.Save(refSchKey, ref1Dat)
+
+	ref2 := Ref2{"2", nkey}
+	ref2Dat := encoder.Serialize(ref2)
+	c.Save(refSchKey, ref2Dat)
+
+	ref3 := Ref2{"3", nkey}
+	ref3Dat := encoder.Serialize(ref3)
+	c.Save(refSchKey, ref3Dat)
+
+	t.Log("Finding objects that reference 'node':")
+	refsToNode := c.GetReferencesFor(nodeKey)
+	if n := len(refsToNode); n != 3 {
+		t.Errorf("expected 3, got %d", n)
+	} else {
+		t.Log("OK")
+	}
+}
+
 type Child struct {
 	Name     string
 	Age      uint32
-	Children HashArray
+	Children HashArray `skyobjects:"href,child"`
 }
 
 func TestGetChildren(t *testing.T) {
@@ -108,7 +144,11 @@ func TestGetChildren(t *testing.T) {
 		for j := i * 4; j < i*4+4; j++ {
 			child.Children = append(child.Children, grandchildrenKeys[j])
 		}
-		childrenKeys = append(childrenKeys, c.SaveObject(_childType, child))
+		childData := encoder.Serialize(child)
+		childrenKeys = append(childrenKeys, c.Save(_childType, childData))
+
+		// Test get children.
+		c.GetChildren(_childType, childData)
 	}
 
 	// Make root.

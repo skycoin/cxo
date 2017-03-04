@@ -9,11 +9,17 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-const _HashArrayStr = "hasharray"
+const _StrHashArray = "hasharray"
+const _StrHashObject = "hashobject"
 
 type href struct {
 	SchemaKey cipher.SHA256
 	Data      []byte
+}
+
+type sref struct {
+	Name   string
+	Schema Schema
 }
 
 // Container contains skyobjects.
@@ -174,15 +180,23 @@ func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[
 	}
 	// Iterate through fields of object.
 	for _, field := range schema.Fields {
-		// Continue if no references in field.
-		if field.Type != _HashArrayStr {
+		// Continue if not referenced.
+		if st, _ := getSkyTag(field.Tag); st.href == false {
 			continue
 		}
-		var keyArray HashArray
-		encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
-		for _, k := range keyArray {
+		switch field.Type {
+		case _StrHashArray, "":
+			var keyArray HashArray
+			encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
+			for _, k := range keyArray {
+				cMap[k] = c.ds.Has(k)
+			}
+		case _StrHashObject, "sha256":
+			var k cipher.SHA256
+			encoder.DeserializeField(data, schema.Fields, field.Name, &k)
 			cMap[k] = c.ds.Has(k)
 		}
+
 	}
 	return
 }
@@ -198,12 +212,23 @@ func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 			return false
 		}
 		for _, field := range schema.Fields {
-			if field.Type != _HashArrayStr {
+			// Continue if not referenced.
+			if st, _ := getSkyTag(field.Tag); st.href == false {
 				continue
 			}
-			var keyArray HashArray
-			encoder.DeserializeField(h.Data, schema.Fields, field.Name, &keyArray)
-			for _, k := range keyArray {
+			// fmt.Println("[FIELD TYPE]", field.Type)
+			switch field.Type {
+			case _StrHashArray, "":
+				var keyArray HashArray
+				encoder.DeserializeField(h.Data, schema.Fields, field.Name, &keyArray)
+				for _, k := range keyArray {
+					if k == objKey {
+						return true
+					}
+				}
+			case _StrHashObject, "sha256":
+				var k cipher.SHA256
+				encoder.DeserializeField(h.Data, schema.Fields, field.Name, &k)
 				if k == objKey {
 					return true
 				}
