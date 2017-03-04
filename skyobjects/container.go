@@ -99,6 +99,20 @@ func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte
 	return
 }
 
+// GetRoot gets the latest local root.
+func (c *Container) GetRoot() (root RootObject, e error) {
+	if c.rootKey == (cipher.SHA256{}) {
+		e = fmt.Errorf("no root avaliable")
+		return
+	}
+	_, data, e := c.Get(c.rootKey)
+	if e != nil {
+		return
+	}
+	encoder.DeserializeRaw(data, &root)
+	return
+}
+
 // GetAllSchemas returns a list of all schemas in container.
 func (c *Container) GetAllSchemas() (schemas []*Schema) {
 	for k := range c.schemas {
