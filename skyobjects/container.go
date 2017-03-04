@@ -9,6 +9,8 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+const _HashArrayStr = "hasharray"
+
 type href struct {
 	SchemaKey cipher.SHA256
 	Data      []byte
@@ -158,45 +160,31 @@ func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	return c.ds.Where(query)
 }
 
-// GetDescendants gets all keys of descendants of object with specified key.
-// Boolean value:
+// GetChildren gets all keys of the direct children of an object.
+// Boolean value in map:
 // * TRUE: We have a copy of this object in container.
 // * FALSE: We don't have a copy of this object in container.
-func (c *Container) GetDescendants(key cipher.SHA256) (dMap map[cipher.SHA256]bool) {
-	dMap = make(map[cipher.SHA256]bool)
-	c.getDescendants(key, dMap)
-	return
-}
-
-func (c *Container) getDescendants(key cipher.SHA256, dMap map[cipher.SHA256]bool) {
-	// Get object from container.
-	schKey, data, e := c.Get(key)
-	if e != nil {
-		fmt.Println(e)
-		dMap[key] = false
-		return
-	}
-	dMap[key] = true
+func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[cipher.SHA256]bool) {
+	cMap = make(map[cipher.SHA256]bool)
 	// Get schema of object.
-	sch, e := c.GetSchemaOfKey(schKey)
+	schema, e := c.GetSchemaOfKey(schemaKey)
 	if e != nil {
 		fmt.Println(e)
-		dMap[key] = false
 		return
 	}
 	// Iterate through fields of object.
-	for _, field := range sch.Fields {
+	for _, field := range schema.Fields {
 		// Continue if no references in field.
-		if field.Type != "hasharray" {
+		if field.Type != _HashArrayStr {
 			continue
 		}
-		// Recursively find more references.
 		var keyArray HashArray
-		encoder.DeserializeField(data, sch.Fields, field.Name, &keyArray)
+		encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
 		for _, k := range keyArray {
-			c.getDescendants(k, dMap)
+			cMap[k] = c.ds.Has(k)
 		}
 	}
+	return
 }
 
 // GetReferencesFor gets a list of objects that reference the specified object.
@@ -210,7 +198,7 @@ func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 			return false
 		}
 		for _, field := range schema.Fields {
-			if field.Type != "hasharray" {
+			if field.Type != _HashArrayStr {
 				continue
 			}
 			var keyArray HashArray
