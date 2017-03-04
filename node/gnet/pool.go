@@ -15,10 +15,6 @@ import (
 	"github.com/skycoin/skycoin/src/util"
 )
 
-var DebugPrint bool = true //disable to disable printing
-
-// TODO -- parameterize configuration per pool
-
 // DisconnectReason is passed to ConnectionPool's DisconnectCallback
 type DisconnectReason error
 
@@ -74,6 +70,8 @@ type Config struct {
 	DisconnectCallback DisconnectCallback
 	// Triggered on client connect
 	ConnectCallback ConnectCallback
+	// DebugPrint is used to show or don't show debug logs
+	DebugPrint bool
 }
 
 // Returns a Config with defaults set
@@ -91,6 +89,7 @@ func NewConfig() Config {
 		ConnectionWriteQueueSize: 32,
 		DisconnectCallback:       nil,
 		ConnectCallback:          nil,
+		DebugPrint:               true,
 	}
 }
 
@@ -635,7 +634,7 @@ func (self *ConnectionPool) HandleMessages() {
 // SendResults channel.
 func (self *ConnectionPool) SendMessage(c *Connection, msg Message) {
 
-	if DebugPrint {
+	if self.Config.DebugPrint {
 		logger.Debug("Send, Msg Type: %s", reflect.TypeOf(msg))
 	}
 
@@ -651,7 +650,7 @@ func (self *ConnectionPool) SendMessage(c *Connection, msg Message) {
 
 // Sends a Message to all connections in the Pool.
 func (self *ConnectionPool) BroadcastMessage(msg Message) {
-	if DebugPrint {
+	if self.Config.DebugPrint {
 		logger.Debug("Broadcast, Msg Type: %s", reflect.TypeOf(msg))
 	}
 
@@ -666,7 +665,7 @@ func (self *ConnectionPool) BroadcastMessage(msg Message) {
 // be the value returned from the message handler.
 func (self *ConnectionPool) receiveMessage(c *Connection,
 	msg []byte) (error, DisconnectReason) {
-	m, err := convertToMessage(c, msg)
+	m, err := convertToMessage(c, msg, self.Config.DebugPrint)
 	if err != nil {
 		return err, nil
 	}

@@ -28,7 +28,6 @@ func init() {
 	if !testing.Verbose() {
 		logging.SetBackend(logging.NewLogBackend(ioutil.Discard, "", 0))
 	}
-	DebugPrint = testing.Verbose()
 }
 
 func newNetConn() net.Conn {
@@ -77,6 +76,81 @@ func cleanupNet() {
 	stopConn()
 }
 
+type DummyListener struct {
+	l net.Listener
+}
+
+func (d *DummyListener) Address() string {
+	return d.l.Addr().String()
+}
+
+func (d *DummyListener) Close() {
+	d.l.Close()
+}
+
+func NewDummyListener(t *testing.T) *DummyListener {
+	l, err := net.Listen("tcp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			if _, err := l.Accept(); err != nil {
+				return
+			}
+		}
+	}()
+	return &DummyListener{l}
+}
+
+func newConfig() Config {
+	c := NewConfig()
+	c.DebugPrint = testing.Verbose()
+	return c
+}
+
+func TestConnectionPool_maxConnections(t *testing.T) {
+	c := newConfig()
+	c.MaxConnections = 1
+	p := NewConnectionPool(c, nil)
+	defer p.StopListen()
+	d1, d2 := NewDummyListener(t), NewDummyListener(t)
+	defer d1.Close()
+	defer d2.Close()
+	done := make(chan struct{})
+	go func() {
+		if _, err := p.Connect(d1.Address()); err != nil {
+			t.Error("unexpected error")
+		}
+		done <- struct{}{}
+	}()
+Loop1:
+	for {
+		select {
+		case <-done:
+			break Loop1
+		default:
+			p.HandleMessages()
+		}
+	}
+	go func() {
+		if _, err := p.Connect(d2.Address()); err == nil {
+			t.Error("missing error")
+		}
+		done <- struct{}{}
+	}()
+Loop2:
+	for {
+		select {
+		case <-done:
+			break Loop2
+		default:
+			p.HandleMessages()
+		}
+	}
+	assert.Equal(t, 1, len(p.Addresses), "too many connections")
+}
+
 func TestConnectionAddr(t *testing.T) {
 	cleanupNet()
 	listen()
@@ -87,7 +161,7 @@ func TestConnectionAddr(t *testing.T) {
 
 func TestNewConnectionPool(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	cfg.MaxConnections = 108
@@ -114,7 +188,7 @@ func TestNewConnectionPool(t *testing.T) {
 func TestNewConnection(t *testing.T) {
 	cleanupNet()
 	listen()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	cfg.ConnectionWriteQueueSize = 101
@@ -135,7 +209,7 @@ func TestNewConnection(t *testing.T) {
 func TestNewConnectionAlreadyConnected(t *testing.T) {
 	cleanupNet()
 	listen()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -145,7 +219,7 @@ func TestNewConnectionAlreadyConnected(t *testing.T) {
 
 func TestAcceptConnections(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	called := false
@@ -188,7 +262,7 @@ func TestAcceptConnections(t *testing.T) {
 func TestListeningAddress(t *testing.T) {
 	t.Run("not listening", func(t *testing.T) {
 		cleanupNet()
-		cfg := NewConfig()
+		cfg := newConfig()
 		p := NewConnectionPool(cfg, nil)
 		addr, err := p.ListeningAddress()
 		assert.Nil(t, addr)
@@ -196,7 +270,7 @@ func TestListeningAddress(t *testing.T) {
 	})
 	t.Run("listening", func(t *testing.T) {
 		cleanupNet()
-		cfg := NewConfig()
+		cfg := newConfig()
 		cfg.Address = ""
 		cfg.Port = 0
 		p := NewConnectionPool(cfg, nil)
@@ -212,7 +286,7 @@ func TestListeningAddress(t *testing.T) {
 
 func TestStartListen(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	called := false
@@ -228,7 +302,7 @@ func TestStartListen(t *testing.T) {
 }
 
 func TestStartListenTwice(t *testing.T) {
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -243,7 +317,7 @@ func TestStartListenTwice(t *testing.T) {
 
 func TestStartListenFailed(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -259,7 +333,7 @@ func TestStartListenFailed(t *testing.T) {
 
 func TestStopListen(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -294,7 +368,7 @@ func TestHandleConnection(t *testing.T) {
 	cleanupNet()
 	listen()
 	conn := newNetConn()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 
@@ -343,7 +417,7 @@ func TestHandleConnection(t *testing.T) {
 func TestConnect(t *testing.T) {
 	cleanupNet()
 	listen()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	cfg.Port += 1
@@ -375,7 +449,7 @@ func TestConnect(t *testing.T) {
 func TestConnectNoTimeout(t *testing.T) {
 	cleanupNet()
 	listen()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	cfg.DialTimeout = 0
@@ -390,7 +464,7 @@ func TestConnectNoTimeout(t *testing.T) {
 
 func TestDisconnect(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -433,7 +507,7 @@ func TestConnectionClose(t *testing.T) {
 	c.Release()
 	c.readLoopDone <- false
 	c.writeLoopDone <- false
-	p := NewConnectionPool(NewConfig(), nil)
+	p := NewConnectionPool(newConfig(), nil)
 	go p.ConnectionWriteLoop(c)
 	wait()
 	c.Buffer.WriteByte(7)
@@ -447,7 +521,7 @@ func TestConnectionClose(t *testing.T) {
 func TestHandleDisconnectionEvent(t *testing.T) {
 	cleanupNet()
 	listen()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	cfg.Port += 1
@@ -490,7 +564,7 @@ func TestHandleDisconnectionEvent(t *testing.T) {
 
 func TestGetConnections(t *testing.T) {
 	cleanupNet()
-	p := NewConnectionPool(NewConfig(), nil)
+	p := NewConnectionPool(newConfig(), nil)
 	c := &Connection{Id: 1}
 	d := &Connection{Id: 2}
 	e := &Connection{Id: 3}
@@ -512,7 +586,7 @@ func TestGetConnections(t *testing.T) {
 
 func TestGetRawConnections(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -554,7 +628,7 @@ func TestGetRawConnections(t *testing.T) {
 
 func TestConnectionReadLoop(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -698,7 +772,7 @@ func TestConnectionReadLoop(t *testing.T) {
 
 func TestHandleConnectionQueue(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -720,7 +794,7 @@ func TestHandleConnectionQueue(t *testing.T) {
 
 func TestProcessEvents(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -746,7 +820,7 @@ func TestProcessConnectionBuffers(t *testing.T) {
 	RegisterMessage(DummyPrefix, DummyMessage{})
 	RegisterMessage(ErrorPrefix, ErrorMessage{})
 	VerifyMessages()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -905,7 +979,7 @@ func TestConnectionWriteLoop(t *testing.T) {
 
 func TestHandleMessages(t *testing.T) {
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
@@ -915,7 +989,7 @@ func TestHandleMessages(t *testing.T) {
 func TestPoolSendMessage(t *testing.T) {
 	resetHandler()
 	c := &Connection{LastSent: time.Time{}, WriteQueue: make(chan Message, 1)}
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.WriteTimeout = time.Second
 	p := NewConnectionPool(cfg, nil)
 	assert.NotEqual(t, p.Config.ConnectionWriteQueueSize, 0)
@@ -975,7 +1049,7 @@ func TestPoolReceiveMessage(t *testing.T) {
 	VerifyMessages()
 	c := &Connection{}
 	assert.True(t, c.LastReceived.IsZero())
-	p := NewConnectionPool(NewConfig(), nil)
+	p := NewConnectionPool(newConfig(), nil)
 
 	// Valid message received
 	b := make([]byte, 0)
@@ -1004,7 +1078,7 @@ func TestPoolReceiveMessage(t *testing.T) {
 func TestConnection_Acquire_Release(t *testing.T) {
 	release := make(chan struct{})
 	cleanupNet()
-	cfg := NewConfig()
+	cfg := newConfig()
 	cfg.Port = uint16(port)
 	cfg.Address = address
 	cfg.ConnectCallback = func(gc *Connection, outgoing bool) {
@@ -1265,7 +1339,7 @@ func makeConnection(id int, addr string) *Connection {
 func setupTwoConnections() (*ConnectionPool, *Connection, *Connection) {
 	b := makeConnection(1, addr)
 	c := makeConnection(2, addrb)
-	p := NewConnectionPool(NewConfig(), nil)
+	p := NewConnectionPool(newConfig(), nil)
 	p.Pool[b.Id] = b
 	p.Pool[c.Id] = c
 	p.Addresses[b.Conn.RemoteAddr().String()] = b

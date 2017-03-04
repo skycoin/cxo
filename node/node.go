@@ -72,9 +72,8 @@ func NewNode(conf Config, db *data.DB) *Node {
 	if conf.Name == "" {
 		conf.Name = "node"
 	}
-	if conf.Debug == false {
-		gnet.DebugPrint = false
-	}
+	// gnet debugging messages and debug messages of node
+	conf.DebugPrint = conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
