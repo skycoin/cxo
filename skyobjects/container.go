@@ -44,6 +44,19 @@ func NewContainer(ds *data.DB) (c *Container) {
 func (c *Container) SetDB(ds *data.DB) error {
 	// TODO: Implement and complete!!!!!!!!!!
 	c.ds = ds
+	c.rootKey, c.rootSeq, c.rootTS = cipher.SHA256{}, 0, 0 // Clear members.
+	// Find latest root.
+	for _, key := range c.GetAllOfSchema(c._rootType) {
+		var rt RootObject
+		_, data, e := c.Get(key)
+		if e != nil {
+			return e
+		}
+		encoder.DeserializeRaw(data, &rt)
+		if rt.TimeStamp > c.rootTS {
+			c.rootKey, c.rootSeq, c.rootTS = key, rt.Sequence, rt.TimeStamp
+		}
+	}
 	return nil
 }
 
