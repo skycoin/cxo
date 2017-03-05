@@ -195,7 +195,7 @@ type ConnectionPool struct {
 	// Listening connection
 	listener net.Listener
 	// connectionQueue, for eliminating contention of the Pool/Addresses
-	connectionQueue chan *Connection
+	connectionQueue chan func() *Connection
 	// channel for synchronizing teardown
 	acceptLock chan bool
 }
@@ -214,7 +214,7 @@ func NewConnectionPool(c Config, state interface{}) *ConnectionPool {
 		messageState:    state,
 		// connectionQueue must not be buffered to guarantee the Pool is
 		// updated before processing is done
-		connectionQueue: make(chan *Connection),
+		connectionQueue: make(chan func() *Connection),
 		acceptLock:      make(chan bool, 1),
 	}
 	pool.acceptLock <- false
@@ -223,16 +223,21 @@ func NewConnectionPool(c Config, state interface{}) *ConnectionPool {
 
 // Creates a new Connection around a net.Conn.  Trying to make a connection
 // to an address that is already connected will panic.
-func (self *ConnectionPool) NewConnection(conn net.Conn) *Connection {
-	a := conn.RemoteAddr().String()
-	if self.Addresses[a] != nil {
-		log.Panicf("Already connected to %s", a)
+func (self *ConnectionPool) NewConnection(conn net.Conn) (c *Connection) {
+	done := make(chan struct{})
+	self.connectionQueue <- func() *Connection {
+		defer close(done)
+		a := conn.RemoteAddr().String()
+		if self.Addresses[a] != nil {
+			log.Panicf("Already connected to %s", a)
+		}
+		self.connId++
+		c = NewConnection(self, self.connId, conn,
+			self.Config.ConnectionWriteQueueSize)
+		return c
 	}
-	self.connId++
-	c := NewConnection(self, self.connId, conn,
-		self.Config.ConnectionWriteQueueSize)
-	self.connectionQueue <- c
-	return c
+	<-done
+	return
 }
 
 // Accepts incoming connections and sends them off for processing.
@@ -322,7 +327,7 @@ func (self *ConnectionPool) StopListen() {
 	close(self.eventChannel)
 	close(self.DisconnectQueue)
 	close(self.connectionQueue)
-	self.connectionQueue = make(chan *Connection)
+	self.connectionQueue = make(chan func() *Connection)
 	self.eventChannel = make(chan dataEvent, self.Config.EventChannelSize)
 	self.DisconnectQueue = make(chan DisconnectEvent,
 		self.Config.MaxConnections)
@@ -330,32 +335,68 @@ func (self *ConnectionPool) StopListen() {
 
 // Creates a Connection and begins its read and write loop
 func (self *ConnectionPool) handleConnection(conn net.Conn,
-	solicited bool) *Connection {
-	a := conn.RemoteAddr().String()
-	c := self.Addresses[a]
-	if c != nil {
-		log.Panicf("Connection %s already exists", a)
+	solicited bool) (c *Connection) {
+	done := make(chan struct{})
+	self.connectionQueue <- func() *Connection {
+		defer close(done)
+		a := conn.RemoteAddr().String()
+		c := self.Addresses[a]
+		if c != nil {
+			log.Panicf("Connection %s already exists", a)
+		}
+		self.connId++
+		c = NewConnection(self, self.connId, conn,
+			self.Config.ConnectionWriteQueueSize)
+		if self.Config.ConnectCallback != nil {
+			self.Config.ConnectCallback(c, solicited)
+		}
+		go self.connectionReadLoop(c)
+		go self.ConnectionWriteLoop(c)
+		return c
 	}
-	c = self.NewConnection(conn)
-	if self.Config.ConnectCallback != nil {
-		self.Config.ConnectCallback(c, solicited)
-	}
-	go self.connectionReadLoop(c)
-	go self.ConnectionWriteLoop(c)
-	return c
+	<-done
+	return
+}
+
+// dial timeout async
+func dial(address string, timeout time.Duration) (conn net.Conn, err error) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err = net.DialTimeout("tcp", address, timeout)
+	}()
+	<-done
+	return
 }
 
 // Connect to an address
-func (self *ConnectionPool) Connect(address string) (*Connection, error) {
-	if c := self.Addresses[address]; c != nil {
-		return c, nil
+func (self *ConnectionPool) Connect(address string) (c *Connection, err error) {
+	done := make(chan struct{})
+	self.connectionQueue <- func() *Connection {
+		defer close(done)
+		var ok bool
+		if c, ok = self.Addresses[address]; ok {
+			return c
+		}
+		logger.Debug("Making TCP Connection to %s", address)
+		var conn net.Conn
+		if conn, err = dial(address, self.Config.DialTimeout); err != nil {
+			return nil
+		}
+
+		// self.handleConnection(conn, true)
+		self.connId++
+		c = NewConnection(self, self.connId, conn,
+			self.Config.ConnectionWriteQueueSize)
+		if self.Config.ConnectCallback != nil {
+			self.Config.ConnectCallback(c, true)
+		}
+		go self.connectionReadLoop(c)
+		go self.ConnectionWriteLoop(c)
+		return c
 	}
-	logger.Debug("Making TCP Connection to %s", address)
-	conn, err := net.DialTimeout("tcp", address, self.Config.DialTimeout)
-	if err != nil {
-		return nil, err
-	}
-	return self.handleConnection(conn, true), nil
+	<-done
+	return
 }
 
 // Removes a Connection from the pool, and passes a DisconnectReason to the
@@ -478,7 +519,11 @@ func (self *ConnectionPool) connectionReadLoop(conn *Connection) {
 // Processes a new queued connection
 func (self *ConnectionPool) handleConnectionQueue() *Connection {
 	select {
-	case c := <-self.connectionQueue:
+	case evt := <-self.connectionQueue:
+		c := evt()
+		if c == nil {
+			return nil
+		}
 		logger.Debug("New connection to %s pulled off connectionQueue",
 			c.Addr())
 		self.Pool[c.Id] = c

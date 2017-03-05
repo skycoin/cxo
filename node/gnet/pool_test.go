@@ -205,6 +205,15 @@ func TestNewConnection(t *testing.T) {
 	assert.False(t, c.LastReceived.IsZero())
 }
 
+func handleConnectionQueue(p *ConnectionPool) {
+	for {
+		if p.handleConnectionQueue() != nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestNewConnectionAlreadyConnected(t *testing.T) {
 	cleanupNet()
 	listen()
@@ -213,7 +222,8 @@ func TestNewConnectionAlreadyConnected(t *testing.T) {
 	cfg.Address = address
 	p := NewConnectionPool(cfg, nil)
 	c := newPoolConnection(p)
-	assert.Panics(t, func() { p.NewConnection(c.Conn) })
+	go p.NewConnection(c.Conn)
+	assert.Panics(t, func() { handleConnectionQueue(p) })
 }
 
 func TestAcceptConnections(t *testing.T) {
@@ -762,7 +772,7 @@ func TestHandleConnectionQueue(t *testing.T) {
 	p := NewConnectionPool(cfg, nil)
 	c := &Connection{Id: 1, Conn: &ReadAlwaysConn{}}
 	go func() {
-		p.connectionQueue <- c
+		p.connectionQueue <- func() *Connection { return c }
 	}()
 	wait()
 	d := p.handleConnectionQueue()
