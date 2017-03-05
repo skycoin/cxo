@@ -63,7 +63,7 @@ type Node struct {
 	done chan struct{}
 }
 
-// NewNode creates Node with given config and DB. I given database is nil
+// NewNode creates Node with given config and DB. If given database is nil
 // then it panics
 func NewNode(conf Config, db *data.DB) *Node {
 	if db == nil {
@@ -72,9 +72,8 @@ func NewNode(conf Config, db *data.DB) *Node {
 	if conf.Name == "" {
 		conf.Name = "node"
 	}
-	if conf.Debug == false {
-		gnet.DebugPrint = false
-	}
+	// gnet debugging messages and debug messages of node
+	gnet.DebugPrint = conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
@@ -111,6 +110,7 @@ func (n *Node) Start() (err error) {
 	return
 }
 
+// TODO: remade to send root
 // sned all hashes from db we have to given connection
 func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
 	n.Debug("[DBG] send everything we have to ", gc.Addr())

@@ -66,15 +66,19 @@ func (s *Server) Start() (err error) {
 		l = netutil.LimitListener(l, s.c.Max)
 	}
 	rpc.RegisterName("rpc", s)
-	go rpc.Accept(l)
-	go s.handleQuit(s.quit, s.done, l)
+	go s.accept(l, s.done)
+	go s.handleQuit(s.quit, l)
 	return
 }
 
-func (s *Server) handleQuit(quit, done chan struct{}, l net.Listener) {
+func (s *Server) accept(l net.Listener, done chan struct{}) {
+	defer close(done)
+	rpc.Accept(l)
+}
+
+func (s *Server) handleQuit(quit chan struct{}, l net.Listener) {
 	<-quit
 	l.Close()
-	close(done)
 }
 
 // Close is used to shutdown the Server

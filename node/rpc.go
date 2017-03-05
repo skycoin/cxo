@@ -30,11 +30,8 @@ func (n *Node) enqueueEvent(done <-chan struct{}, evt Event) (err error) {
 // Connect should be called from RPC server. It trying
 // to connect to given address
 func (n *Node) Connect(address string) (err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
-		_, err = n.pool.Connect(address)
-	})
+	// waiting for skycoin/src/daemon/gnet PR 300
+	_, err = n.pool.Connect(address)
 	return
 }
 
