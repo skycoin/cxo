@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobjects"
 )
 
 var (
@@ -53,6 +53,7 @@ type Node struct {
 	conf Config
 
 	db *data.DB
+	so *skyobjects.Container
 
 	pool *gnet.ConnectionPool
 
@@ -65,9 +66,12 @@ type Node struct {
 
 // NewNode creates Node with given config and DB. If given database is nil
 // then it panics
-func NewNode(conf Config, db *data.DB) *Node {
+func NewNode(conf Config, db *data.DB, so *skyobjects.Container) *Node {
 	if db == nil {
-		panic("NewNode has got nil database")
+		panic("NewNode: given database is nil")
+	}
+	if so == nil {
+		panic("NewNode: given container is nil")
 	}
 	if conf.Name == "" {
 		conf.Name = "node"
@@ -78,6 +82,7 @@ func NewNode(conf Config, db *data.DB) *Node {
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
 		db:     db,
+		so:     so,
 	}
 }
 
@@ -86,12 +91,7 @@ func (n *Node) Start() (err error) {
 	n.Debug("[DBG] starting node")
 	n.once = sync.Once{} // refresh once
 	n.quit, n.done = make(chan struct{}), make(chan struct{})
-	n.conf.ConnectCallback = func(gc *gnet.Connection, outgoing bool) {
-		n.Debug("[DBG] got new connection ", gc.Addr())
-		if !outgoing {
-			n.sendEverythingWeHave(gc)
-		}
-	}
+	n.conf.ConnectCallback = n.onConnect
 	n.pool = gnet.NewConnectionPool(n.conf.Config, n)
 	if err = n.pool.StartListen(); err != nil {
 		return
@@ -110,13 +110,22 @@ func (n *Node) Start() (err error) {
 	return
 }
 
-// TODO: remade to send root
-// sned all hashes from db we have to given connection
-func (n *Node) sendEverythingWeHave(gc *gnet.Connection) {
-	n.Debug("[DBG] send everything we have to ", gc.Addr())
-	n.db.Range(func(k cipher.SHA256) {
-		gc.ConnectionPool.SendMessage(gc, &Announce{k})
-	})
+// gnet callback
+func (n *Node) onConnect(gc *gnet.Connection, outgoing bool) {
+	n.Debug("[DBG] got new connection ", gc.Addr())
+	if !outgoing {
+		n.sendRoot(gc)
+	}
+}
+
+// sned root object we have (if we have)
+func (n *Node) sendRoot(gc *gnet.Connection) {
+	root, err := n.so.GetRoot()
+	if err != nil {
+		return // we don't have root object
+	}
+	n.Debug("[DBG] send root object to ", gc.Addr())
+	gc.ConnectionPool.SendMessage(gc, &Root{root})
 }
 
 // handling loop

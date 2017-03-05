@@ -3,6 +3,8 @@ package node
 import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/daemon/gnet"
+
+	"github.com/skycoin/cxo/skyobjects"
 )
 
 func init() {
@@ -62,7 +64,8 @@ func (r *Request) Handle(ctx *gnet.MessageContext,
 
 // Data is a pice of data
 type Data struct {
-	Data []byte
+	Schema cipher.SHA256
+	Data   []byte
 }
 
 func (d *Data) Handle(ctx *gnet.MessageContext,
@@ -77,6 +80,30 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 	for _, gc := range n.pool.Pool {
 		if gc != ctx.Conn {
 			n.pool.SendMessage(gc, &Announce{hash})
+		}
+	}
+	return
+}
+
+// Root contains root object
+type Root struct {
+	Root skyobjects.RootObject
+}
+
+func (r *Root) Handle(ctx *gnet.MessageContext,
+	node interface{}) (terminate error) {
+
+	n := node.(*Node)
+	if !n.so.SaveRoot(r.Root) {
+		// older or the same
+		return
+	}
+	// TODO: terminate all other transactions for old root,
+	//       we take in new root object
+	// Broadcast the root
+	for _, gc := range n.pool.Pool {
+		if gc != ctx.Conn {
+			n.pool.SendMessage(gc, r)
 		}
 	}
 	return
