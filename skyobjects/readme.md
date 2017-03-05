@@ -1,32 +1,16 @@
 SkyObjects API
 ===
 
-## TODO: Features to implement
+### TODO: Features to implement
 
-### (Container).SetDB(\*data.DB)
+##### ~~(Container).SetDB(\*data.DB)~~
 
-Sets a new DB for container.
+Done.
 
-Remember to set ...
-```
-rootKey cipher.SHA256
-rootSeq uint64
-schemas map[cipher.SHA256]string
-```
-... to appropriate values.
+##### ~~(Container).GetReferencesFor(schemaKey cipher.SHA256, objData []byte) map[cipher.SHA256]cipher.SHA256~~
 
-### ~~(Container).GetReferencesFor(schemaKey cipher.SHA256, objData []byte) map[cipher.SHA256]cipher.SHA256~~
+Done.
 
-Gets list of objects that reference the specified object.
+##### ~~(RootObject).GetDescendants(c \*Container) map[cipher.SHA256]bool~~
 
-Returns a map of:
-* Key: key of object stored
-* Value: schemaKey of object stored
-
-### ~~(RootObject).GetDescendants(c \*Container) map[cipher.SHA256]bool~~
-
-Gets all keys of descendants of a root object.
-
-Boolean value:
-* TRUE: We have a copy of this object in container.
-* FALSE: We don't have a copy of this object in container.
+Done.

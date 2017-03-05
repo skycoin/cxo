@@ -1,10 +1,10 @@
 package skyobjects
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -51,7 +51,7 @@ type Node struct {
 
 type Ref struct {
 	A string
-	B HashArray
+	B HashArray `skyobjects:"href"`
 }
 
 func TestReferencing(t *testing.T) {
@@ -63,15 +63,51 @@ func TestReferencing(t *testing.T) {
 	nodeDat := encoder.Serialize(node)
 	nodeKey := c.Save(nodeSchKey, nodeDat)
 
-	ref1 := Ref{"1", []cipher.SHA256{nodeKey}}
+	ref1 := Ref{"1", NewArray(nodeKey)}
 	ref1Dat := encoder.Serialize(ref1)
 	c.Save(refSchKey, ref1Dat)
 
-	ref2 := Ref{"2", []cipher.SHA256{nodeKey}}
+	ref2 := Ref{"2", NewArray(nodeKey)}
 	ref2Dat := encoder.Serialize(ref2)
 	c.Save(refSchKey, ref2Dat)
 
-	ref3 := Ref{"3", []cipher.SHA256{nodeKey}}
+	ref3 := Ref{"3", NewArray(nodeKey)}
+	ref3Dat := encoder.Serialize(ref3)
+	c.Save(refSchKey, ref3Dat)
+
+	t.Log("Finding objects that reference 'node':")
+	refsToNode := c.GetReferencesFor(nodeKey)
+	if n := len(refsToNode); n != 3 {
+		t.Errorf("expected 3, got %d", n)
+	} else {
+		t.Log("OK")
+	}
+}
+
+type Ref2 struct {
+	A string
+	B HashObject `skyobjects:"href"`
+}
+
+func TestReferencing2(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	nodeSchKey := c.SaveSchema(Node{})
+	refSchKey := c.SaveSchema(Ref2{})
+
+	node := Node{"main"}
+	nodeDat := encoder.Serialize(node)
+	nodeKey := c.Save(nodeSchKey, nodeDat)
+	nkey := HashObject(nodeKey)
+
+	ref1 := Ref2{"1", nkey}
+	ref1Dat := encoder.Serialize(ref1)
+	c.Save(refSchKey, ref1Dat)
+
+	ref2 := Ref2{"2", nkey}
+	ref2Dat := encoder.Serialize(ref2)
+	c.Save(refSchKey, ref2Dat)
+
+	ref3 := Ref2{"3", nkey}
 	ref3Dat := encoder.Serialize(ref3)
 	c.Save(refSchKey, ref3Dat)
 
@@ -87,9 +123,49 @@ func TestReferencing(t *testing.T) {
 type Child struct {
 	Name     string
 	Age      uint32
-	Children HashArray
+	Children HashArray `skyobjects:"href,child"`
 }
 
-func TestGetDescendants(t *testing.T) {
+func TestGetChildren(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	_childType := c.SaveSchema(Child{})
 
+	// Make some grandchildren.
+	var grandchildrenKeys HashArray
+	for i := 0; i < 20; i++ {
+		grandchild := Child{Name: "Grandchild" + strconv.Itoa(i), Age: 20}
+		grandchildrenKeys = append(grandchildrenKeys, c.SaveObject(_childType, grandchild))
+	}
+
+	// Make some children.
+	var childrenKeys HashArray
+	for i := 0; i < 5; i++ {
+		child := Child{Name: "Child" + strconv.Itoa(i), Age: 40}
+		for j := i * 4; j < i*4+4; j++ {
+			child.Children = append(child.Children, grandchildrenKeys[j])
+		}
+		childData := encoder.Serialize(child)
+		childrenKeys = append(childrenKeys, c.Save(_childType, childData))
+
+		// Test get children.
+		c.GetChildren(_childType, childData)
+	}
+
+	// Make root.
+	root := NewRoot(0)
+	root.AddChildren(childrenKeys...)
+	c.SaveRoot(root)
+
+	// dMap := root.GetDescendants(c)
+	// t.Logf("Number of root Descendants: %d", len(dMap))
+	// if n := len(dMap); n != 25 {
+	// 	t.Errorf("expected number of descendants: %d, I got: %d", 25, n)
+	// }
+	//
+	// for k, v := range dMap {
+	// 	if v == false {
+	// 		t.Errorf("object of key '%s' should exist.", k.Hex())
+	// 	}
+	// 	t.Logf("key = %s, exist = %v", k.Hex(), v)
+	// }
 }
