@@ -2,8 +2,7 @@ package node
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/node/gnet"
+	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
 func init() {

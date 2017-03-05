@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/gnet"
 )
 
 var (
