@@ -1,5 +1,6 @@
-// Package client is RPC-client for node/. For example
+// Package client is RPC-client for CXO daemon. For example
 // see cmd/cli
+//
 //
 package client
 
@@ -22,14 +23,14 @@ type Client struct {
 	r *rpc.Client
 }
 
-// Dial connects to RPC-server and return Client or an error
+// Dial connects to RPC-server and returns Client or an error
 func Dial(net string, address string) (c *Client, err error) {
 	c = new(Client)
 	c.r, err = rpc.Dial(net, address)
 	return
 }
 
-// Close is used shutdonw the Client
+// Close is used to shutdonw the Client
 func (c *Client) Close() (err error) {
 	err = c.r.Close()
 	return
@@ -39,36 +40,39 @@ func (c *Client) Close() (err error) {
 // RPC methods
 //
 
-// Connect to given address
+// Connect is used to connect remote node to given address
 func (c *Client) Connect(address string) (err error) {
 	err = c.r.Call("rpc.Connect", address, nil)
 	return
 }
 
-// Disconnect from given address
+// Disconnect is used to disconnect remote node from given address
 func (c *Client) Disconnect(address string) (err error) {
 	err = c.r.Call("rpc.Disconnect", address, nil)
 	return
 }
 
+// List returns all connections of remote node
 func (c *Client) List() (list []string, err error) {
 	err = c.r.Call("rpc.List", struct{}{}, &list)
 	return
 }
 
-// Info returns listening address
+// Info returns listening address of remote node
 func (c *Client) Info() (address string, err error) {
 	err = c.r.Call("rpc.Info", struct{}{}, &address)
 	return
 }
 
-// Stat returns database Statistic
+// Stat returns database statistic of remote node
 func (c *Client) Stat() (stat data.Stat, err error) {
 	err = c.r.Call("rpc.Stat", struct{}{}, &stat)
 	return
 }
 
-// Terminate is used to close node remotely
+// Terminate is used to close remote node if possible.
+// If the node was launched with -remote-close=t flag,
+// we can to shutdown it remotely
 func (c *Client) Terminate() (err error) {
 	err = c.r.Call("rpc.Terminate", struct{}{}, nil)
 	if err == io.ErrUnexpectedEOF {
