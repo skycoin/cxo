@@ -116,7 +116,7 @@ func (c *Container) SaveRoot(newRoot RootObject) bool {
 func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte, e error) {
 	hrefData, ok := c.ds.Get(key)
 	if ok == false {
-		e = fmt.Errorf("no object found with key '%s'", key.Hex())
+		e = ErrorSkyObjectNotFound{Key: key}
 		return
 	}
 	var h Href
@@ -129,7 +129,7 @@ func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte
 func (c *Container) GetHref(key cipher.SHA256) (h Href, e error) {
 	data, ok := c.ds.Get(key)
 	if ok == false {
-		e = fmt.Errorf("no object found with key '%s'", key.Hex())
+		e = ErrorSkyObjectNotFound{Key: key}
 		return
 	}
 	encoder.DeserializeRaw(data, &h)
@@ -139,7 +139,7 @@ func (c *Container) GetHref(key cipher.SHA256) (h Href, e error) {
 // GetRoot gets the latest local root.
 func (c *Container) GetRoot() (root RootObject, e error) {
 	if c.rootKey == (cipher.SHA256{}) {
-		e = fmt.Errorf("no root avaliable")
+		e = ErrorRootNotSpecified{}
 		return
 	}
 	_, data, e := c.Get(c.rootKey)

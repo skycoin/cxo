@@ -1,8 +1,6 @@
 package skyobjects
 
 import (
-	"fmt"
-
 	"github.com/evanlinjin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
 )
@@ -35,7 +33,7 @@ func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e e
 		return
 	}
 	if dbSchemaKey != c._schemaType {
-		e = fmt.Errorf("is not Schema type")
+		e = ErrorKeyIsNotSchema{SchemaKey: schemaKey}
 		return
 	}
 	schema = &Schema{}
@@ -47,7 +45,7 @@ func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e e
 func (c *Container) GetSchemaOfName(schemaName string) (schema *Schema, e error) {
 	schemaKey, exists := c.schemas[schemaName]
 	if exists == false {
-		e = fmt.Errorf("no schema found with name '%s'", schemaName)
+		e = ErrorSchemaNotFound{SchemaName: schemaName}
 		return
 	}
 	// Obtain schema from db.
