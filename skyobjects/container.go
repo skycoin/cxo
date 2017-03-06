@@ -12,14 +12,10 @@ import (
 const _StrHashArray = "hasharray"
 const _StrHashObject = "hashobject"
 
-type href struct {
+// Href is an objects data wrapped with it's Schema.
+type Href struct {
 	SchemaKey cipher.SHA256
 	Data      []byte
-}
-
-type sref struct {
-	Name   string
-	Schema Schema
 }
 
 // Container contains skyobjects.
@@ -65,13 +61,14 @@ func (c *Container) SetDB(ds *data.DB) error {
 			c.rootKey, c.rootSeq, c.rootTS = key, rt.Sequence, rt.TimeStamp
 		}
 	}
+	// Update Schemas.
 	return nil
 }
 
 // Save saves an object into container.
 func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
 	// TODO: Special cases for RootObject.
-	h := href{SchemaKey: schemaKey, Data: data}
+	h := Href{SchemaKey: schemaKey, Data: data}
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
 	return
 }
@@ -79,7 +76,13 @@ func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA25
 // SaveObject also saves an object into container, but Serialises for you.
 func (c *Container) SaveObject(schemaKey cipher.SHA256, obj interface{}) (key cipher.SHA256) {
 	data := encoder.Serialize(obj)
-	h := href{SchemaKey: schemaKey, Data: data}
+	h := Href{SchemaKey: schemaKey, Data: data}
+	key = c.ds.AddAutoKey(encoder.Serialize(h))
+	return
+}
+
+// SaveHref saves object in form of 'Href'.
+func (c *Container) SaveHref(h Href) (key cipher.SHA256) {
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
 	return
 }
@@ -99,7 +102,7 @@ func (c *Container) SaveRoot(newRoot RootObject) bool {
 func (c *Container) SaveSchema(object interface{}) (schemaKey cipher.SHA256) {
 	schema := ReadSchema(object)
 	schemaData := encoder.Serialize(schema)
-	h := href{SchemaKey: c._schemaType, Data: schemaData}
+	h := Href{SchemaKey: c._schemaType, Data: schemaData}
 	schemaKey = c.ds.AddAutoKey(encoder.Serialize(h))
 
 	// Append data to c.schemas
@@ -114,9 +117,20 @@ func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte
 		e = fmt.Errorf("no object found with key '%s'", key.Hex())
 		return
 	}
-	var h href
+	var h Href
 	encoder.DeserializeRaw(hrefData, &h) // Shouldn't create an error, everything stored in db is of type href.
 	schemaKey, data = h.SchemaKey, h.Data
+	return
+}
+
+// GetHref retrieves a stored object in the form of 'Href'.
+func (c *Container) GetHref(key cipher.SHA256) (h Href, e error) {
+	data, ok := c.ds.Get(key)
+	if ok == false {
+		e = fmt.Errorf("no object found with key '%s'", key.Hex())
+		return
+	}
+	encoder.DeserializeRaw(data, &h)
 	return
 }
 
@@ -196,7 +210,6 @@ func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[
 			encoder.DeserializeField(data, schema.Fields, field.Name, &k)
 			cMap[k] = c.ds.Has(k)
 		}
-
 	}
 	return
 }
@@ -204,7 +217,7 @@ func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[
 // GetReferencesFor gets a list of objects that reference the specified object.
 func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
-		var h href
+		var h Href
 		encoder.DeserializeRaw(data, &h)
 		schema, e := c.GetSchemaOfKey(h.SchemaKey)
 		if e != nil {

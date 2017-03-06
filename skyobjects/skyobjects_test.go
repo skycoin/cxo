@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -51,7 +52,7 @@ type Node struct {
 
 type Ref struct {
 	A string
-	B HashArray `skyobjects:"href"`
+	B []cipher.SHA256 `skyobjects:"href"`
 }
 
 func TestReferencing(t *testing.T) {
@@ -86,7 +87,7 @@ func TestReferencing(t *testing.T) {
 
 type Ref2 struct {
 	A string
-	B HashObject `skyobjects:"href"`
+	B cipher.SHA256 `skyobjects:"href"`
 }
 
 func TestReferencing2(t *testing.T) {
@@ -97,7 +98,7 @@ func TestReferencing2(t *testing.T) {
 	node := Node{"main"}
 	nodeDat := encoder.Serialize(node)
 	nodeKey := c.Save(nodeSchKey, nodeDat)
-	nkey := HashObject(nodeKey)
+	nkey := nodeKey
 
 	ref1 := Ref2{"1", nkey}
 	ref1Dat := encoder.Serialize(ref1)
