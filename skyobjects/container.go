@@ -48,7 +48,8 @@ func NewContainer(ds *data.DB) (c *Container) {
 func (c *Container) SetDB(ds *data.DB) error {
 	// TODO: Implement and complete!!!!!!!!!!
 	c.ds = ds
-	c.rootKey, c.rootSeq, c.rootTS = cipher.SHA256{}, 0, 0 // Clear members.
+	// Clear members.
+	c.rootKey, c.rootSeq, c.rootTS = cipher.SHA256{}, 0, 0
 	// Find latest root.
 	for _, key := range c.GetAllOfSchema(c._rootType) {
 		var rt RootObject
@@ -62,6 +63,7 @@ func (c *Container) SetDB(ds *data.DB) error {
 		}
 	}
 	// Update Schemas.
+	c.IndexSchemas()
 	return nil
 }
 
@@ -96,18 +98,6 @@ func (c *Container) SaveRoot(newRoot RootObject) bool {
 	c.rootSeq = newRoot.Sequence
 	c.rootKey = c.SaveObject(c._rootType, newRoot)
 	return true
-}
-
-// SaveSchema saves a schema to container.
-func (c *Container) SaveSchema(object interface{}) (schemaKey cipher.SHA256) {
-	schema := ReadSchema(object)
-	schemaData := encoder.Serialize(schema)
-	h := Href{SchemaKey: c._schemaType, Data: schemaData}
-	schemaKey = c.ds.AddAutoKey(encoder.Serialize(h))
-
-	// Append data to c.schemas
-	c.schemas[schemaKey] = schema.Name
-	return
 }
 
 // Get retrieves a stored object.
@@ -148,30 +138,6 @@ func (c *Container) GetRoot() (root RootObject, e error) {
 	return
 }
 
-// GetAllSchemas returns a list of all schemas in container.
-func (c *Container) GetAllSchemas() (schemas []*Schema) {
-	for k := range c.schemas {
-		schema, _ := c.GetSchemaOfKey(k)
-		schemas = append(schemas, schema)
-	}
-	return
-}
-
-// GetSchemaOfKey gets the schema from schemaKey.
-func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e error) {
-	dbSchemaKey, data, e := c.Get(schemaKey)
-	if e != nil {
-		return
-	}
-	if dbSchemaKey != c._schemaType {
-		e = fmt.Errorf("is not Schema type")
-		return
-	}
-	schema = &Schema{}
-	e = encoder.DeserializeRaw(data, schema)
-	return
-}
-
 // GetAllOfSchema gets all keys of objects with specified schemaKey.
 func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 	query := func(key cipher.SHA256, data []byte) bool {
@@ -195,7 +161,7 @@ func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[
 	// Iterate through fields of object.
 	for _, field := range schema.Fields {
 		// Continue if not referenced.
-		if st, _ := getSkyTag(field.Tag); st.href == false {
+		if st, _ := getSkyTag(c, field.Tag); st.href == false {
 			continue
 		}
 		switch field.Type {
@@ -226,7 +192,7 @@ func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 		}
 		for _, field := range schema.Fields {
 			// Continue if not referenced.
-			if st, _ := getSkyTag(field.Tag); st.href == false {
+			if st, _ := getSkyTag(c, field.Tag); st.href == false {
 				continue
 			}
 			// fmt.Println("[FIELD TYPE]", field.Type)
