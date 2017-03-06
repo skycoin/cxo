@@ -22,7 +22,6 @@ func getSkyTag(c *Container, tag string) (st skyTag, e error) {
 	} else if alias == "" {
 		return
 	}
-
 	// Extract data from 'skyobjects' tag.
 	tags := strings.Split(alias, ",")
 	for _, tag := range tags {
@@ -33,8 +32,11 @@ func getSkyTag(c *Container, tag string) (st skyTag, e error) {
 			st.schemaName = strings.TrimPrefix(tag, "schema_name=")
 		}
 	}
-
-	// Fill aditional data from container.
-
+	// Fill additional data to skyTag object from container.
+	schema, e := c.GetSchemaOfName(st.schemaName)
+	if e != nil {
+		return
+	}
+	st.schemaName = schema.Name
 	return
 }

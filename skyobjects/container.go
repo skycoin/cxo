@@ -24,7 +24,7 @@ type Container struct {
 	rootKey cipher.SHA256            // Key of latest root object.
 	rootSeq uint64                   // Sequence number of latest root object.
 	rootTS  int64                    // Timestamp of latest root object.
-	schemas map[cipher.SHA256]string // List of avaliable schemas.
+	schemas map[string]cipher.SHA256 // List of avaliable schemas.
 
 	// Keys used for storing/retrieving specific object types.
 	// NO NOT MODIFY.
@@ -36,7 +36,7 @@ type Container struct {
 func NewContainer(ds *data.DB) (c *Container) {
 	c = &Container{
 		ds:      ds,
-		schemas: make(map[cipher.SHA256]string),
+		schemas: make(map[string]cipher.SHA256),
 	}
 	c._rootType = cipher.SumSHA256(encoder.Serialize(RootObject{}))
 	c._schemaType = cipher.SumSHA256(encoder.Serialize(Schema{}))
@@ -69,23 +69,34 @@ func (c *Container) SetDB(ds *data.DB) error {
 
 // Save saves an object into container.
 func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
-	// TODO: Special cases for RootObject.
 	h := Href{SchemaKey: schemaKey, Data: data}
-	key = c.ds.AddAutoKey(encoder.Serialize(h))
-	return
+	return c.SaveHref(h)
 }
 
 // SaveObject also saves an object into container, but Serialises for you.
 func (c *Container) SaveObject(schemaKey cipher.SHA256, obj interface{}) (key cipher.SHA256) {
 	data := encoder.Serialize(obj)
 	h := Href{SchemaKey: schemaKey, Data: data}
-	key = c.ds.AddAutoKey(encoder.Serialize(h))
-	return
+	return c.SaveHref(h)
 }
 
 // SaveHref saves object in form of 'Href'.
 func (c *Container) SaveHref(h Href) (key cipher.SHA256) {
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
+	// SPECIAL CASES:
+	switch h.SchemaKey {
+	case c._schemaType: // Special case for schemas.
+		c.IndexSchemas()
+	case c._rootType: // Special case for root.
+		var root RootObject
+		encoder.DeserializeRaw(h.Data, &root)
+		// Only add to main root if latest root.
+		if root.TimeStamp > c.rootTS {
+			c.rootKey = key
+			c.rootSeq = root.Sequence
+			c.rootTS = root.TimeStamp
+		}
+	}
 	return
 }
 
@@ -94,9 +105,10 @@ func (c *Container) SaveRoot(newRoot RootObject) bool {
 	if newRoot.TimeStamp < c.rootTS {
 		return false
 	}
-	c.rootTS = newRoot.TimeStamp
-	c.rootSeq = newRoot.Sequence
-	c.rootKey = c.SaveObject(c._rootType, newRoot)
+	c.SaveObject(c._rootType, newRoot)
+	// c.rootTS = newRoot.TimeStamp
+	// c.rootSeq = newRoot.Sequence
+	// c.rootKey = c.SaveObject(c._rootType, newRoot)
 	return true
 }
 

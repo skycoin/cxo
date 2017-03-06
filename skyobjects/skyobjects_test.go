@@ -156,6 +156,7 @@ func TestGetChildren(t *testing.T) {
 	root := NewRoot(0)
 	root.AddChildren(childrenKeys...)
 	c.SaveRoot(root)
+	c.GetSchemaOfName("")
 
 	// dMap := root.GetDescendants(c)
 	// t.Logf("Number of root Descendants: %d", len(dMap))
