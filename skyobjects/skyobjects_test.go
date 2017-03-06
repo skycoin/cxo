@@ -144,15 +144,14 @@ func TestGetChildren(t *testing.T) {
 		for j := i * 4; j < i*4+4; j++ {
 			child.Children = append(child.Children, grandchildrenKeys[j])
 		}
-		childData := encoder.Serialize(child)
-		childrenKeys = append(childrenKeys, c.SaveData(_childType, childData))
-
-		// Test get children.
-		c.GetChildren(_childType, childData)
+		childrenKeys = append(childrenKeys, c.SaveObject(_childType, child))
 	}
 
 	// Make root.
 	root := NewRoot(0)
 	root.AddChildren(childrenKeys...)
 	c.SaveRoot(root)
+
+	// Print tree.
+
 }

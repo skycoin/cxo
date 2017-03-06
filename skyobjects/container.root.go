@@ -1,8 +1,10 @@
 package skyobjects
 
 import (
-	"github.com/evanlinjin/cxo/encoder"
+	"fmt"
+
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 // SaveRoot saves a root object (if latest).
@@ -43,3 +45,13 @@ func (c *Container) GetCurrentRootSequence() uint64 { return c.rootSeq }
 
 // GetCurrentRootTimeStamp returns the local main root's time stamp.
 func (c *Container) GetCurrentRootTimeStamp() int64 { return c.rootTS }
+
+// GetCurrentRootChildren get's the keys of the current root's children.
+func (c *Container) GetCurrentRootChildren() (keys []cipher.SHA256) {
+	root, e := c.GetCurrentRootDeserialised()
+	if e != nil {
+		fmt.Println(e)
+		return
+	}
+	return root.Children
+}
