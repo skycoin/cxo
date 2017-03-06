@@ -53,11 +53,11 @@ func (c *Container) SetDB(ds *data.DB) error {
 	// Find latest root.
 	for _, key := range c.GetAllOfSchema(c._rootType) {
 		var rt RootObject
-		_, data, e := c.Get(key)
+		h, e := c.Get(key)
 		if e != nil {
 			return e
 		}
-		encoder.DeserializeRaw(data, &rt)
+		encoder.DeserializeRaw(h.Data, &rt)
 		if rt.TimeStamp > c.rootTS {
 			c.rootKey, c.rootSeq, c.rootTS = key, rt.Sequence, rt.TimeStamp
 		}
@@ -67,21 +67,8 @@ func (c *Container) SetDB(ds *data.DB) error {
 	return nil
 }
 
-// Save saves an object into container.
-func (c *Container) Save(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
-	h := Href{SchemaKey: schemaKey, Data: data}
-	return c.SaveHref(h)
-}
-
-// SaveObject also saves an object into container, but Serialises for you.
-func (c *Container) SaveObject(schemaKey cipher.SHA256, obj interface{}) (key cipher.SHA256) {
-	data := encoder.Serialize(obj)
-	h := Href{SchemaKey: schemaKey, Data: data}
-	return c.SaveHref(h)
-}
-
-// SaveHref saves object in form of 'Href'.
-func (c *Container) SaveHref(h Href) (key cipher.SHA256) {
+// Save saves object (form of 'Href') into container.
+func (c *Container) Save(h Href) (key cipher.SHA256) {
 	key = c.ds.AddAutoKey(encoder.Serialize(h))
 	// SPECIAL CASES:
 	switch h.SchemaKey {
@@ -100,53 +87,27 @@ func (c *Container) SaveHref(h Href) (key cipher.SHA256) {
 	return
 }
 
-// SaveRoot saves a root object (if latest).
-func (c *Container) SaveRoot(newRoot RootObject) bool {
-	if newRoot.TimeStamp < c.rootTS {
-		return false
-	}
-	c.SaveObject(c._rootType, newRoot)
-	// c.rootTS = newRoot.TimeStamp
-	// c.rootSeq = newRoot.Sequence
-	// c.rootKey = c.SaveObject(c._rootType, newRoot)
-	return true
+// SaveData saves an object into container.
+func (c *Container) SaveData(schemaKey cipher.SHA256, data []byte) (key cipher.SHA256) {
+	h := Href{SchemaKey: schemaKey, Data: data}
+	return c.Save(h)
 }
 
-// Get retrieves a stored object.
-func (c *Container) Get(key cipher.SHA256) (schemaKey cipher.SHA256, data []byte, e error) {
-	hrefData, ok := c.ds.Get(key)
-	if ok == false {
-		e = ErrorSkyObjectNotFound{Key: key}
-		return
-	}
-	var h Href
-	encoder.DeserializeRaw(hrefData, &h) // Shouldn't create an error, everything stored in db is of type href.
-	schemaKey, data = h.SchemaKey, h.Data
-	return
+// SaveObject also saves an object into container, but Serialises for you.
+func (c *Container) SaveObject(schemaKey cipher.SHA256, obj interface{}) (key cipher.SHA256) {
+	data := encoder.Serialize(obj)
+	h := Href{SchemaKey: schemaKey, Data: data}
+	return c.Save(h)
 }
 
-// GetHref retrieves a stored object in the form of 'Href'.
-func (c *Container) GetHref(key cipher.SHA256) (h Href, e error) {
+// Get retrieves a stored object in the form of 'Href'.
+func (c *Container) Get(key cipher.SHA256) (h Href, e error) {
 	data, ok := c.ds.Get(key)
 	if ok == false {
 		e = ErrorSkyObjectNotFound{Key: key}
 		return
 	}
 	encoder.DeserializeRaw(data, &h)
-	return
-}
-
-// GetRoot gets the latest local root.
-func (c *Container) GetRoot() (root RootObject, e error) {
-	if c.rootKey == (cipher.SHA256{}) {
-		e = ErrorRootNotSpecified{}
-		return
-	}
-	_, data, e := c.Get(c.rootKey)
-	if e != nil {
-		return
-	}
-	encoder.DeserializeRaw(data, &root)
 	return
 }
 
@@ -178,7 +139,7 @@ func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[
 		}
 		switch field.Type {
 		case _StrHashArray, "":
-			var keyArray HashArray
+			var keyArray []cipher.SHA256
 			encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
 			for _, k := range keyArray {
 				cMap[k] = c.ds.Has(k)
@@ -210,7 +171,7 @@ func (c *Container) GetReferencesFor(objKey cipher.SHA256) []cipher.SHA256 {
 			// fmt.Println("[FIELD TYPE]", field.Type)
 			switch field.Type {
 			case _StrHashArray, "":
-				var keyArray HashArray
+				var keyArray []cipher.SHA256
 				encoder.DeserializeField(h.Data, schema.Fields, field.Name, &keyArray)
 				for _, k := range keyArray {
 					if k == objKey {

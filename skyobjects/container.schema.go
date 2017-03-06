@@ -28,16 +28,16 @@ func (c *Container) GetAllSchemas() (schemas []*Schema) {
 
 // GetSchemaOfKey gets the schema from schemaKey.
 func (c *Container) GetSchemaOfKey(schemaKey cipher.SHA256) (schema *Schema, e error) {
-	dbSchemaKey, data, e := c.Get(schemaKey)
+	h, e := c.Get(schemaKey)
 	if e != nil {
 		return
 	}
-	if dbSchemaKey != c._schemaType {
+	if h.SchemaKey != c._schemaType {
 		e = ErrorKeyIsNotSchema{SchemaKey: schemaKey}
 		return
 	}
 	schema = &Schema{}
-	e = encoder.DeserializeRaw(data, schema)
+	e = encoder.DeserializeRaw(h.Data, schema)
 	return
 }
 
@@ -49,12 +49,12 @@ func (c *Container) GetSchemaOfName(schemaName string) (schema *Schema, e error)
 		return
 	}
 	// Obtain schema from db.
-	_, data, err := c.Get(schemaKey)
+	h, err := c.Get(schemaKey)
 	if e != nil {
 		return nil, err
 	}
 	schema = &Schema{}
-	encoder.DeserializeRaw(data, schema)
+	encoder.DeserializeRaw(h.Data, schema)
 	return
 }
 
