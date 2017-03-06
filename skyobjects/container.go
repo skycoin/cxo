@@ -12,12 +12,6 @@ import (
 const _StrHashArray = "hasharray"
 const _StrHashObject = "hashobject"
 
-// Href is an objects data wrapped with it's Schema.
-type Href struct {
-	SchemaKey cipher.SHA256
-	Data      []byte
-}
-
 // Container contains skyobjects.
 type Container struct {
 	ds      *data.DB                 // Data source.
@@ -123,10 +117,10 @@ func (c *Container) GetAllOfSchema(schemaKey cipher.SHA256) []cipher.SHA256 {
 // Boolean value in map:
 // * TRUE: We have a copy of this object in container.
 // * FALSE: We don't have a copy of this object in container.
-func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[cipher.SHA256]bool) {
+func (c *Container) GetChildren(h Href) (cMap map[cipher.SHA256]bool) {
 	cMap = make(map[cipher.SHA256]bool)
 	// Get schema of object.
-	schema, e := c.GetSchemaOfKey(schemaKey)
+	schema, e := c.GetSchemaOfKey(h.SchemaKey)
 	if e != nil {
 		fmt.Println(e)
 		return
@@ -140,13 +134,13 @@ func (c *Container) GetChildren(schemaKey cipher.SHA256, data []byte) (cMap map[
 		switch field.Type {
 		case _StrHashArray, "":
 			var keyArray []cipher.SHA256
-			encoder.DeserializeField(data, schema.Fields, field.Name, &keyArray)
+			encoder.DeserializeField(h.Data, schema.Fields, field.Name, &keyArray)
 			for _, k := range keyArray {
 				cMap[k] = c.ds.Has(k)
 			}
 		case _StrHashObject, "sha256":
 			var k cipher.SHA256
-			encoder.DeserializeField(data, schema.Fields, field.Name, &k)
+			encoder.DeserializeField(h.Data, schema.Fields, field.Name, &k)
 			cMap[k] = c.ds.Has(k)
 		}
 	}

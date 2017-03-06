@@ -1,6 +1,7 @@
 package skyobjects
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -130,15 +131,18 @@ func TestGetChildren(t *testing.T) {
 	c := NewContainer(data.NewDB())
 	_childType := c.SaveSchema(Child{})
 
+	var (
+		grandchildrenKeys []cipher.SHA256
+		childrenKeys      []cipher.SHA256
+	)
+
 	// Make some grandchildren.
-	var grandchildrenKeys []cipher.SHA256
 	for i := 0; i < 20; i++ {
 		grandchild := Child{Name: "Grandchild" + strconv.Itoa(i), Age: 20}
 		grandchildrenKeys = append(grandchildrenKeys, c.SaveObject(_childType, grandchild))
 	}
 
 	// Make some children.
-	var childrenKeys []cipher.SHA256
 	for i := 0; i < 5; i++ {
 		child := Child{Name: "Child" + strconv.Itoa(i), Age: 40}
 		for j := i * 4; j < i*4+4; j++ {
@@ -153,5 +157,17 @@ func TestGetChildren(t *testing.T) {
 	c.SaveRoot(root)
 
 	// Print tree.
+	for _, childKey := range c.GetCurrentRootChildren() {
+		var child Child
+		childRef, _ := c.Get(childKey)
+		childRef.Deserialize(&child)
+		fmt.Printf("CHILD: Name = %s, Age = %d\n", child.Name, child.Age)
 
+		for grandchildKey := range c.GetChildren(childRef) {
+			var grandchild Child
+			grandchildRef, _ := c.Get(grandchildKey)
+			grandchildRef.Deserialize(&grandchild)
+			fmt.Printf("\tGRANDCHILD: Name = %s, Age = %d\n", grandchild.Name, grandchild.Age)
+		}
+	}
 }
