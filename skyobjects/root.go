@@ -8,7 +8,7 @@ import (
 
 // RootObject represents a root object in container.
 type RootObject struct {
-	Children  HashArray
+	Children  []cipher.SHA256 `skyobjects:"href"`
 	Sequence  uint64
 	TimeStamp int64
 }
