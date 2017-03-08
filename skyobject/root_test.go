@@ -1,9 +1,8 @@
 package skyobject
 
 import (
-	"time"
-
 	"testing"
+	"time"
 )
 
 func TestNewRoot(t *testing.T) {

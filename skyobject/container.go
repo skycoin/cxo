@@ -18,6 +18,8 @@ var (
 	dynamicHrefSchema = getSchema(DynamicHref{})
 )
 
+// A Container is a helper type to manage skyobjects. The container is not
+// thread safe
 type Container struct {
 	db   *data.DB
 	root *Root
@@ -25,7 +27,12 @@ type Container struct {
 	registry map[string]*Schema
 }
 
+// NewContainer creates new Container that will use provided database.
+// The database must not be nil
 func NewContainer(db *data.DB) (c *Container) {
+	if db == nil {
+		panic("NewContainer tooks in nil-db")
+	}
 	c = &Container{
 		db:       db,
 		registry: make(map[string]*Schema),
@@ -33,10 +40,13 @@ func NewContainer(db *data.DB) (c *Container) {
 	return
 }
 
+// Root returns root object or nil
 func (c *Container) Root() *Root {
 	return c.root
 }
 
+// SetRoot replaces existing root from given one if timespamp of the given root
+// is greater. The given root must not be nil
 func (c *Container) SetRoot(root *Root) (ok bool) {
 	if c.root == nil {
 		c.root, ok = root, true
@@ -77,9 +87,11 @@ func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 	return
 }
 
-// Get all chield references without any filters
+// Get all child references without any filters
 func (c *Container) Childs(schema Schema,
 	data []byte) (ch map[*Schema][]cipher.SHA256, err error) {
+
+	ch = make(map[*Schema][]cipher.SHA256)
 
 	for _, sf := range schema.Fields {
 		var tag string
@@ -154,6 +166,7 @@ func (c *Container) schemaByTag(tag string) (schema *Schema, err error) {
 	return
 }
 
+// extract href and schema from field, type of which is cipher.SHA256
 func (c *Container) singleHref(data []byte, fields []encoder.StructField,
 	fieldName, tag string) (schema *Schema, obj cipher.SHA256, err error) {
 
@@ -165,6 +178,7 @@ func (c *Container) singleHref(data []byte, fields []encoder.StructField,
 
 }
 
+// same as singleHref for []cipher.SHA256
 func (c *Container) arrayHref(data []byte, fields []encoder.StructField,
 	fieldName, tag string) (schema *Schema, objs []cipher.SHA256, err error) {
 

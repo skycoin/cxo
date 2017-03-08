@@ -3,7 +3,6 @@ package skyobject
 import (
 	"reflect"
 	"strings"
-
 	"testing"
 )
 

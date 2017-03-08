@@ -2,7 +2,6 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 // DynamicHref is reference to object with schema
