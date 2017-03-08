@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"fmt"
+	"fmt"
 	"log"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -26,21 +26,32 @@ type SamllGroup struct {
 	Name     string
 	Leader   cipher.SHA256 `skyobject:"href,schema=User"`
 	Outsider cipher.SHA256 // not a reference
-	//FallGuy  skyobject.DynamicHref `skyobject:"href"`
+	//FallGuy  cipher.SHA256   `skyobject:"href"`
 	Members []cipher.SHA256 `skyobject:"href,schema=User"`
 }
 
 func main() {
-	c := skyobject.NewContainer(data.NewDB())
+	// create database and container instance
+	db := data.NewDB()
+	c := skyobject.NewContainer(db)
 
+	// create new empty root (that is, actually, wrapper of root, but who cares)
 	root := c.NewRoot()
+	// register schema of User{} with name "User",
+	// thus, tags like `skyobject:"href,schema=User"` will refer to
+	// schema of User{}
 	root.Register("User", User{})
 
+	// Set SmallGroup as root
 	root.Set(SamllGroup{
-		Name:     "Average small group",
-		Leader:   c.Save(User{"Billy Kid", 16, ""}),
+		Name: "Average small group",
+		// Save the Leader and get its key
+		Leader: c.Save(User{"Billy Kid", 16, ""}),
+		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
-		//FallGuy:  c.NewDynamicHref(Man{"Bob", 182, 82}),
+		// Unfortunately, there is some unexpected panic for dynamic refs
+		//FallGuy:  c.Save(c.NewDynamicHref(Man{"Bob", 182, 82})),
+		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
 			User{"Eva", 22, ""},
@@ -49,11 +60,23 @@ func main() {
 		),
 	})
 
+	// Set the root as root of the container
 	c.SetRoot(root)
 
+	// print the tree
 	if err := c.Inspect(); err != nil {
 		log.Fatal(err)
 	}
+
+	// database statistic
+	// members:               4
+	// leader:               +1
+	// small group:          +1
+	// schema of User:       +1
+	// schema of SmallGroup: +1
+	// ------------------------
+	//                        8
+	fmt.Println("===\n", db.Stat(), "\n===")
 
 	//
 	//
