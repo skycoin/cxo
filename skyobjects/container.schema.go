@@ -1,8 +1,8 @@
 package skyobjects
 
 import (
-	"github.com/evanlinjin/cxo/encoder"
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 // SaveSchema saves a schema to container.
