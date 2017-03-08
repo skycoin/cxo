@@ -2,13 +2,6 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
-)
-
-var (
-	dynamicHrefSchema    = getSchema(DynamicHref{})
-	dynamicHrefSchemaKey = cipher.SumSHA256(
-		encoder.Serialize(dynamicHrefSchema))
 )
 
 // DynamicHref is reference to object with schema

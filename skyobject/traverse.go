@@ -74,11 +74,26 @@ func (c *Container) inspect(schk, objk cipher.SHA256) (err error) {
 			if err != nil {
 				return
 			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				return
-			}
-			if err = c.inspect(schk, ref); err != nil {
-				return
+			if strings.Contains(tag, "schema=") {
+				if schk, err = c.schemaByTag(tag); err != nil {
+					return
+				}
+				if err = c.inspect(schk, ref); err != nil {
+					return
+				}
+			} else {
+				var dhd []byte
+				if dhd, ok = c.db.Get(ref); !ok {
+					fmt.Println("missing dynamic reference value: ", ref.Hex())
+					continue
+				}
+				var dh DynamicHref
+				if err = encoder.DeserializeRaw(dhd, &dh); err != nil {
+					return
+				}
+				if err = c.inspect(dh.Schema, dh.ObjKey); err != nil {
+					return
+				}
 			}
 		case hrefArrayTypeName:
 			// the field contains []cipher.SHA256 references
@@ -95,30 +110,10 @@ func (c *Container) inspect(schk, objk cipher.SHA256) (err error) {
 					return
 				}
 			}
-		case dynamicHrefTypeName:
-			// the field is dynamic schema
-			var dh DynamicHref
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
-			if err != nil {
-				return
-			}
-			if err = c.inspect(dh.Schema, dh.ObjKey); err != nil {
-				return
-			}
 		default:
 			err = ErrUnexpectedHrefTag
 			return
 		}
 	}
-	return
-}
-
-//
-// TODO: fix encoder.ParseFields
-//
-
-func (c *Container) parseFields(data []byte,
-	sf []encoder.StructField) (mss map[string]string) {
-
 	return
 }
