@@ -16,8 +16,6 @@ var (
 	hrefTypeName      = typeName(reflect.TypeOf(cipher.SHA256{}))
 	hrefArrayTypeName = typeName(reflect.TypeOf([]cipher.SHA256{}))
 
-	dynamicHrefSchema = getSchema(DynamicHref{})
-
 	ErrMissingRoot = errors.New("missing root object")
 )
 
@@ -76,21 +74,28 @@ func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 	return
 }
 
-type Childs map[*Schema][]cipher.SHA256
+// A Childs represent schema-key->object-keys mapping for static objects.
+// And set of dynamic objects
+type Childs struct {
+	Static  map[cipher.SHA256][]cipher.SHA256 // static schema-key -> object-key
+	Dynamic []DynamicHref                     // dynamic references
+}
 
 // Get all child references without any filters. The childs are all references
-// one level deep.
-func (c *Container) Childs(schema Schema, data []byte) (ch Childs, err error) {
+// one level deep
+func (c *Container) Childs(schemaKey cipher.SHA256,
+	data []byte) (ch Childs, err error) {
 
-	ch = make(Childs)
-
-	if schema.Name == dynamicHrefSchema.Name {
+	if schemaKey == dynamicHrefSchemaKey {
 		var dh DynamicHref
-		if err = encoder.DeserializeRaw(data, &dh); err != nil {
+		if dh, err = decodeDynamicHref(data); err != nil {
 			return
 		}
-		//
+		ch.Dynamic = []DynamicHref{dh}
+		return
 	}
+
+	ch.Static = make(map[cipher.SHA256][]cipher.SHA256)
 
 	for _, sf := range schema.Fields {
 		var tag string

@@ -8,7 +8,7 @@ import (
 )
 
 type Root struct {
-	container *Container `enc:"-"`
+	container *Container `enc:"-"` // back reference
 	registry  map[string]cipher.SHA256
 	Schema    cipher.SHA256
 	Root      []byte
@@ -17,7 +17,10 @@ type Root struct {
 }
 
 // NewRoot creates new root object from given interface. The method don't
-// set the new root as root of the Container
+// set the new root as root of the Container. Use SetRoot as follow
+//
+//     c.SetRoot(c.NewRoot(Object{}))
+//
 func (c *Container) NewRoot(i interface{}) (root *Root) {
 	return &Root{
 		Schema:   c.Save(getSchema(i)),

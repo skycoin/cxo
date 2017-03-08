@@ -114,6 +114,23 @@ func (d *DB) Remove(key cipher.SHA256) {
 	delete(d.data, key)
 }
 
+// TODO: test case for FilterExists
+
+// FilterExists modifies given slice removing all values present in db
+func (d *DB) FilterExists(set []cipher.SHA256) []cipher.SHA256 {
+	d.RLock()
+	defer d.RUnlock()
+	var j int
+	for i, k := range set {
+		if _, ok := d.data[k]; ok {
+			continue
+		}
+		set[j] = k
+		j++
+	}
+	return set[:j]
+}
+
 // Stat return statistic of the DB
 func (d *DB) Stat() (s Stat) {
 	d.RLock()
