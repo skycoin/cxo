@@ -20,9 +20,9 @@ func init() {
 type Ping struct{}
 
 // Handle implements *gnet.Message interface and sends Pong back
-func (p *Ping) Handle(ctx *gnet.MessageContext, n interface{}) (_ error) {
-	var node *Node = n.(*Node)
-	node.pool.SendMessage(ctx.Addr, &Pong{})
+func (p *Ping) Handle(ctx *gnet.MessageContext, node interface{}) (_ error) {
+	var n *Node = node.(*Node)
+	n.pool.SendMessage(ctx.Addr, &Pong{})
 	return
 }
 
@@ -41,11 +41,11 @@ type Announce struct {
 func (a *Announce) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
-	n := node.(*Node)
+	var n *Node = node.(*Node)
 	if n.db.Has(a.Hash) {
 		return
 	}
-	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Request{a.Hash})
+	n.pool.SendMessage(ctx.Addr, &Request{a.Hash})
 	return
 }
 
@@ -57,17 +57,16 @@ type Request struct {
 func (r *Request) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
-	n := node.(*Node)
+	var n *Node = node.(*Node)
 	if data, ok := n.db.Get(r.Hash); ok {
-		ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Data{data})
+		n.pool.SendMessage(ctx.Addr, &Data{data})
 	}
 	return
 }
 
 // Data is a pice of data
 type Data struct {
-	Schema cipher.SHA256
-	Data   []byte
+	Data []byte
 }
 
 func (d *Data) Handle(ctx *gnet.MessageContext,
@@ -75,13 +74,13 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 
 	// TODO: drop data I don't asking for
 
-	n := node.(*Node)
+	var n *Node = node.(*Node)
 	hash := cipher.SumSHA256(d.Data)
 	n.db.Set(hash, d.Data)
 	// Broadcast
-	for _, gc := range n.pool.Pool {
-		if gc != ctx.Conn {
-			n.pool.SendMessage(gc, &Announce{hash})
+	for _, gc := range n.pool.GetConnections() {
+		if gc.Id != ctx.ConnID {
+			n.pool.SendMessage(gc.Addr(), &Announce{hash})
 		}
 	}
 	return
@@ -95,17 +94,17 @@ type Root struct {
 func (r *Root) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
-	n := node.(*Node)
-	if !n.so.SaveRoot(r.Root) {
+	var n *Node = node.(*Node)
+	if n.so.SaveRoot(r.Root) == (cipher.SHA256{}) {
 		// older or the same
 		return
 	}
 	// TODO: terminate all other transactions for old root,
 	//       we take in new root object
 	// Broadcast the root
-	for _, gc := range n.pool.Pool {
-		if gc != ctx.Conn {
-			n.pool.SendMessage(gc, r)
+	for _, gc := range n.pool.GetConnections() {
+		if gc.Id != ctx.ConnID {
+			n.pool.SendMessage(gc.Addr(), r)
 		}
 	}
 	return

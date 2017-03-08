@@ -1,50 +1,50 @@
 package skyobject
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// Schema represents the type of SkyObject.
 type Schema struct {
-	Name   string                `json:"name"`
-	Fields []encoder.StructField `json:"fields"`
+	Name   string
+	Fields []encoder.StructField
 }
 
-// ReadSchema gets Schema from object.
-func ReadSchema(data interface{}) (sch Schema) {
-	st := reflect.TypeOf(data)
-	sv := reflect.ValueOf(data)
-	sch.Name = st.Name()
-	for i := 0; i < st.NumField(); i++ {
-		if st.Field(i).Tag.Get("enc") == "-" {
-			continue
-		}
-		newField := getField(st.Field(i), sv.Field(i))
-		sch.Fields = append(sch.Fields, newField)
+func (s *Schema) String() (st string) {
+	st = s.Name + "\n"
+	for _, sf := range s.Fields {
+		st += fmt.Sprintf("  %s %s `%s` %d\n",
+			sf.Name,
+			sf.Type,
+			sf.Tag,
+			sf.Kind)
 	}
 	return
 }
 
-func (s *Schema) String() string {
-	var b = make([]byte, 0, 96) // scratch
-	b = append(b, "struct "...)
-	b = append(b, s.Name...)
-	b = append(b, '\n')
-	for i := 0; i < len(s.Fields); i++ {
-		b = append(b, s.Fields[i].String()...)
+func getSchema(i interface{}) (s Schema) {
+	typ, nf := reflect.Type(i), typ.NumField()
+	s.Name = typ.Name()
+	s.Fields = make([]encoder.StructField, 0, nf)
+	for i := 0; i < nf; i++ {
+		ft := typ.Field(i)
+		if ft.Tag.Get("enc") != "-" {
+			s.Fields = append(sch.Fields, getField(ft))
+		}
 	}
-	return string(b)
 }
 
-func getField(field reflect.StructField, fieldValue reflect.Value) encoder.StructField {
-	fieldType := strings.ToLower(fieldValue.Type().Name())
-	return encoder.StructField{
-		Name: field.Name,
-		Type: fieldType,
-		Tag:  string(field.Tag),
-		Kind: uint32(fieldValue.Type().Kind()),
-	}
+func getField(ft reflect.StructField) (sf encoder.StructField) {
+	sf.Name = ft.Name
+	sf.Type = typeName(ft.Type)
+	sf.Tag = string(ft.Tag)
+	sf.Kind = uint32(ft.Type.Kind())
+	return
+}
+
+func typeName(typ reflect.Type) string {
+	return strings.ToLower(typ.Name())
 }

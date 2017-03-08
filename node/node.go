@@ -111,15 +111,15 @@ func (n *Node) Start() (err error) {
 }
 
 // gnet callback
-func (n *Node) onConnect(gc *gnet.Connection, outgoing bool) {
-	n.Debug("[DBG] got new connection ", gc.Addr())
+func (n *Node) onConnect(address string, outgoing bool) {
+	n.Debug("[DBG] got new connection ", address)
 	if !outgoing {
-		n.sendRoot(gc)
+		n.sendRoot(address)
 	}
 }
 
 // sned root object we have (if we have)
-func (n *Node) sendRoot(gc *gnet.Connection) {
+func (n *Node) sendRoot(address string) {
 	root, err := n.so.GetRoot()
 	if err != nil {
 		return // we don't have root object
