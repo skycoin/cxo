@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	//"fmt"
+	"log"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -23,10 +24,10 @@ type Man struct {
 
 type SamllGroup struct {
 	Name     string
-	Leader   cipher.SHA256         `skyobject:"href,schema=User"`
-	Outsider cipher.SHA256         // not a reference
-	FallGuy  skyobject.DynamicHref `skyobject:"href"`
-	Members  []cipher.SHA256       `skyobject:"href,schema=User"`
+	Leader   cipher.SHA256 `skyobject:"href,schema=User"`
+	Outsider cipher.SHA256 // not a reference
+	//FallGuy  skyobject.DynamicHref `skyobject:"href"`
+	Members []cipher.SHA256 `skyobject:"href,schema=User"`
 }
 
 func main() {
@@ -37,9 +38,9 @@ func main() {
 
 	root.Set(SamllGroup{
 		Name:     "Average small group",
-		Leader:   c.Save(User{"Billy Kid", 16}),
+		Leader:   c.Save(User{"Billy Kid", 16, ""}),
 		Outsider: cipher.SHA256{0, 1, 2, 3},
-		FallGuy:  c.NewDynamicHref(Man{"Bob", 182, 82}),
+		//FallGuy:  c.NewDynamicHref(Man{"Bob", 182, 82}),
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
 			User{"Eva", 22, ""},
@@ -50,63 +51,69 @@ func main() {
 
 	c.SetRoot(root)
 
+	if err := c.Inspect(); err != nil {
+		log.Fatal(err)
+	}
+
 	//
 	//
 	//
 
-	// Retrieve the 'Children' field of the Parent object as an 'ObjRef'.
-	childrenRef, e := parentRef.GetFieldAsObj("Children")
-	if e != nil {
-		fmt.Println("Unable to retrieve field. Error:", e)
-	}
-
-	// We know that 'childrenRef' references a HashArray, not a HashObject.
-	// We can retrieve all the array elements using the `GetValuesAsObjArray` member function of 'childrenRef'.
-	childRefArray, e := childrenRef.GetValuesAsObjArray()
-	if e != nil {
-		fmt.Println("Unable to retrieve elements. Error:", e)
-	}
-
-	// 'childRefArray' is of type '[]ObjRef'.
-	// We can now deserialize all the child references into child objects.
-	fmt.Println("Children:")
-
-	for _, childRef := range childRefArray {
-		var child Child
-		childRef.Deserialize(&child)
-
-		fmt.Println(" -", child.Name)
-	}
-
-	// Schemas.
-	fmt.Println("Schemas:")
-	schemas := container.GetSchemas()
-	for _, schema := range schemas {
-		fmt.Println("-", schema.Name)
-	}
-
-	// Inspect.
-	fmt.Println("Inspect:")
-	container.Inspect()
-
-	func() {
-		// Get all keys of objects with Schema type 'Child'.
-		schemaKey, ok := container.GetSchemaKey("Child")
-		if ok == false {
-			fmt.Println("Woops! This Schema doesn't exist in the container.")
-			return
+	/*
+		// Retrieve the 'Children' field of the Parent object as an 'ObjRef'.
+		childrenRef, e := parentRef.GetFieldAsObj("Children")
+		if e != nil {
+			fmt.Println("Unable to retrieve field. Error:", e)
 		}
-		childrenKeys := container.GetAllBySchema(schemaKey)
 
-		// Get all children.
+		// We know that 'childrenRef' references a HashArray, not a HashObject.
+		// We can retrieve all the array elements using the `GetValuesAsObjArray` member function of 'childrenRef'.
+		childRefArray, e := childrenRef.GetValuesAsObjArray()
+		if e != nil {
+			fmt.Println("Unable to retrieve elements. Error:", e)
+		}
+
+		// 'childRefArray' is of type '[]ObjRef'.
+		// We can now deserialize all the child references into child objects.
 		fmt.Println("Children:")
 
-		for _, childKey := range childrenKeys {
+		for _, childRef := range childRefArray {
 			var child Child
-			childRef := container.GetObjRef(childKey)
 			childRef.Deserialize(&child)
 
 			fmt.Println(" -", child.Name)
 		}
-	}()
+
+		// Schemas.
+		fmt.Println("Schemas:")
+		schemas := container.GetSchemas()
+		for _, schema := range schemas {
+			fmt.Println("-", schema.Name)
+		}
+
+		// Inspect.
+		fmt.Println("Inspect:")
+		container.Inspect()
+
+		func() {
+			// Get all keys of objects with Schema type 'Child'.
+			schemaKey, ok := container.GetSchemaKey("Child")
+			if ok == false {
+				fmt.Println("Woops! This Schema doesn't exist in the container.")
+				return
+			}
+			childrenKeys := container.GetAllBySchema(schemaKey)
+
+			// Get all children.
+			fmt.Println("Children:")
+
+			for _, childKey := range childrenKeys {
+				var child Child
+				childRef := container.GetObjRef(childKey)
+				childRef.Deserialize(&child)
+
+				fmt.Println(" -", child.Name)
+			}
+		}()
+	*/
 }

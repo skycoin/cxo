@@ -21,9 +21,10 @@ type Root struct {
 // set the new root as root of the Container
 func (c *Container) NewRoot() (root *Root) {
 	return &Root{
-		Time:     time.Now().UnixNano(),
-		Seq:      0,
-		registry: make(map[string]cipher.SHA256),
+		container: c,
+		Time:      time.Now().UnixNano(),
+		Seq:       0,
+		registry:  make(map[string]cipher.SHA256),
 	}
 }
 

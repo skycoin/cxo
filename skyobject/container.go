@@ -20,6 +20,7 @@ var (
 	ErrMissingRoot       = errors.New("missing root object")
 	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
 	ErrMissingSchemaName = errors.New("missing schema name")
+	ErrMissingObject     = errors.New("missing object")
 )
 
 // A Container is a helper type to manage skyobjects. The container is not
@@ -120,7 +121,6 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
 			continue
 		}
-		var s *Schema
 		//
 		// TODO: DRY
 		//
