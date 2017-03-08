@@ -82,12 +82,13 @@ func (c *Container) inspect(schk, objk cipher.SHA256) (err error) {
 					return
 				}
 			} else {
-				if objd, ok = c.db.Get(ref); !ok {
+				var dhd []byte
+				if dhd, ok = c.db.Get(ref); !ok {
 					fmt.Println("missing dynamic reference value: ", ref.Hex())
 					continue
 				}
 				var dh DynamicHref
-				if err = encoder.DeserializeRaw(objd, &dh); err != nil {
+				if err = encoder.DeserializeRaw(dhd, &dh); err != nil {
 					return
 				}
 				if err = c.inspect(dh.Schema, dh.ObjKey); err != nil {

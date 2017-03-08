@@ -143,12 +143,13 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 				want = append(want, w...)
 			} else { // dynamic reference
 				// the field refer to dynamic schema
-				if objd, ok = c.db.Get(ref); !ok {
+				var dhd []byte
+				if dhd, ok = c.db.Get(ref); !ok {
 					want = append(want, ref)
 					continue
 				}
 				var dh DynamicHref
-				if err = encoder.DeserializeRaw(objd, &dh); err != nil {
+				if err = encoder.DeserializeRaw(dhd, &dh); err != nil {
 					goto Error
 				}
 				var w []cipher.SHA256
