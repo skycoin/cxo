@@ -3,7 +3,6 @@ package skyobject
 import (
 	"time"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -16,7 +15,7 @@ type Root struct {
 
 func NewRoot(i interface{}) (root *Root) {
 	return &Root{
-		Schema: getSchema(i),
+		Schema: *getSchema(i),
 		Root:   encoder.Serialize(i),
 		Time:   time.Now().UnixNano(),
 		Seq:    0,
