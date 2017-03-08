@@ -9,7 +9,7 @@ import (
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/node/rpc/server"
-	"github.com/skycoin/cxo/skyobjects"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func getConfigs() (nc node.Config, rc server.Config) {
@@ -140,7 +140,7 @@ func main() {
 
 	var (
 		db  *data.DB
-		so  *skyobjects.Container
+		so  *skyobject.Container
 		n   *node.Node
 		rpc *server.Server
 
@@ -150,7 +150,7 @@ func main() {
 
 	db = data.NewDB()
 
-	so = skyobjects.NewContainer(db)
+	so = skyobject.NewContainer(db)
 
 	//
 	// Get configurations from flags

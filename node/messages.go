@@ -1,10 +1,10 @@
 package node
 
 import (
+	"github.com/iketheadore/skycoin/src/daemon/gnet"
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/daemon/gnet"
 
-	"github.com/skycoin/cxo/skyobjects"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func init() {
@@ -19,8 +19,10 @@ func init() {
 // A Ping is used to keep conections alive
 type Ping struct{}
 
-func (p *Ping) Handle(ctx *gnet.MessageContext, _ interface{}) (_ error) {
-	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Pong{})
+// Handle implements *gnet.Message interface and sends Pong back
+func (p *Ping) Handle(ctx *gnet.MessageContext, n interface{}) (_ error) {
+	var node *Node = n.(*Node)
+	node.pool.SendMessage(ctx.Addr, &Pong{})
 	return
 }
 
@@ -87,7 +89,7 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 
 // Root contains root object
 type Root struct {
-	Root skyobjects.RootObject
+	Root skyobject.RootObject
 }
 
 func (r *Root) Handle(ctx *gnet.MessageContext,

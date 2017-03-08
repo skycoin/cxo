@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skycoin/skycoin/src/daemon/gnet"
+	"github.com/iketheadore/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/skyobjects"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 var (
@@ -53,7 +53,7 @@ type Node struct {
 	conf Config
 
 	db *data.DB
-	so *skyobjects.Container
+	so *skyobject.Container
 
 	pool *gnet.ConnectionPool
 
@@ -66,7 +66,7 @@ type Node struct {
 
 // NewNode creates Node with given config and DB. If given database is nil
 // then it panics
-func NewNode(conf Config, db *data.DB, so *skyobjects.Container) *Node {
+func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 	if db == nil {
 		panic("NewNode: given database is nil")
 	}
@@ -131,15 +131,6 @@ func (n *Node) sendRoot(gc *gnet.Connection) {
 // handling loop
 func (n *Node) handle(quit, done chan struct{}) {
 	n.Debug("[DBG] start handling events")
-	var (
-		tk   *time.Ticker
-		ping <-chan time.Time
-	)
-	if n.conf.Ping > 0 {
-		tk = time.NewTicker(n.conf.Ping)
-		ping = tk.C
-		defer tk.Stop()
-	}
 	defer close(done)
 	defer n.pool.StopListen()
 	for {
@@ -156,15 +147,15 @@ func (n *Node) handle(quit, done chan struct{}) {
 				n.pool.Pool[de.ConnId].Addr(),
 				de.Reason)
 			n.pool.HandleDisconnectEvent(de)
-		case <-ping:
-			n.Debug("[DBG] send pings")
-			n.pool.BroadcastMessage(&Ping{})
 		case rpce := <-n.rpce:
 			rpce()
 		case <-quit:
 			return
 		default:
 			n.pool.HandleMessages()
+			if n.conf.Ping > 0 {
+				n.pool.SendPings(n.conf.Ping, &Ping{})
+			}
 		}
 	}
 }
