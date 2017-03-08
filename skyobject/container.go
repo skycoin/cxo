@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -16,6 +17,8 @@ var (
 	hrefArrayTypeName = typeName(reflect.TypeOf([]cipher.SHA256{}))
 
 	dynamicHrefSchema = getSchema(DynamicHref{})
+
+	ErrMissingRoot = errors.New("missing root object")
 )
 
 // A Container is a helper type to manage skyobjects. The container is not
@@ -23,8 +26,6 @@ var (
 type Container struct {
 	db   *data.DB
 	root *Root
-
-	registry map[string]*Schema
 }
 
 // NewContainer creates new Container that will use provided database.
@@ -34,8 +35,7 @@ func NewContainer(db *data.DB) (c *Container) {
 		panic("NewContainer tooks in nil-db")
 	}
 	c = &Container{
-		db:       db,
-		registry: make(map[string]*Schema),
+		db: db,
 	}
 	return
 }
@@ -58,17 +58,6 @@ func (c *Container) SetRoot(root *Root) (ok bool) {
 	return
 }
 
-// Register schema of given interface with provided name
-func (c *Container) Register(name string, i interface{}) {
-	c.registry[name] = getSchema(i)
-}
-
-// Schema returns registered Schema by given name
-func (c *Container) Schema(name string) (s *Schema, ok bool) {
-	s, ok = c.registry[name]
-	return
-}
-
 // Save serializes given object and sotres it in DB returning
 // key of the object
 func (c *Container) Save(i interface{}) cipher.SHA256 {
@@ -87,11 +76,21 @@ func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 	return
 }
 
-// Get all child references without any filters
-func (c *Container) Childs(schema Schema,
-	data []byte) (ch map[*Schema][]cipher.SHA256, err error) {
+type Childs map[*Schema][]cipher.SHA256
 
-	ch = make(map[*Schema][]cipher.SHA256)
+// Get all child references without any filters. The childs are all references
+// one level deep.
+func (c *Container) Childs(schema Schema, data []byte) (ch Childs, err error) {
+
+	ch = make(Childs)
+
+	if schema.Name == dynamicHrefSchema.Name {
+		var dh DynamicHref
+		if err = encoder.DeserializeRaw(data, &dh); err != nil {
+			return
+		}
+		//
+	}
 
 	for _, sf := range schema.Fields {
 		var tag string
@@ -148,7 +147,7 @@ func tagSchemaName(tag string) (s string, err error) {
 // if given tag contains schema=xxx then it reutrns appropriate schema or
 // error if the schema is not registered, otherwise it returns
 // dynamicHrefSchema
-func (c *Container) schemaByTag(tag string) (schema *Schema, err error) {
+func (c *Container) schemaByTag(tag string) (schema Schema, err error) {
 	var (
 		schemaName string
 		ok         bool
@@ -159,7 +158,11 @@ func (c *Container) schemaByTag(tag string) (schema *Schema, err error) {
 	if schemaName == "" { // DynamicHref
 		schema = dynamicHrefSchema
 	} else { //static href
-		if schema, ok = c.registry[schemaName]; !ok {
+		if c.root == nil {
+			err = ErrMissingRoot
+			return
+		}
+		if schema, ok = c.root.registry[schemaName]; !ok {
 			err = fmt.Errorf("unregistered schema: %s", schemaName)
 		}
 	}

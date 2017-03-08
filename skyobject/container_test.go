@@ -62,40 +62,6 @@ func TestContainer_SetRoot(t *testing.T) {
 	}
 }
 
-func TestContainer_Register(t *testing.T) {
-	c := NewContainer(data.NewDB())
-	c.Register("user", User{})
-	if len(c.registry) != 1 {
-		t.Error("don't register")
-		return
-	}
-	for k, v := range c.registry {
-		if k != "user" {
-			t.Error("registered with wrong name")
-		}
-		if v.Name != reflect.TypeOf(User{}).Name() {
-			t.Error("wrong schema registered")
-		}
-	}
-}
-
-func TestContainer_Schema(t *testing.T) {
-	c := NewContainer(data.NewDB())
-	if s, ok := c.Schema("user"); ok {
-		t.Error("returns schema that should not have")
-	} else if s != nil {
-		t.Error("it's crazy")
-	}
-	c.Register("user", User{})
-	if s, ok := c.Schema("user"); !ok {
-		t.Error("can't return schema that should have")
-	} else if s == nil {
-		t.Error("misisng schema")
-	} else if s.Name != reflect.TypeOf(User{}).Name() {
-		t.Error("wrong schema")
-	}
-}
-
 func TestContainer_Save(t *testing.T) {
 	c := NewContainer(data.NewDB())
 	key := c.Save(User{})
@@ -241,10 +207,78 @@ func TestContainer_Childs(t *testing.T) {
 	c := preparedContainer()
 	// we will use root to explore
 	root := c.Root()
-	ch, err := c.Childs(root.Schema, root.Root)
+	ch, err := c.Childs(&root.Schema, root.Root)
 	if err != nil {
-		t.Error("unexpected error")
+		t.Error("unexpected error: ", err)
 	}
-	// TODO
-	_ = ch
+	// leader := c.Save(User{Name: "leader", Age: 30})
+	// fallguy := c.Save(c.NewDynamicHref(User{Name: "fallguy", Age: 31}))
+	// users := c.SaveArray(
+	// 	User{"Alice", 21, ""},
+	// 	User{"Bob", 25, ""},
+	// 	User{"Eva", 27, ""},
+	// 	User{"Peter", 18, ""},
+	// )
+	// c.SetRoot(NewRoot(SmallGroup{
+	// 	Name:     "any",
+	// 	Leader:   leader,
+	// 	Outsider: cipher.SHA256{},
+	// 	FallGuy:  fallguy,
+	// 	Users:    users,
+	// }))
+
+	//
+	//
+	//
+	if len(ch) != 2 {
+		t.Error("wrong schemas count in childs")
+	}
+	// schemas we want
+	dhs := dynamicHrefSchema
+	uss, _ := c.Schema("User")
+	for s, array := range ch {
+		switch s {
+		case dhs:
+			if len(array) != 1 {
+				t.Error("wrong count of DynamicHref objects")
+				continue
+			}
+			data, _ := c.db.Get(array[0])
+			var dh DynamicHref
+			if err = encoder.DeserializeRaw(data, &dh); err != nil {
+				t.Error("unexpected error: ", err)
+				continue
+			}
+			data, _ = c.db.Get(dh.ObjKey)
+			mss := encoder.ParseFields(data, dh.Schema.Fields)
+			if !mssEq(mss, map[string]string{
+				"Name": "fallguy",
+				"Age":  "31",
+			}) {
+				t.Error("wrong fields: ", mss)
+			}
+		case uss:
+			if len(array) != 5 {
+				t.Error("wrong count of User objects")
+				continue
+			}
+			//
+		default:
+			t.Error("wrong schema: ", s.Name)
+			continue
+		}
+	}
+}
+
+func mssEq(a, b map[string]string) (equal bool) {
+	if len(a) != len(b) {
+		return
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return
+		}
+	}
+	equal = true
+	return
 }

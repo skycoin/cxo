@@ -14,7 +14,7 @@ type DynamicHref struct {
 // object in DB
 func (c *Container) NewDynamicHref(i interface{}) *DynamicHref {
 	return &DynamicHref{
-		Schema: *getSchema(i),
+		Schema: getSchema(i),
 		ObjKey: c.Save(i),
 	}
 }

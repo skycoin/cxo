@@ -25,12 +25,11 @@ func (s *Schema) String() (st string) {
 	return
 }
 
-func getSchema(i interface{}) (s *Schema) {
+func getSchema(i interface{}) (s Schema) {
 	var (
 		typ reflect.Type
 		nf  int
 	)
-	s = new(Schema)
 	typ = reflect.TypeOf(i)
 	nf = typ.NumField()
 	s.Name = typ.Name()
