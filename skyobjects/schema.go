@@ -19,12 +19,11 @@ func ReadSchema(data interface{}) (sch Schema) {
 	sv := reflect.ValueOf(data)
 	sch.Name = st.Name()
 	for i := 0; i < st.NumField(); i++ {
-		if st.Field(i).Tag.Get("enc") != "-" {
-			sch.Fields = append(
-				sch.Fields,
-				getField(st.Field(i), sv.Field(i)),
-			)
+		if st.Field(i).Tag.Get("enc") == "-" {
+			continue
 		}
+		newField := getField(st.Field(i), sv.Field(i))
+		sch.Fields = append(sch.Fields, newField)
 	}
 	return
 }

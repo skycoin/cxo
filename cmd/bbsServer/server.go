@@ -1,31 +1,33 @@
 package main
 
 import (
-	"github.com/skycoin/cxo/gui"
+	"strings"
+
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// BbsServer handles subscription to CXO Daemon and Connection with RPC Client.
-type BbsServer struct {
-	Router *gui.Router
+// Server represents a RPC server for bbs.
+type Server struct {
+	ix *Indexer
 }
 
-// NewBbsServer creates a new BbsServer.
-func NewBbsServer() *BbsServer {
-	server := BbsServer{
-		Router: gui.NewRouter(),
-	}
-	server.Router.Serve("http://127.0.0.1:6482")
-	return &server
-}
-
-// Run runs the server.
-func (s *BbsServer) Run() {
-	for {
-
+// NewServer creates a new server.
+func NewServer() *Server {
+	return &Server{
+		ix: NewIndexer(),
 	}
 }
 
-func main() {
-	server := NewBbsServer()
-	server.Run()
+// Greet greets the user with given name.
+func (s *Server) Greet(args []string, response *[]byte) error {
+	if len(args) == 0 {
+		*response = encoder.Serialize("Hello Anonymous!")
+		return nil
+	}
+	name := strings.TrimSpace(args[0])
+	if name == "" {
+		name = "Anonymous"
+	}
+	*response = encoder.Serialize("Hello " + name + "!")
+	return nil
 }
