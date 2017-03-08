@@ -17,10 +17,14 @@ var (
 	hrefArrayTypeName   = typeName(reflect.TypeOf([]cipher.SHA256{}))
 	dynamicHrefTypeName = typeName(reflect.TypeOf(DynamicHref{}))
 
-	ErrMissingRoot       = errors.New("missing root object")
+	// ErrMissingRoot represents missing root.
+	ErrMissingRoot = errors.New("missing root object")
+	// ErrUnexpectedHrefTag represents missing href tag.
 	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
+	// ErrMissingSchemaName represents missing schema name.
 	ErrMissingSchemaName = errors.New("missing schema name")
-	ErrMissingObject     = errors.New("missing object")
+	// ErrMissingObject represents missing object.
+	ErrMissingObject = errors.New("missing object")
 )
 
 // A Container is a helper type to manage skyobjects. The container is not
