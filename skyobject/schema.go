@@ -8,6 +8,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// Schema represents the type of object in container.
 type Schema struct {
 	Name   string
 	Fields []encoder.StructField
