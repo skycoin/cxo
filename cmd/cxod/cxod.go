@@ -9,6 +9,7 @@ import (
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/node/rpc/server"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func getConfigs() (nc node.Config, rc server.Config) {
@@ -139,6 +140,7 @@ func main() {
 
 	var (
 		db  *data.DB
+		so  *skyobject.Container
 		n   *node.Node
 		rpc *server.Server
 
@@ -148,11 +150,7 @@ func main() {
 
 	db = data.NewDB()
 
-	// =========================================================================
-	//
-	// TODO: skyobject stuff
-	//
-	// =========================================================================
+	so = skyobject.NewContainer(db)
 
 	//
 	// Get configurations from flags
@@ -164,7 +162,7 @@ func main() {
 	// Node
 	//
 
-	n = node.NewNode(nc, db)
+	n = node.NewNode(nc, db, so)
 
 	if err = n.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, "error starting node:", err)
@@ -178,7 +176,8 @@ func main() {
 	//
 
 	if rc.Enable {
-		rpc = server.NewServer(rc, n)
+		// TODO: add RPC control to skyobject
+		rpc = server.NewServer(rc, n) // , so)
 		if err = rpc.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, "error starting RPC:", err)
 			code = 1
