@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/skycoin/cxo/bbs"
+)
 
 func hello(client *Client, args []string) {
 	res, e := client.SendToRPC("Greet", args)
@@ -37,7 +41,13 @@ func listBoards(c *Client, args []string) {
 		fmt.Println(e)
 		return
 	}
-	fmt.Println(msg)
+	var boards []bbs.Board
+	msg.Deserialize(&boards)
+	for _, b := range boards {
+		fmt.Printf("[BOARD] Name : '%s'\n", b.Name)
+		fmt.Printf("        Desc : '%s'\n", b.Desc)
+		fmt.Printf("     Threads : (%d)\n\n", len(b.Threads))
+	}
 }
 
 func addThread(c *Client, args []string) {

@@ -140,9 +140,25 @@ func (ix *Indexer) GetPostsOfThread(tName string) (posts []bbs.Post, err error) 
 	return
 }
 
-// func Release()
+func (ix *Indexer) addBoardOfKeyToRoot(bKey cipher.SHA256) error {
+	bKeys := ix.c.GetCurrentRootChildren()
+	if SHA256SliceHas(bKeys, bKey) {
+		return fmt.Errorf("board is already a child of root")
+	}
+	bKeys = append(bKeys, bKey)
+	ix.CreateRoot(bKeys...)
+	return nil
+}
 
-// Should commit and then push?
-// NewBoard()
-// NewThread()
-// NewPost()
+func (ix *Indexer) removeBoardOfKeyFromRoot(bKey cipher.SHA256) error {
+	bKeys := ix.c.GetCurrentRootChildren()
+	for i, bk := range bKeys {
+		if bk == bKey {
+			bKeys[i], bKeys[0] = bKeys[0], bKeys[i]
+			bKeys = bKeys[1:]
+			ix.CreateRoot(bKeys...)
+			return nil
+		}
+	}
+	return fmt.Errorf("board is not a child of root")
+}

@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
+
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 var (
@@ -23,4 +25,14 @@ func main() {
 	if e := http.Serve(l, nil); e != nil {
 		panic(e)
 	}
+}
+
+// SHA256SliceHas determines if a value is included in slice.
+func SHA256SliceHas(slice []cipher.SHA256, check cipher.SHA256) bool {
+	for _, v := range slice {
+		if v == check {
+			return true
+		}
+	}
+	return false
 }
