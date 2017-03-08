@@ -13,10 +13,13 @@ import (
 )
 
 var (
-	hrefTypeName      = typeName(reflect.TypeOf(cipher.SHA256{}))
-	hrefArrayTypeName = typeName(reflect.TypeOf([]cipher.SHA256{}))
+	hrefTypeName        = typeName(reflect.TypeOf(cipher.SHA256{}))
+	hrefArrayTypeName   = typeName(reflect.TypeOf([]cipher.SHA256{}))
+	dynamicHrefTypeName = typeName(reflect.TypeOf(DynamicHref{}))
 
-	ErrMissingRoot = errors.New("missing root object")
+	ErrMissingRoot       = errors.New("missing root object")
+	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
+	ErrMissingSchemaName = errors.New("missing schema name")
 )
 
 // A Container is a helper type to manage skyobjects. The container is not
@@ -46,6 +49,9 @@ func (c *Container) Root() *Root {
 // SetRoot replaces existing root from given one if timespamp of the given root
 // is greater. The given root must not be nil
 func (c *Container) SetRoot(root *Root) (ok bool) {
+	if root == nil {
+		panic(ErrMissingRoot)
+	}
 	if c.root == nil {
 		c.root, ok = root, true
 		return
@@ -74,56 +80,118 @@ func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 	return
 }
 
-// A Childs represent schema-key->object-keys mapping for static objects.
-// And set of dynamic objects
-type Childs struct {
-	Static  map[cipher.SHA256][]cipher.SHA256 // static schema-key -> object-key
-	Dynamic []DynamicHref                     // dynamic references
+// Want returns slice of nessessary references that
+// doesn't exist in db but required
+func (c *Container) Want() (want []cipher.SHA256, err error) {
+	if c.root == nil {
+		return
+	}
+	return c.want(c.root.Schema, c.root.Root)
 }
 
-// Get all child references without any filters. The childs are all references
-// one level deep
-func (c *Container) Childs(schemaKey cipher.SHA256,
-	data []byte) (ch Childs, err error) {
+func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
+	err error) {
 
-	if schemaKey == dynamicHrefSchemaKey {
-		var dh DynamicHref
-		if dh, err = decodeDynamicHref(data); err != nil {
-			return
-		}
-		ch.Dynamic = []DynamicHref{dh}
+	var (
+		schd, objd []byte
+		ok         bool
+
+		s Schema
+	)
+
+	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
+		want = append(want, schk)
+		want = c.addMissing(want, objk)
 		return
 	}
 
-	ch.Static = make(map[cipher.SHA256][]cipher.SHA256)
+	if objd, ok = c.db.Get(objk); !ok {
+		want = append(want, objk)
+		return
+	}
 
-	for _, sf := range schema.Fields {
+	// we have both schema and object
+	if err = encoder.DeserializeRaw(schd, &s); err != nil {
+		return
+	}
+
+	for _, sf := range s.Fields {
 		var tag string
 		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
 			continue
 		}
 		var s *Schema
+		//
+		// TODO: DRY
+		//
 		switch sf.Type {
 		case hrefTypeName:
-			var k cipher.SHA256
-			s, k, err = c.singleHref(data, schema.Fields, sf.Name, tag)
+			// the field contains cipher.SHA256 reference
+			var ref cipher.SHA256
+			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
 			if err != nil {
-				ch = nil
-				return
+				goto Error
 			}
-			ch[s] = append(ch[s], k)
+			if schk, err = c.schemaByTag(tag); err != nil {
+				goto Error
+			}
+			var w []cipher.SHA256
+			if w, err = c.want(schk, ref); err != nil {
+				goto Error
+			}
+			want = append(want, w...)
 		case hrefArrayTypeName:
-			var ks []cipher.SHA256
-			s, ks, err = c.arrayHref(data, schema.Fields, sf.Name, tag)
+			// the field contains []cipher.SHA256 references
+			var refs []cipher.SHA256
+			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &refs)
 			if err != nil {
-				ch = nil
-				return
+				goto Error
 			}
-			ch[s] = append(ch[s], ks...)
+			if schk, err = c.schemaByTag(tag); err != nil {
+				goto Error
+			}
+			var w []cipher.SHA256
+			for _, ref := range refs {
+				if w, err = c.want(schk, ref); err != nil {
+					goto Error
+				}
+				want = append(want, w...)
+			}
+		case dynamicHrefTypeName:
+			// the field is dynamic schema
+			var dh DynamicHref
+			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
+			if err != nil {
+				goto Error
+			}
+			var w []cipher.SHA256
+			if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
+				goto Error
+			}
+			want = c.addMissing(want, w...)
+		default:
+			err = ErrUnexpectedHrefTag
+			goto Error
+		}
+	}
+	return
+Error:
+	want = nil // set want to nil if we have got an error
+	return
+}
+
+// append key to array if it is not exist in db
+func (c *Container) addMissing(ary []cipher.SHA256,
+	keys ...cipher.SHA256) []cipher.SHA256 {
+
+	for _, key := range keys {
+		if _, ok := c.db.Get(key); !ok {
+			ary = append(ary, key)
 		}
 	}
 
-	return
+	return ary
+
 }
 
 // get vlaue of `skyobjet:"xxx"` tag or empty string
@@ -131,7 +199,7 @@ func skyobjectTag(sf encoder.StructField) string {
 	return reflect.StructTag(sf.Tag).Get("skyobject")
 }
 
-// tagSchemaName returns schema name or empty string if there is no
+// tagSchemaName returns schema name or error if there is no
 // schema=xxx in given tag, it returns an error if given tag
 // is invalid
 func tagSchemaName(tag string) (s string, err error) {
@@ -146,13 +214,15 @@ func tagSchemaName(tag string) (s string, err error) {
 			return
 		}
 	}
+	if s == "" {
+		err = ErrMissingSchemaName
+	}
 	return
 }
 
 // if given tag contains schema=xxx then it reutrns appropriate schema or
-// error if the schema is not registered, otherwise it returns
-// dynamicHrefSchema
-func (c *Container) schemaByTag(tag string) (schema Schema, err error) {
+// error if the schema is not registered
+func (c *Container) schemaByTag(tag string) (s cipher.SHA256, err error) {
 	var (
 		schemaName string
 		ok         bool
@@ -160,40 +230,12 @@ func (c *Container) schemaByTag(tag string) (schema Schema, err error) {
 	if schemaName, err = tagSchemaName(tag); err != nil {
 		return
 	}
-	if schemaName == "" { // DynamicHref
-		schema = dynamicHrefSchema
-	} else { //static href
-		if c.root == nil {
-			err = ErrMissingRoot
-			return
-		}
-		if schema, ok = c.root.registry[schemaName]; !ok {
-			err = fmt.Errorf("unregistered schema: %s", schemaName)
-		}
-	}
-	return
-}
-
-// extract href and schema from field, type of which is cipher.SHA256
-func (c *Container) singleHref(data []byte, fields []encoder.StructField,
-	fieldName, tag string) (schema *Schema, obj cipher.SHA256, err error) {
-
-	if schema, err = c.schemaByTag(tag); err != nil {
+	if c.root == nil {
+		err = ErrMissingRoot
 		return
 	}
-	err = encoder.DeserializeField(data, fields, fieldName, &obj)
-	return
-
-}
-
-// same as singleHref for []cipher.SHA256
-func (c *Container) arrayHref(data []byte, fields []encoder.StructField,
-	fieldName, tag string) (schema *Schema, objs []cipher.SHA256, err error) {
-
-	if schema, err = c.schemaByTag(tag); err != nil {
-		return
+	if s, ok = c.root.registry[schemaName]; !ok {
+		err = fmt.Errorf("unregistered schema: %s", schemaName)
 	}
-	err = encoder.DeserializeField(data, fields, fieldName, &objs)
 	return
-
 }

@@ -13,7 +13,7 @@ var (
 
 // DynamicHref is reference to object with schema
 type DynamicHref struct {
-	Schema Schema
+	Schema cipher.SHA256
 	ObjKey cipher.SHA256
 }
 
@@ -21,12 +21,7 @@ type DynamicHref struct {
 // object in DB
 func (c *Container) NewDynamicHref(i interface{}) DynamicHref {
 	return DynamicHref{
-		Schema: getSchema(i),
+		Schema: c.Save(getSchema(i)),
 		ObjKey: c.Save(i),
 	}
-}
-
-func decodeDynamicHref(data []byte) (dh DynamicHref, err error) {
-	err = encoder.DeserializeRaw(data, &dh)
-	return
 }

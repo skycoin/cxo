@@ -1,10 +1,13 @@
 package skyobject
 
+// TODO: redo
+
 import (
-	"testing"
-	"time"
+//"testing"
+//"time"
 )
 
+/*
 func TestNewRoot(t *testing.T) {
 	tp := time.Now().UnixNano()
 	root := NewRoot(User{})
@@ -59,3 +62,4 @@ func TestRoot_Schema(t *testing.T) {
 func TestRoot_Touch(t *testing.T) {
 	// TODO:
 }
+*/

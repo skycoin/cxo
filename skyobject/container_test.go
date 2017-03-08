@@ -1,5 +1,6 @@
 package skyobject
 
+/*
 import (
 	"reflect"
 	"testing"
@@ -282,3 +283,4 @@ func mssEq(a, b map[string]string) (equal bool) {
 	equal = true
 	return
 }
+*/

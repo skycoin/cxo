@@ -1,9 +1,10 @@
 package skyobject
 
-// TODO or not to do
+import (
+//"github.com/skycoin/skycoin/src/cipher"
+//"github.com/skycoin/skycoin/src/cipher/encoder"
+)
 
-// There is
-//
-// encoder.ParseFields([]byte, []encoder.StructFields) map[string]string
-// (*Container).Root()
-// (*Container).Childs(Schema, []byte) (map[*Schema][]cipher.Encoder, error)
+func (c *Container) X() {
+	//
+}

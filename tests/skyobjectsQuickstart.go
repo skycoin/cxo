@@ -2,39 +2,57 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 )
 
-// Parent type.
-type Parent struct {
-	Name     string
-	Children skyobject.HashArray
+type User struct {
+	Name   string
+	Age    int64
+	Hidden string `enc:"-"`
 }
 
-// Child type.
-type Child struct {
-	Name string
+type Man struct {
+	Name   string
+	Height int64
+	Weight int64
+}
+
+type SamllGroup struct {
+	Name     string
+	Leader   cipher.SHA256         `skyobject:"href,schema=User"`
+	Outsider cipher.SHA256         // not a reference
+	FallGuy  skyobject.DynamicHref `skyobject:"href"`
+	Members  []cipher.SHA256       `skyobject:"href,schema=User"`
 }
 
 func main() {
-	container := skyobject.SkyObjects(data.NewDB())
-	container.RegisterSchema(Parent{})
-	container.RegisterSchema(Child{})
+	c := skyobject.NewContainer(data.NewDB())
 
-	getParentRef := func() skyobject.ObjRef {
-		children := []Child{{"Ben"}, {"James"}, {"Ryan"}}
-		childrenRef := skyobject.NewArray(children)
-		container.Save(&childrenRef)
+	root := c.NewRoot()
+	root.Register("User", User{})
 
-		parent := Parent{Name: "Bob", Children: childrenRef}
-		parentRef := skyobject.NewObject(parent)
-		container.Save(&parentRef)
+	root.Set(SamllGroup{
+		Name:     "Average small group",
+		Leader:   c.Save(User{"Billy Kid", 16}),
+		Outsider: cipher.SHA256{0, 1, 2, 3},
+		FallGuy:  c.NewDynamicHref(Man{"Bob", 182, 82}),
+		Members: c.SaveArray(
+			User{"Alice", 21, ""},
+			User{"Eva", 22, ""},
+			User{"Jhon", 23, ""},
+			User{"Michel", 24, ""},
+		),
+	})
 
-		return container.GetObjRef(parentRef.Ref)
-	}
+	c.SetRoot(root)
 
-	parentRef := getParentRef()
+	//
+	//
+	//
 
 	// Retrieve the 'Children' field of the Parent object as an 'ObjRef'.
 	childrenRef, e := parentRef.GetFieldAsObj("Children")

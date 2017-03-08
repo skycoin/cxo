@@ -1,5 +1,6 @@
 package skyobject
 
+/*
 import (
 	"reflect"
 	"testing"
@@ -23,3 +24,4 @@ func TestContainer_NewDynamicHref(t *testing.T) {
 		t.Error("empty object stored")
 	}
 }
+*/
