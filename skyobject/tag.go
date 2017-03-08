@@ -1,4 +1,4 @@
-package skyobjects
+package skyobject
 
 import (
 	"fmt"
@@ -15,14 +15,14 @@ type skyTag struct {
 }
 
 func getSkyTag(c *Container, tag string) (st skyTag, e error) {
-	alias, ok := reflect.StructTag(tag).Lookup("skyobjects")
+	alias, ok := reflect.StructTag(tag).Lookup("skyobject")
 	if ok == false {
-		e = fmt.Errorf("skyobjects not specified")
+		e = fmt.Errorf("skyobject not specified")
 		return
 	} else if alias == "" {
 		return
 	}
-	// Extract data from 'skyobjects' tag.
+	// Extract data from 'skyobject' tag.
 	tags := strings.Split(alias, ",")
 	for _, tag := range tags {
 		switch {

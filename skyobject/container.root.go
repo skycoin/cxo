@@ -1,4 +1,4 @@
-package skyobjects
+package skyobject
 
 import (
 	"fmt"

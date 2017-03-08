@@ -1,4 +1,4 @@
-package skyobjects
+package skyobject
 
 import (
 	"fmt"
@@ -56,7 +56,7 @@ type Node struct {
 
 type Ref struct {
 	A string
-	B []cipher.SHA256 `skyobjects:"href"`
+	B []cipher.SHA256 `skyobject:"href"`
 }
 
 func TestReferencing(t *testing.T) {
@@ -87,7 +87,7 @@ func TestReferencing(t *testing.T) {
 
 type Ref2 struct {
 	A string
-	B cipher.SHA256 `skyobjects:"href"`
+	B cipher.SHA256 `skyobject:"href"`
 }
 
 func TestReferencing2(t *testing.T) {
@@ -124,7 +124,7 @@ func TestReferencing2(t *testing.T) {
 type Child struct {
 	Name     string
 	Age      uint32
-	Children []cipher.SHA256 `skyobjects:"href,child"`
+	Children []cipher.SHA256 `skyobject:"href,child"`
 }
 
 func TestGetChildren(t *testing.T) {
