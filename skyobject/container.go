@@ -33,6 +33,9 @@ var (
 	// ErrMalformedRoot can occur during SetRoot call if the given
 	// root is malformed
 	ErrMalformedRoot = errors.New("malformed root")
+
+	// ErrStopInspection is used to stop Inspect
+	ErrStopInspection = errors.New("stop inspection")
 )
 
 // A Container is a helper type to manage skyobjects. The container is not
