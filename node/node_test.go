@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func TestNode_connecting(t *testing.T) {
 	conf := NewConfig()
 	db := data.NewDB()
-	n1, n2 := NewNode(conf, db), NewNode(conf, db)
+	so := skyobject.NewContainer(db)
+	n1, n2 := NewNode(conf, db, so), NewNode(conf, db, so)
 	if err := n1.Start(); err != nil {
 		t.Error(err)
 		return
@@ -29,3 +31,7 @@ func TestNode_connecting(t *testing.T) {
 		}
 	}
 }
+
+//
+// TODO: root replication test
+//

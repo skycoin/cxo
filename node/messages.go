@@ -4,7 +4,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node/gnet"
-	"github.com/skycoin/cxo/skyobject"
 )
 
 func init() {
@@ -102,13 +101,14 @@ type Root struct {
 func (r *Root) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
-	var n *Node = node.(*Node)
-	var root *skyobject.Root
-	if root, terminate = skyobject.DecodeRoot(r.Root); terminate != nil {
+	var (
+		n  *Node = node.(*Node)
+		ok bool
+	)
+	if ok, terminate = n.so.SetEncodedRoot(r.Root); terminate != nil {
 		return // terminate connection that sends malformed messages
 	}
-	if !n.so.SetRoot(root) {
-		// older or the same
+	if !ok { // older or the same
 		return
 	}
 	// refresh list of wanted objects
