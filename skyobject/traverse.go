@@ -58,6 +58,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256) (err error) {
 	fmt.Println("object: ", encoder.ParseFields(objd, s.Fields))
 	fmt.Println("---")
 
+	// follow references
 	for _, sf := range s.Fields {
 		var tag string
 		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {

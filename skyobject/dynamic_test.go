@@ -1,8 +1,6 @@
 package skyobject
 
-/*
 import (
-	"reflect"
 	"testing"
 
 	"github.com/skycoin/cxo/data"
@@ -10,18 +8,11 @@ import (
 
 func TestContainer_NewDynamicHref(t *testing.T) {
 	c := NewContainer(data.NewDB())
-	dh := c.NewDynamicHref(User{})
-	if dh == nil {
-		t.Error("NewDynamicHref returns nil")
-		return
+	dh := c.NewDynamicHref(User{"Alice Cooper", 23, ""})
+	if _, ok := c.db.Get(dh.Schema); !ok {
+		t.Error("missing saved schema")
 	}
-	if dh.Schema.Name != reflect.TypeOf(User{}).Name() {
-		t.Error("invalid schema")
-	}
-	if data, ok := c.db.Get(dh.ObjKey); !ok {
-		t.Error("missing object in db")
-	} else if len(data) == 0 {
-		t.Error("empty object stored")
+	if _, ok := c.db.Get(dh.ObjKey); !ok {
+		t.Error("missing saved object")
 	}
 }
-*/

@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strings"
@@ -13,16 +14,22 @@ type Schema struct {
 	Fields []encoder.StructField
 }
 
-func (s *Schema) String() (st string) {
-	st = s.Name + "\n"
-	for _, sf := range s.Fields {
-		st += fmt.Sprintf("  %s %s `%s` %s\n",
+func (s *Schema) String() string {
+	w := new(bytes.Buffer)
+	w.WriteString(s.Name)
+	w.WriteString(" {")
+	for i, sf := range s.Fields {
+		fmt.Fprintf(w, "%s %s `%s` %s",
 			sf.Name,
 			sf.Type,
 			sf.Tag,
 			kindString(sf.Kind))
+		if i != len(s.Fields)-1 {
+			w.WriteString("; ")
+		}
 	}
-	return
+	w.WriteByte('}')
+	return w.String()
 }
 
 func getSchema(i interface{}) (s Schema) {
@@ -59,33 +66,33 @@ func typeName(typ reflect.Type) string {
 }
 
 var kinds = [...]string{
-	"Invalid",
-	"Bool",
-	"Int",
-	"Int8",
-	"Int16",
-	"Int32",
-	"Int64",
-	"Uint",
-	"Uint8",
-	"Uint16",
-	"Uint32",
-	"Uint64",
-	"Uintptr",
-	"Float32",
-	"Float64",
-	"Complex64",
-	"Complex128",
-	"Array",
-	"Chan",
-	"Func",
-	"Interface",
-	"Map",
-	"Ptr",
-	"Slice",
-	"String",
-	"Struct",
-	"UnsafePointer",
+	"invalid",
+	"bool",
+	"int",
+	"int8",
+	"int16",
+	"int32",
+	"int64",
+	"uint",
+	"uint8",
+	"uint16",
+	"uint32",
+	"uint64",
+	"uintptr",
+	"float32",
+	"float64",
+	"complex64",
+	"complex128",
+	"array",
+	"chan",
+	"func",
+	"interface",
+	"map",
+	"ptr",
+	"slice",
+	"string",
+	"struct",
+	"unsafePointer",
 }
 
 func kindString(k uint32) string {
