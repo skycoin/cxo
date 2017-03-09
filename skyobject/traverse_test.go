@@ -13,7 +13,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-func ExampleContainer_Travers() {
+func ExampleContainer_Inspect() {
 	//
 	// nessesary types
 	//
