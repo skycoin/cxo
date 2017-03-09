@@ -147,32 +147,14 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 			if err != nil {
 				goto Error
 			}
-			if strings.Contains(tag, "schema=") { // static reference
-				if schk, err = c.schemaByTag(tag); err != nil {
-					goto Error
-				}
-				var w []cipher.SHA256
-				if w, err = c.want(schk, ref); err != nil {
-					goto Error
-				}
-				want = append(want, w...)
-			} else { // dynamic reference
-				// the field refer to dynamic schema
-				var dhd []byte
-				if dhd, ok = c.db.Get(ref); !ok {
-					want = append(want, ref)
-					continue
-				}
-				var dh DynamicHref
-				if err = encoder.DeserializeRaw(dhd, &dh); err != nil {
-					goto Error
-				}
-				var w []cipher.SHA256
-				if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
-					goto Error
-				}
-				want = append(want, w...)
+			if schk, err = c.schemaByTag(tag); err != nil {
+				goto Error
 			}
+			var w []cipher.SHA256
+			if w, err = c.want(schk, ref); err != nil {
+				goto Error
+			}
+			want = append(want, w...)
 		case hrefArrayTypeName:
 			// the field contains []cipher.SHA256 references
 			var refs []cipher.SHA256
@@ -190,6 +172,18 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 				}
 				want = append(want, w...)
 			}
+		case dynamicHrefTypeName:
+			// the field refer to dynamic schema
+			var dh DynamicHref
+			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
+			if err != nil {
+				goto Error
+			}
+			var w []cipher.SHA256
+			if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
+				goto Error
+			}
+			want = append(want, w...)
 		default:
 			err = ErrUnexpectedHrefTag
 			goto Error

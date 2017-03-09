@@ -28,10 +28,10 @@ type Man struct {
 
 type SamllGroup struct {
 	Name     string
-	Leader   cipher.SHA256   `skyobject:"href,schema=User"`
-	Outsider cipher.SHA256   // not a reference
-	FallGuy  cipher.SHA256   `skyobject:"href"`
-	Members  []cipher.SHA256 `skyobject:"href,schema=User"`
+	Leader   cipher.SHA256         `skyobject:"href,schema=User"`
+	Outsider cipher.SHA256         // not a reference
+	Members  []cipher.SHA256       `skyobject:"href,schema=User"`
+	FallGuy  skyobject.DynamicHref `skyobject:"href"`
 }
 
 func main() {
@@ -46,6 +46,10 @@ func main() {
 	// schema of User{}
 	root.Register("User", User{})
 
+	fg := c.NewDynamicHref(Man{"Bob", 182, 82})
+	fmt.Println("[FG] schema key:", fg.Schema.Hex())
+	fmt.Println("[FG] object key:", fg.ObjKey.Hex())
+
 	// Set SmallGroup as root
 	root.Set(SamllGroup{
 		Name: "Average small group",
@@ -54,7 +58,7 @@ func main() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: c.Save(c.NewDynamicHref(Man{"Bob", 182, 82})),
+		FallGuy: fg,
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
@@ -130,13 +134,12 @@ func main() {
 	// members:               4
 	// leader:               +1
 	// small group:          +1
-	// dynamic reference     +1
 	// man:                  +1
 	// schema of Man         +1
 	// schema of User:       +1
 	// schema of SmallGroup: +1
 	// ------------------------
-	//                       11
+	//                       10
 	fmt.Println("===\n", db.Stat(), "\n===")
 
 	//

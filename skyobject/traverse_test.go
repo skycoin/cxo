@@ -32,10 +32,10 @@ func ExampleContainer_Inspect() {
 
 	type SamllGroup struct {
 		Name     string
-		Leader   cipher.SHA256   `skyobject:"href,schema=User"`
-		Outsider cipher.SHA256   // not a reference
-		FallGuy  cipher.SHA256   `skyobject:"href"`
-		Members  []cipher.SHA256 `skyobject:"href,schema=User"`
+		Leader   cipher.SHA256         `skyobject:"href,schema=User"`
+		Outsider cipher.SHA256         // not a reference
+		FallGuy  skyobject.DynamicHref `skyobject:"href"`
+		Members  []cipher.SHA256       `skyobject:"href,schema=User"`
 	}
 
 	// create database and container instance
@@ -57,7 +57,7 @@ func ExampleContainer_Inspect() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: c.Save(c.NewDynamicHref(Man{"Bob", 182, 82})),
+		FallGuy: c.NewDynamicHref(Man{"Bob", 182, 82}),
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},

@@ -69,6 +69,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 	}()
 
 	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
+		fmt.Println("[DEBUG] misisng schema")
 		if err = insp(nil, nil, &MissingError{schk}); err != nil {
 			return
 		}
@@ -76,6 +77,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 	}
 
 	if objd, ok = c.db.Get(objk); !ok {
+		fmt.Println("[DEBUG] misisng object")
 		if err = insp(nil, nil, &MissingError{objk}); err != nil {
 			return
 		}
@@ -87,8 +89,8 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 		return
 	}
 
-	// ---
-	if err = insp(&s, encoder.ParseFields(objd, s.Fields), nil); err != nil {
+	// --- TODO: encoder.ParseFields(objd, s.Fields) instead of hidden:hidden
+	if err = insp(&s, map[string]string{"hidden": "hidden"}, nil); err != nil {
 		return
 	}
 	// ---
@@ -110,26 +112,11 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 			if err != nil {
 				return
 			}
-			if strings.Contains(tag, "schema=") {
-				if schk, err = c.schemaByTag(tag); err != nil {
-					return
-				}
-				if err = c.inspect(schk, ref, insp); err != nil {
-					return
-				}
-			} else {
-				var dhd []byte
-				if dhd, ok = c.db.Get(ref); !ok {
-					fmt.Println("missing dynamic reference value: ", ref.Hex())
-					continue
-				}
-				var dh DynamicHref
-				if err = encoder.DeserializeRaw(dhd, &dh); err != nil {
-					return
-				}
-				if err = c.inspect(dh.Schema, dh.ObjKey, insp); err != nil {
-					return
-				}
+			if schk, err = c.schemaByTag(tag); err != nil {
+				return
+			}
+			if err = c.inspect(schk, ref, insp); err != nil {
+				return
 			}
 		case hrefArrayTypeName:
 			// the field contains []cipher.SHA256 references
@@ -145,6 +132,18 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 				if err = c.inspect(schk, ref, insp); err != nil {
 					return
 				}
+			}
+		case dynamicHrefTypeName:
+			// the field containe dynamic reference
+			var dh DynamicHref
+			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
+			if err != nil {
+				return
+			}
+			fmt.Println("[FG INSPECT] schema key:", dh.Schema.Hex())
+			fmt.Println("[FG INSPECT] object key:", dh.ObjKey.Hex())
+			if err = c.inspect(dh.Schema, dh.ObjKey, insp); err != nil {
+				return
 			}
 		default:
 			err = ErrUnexpectedHrefTag
