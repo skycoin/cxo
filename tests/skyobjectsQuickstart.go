@@ -3,6 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"reflect"
+	"sort"
+	"text/tabwriter"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -63,9 +67,63 @@ func main() {
 	// Set the root as root of the container
 	c.SetRoot(root)
 
+	// prepare writer for inspect function
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 0, ' ', 0)
+
+	// prepare schema printer for inspect fucntion
+	printSchema := func(s *skyobject.Schema) {
+		fmt.Printf("schema %s {", s.Name)
+		if len(s.Fields) == 0 {
+			fmt.Println("}")
+			return
+		}
+		fmt.Println() // break line
+		for _, sf := range s.Fields {
+			fmt.Fprintln(tw, "   ",
+				sf.Name, "\t",
+				sf.Type, "\t",
+				"`"+sf.Tag+"`", "\t",
+				reflect.Kind(sf.Kind))
+		}
+		tw.Flush()
+		fmt.Println("}")
+	}
+
+	// prepare fields printer for inspect function
+	printFields := func(fields map[string]string) {
+		// sorted by key
+		keys := make([]string, 0, len(fields))
+		for k := range fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintln(tw, fmt.Sprintf("%s:\t%q", k, fields[k]))
+		}
+		tw.Flush()
+	}
+
+	// create function to inspecting
+	inspect := func(s *skyobject.Schema, fields map[string]string,
+		err error) error {
+
+		fmt.Println("---")
+
+		if err != nil {
+			fmt.Println("Err: ", err)
+		} else {
+			printSchema(s)
+			printFields(fields)
+		}
+
+		fmt.Println("---")
+		return nil
+	}
+
 	// print the tree
-	if err := c.Inspect(); err != nil {
+	if err := c.Inspect(inspect); err != nil {
 		log.Fatal(err)
+		return
 	}
 
 	// database statistic
