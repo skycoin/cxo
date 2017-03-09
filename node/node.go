@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iketheadore/skycoin/src/daemon/gnet"
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -89,15 +89,16 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 }
 
 // Start is used to launch the Node. The Start is non-blocking
-func (n *Node) Start() {
+func (n *Node) Start() (err error) {
 	n.Debug("[DBG] starting node")
 	n.once = sync.Once{} // refresh once
 	n.quit, n.done = make(chan struct{}), make(chan struct{})
 	n.conf.ConnectCallback = n.onConnect
 	n.pool = gnet.NewConnectionPool(n.conf.Config, n)
-	n.pool.Run()
+	if err = n.pool.StartListen(); err != nil {
+		return
+	}
 	var addr net.Addr
-	var err error
 	if addr, err = n.pool.ListeningAddress(); err != nil {
 		n.Panic("[CRITICAL] can't obtain lisening address: ", err)
 		return // never happens
@@ -105,32 +106,44 @@ func (n *Node) Start() {
 		n.Print("[INF] listening on ", addr)
 	}
 	n.rpce = make(chan Event, n.conf.Events)
+	go n.pool.AcceptConnections()
 	go n.handle(n.quit, n.done)
 	go n.connectToKnown(n.quit)
 	return
 }
 
 // gnet callback
-func (n *Node) onConnect(address string, outgoing bool) {
-	n.Debug("[DBG] got new connection ", address)
+func (n *Node) onConnect(gc *gnet.Connection, outgoing bool) {
+	n.Debug("[DBG] got new connection ", gc.Addr())
 	if !outgoing {
-		n.sendRoot(address)
+		n.sendRoot(gc)
 	}
 }
 
 // sned root object we have (if we have)
-func (n *Node) sendRoot(address string) {
-	root := n.so.Root()
-	if root == nil {
-		return // we don't have root object
+func (n *Node) sendRoot(gc *gnet.Connection) {
+	if root := n.so.Root(); root != nil {
+		n.Debug("[DBG] send root object to ", gc.Addr())
+		gc.ConnectionPool.SendMessage(gc, &Root{root.Encode()})
 	}
-	n.Debug("[DBG] send root object to ", gc.Addr())
-	gc.ConnectionPool.SendMessage(gc, &Root{root})
+	// else -> we don't have a root object
 }
 
 // handling loop
 func (n *Node) handle(quit, done chan struct{}) {
 	n.Debug("[DBG] start handling events")
+
+	var (
+		pingsTicker *time.Ticker
+		pings       <-chan time.Time
+	)
+
+	if n.conf.Ping > 0 { // enable pings
+		pingsTicker = time.NewTicker(n.conf.Ping)
+		defer pingsTicker.Stop()
+		pings = pingsTicker.C
+	}
+
 	defer close(done)
 	defer n.pool.StopListen()
 	for {
@@ -147,6 +160,9 @@ func (n *Node) handle(quit, done chan struct{}) {
 				n.pool.Pool[de.ConnId].Addr(),
 				de.Reason)
 			n.pool.HandleDisconnectEvent(de)
+		case <-pings:
+			n.Debug("[DBG] send pings")
+			n.pool.BroadcastMessage(&Ping{})
 		case rpce := <-n.rpce:
 			rpce()
 		case <-quit:
@@ -156,10 +172,6 @@ func (n *Node) handle(quit, done chan struct{}) {
 			n.hot, _ = n.so.Want()
 			// handle messges
 			n.pool.HandleMessages()
-			// send pings if need
-			if n.conf.Ping > 0 {
-				n.pool.SendPings(n.conf.Ping, &Ping{})
-			}
 		}
 	}
 }

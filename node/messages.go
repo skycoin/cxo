@@ -1,9 +1,9 @@
 package node
 
 import (
-	"github.com/iketheadore/skycoin/src/daemon/gnet"
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -20,9 +20,8 @@ func init() {
 type Ping struct{}
 
 // Handle implements *gnet.Message interface and sends Pong back
-func (p *Ping) Handle(ctx *gnet.MessageContext, node interface{}) (_ error) {
-	var n *Node = node.(*Node)
-	n.pool.SendMessage(ctx.Addr, &Pong{})
+func (p *Ping) Handle(ctx *gnet.MessageContext, _ interface{}) (_ error) {
+	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Pong{})
 	return
 }
 
@@ -42,13 +41,13 @@ func (a *Announce) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
 	var n *Node = node.(*Node)
-	if n.hot == nil { // we don't have a root yet
+	if len(n.hot) == 0 { // we don't have a root yet or it's full
 		return
 	}
 	if _, ok := n.hot[a.Hash]; !ok { // don't want this object
 		return
 	}
-	n.pool.SendMessage(ctx.Addr, &Request{a.Hash})
+	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Request{a.Hash})
 	return
 }
 
@@ -62,7 +61,7 @@ func (r *Request) Handle(ctx *gnet.MessageContext,
 
 	var n *Node = node.(*Node)
 	if data, ok := n.db.Get(r.Hash); ok {
-		n.pool.SendMessage(ctx.Addr, &Data{data})
+		ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Data{data})
 	}
 	return
 }
@@ -76,8 +75,9 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
 	var n *Node = node.(*Node)
-	if n.hot == nil {
-		return // i don't want any data (i don't have root object yet)
+	if len(n.hot) == 0 {
+		// i don't have root object yet or it's full (i don't want any data)
+		return
 	}
 	hash := cipher.SumSHA256(d.Data)
 	if _, ok := n.hot[hash]; !ok {
@@ -86,9 +86,9 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 	n.db.Set(hash, d.Data)
 	delete(n.hot, hash)
 	// Broadcast
-	for _, gc := range n.pool.GetConnections() {
-		if gc.Id != ctx.ConnID {
-			n.pool.SendMessage(gc.Addr(), &Announce{hash})
+	for _, gc := range n.pool.Pool {
+		if gc.Id != ctx.Conn.Id {
+			n.pool.SendMessage(gc, &Announce{hash})
 		}
 	}
 	return
@@ -114,9 +114,9 @@ func (r *Root) Handle(ctx *gnet.MessageContext,
 	// refresh list of wanted objects
 	n.hot, _ = n.so.Want()
 	// Broadcast the root
-	for _, gc := range n.pool.GetConnections() {
-		if gc.Id != ctx.ConnID {
-			n.pool.SendMessage(gc.Addr(), r)
+	for id, gc := range n.pool.Pool {
+		if id != ctx.Conn.Id {
+			n.pool.SendMessage(gc, r)
 		}
 	}
 	return
