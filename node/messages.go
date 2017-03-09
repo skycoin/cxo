@@ -42,7 +42,10 @@ func (a *Announce) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
 	var n *Node = node.(*Node)
-	if n.db.Has(a.Hash) {
+	if n.hot == nil { // we don't have a root yet
+		return
+	}
+	if _, ok := n.hot[a.Hash]; !ok { // don't want this object
 		return
 	}
 	n.pool.SendMessage(ctx.Addr, &Request{a.Hash})
@@ -72,11 +75,16 @@ type Data struct {
 func (d *Data) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
-	// TODO: drop data I don't asking for
-
 	var n *Node = node.(*Node)
+	if n.hot == nil {
+		return // i don't want any data (i don't have root object yet)
+	}
 	hash := cipher.SumSHA256(d.Data)
+	if _, ok := n.hot[hash]; !ok {
+		return // i don't want the data
+	}
 	n.db.Set(hash, d.Data)
+	delete(n.hot, hash)
 	// Broadcast
 	for _, gc := range n.pool.GetConnections() {
 		if gc.Id != ctx.ConnID {
@@ -88,19 +96,23 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 
 // Root contains root object
 type Root struct {
-	Root skyobject.RootObject
+	Root []byte
 }
 
 func (r *Root) Handle(ctx *gnet.MessageContext,
 	node interface{}) (terminate error) {
 
 	var n *Node = node.(*Node)
-	if n.so.SaveRoot(r.Root) == (cipher.SHA256{}) {
+	var root *skyobject.Root
+	if root, terminate = skyobject.DecodeRoot(r.Root); terminate != nil {
+		return // terminate connection that sends malformed messages
+	}
+	if !n.so.SetRoot(root) {
 		// older or the same
 		return
 	}
-	// TODO: terminate all other transactions for old root,
-	//       we take in new root object
+	// refresh list of wanted objects
+	n.hot, _ = n.so.Want()
 	// Broadcast the root
 	for _, gc := range n.pool.GetConnections() {
 		if gc.Id != ctx.ConnID {

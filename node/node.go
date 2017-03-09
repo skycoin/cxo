@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/iketheadore/skycoin/src/daemon/gnet"
+	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
@@ -52,8 +53,9 @@ type Node struct {
 	Logger
 	conf Config
 
-	db *data.DB
-	so *skyobject.Container
+	db  *data.DB
+	so  *skyobject.Container
+	hot map[cipher.SHA256]struct{} // hot list of wanted objects
 
 	pool *gnet.ConnectionPool
 
@@ -87,16 +89,15 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 }
 
 // Start is used to launch the Node. The Start is non-blocking
-func (n *Node) Start() (err error) {
+func (n *Node) Start() {
 	n.Debug("[DBG] starting node")
 	n.once = sync.Once{} // refresh once
 	n.quit, n.done = make(chan struct{}), make(chan struct{})
 	n.conf.ConnectCallback = n.onConnect
 	n.pool = gnet.NewConnectionPool(n.conf.Config, n)
-	if err = n.pool.StartListen(); err != nil {
-		return
-	}
+	n.pool.Run()
 	var addr net.Addr
+	var err error
 	if addr, err = n.pool.ListeningAddress(); err != nil {
 		n.Panic("[CRITICAL] can't obtain lisening address: ", err)
 		return // never happens
@@ -104,7 +105,6 @@ func (n *Node) Start() (err error) {
 		n.Print("[INF] listening on ", addr)
 	}
 	n.rpce = make(chan Event, n.conf.Events)
-	go n.pool.AcceptConnections()
 	go n.handle(n.quit, n.done)
 	go n.connectToKnown(n.quit)
 	return
@@ -120,8 +120,8 @@ func (n *Node) onConnect(address string, outgoing bool) {
 
 // sned root object we have (if we have)
 func (n *Node) sendRoot(address string) {
-	root, err := n.so.GetRoot()
-	if err != nil {
+	root := n.so.Root()
+	if root == nil {
 		return // we don't have root object
 	}
 	n.Debug("[DBG] send root object to ", gc.Addr())
@@ -152,7 +152,11 @@ func (n *Node) handle(quit, done chan struct{}) {
 		case <-quit:
 			return
 		default:
+			// create hot list of wanted objects
+			n.hot, _ = n.so.Want()
+			// handle messges
 			n.pool.HandleMessages()
+			// send pings if need
 			if n.conf.Ping > 0 {
 				n.pool.SendPings(n.conf.Ping, &Ping{})
 			}

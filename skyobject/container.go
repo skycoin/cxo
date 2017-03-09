@@ -98,15 +98,15 @@ func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 
 // Want returns slice of nessessary references that
 // doesn't exist in db but required
-func (c *Container) Want() (want []cipher.SHA256, err error) {
+func (c *Container) Want() (want map[cipher.SHA256]struct{}, err error) {
 	if c.root == nil {
 		return
 	}
 	return c.want(c.root.Schema, c.root.Root)
 }
 
-func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
-	err error) {
+func (c *Container) want(schk,
+	objk cipher.SHA256) (want map[cipher.SHA256]struct{}, err error) {
 
 	var (
 		schd, objd []byte
@@ -116,13 +116,13 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 	)
 
 	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
-		want = append(want, schk)
-		want = c.addMissing(want, objk)
+		want[schk] = struct{}{}
+		c.addMissing(want, objk)
 		return
 	}
 
 	if objd, ok = c.db.Get(objk); !ok {
-		want = append(want, objk)
+		want[objk] = struct{}{}
 		return
 	}
 
@@ -150,11 +150,11 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 			if schk, err = c.schemaByTag(tag); err != nil {
 				goto Error
 			}
-			var w []cipher.SHA256
+			var w map[cipher.SHA256]struct{}
 			if w, err = c.want(schk, ref); err != nil {
 				goto Error
 			}
-			want = append(want, w...)
+			mergeMaps(want, w)
 		case hrefArrayTypeName:
 			// the field contains []cipher.SHA256 references
 			var refs []cipher.SHA256
@@ -165,12 +165,12 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 			if schk, err = c.schemaByTag(tag); err != nil {
 				goto Error
 			}
-			var w []cipher.SHA256
+			var w map[cipher.SHA256]struct{}
 			for _, ref := range refs {
 				if w, err = c.want(schk, ref); err != nil {
 					goto Error
 				}
-				want = append(want, w...)
+				mergeMaps(want, w)
 			}
 		case dynamicHrefTypeName:
 			// the field refer to dynamic schema
@@ -179,11 +179,11 @@ func (c *Container) want(schk, objk cipher.SHA256) (want []cipher.SHA256,
 			if err != nil {
 				goto Error
 			}
-			var w []cipher.SHA256
+			var w map[cipher.SHA256]struct{}
 			if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
 				goto Error
 			}
-			want = append(want, w...)
+			mergeMaps(want, w)
 		default:
 			err = ErrUnexpectedHrefTag
 			goto Error
@@ -195,17 +195,22 @@ Error:
 	return
 }
 
+// mergeMaps merges appention to dst
+func mergeMaps(dst, appention map[cipher.SHA256]struct{}) {
+	for k := range appention {
+		dst[k] = struct{}{}
+	}
+}
+
 // append key to array if it is not exist in db
-func (c *Container) addMissing(ary []cipher.SHA256,
-	keys ...cipher.SHA256) []cipher.SHA256 {
+func (c *Container) addMissing(w map[cipher.SHA256]struct{},
+	keys ...cipher.SHA256) {
 
 	for _, key := range keys {
 		if _, ok := c.db.Get(key); !ok {
-			ary = append(ary, key)
+			w[key] = struct{}{}
 		}
 	}
-
-	return ary
 
 }
 
