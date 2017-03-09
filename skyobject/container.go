@@ -78,6 +78,18 @@ func (c *Container) SetRoot(root *Root) (ok bool) {
 	return
 }
 
+// SetEncodedRoot decodes given data to Root and set it as root of the
+// Container. It returns (ok, nil) if root of the container replaced,
+// (false, nil) if not and (false, err) if there is a decoding error
+func (c *Container) SetEncodedRoot(data []byte) (ok bool, err error) {
+	var root *Root
+	if root, err = decodeRoot(data); err != nil {
+		return
+	}
+	ok = c.SetRoot(root)
+	return
+}
+
 // Save serializes given object and sotres it in DB returning
 // key of the object
 func (c *Container) Save(i interface{}) cipher.SHA256 {

@@ -195,7 +195,7 @@ func TestRoot_Encode(t *testing.T) {
 		return
 	}
 	// decoding
-	r2, err := DecodeRoot(data)
+	r2, err := decodeRoot(data)
 	if err != nil {
 		t.Error("unexpectd error:", err)
 	}
@@ -217,7 +217,7 @@ func TestRoot_Encode(t *testing.T) {
 	}
 }
 
-func TestDecodeRoot(t *testing.T) {
+func Test_decodeRoot(t *testing.T) {
 	// TODO or not to do
 	// see TestRoot_Encode
 }
