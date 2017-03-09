@@ -17,10 +17,25 @@ var (
 	hrefArrayTypeName   = typeName(reflect.TypeOf([]cipher.SHA256{}))
 	dynamicHrefTypeName = typeName(reflect.TypeOf(DynamicHref{}))
 
-	ErrMissingRoot       = errors.New("missing root object")
+	// ErrMissingRoot occurs when a Container doesn't have
+	// a root object, but the action requires it
+	ErrMissingRoot = errors.New("missing root object")
+	// ErrUnexpectedHrefTag occurs when there is `skyobject:"href"`
+	// tag but type of the field is not cipher.SHA256 nor []cipher.SHA256
 	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
+	// ErrMissingSchemaName occurs when a field has got `skyobject:"href"`
+	// tag, but doesn't have "schema=xxx" tag
 	ErrMissingSchemaName = errors.New("missing schema name")
-	ErrMissingObject     = errors.New("missing object")
+	// ErrMissingObject occurs where requested object is not received yet
+	ErrMissingObject = errors.New("missing object")
+	// ErrInvalidArgument occurs when given argument is not valid
+	ErrInvalidArgument = errors.New("invalid argument")
+	// ErrMalformedRoot can occur during SetRoot call if the given
+	// root is malformed
+	ErrMalformedRoot = errors.New("malformed root")
+
+	// ErrStopInspection is used to stop Inspect
+	ErrStopInspection = errors.New("stop inspection")
 )
 
 // A Container is a helper type to manage skyobjects. The container is not

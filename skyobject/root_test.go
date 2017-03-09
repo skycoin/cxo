@@ -1,65 +1,223 @@
 package skyobject
 
-// TODO: redo
-
 import (
-//"testing"
-//"time"
+	"testing"
+	"time"
+
+	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
 
-/*
-func TestNewRoot(t *testing.T) {
-	tp := time.Now().UnixNano()
-	root := NewRoot(User{})
-	if root.Seq != 0 {
-		t.Error("invalid Seq for fresh root: ", root.Seq)
+////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////// T Y P E S //////////////////////////////////////
+
+type User struct {
+	Name   string
+	Age    int64
+	Hidden string `enc:"-"`
+}
+
+type Man struct {
+	Name   string
+	Height int64
+	Weight int64
+}
+
+type SamllGroup struct {
+	Name     string
+	Leader   cipher.SHA256   `skyobject:"href,schema=User"`
+	Outsider cipher.SHA256   // not a reference
+	FallGuy  cipher.SHA256   `skyobject:"href"`
+	Members  []cipher.SHA256 `skyobject:"href,schema=User"`
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////// HELPERS ///////////////////////////////////////
+
+func shaOf(i interface{}) cipher.SHA256 {
+	return cipher.SumSHA256(encoder.Serialize(i))
+}
+
+func isRegisteriesEqual(r1, r2 map[string]cipher.SHA256) bool {
+	if len(r1) != len(r2) {
+		return false
 	}
-	if root.Time < tp || root.Time > time.Now().UnixNano() {
-		t.Error("invalid time for fresh root")
+	for k, v := range r1 {
+		if r2[k] != v {
+			return false
+		}
 	}
-	if root.Schema.Name != getSchema(User{}).Name {
-		t.Error("invalid schema")
-	}
-	if len(root.Root) == 0 {
-		t.Error("invalid root object")
-	}
+	return true
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+func TestContainer_NewRoot(t *testing.T) {
+	t.Run("nil", func(t *testing.T) {
+		if NewContainer(data.NewDB()).NewRoot() == nil {
+			t.Error("returns nil")
+		}
+	})
+	t.Run("filling down", func(t *testing.T) {
+		c := NewContainer(data.NewDB())
+		tb := time.Now().UnixNano() // time point
+		r := c.NewRoot()
+		te := time.Now().UnixNano() // time point
+		if r.container != c {
+			t.Error("wrong container field")
+		}
+		if r.registry == nil {
+			t.Error("registery is nil")
+		}
+		if r.Schema != (cipher.SHA256{}) {
+			t.Error("non-empty schema")
+		}
+		if r.Root != (cipher.SHA256{}) {
+			t.Error("non-empty root")
+		}
+		if r.Time < tb || r.Time > te {
+			t.Error("invalid timestamp")
+		}
+		if r.Seq != 0 {
+			t.Error("invalid seq: ", r.Seq)
+		}
+	})
+}
+
+func TestRoot_Set(t *testing.T) {
+	t.Run("nil", func(t *testing.T) {
+		c := NewContainer(data.NewDB())
+		root := c.NewRoot()
+		if err := root.Set(nil); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("value", func(t *testing.T) {
+		c := NewContainer(data.NewDB())
+		root := c.NewRoot()
+		val := User{"Vasya Pupkin", 34, "businessman"}
+		if err := root.Set(val); err != nil {
+			t.Error("unexpected error: ", err)
+		}
+		if stat := c.db.Stat(); stat.Total != 2 {
+			t.Error("wrong object count: want 2, got ", stat.Total)
+		}
+		if _, ok := c.db.Get(shaOf(getSchema(User{}))); !ok {
+			t.Error("wrong or misisng schema in db")
+		}
+		if _, ok := c.db.Get(shaOf(val)); !ok {
+			t.Error("wrong or misisng value in db")
+		}
+	})
 }
 
 func TestRoot_Register(t *testing.T) {
-	r := NewRoot(User{})
-	r.Register("user", User{})
-	if len(r.registry) != 1 {
-		t.Error("don't register")
-		return
-	}
-	for k, v := range r.registry {
-		if k != "user" {
-			t.Error("registered with wrong name")
+	c := NewContainer(data.NewDB())
+	root := c.NewRoot()
+	t.Run("nil", func(t *testing.T) {
+		if err := root.Register("Some", nil); err == nil {
+			t.Error("missing error")
 		}
-		if v.Name != reflect.TypeOf(User{}).Name() {
-			t.Error("wrong schema registered")
+	})
+	t.Run("user", func(t *testing.T) {
+		if err := root.Register("User", User{}); err != nil {
+			t.Error("unexpected error")
+			return
 		}
-	}
+		if len(root.registry) != 1 {
+			t.Error("unexpected length of registery: ", len(root.registry))
+			return
+		}
+		for k, v := range root.registry {
+			if k != "User" {
+				t.Errorf("unexpected key: %q", k)
+			}
+			if v != shaOf(getSchema(User{})) {
+				t.Error("unexpected value")
+			}
+		}
+	})
+	t.Run("overwrite", func(t *testing.T) {
+		if err := root.Register("User", User{}); err != nil {
+			t.Error("unexpected error")
+		}
+	})
 }
 
-func TestRoot_Schema(t *testing.T) {
-	r := NewRoot(User{})
-	if s, ok := r.Schema("user"); ok {
-		t.Error("returns schema that should not have")
-	} else if s != nil {
-		t.Error("it's crazy")
+func TestRoot_SchemaKey(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	root := c.NewRoot()
+	root.Register("User", User{})
+	if k, ok := root.SchemaKey("User"); !ok {
+		t.Error("missing registered schema")
+	} else if k != shaOf(getSchema(User{})) {
+		t.Error("wrong schema key")
 	}
-	r.Register("user", User{})
-	if s, ok := r.Schema("user"); !ok {
-		t.Error("can't return schema that should have")
-	} else if s == nil {
-		t.Error("misisng schema")
-	} else if s.Name != reflect.TypeOf(User{}).Name() {
-		t.Error("wrong schema")
+	if _, ok := root.SchemaKey("Man"); ok {
+		t.Error("got unregistered schema")
 	}
 }
 
 func TestRoot_Touch(t *testing.T) {
-	// TODO:
+	root := new(Root)
+	tb := time.Now().UnixNano()
+	root.Touch()
+	te := time.Now().UnixNano()
+	if root.Time < tb || root.Time > te {
+		t.Error("invalid timestamp")
+	}
+	if root.Seq != 1 {
+		t.Error("invalid seq: ", root.Seq)
+	}
 }
-*/
+
+func TestRoot_initialize(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	root := new(Root)
+	root.initialize(c)
+	if root.container != c {
+		t.Error("initialization failed")
+	}
+}
+
+func TestRoot_Encode(t *testing.T) {
+	c := NewContainer(data.NewDB())
+	root := c.NewRoot()
+	root.Register("User", User{})
+	root.Register("SmallGroup", SamllGroup{})
+	root.Set(Man{"Bob", 182, 82})
+	data := root.Encode()
+	if data == nil || len(data) == 0 {
+		t.Error("empty encoding")
+		return
+	}
+	// decoding
+	r2, err := DecodeRoot(data)
+	if err != nil {
+		t.Error("unexpectd error:", err)
+	}
+	// compare
+	if !isRegisteriesEqual(root.registry, r2.registry) {
+		t.Error("different registery")
+	}
+	if root.Schema != r2.Schema {
+		t.Error("different shemas")
+	}
+	if root.Root != r2.Root {
+		t.Error("different roots")
+	}
+	if root.Time != r2.Time {
+		t.Error("different time")
+	}
+	if root.Seq != r2.Seq {
+		t.Error("different seq")
+	}
+}
+
+func TestDecodeRoot(t *testing.T) {
+	// TODO or not to do
+	// see TestRoot_Encode
+}

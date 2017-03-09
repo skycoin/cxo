@@ -1,8 +1,7 @@
-package main
+package skyobject_test
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"sort"
@@ -14,27 +13,31 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-type User struct {
-	Name   string
-	Age    int64
-	Hidden string `enc:"-"`
-}
+func ExampleContainer_Travers() {
+	//
+	// nessesary types
+	//
 
-type Man struct {
-	Name   string
-	Height int64
-	Weight int64
-}
+	type User struct {
+		Name   string
+		Age    int64
+		Hidden string `enc:"-"`
+	}
 
-type SamllGroup struct {
-	Name     string
-	Leader   cipher.SHA256   `skyobject:"href,schema=User"`
-	Outsider cipher.SHA256   // not a reference
-	FallGuy  cipher.SHA256   `skyobject:"href"`
-	Members  []cipher.SHA256 `skyobject:"href,schema=User"`
-}
+	type Man struct {
+		Name   string
+		Height int64
+		Weight int64
+	}
 
-func main() {
+	type SamllGroup struct {
+		Name     string
+		Leader   cipher.SHA256   `skyobject:"href,schema=User"`
+		Outsider cipher.SHA256   // not a reference
+		FallGuy  cipher.SHA256   `skyobject:"href"`
+		Members  []cipher.SHA256 `skyobject:"href,schema=User"`
+	}
+
 	// create database and container instance
 	db := data.NewDB()
 	c := skyobject.NewContainer(db)
@@ -122,82 +125,73 @@ func main() {
 
 	// print the tree
 	if err := c.Inspect(inspect); err != nil {
-		log.Fatal(err)
+		// fatal error
 		return
 	}
 
-	// database statistic
-	// members:               4
-	// leader:               +1
-	// small group:          +1
-	// dynamic reference     +1
-	// man:                  +1
-	// schema of Man         +1
-	// schema of User:       +1
-	// schema of SmallGroup: +1
-	// ------------------------
-	//                       11
-	fmt.Println("===\n", db.Stat(), "\n===")
-
-	//
-	//
-	//
-
-	/*
-		// Retrieve the 'Children' field of the Parent object as an 'ObjRef'.
-		childrenRef, e := parentRef.GetFieldAsObj("Children")
-		if e != nil {
-			fmt.Println("Unable to retrieve field. Error:", e)
-		}
-
-		// We know that 'childrenRef' references a HashArray, not a HashObject.
-		// We can retrieve all the array elements using the `GetValuesAsObjArray` member function of 'childrenRef'.
-		childRefArray, e := childrenRef.GetValuesAsObjArray()
-		if e != nil {
-			fmt.Println("Unable to retrieve elements. Error:", e)
-		}
-
-		// 'childRefArray' is of type '[]ObjRef'.
-		// We can now deserialize all the child references into child objects.
-		fmt.Println("Children:")
-
-		for _, childRef := range childRefArray {
-			var child Child
-			childRef.Deserialize(&child)
-
-			fmt.Println(" -", child.Name)
-		}
-
-		// Schemas.
-		fmt.Println("Schemas:")
-		schemas := container.GetSchemas()
-		for _, schema := range schemas {
-			fmt.Println("-", schema.Name)
-		}
-
-		// Inspect.
-		fmt.Println("Inspect:")
-		container.Inspect()
-
-		func() {
-			// Get all keys of objects with Schema type 'Child'.
-			schemaKey, ok := container.GetSchemaKey("Child")
-			if ok == false {
-				fmt.Println("Woops! This Schema doesn't exist in the container.")
-				return
-			}
-			childrenKeys := container.GetAllBySchema(schemaKey)
-
-			// Get all children.
-			fmt.Println("Children:")
-
-			for _, childKey := range childrenKeys {
-				var child Child
-				childRef := container.GetObjRef(childKey)
-				childRef.Deserialize(&child)
-
-				fmt.Println(" -", child.Name)
-			}
-		}()
-	*/
+	// Output:
+	// ---
+	// schema SamllGroup {
+	//     Name      string  ``                              string
+	//     Leader    sha256  `skyobject:"href,schema=User"`  array
+	//     Outsider  sha256  ``                              array
+	//     FallGuy   sha256  `skyobject:"href"`              array
+	//     Members           `skyobject:"href,schema=User"`  slice
+	// }
+	// FallGuy: "45bd07e2f95bd52cfd27ac56dd701e207d836b4e669788b1a15ce0aa60e54c12"
+	// Leader:  "03d9a33bd9e53cbc06db0fcb7ac015fc3ca276b291c425b3b786708753f9a604"
+	// Members: "PY,\xcf"
+	// Name:    "Average small group"
+	// Outsider:"0001020300000000000000000000000000000000000000000000000000000000"
+	// ---
+	// ---
+	// schema User {
+	//     Name  string  ``  string
+	//     Age   int64   ``  int64
+	// }
+	// Age: "16"
+	// Name:"Billy Kid"
+	// ---
+	// ---
+	// schema Man {
+	//     Name    string  ``  string
+	//     Height  int64   ``  int64
+	//     Weight  int64   ``  int64
+	// }
+	// Height:"182"
+	// Name:  "Bob"
+	// Weight:"82"
+	// ---
+	// ---
+	// schema User {
+	//     Name  string  ``  string
+	//     Age   int64   ``  int64
+	// }
+	// Age: "21"
+	// Name:"Alice"
+	// ---
+	// ---
+	// schema User {
+	//     Name  string  ``  string
+	//     Age   int64   ``  int64
+	// }
+	// Age: "22"
+	// Name:"Eva"
+	// ---
+	// ---
+	// schema User {
+	//     Name  string  ``  string
+	//     Age   int64   ``  int64
+	// }
+	// Age: "23"
+	// Name:"Jhon"
+	// ---
+	// ---
+	// schema User {
+	//     Name  string  ``  string
+	//     Age   int64   ``  int64
+	// }
+	// Age: "24"
+	// Name:"Michel"
+	// ---
 }
