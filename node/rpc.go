@@ -6,11 +6,11 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-// An Event represent RPC event
-type Event func()
+// An rpcEvent represent RPC event
+type rpcEvent func()
 
 // enqueue rpc event
-func (n *Node) enqueueEvent(done <-chan struct{}, evt Event) (err error) {
+func (n *Node) enqueueEvent(done <-chan struct{}, evt rpcEvent) (err error) {
 	// enquue
 	select {
 	case n.rpce <- evt:
@@ -29,38 +29,29 @@ func (n *Node) enqueueEvent(done <-chan struct{}, evt Event) (err error) {
 
 // Connect should be called from RPC server. It trying
 // to connect to given address
-func (n *Node) Connect(address string) (err error) {
-	// waiting for skycoin/src/daemon/gnet PR 300
-	_, err = n.pool.Connect(address)
-	return
+func (n *Node) Connect(address string) error {
+	return n.pool.Connect(address)
 }
 
 // Disconnect should be called from RPC server. It trying to
 // disconnect from given address
 func (n *Node) Disconnect(address string) (err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
-		if gc, ok := n.pool.Addresses[address]; ok {
-			n.pool.Disconnect(gc, ErrManualDisconnect)
-			return
-		}
+	if !n.pool.IsConnExist(address) {
 		err = ErrNotFound
-	})
+	} else {
+		n.pool.Disconnect(address, ErrManualDisconnect)
+	}
 	return
 }
 
 // List should be called from RPC server. The List returns all
 // connections
 func (n *Node) List() (list []string, err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		close(done)
-		list = make([]string, 0, len(n.pool.Addresses))
-		for a := range n.pool.Addresses {
-			list = append(list, a)
-		}
-	})
+	cc := n.pool.GetConnections()
+	list = make([]string, 0, len(cc))
+	for _, c := range cc {
+		list = append(list, c.Addr())
+	}
 	return
 }
 

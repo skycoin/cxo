@@ -127,6 +127,8 @@ func (c *Container) want(schk,
 		s Schema
 	)
 
+	want = make(map[cipher.SHA256]struct{})
+
 	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
 		want[schk] = struct{}{}
 		c.addMissing(want, objk)

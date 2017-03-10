@@ -3,7 +3,7 @@ package node
 import (
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/node/gnet"
+	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
 func init() {
@@ -12,6 +12,7 @@ func init() {
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("REQT"), Request{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("ROOT"), Root{})
 	gnet.VerifyMessages()
 }
 
@@ -19,8 +20,9 @@ func init() {
 type Ping struct{}
 
 // Handle implements *gnet.Message interface and sends Pong back
-func (p *Ping) Handle(ctx *gnet.MessageContext, _ interface{}) (_ error) {
-	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Pong{})
+func (p *Ping) Handle(ctx *gnet.MessageContext, node interface{}) (_ error) {
+	var n *Node = node.(*Node)
+	n.pool.SendMessage(ctx.Addr, &Pong{})
 	return
 }
 
@@ -31,93 +33,50 @@ func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
 	return
 }
 
-// Announce is used to notify remote node about data the node has got
+// An Announce message is used to notify other nodes about new data we have got
 type Announce struct {
 	Hash cipher.SHA256
 }
 
 func (a *Announce) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var n *Node = node.(*Node)
-	if len(n.hot) == 0 { // we don't have a root yet or it's full
-		return
-	}
-	if _, ok := n.hot[a.Hash]; !ok { // don't want this object
-		return
-	}
-	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Request{a.Hash})
+	node.(*Node).enqueueMsgEvent(a, ctx.Addr)
 	return
 }
 
-// Request is used to request data
+// A Request is used to request data we want
 type Request struct {
 	Hash cipher.SHA256
 }
 
 func (r *Request) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var n *Node = node.(*Node)
-	if data, ok := n.db.Get(r.Hash); ok {
-		ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Data{data})
-	}
+	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
 	return
 }
 
-// Data is a pice of data
+// A Data is an encoded ([]byte) object we send
 type Data struct {
 	Data []byte
 }
 
 func (d *Data) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var n *Node = node.(*Node)
-	if len(n.hot) == 0 {
-		// i don't have root object yet or it's full (i don't want any data)
-		return
-	}
-	hash := cipher.SumSHA256(d.Data)
-	if _, ok := n.hot[hash]; !ok {
-		return // i don't want the data
-	}
-	n.db.Set(hash, d.Data)
-	delete(n.hot, hash)
-	// Broadcast
-	for _, gc := range n.pool.Pool {
-		if gc.Id != ctx.Conn.Id {
-			n.pool.SendMessage(gc, &Announce{hash})
-		}
-	}
+	node.(*Node).enqueueMsgEvent(d, ctx.Addr)
 	return
 }
 
-// Root contains root object
+// A Root contains encoded ([]byte) root object
 type Root struct {
 	Root []byte
 }
 
 func (r *Root) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var (
-		n  *Node = node.(*Node)
-		ok bool
-	)
-	if ok, terminate = n.so.SetEncodedRoot(r.Root); terminate != nil {
-		return // terminate connection that sends malformed messages
-	}
-	if !ok { // older or the same
-		return
-	}
-	// refresh list of wanted objects
-	n.hot, _ = n.so.Want()
-	// Broadcast the root
-	for id, gc := range n.pool.Pool {
-		if id != ctx.Conn.Id {
-			n.pool.SendMessage(gc, r)
-		}
-	}
+	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
 	return
 }
