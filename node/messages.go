@@ -1,10 +1,9 @@
 package node
 
 import (
-	"github.com/iketheadore/skycoin/src/daemon/gnet"
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
 func init() {
@@ -13,6 +12,7 @@ func init() {
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("REQT"), Request{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("ROOT"), Root{})
 	gnet.VerifyMessages()
 }
 
@@ -33,79 +33,50 @@ func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
 	return
 }
 
-// Announce is used to notify remote node about data the node has got
+// An Announce message is used to notify other nodes about new data we have got
 type Announce struct {
 	Hash cipher.SHA256
 }
 
 func (a *Announce) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var n *Node = node.(*Node)
-	if n.db.Has(a.Hash) {
-		return
-	}
-	n.pool.SendMessage(ctx.Addr, &Request{a.Hash})
+	node.(*Node).enqueueMsgEvent(a, ctx.Addr)
 	return
 }
 
-// Request is used to request data
+// A Request is used to request data we want
 type Request struct {
 	Hash cipher.SHA256
 }
 
 func (r *Request) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var n *Node = node.(*Node)
-	if data, ok := n.db.Get(r.Hash); ok {
-		n.pool.SendMessage(ctx.Addr, &Data{data})
-	}
+	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
 	return
 }
 
-// Data is a pice of data
+// A Data is an encoded ([]byte) object we send
 type Data struct {
 	Data []byte
 }
 
 func (d *Data) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	// TODO: drop data I don't asking for
-
-	var n *Node = node.(*Node)
-	hash := cipher.SumSHA256(d.Data)
-	n.db.Set(hash, d.Data)
-	// Broadcast
-	for _, gc := range n.pool.GetConnections() {
-		if gc.Id != ctx.ConnID {
-			n.pool.SendMessage(gc.Addr(), &Announce{hash})
-		}
-	}
+	node.(*Node).enqueueMsgEvent(d, ctx.Addr)
 	return
 }
 
-// Root contains root object
+// A Root contains encoded ([]byte) root object
 type Root struct {
-	Root skyobject.RootObject
+	Root []byte
 }
 
 func (r *Root) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+	node interface{}) (_ error) {
 
-	var n *Node = node.(*Node)
-	if n.so.SaveRoot(r.Root) == (cipher.SHA256{}) {
-		// older or the same
-		return
-	}
-	// TODO: terminate all other transactions for old root,
-	//       we take in new root object
-	// Broadcast the root
-	for _, gc := range n.pool.GetConnections() {
-		if gc.Id != ctx.ConnID {
-			n.pool.SendMessage(gc.Addr(), r)
-		}
-	}
+	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
 	return
 }

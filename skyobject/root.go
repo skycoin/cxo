@@ -90,12 +90,12 @@ func (r *Root) Encode() []byte {
 	return buf.Bytes()
 }
 
-// Decode root is used when a node received decoded root objet. Unfortunately,
+// decodeRoot is used when a node received decoded root objet. Unfortunately,
 // the cipher/ecnoded can't encode maps and unexported fields. The Decode
 // returns an error if given data is malformed. You can to use methods of
 // decoded root only, and only, after (*Container).SetRoot if the SetRoot
 // returns true
-func DecodeRoot(data []byte) (root *Root, err error) {
+func decodeRoot(data []byte) (root *Root, err error) {
 	var intermediate struct {
 		Registry map[string]cipher.SHA256
 		*Root
