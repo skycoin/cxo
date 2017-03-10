@@ -1,4 +1,4 @@
-package skyobject_test
+package skyobject
 
 import (
 	"fmt"
@@ -10,7 +10,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/skyobject"
 )
 
 func ExampleContainer_Inspect() {
@@ -32,15 +31,15 @@ func ExampleContainer_Inspect() {
 
 	type SamllGroup struct {
 		Name     string
-		Leader   cipher.SHA256         `skyobject:"href,schema=User"`
-		Outsider cipher.SHA256         // not a reference
-		FallGuy  skyobject.DynamicHref `skyobject:"href"`
-		Members  []cipher.SHA256       `skyobject:"href,schema=User"`
+		Leader   cipher.SHA256   `skyobject:"href,schema=User"`
+		Outsider cipher.SHA256   // not a reference
+		FallGuy  DynamicHref     `skyobject:"href"`
+		Members  []cipher.SHA256 `skyobject:"href,schema=User"`
 	}
 
 	// create database and container instance
 	db := data.NewDB()
-	c := skyobject.NewContainer(db)
+	c := NewContainer(db)
 
 	// create new empty root (that is, actually, wrapper of root, but who cares)
 	root := c.NewRoot()
@@ -74,7 +73,7 @@ func ExampleContainer_Inspect() {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 0, ' ', 0)
 
 	// prepare schema printer for inspect fucntion
-	printSchema := func(s *skyobject.Schema) {
+	printSchema := func(s *Schema) {
 		fmt.Printf("schema %s {", s.Name)
 		if len(s.Fields) == 0 {
 			fmt.Println("}")
@@ -107,7 +106,7 @@ func ExampleContainer_Inspect() {
 	}
 
 	// create function to inspecting
-	inspect := func(s *skyobject.Schema, fields map[string]string,
+	inspect := func(s *Schema, fields map[string]string,
 		err error) error {
 
 		fmt.Println("---")
