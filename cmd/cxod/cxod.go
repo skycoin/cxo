@@ -49,10 +49,6 @@ func getConfigs() (nc node.Config, rc server.Config) {
 		nc.WriteTimeout,
 		"Timeout for writing to a connection. Set to 0 to default to the"+
 			" system's timeout")
-	flag.IntVar(&nc.EventChannelSize,
-		"events-chan",
-		nc.EventChannelSize,
-		"Event channel buffering")
 	flag.IntVar(&nc.BroadcastResultSize,
 		"broadcast-result",
 		nc.BroadcastResultSize,
@@ -85,10 +81,10 @@ func getConfigs() (nc node.Config, rc server.Config) {
 		"rpc",
 		rc.Enable,
 		"use rpc")
-	flag.IntVar(&nc.Events, //////////
-		"rpc-events",           /////
-		nc.Events,              ////
-		"rpc events chan size") ///
+	flag.IntVar(&nc.RPCEvents,
+		"rpc-events",
+		nc.RPCEvents,
+		"rpc events chan size")
 	flag.StringVar(&rc.Address,
 		"rpc-address",
 		rc.Address,
@@ -164,11 +160,8 @@ func main() {
 
 	n = node.NewNode(nc, db, so)
 
-	if err = n.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "error starting node:", err)
-		code = 1
-		return
-	}
+	// can panic
+	n.Start()
 	defer n.Close()
 
 	//

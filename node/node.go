@@ -126,6 +126,33 @@ func (n *Node) Start() {
 	return
 }
 
+// Share sends root object to all connected nodes. The method is used to
+// publish new root object manually. If there is no root object, it does
+// nothing. A call of the Share is useful only if you update the root
+// using skyobject API and want to publish it. For example
+//
+//     db := data.NewDB()
+//     so := skyobject.NewContainer(db)
+//     n := node.NewNode(node.NewConfig(), db, so)
+//
+//     n.Start()
+//     defer n.Close()
+//
+//     so.SetRoot(SomeObject{}) // <- update ro object manually
+//     n.Share()                // <- share it
+//
+func (n *Node) Share() {
+	done := make(chan struct{}) // used by enqueueEvent
+	n.enqueueEvent(done, func() {
+		defer close(done) // required for enqueueEvent
+		if root := n.so.Root(); root != nil {
+			n.Debug("[DBG] boadcast root object")
+			r := &Root{root.Encode()}
+			n.pool.BroadcastMessage(r)
+		}
+	})
+}
+
 // gnet callback
 func (n *Node) onConnect(address string, outgoing bool) {
 	n.Debug("[DBG] got new connection ", address)
