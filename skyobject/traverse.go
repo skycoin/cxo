@@ -38,6 +38,10 @@ func (m *MissingError) Error() string {
 type InspectFunc func(s *Schema, fields map[string]string, err error) error
 
 // Inspect prints the tree. Inspect doesn't returns "missing" errors
+//
+//     Note: unfortunately Inspect doesn't show fields of data
+//     because of encoder bug
+//
 func (c *Container) Inspect(insp InspectFunc) (err error) {
 	if insp == nil {
 		err = ErrInvalidArgument
