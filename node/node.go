@@ -133,13 +133,36 @@ func (n *Node) Start() {
 //
 //     db := data.NewDB()
 //     so := skyobject.NewContainer(db)
-//     n := node.NewNode(node.NewConfig(), db, so)
+//
+//     conf := node.NewConfig()
+//     conf.Name = "example node"
+//     conf.Debug = true
+//
+//     n := node.NewNode(conf, db, so)
 //
 //     n.Start()
 //     defer n.Close()
 //
-//     so.SetRoot(SomeObject{}) // <- update ro object manually
-//     n.Share()                // <- share it
+//     // example root object
+//
+//     type Root struct {
+//     	Name  string
+//     	Value int64
+//     }
+//
+//     root := so.NewRoot()
+//     root.Set(Root{
+//     	Name:  "Old Uncle Tom Cobley",
+//     	Value: 411,
+//     })
+//     so.SetRoot(root)
+//     n.Share()
+//
+//     //
+//     // stuff
+//     //
+//
+//     return
 //
 func (n *Node) Share() {
 	done := make(chan struct{}) // used by enqueueEvent
