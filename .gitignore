@@ -34,3 +34,4 @@ cmd/cxod/cxod
 cmd/*.out
 tests/tests
 
+encoder/

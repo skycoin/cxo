@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
@@ -19,11 +18,11 @@ func (s *Schema) String() string {
 	w.WriteString(s.Name)
 	w.WriteString(" {")
 	for i, sf := range s.Fields {
-		fmt.Fprintf(w, "%s %s `%s` %s",
+		fmt.Fprintf(w, "%s %s `%s` <%s>",
 			sf.Name,
 			sf.Type,
 			sf.Tag,
-			kindString(sf.Kind))
+			reflect.Kind(sf.Kind).String())
 		if i != len(s.Fields)-1 {
 			w.WriteString("; ")
 		}
@@ -34,10 +33,12 @@ func (s *Schema) String() string {
 
 func getSchema(i interface{}) (s Schema) {
 	var (
+		val reflect.Value
 		typ reflect.Type
 		nf  int
 	)
-	typ = reflect.TypeOf(i)
+	val = reflect.Indirect(reflect.ValueOf(i))
+	typ = val.Type()
 	nf = typ.NumField()
 	s.Name = typ.Name()
 	if nf == 0 {
@@ -46,7 +47,20 @@ func getSchema(i interface{}) (s Schema) {
 	s.Fields = make([]encoder.StructField, 0, nf)
 	for i := 0; i < nf; i++ {
 		ft := typ.Field(i)
-		if ft.Tag.Get("enc") != "-" {
+		fv := val.Field(i)
+		if ft.Tag.Get("enc") == "-" || ft.Name == "_" || ft.PkgPath != "" {
+			continue
+		}
+		// use fields of embeded struct as
+		// field of the struct
+		if fv.Kind() == reflect.Struct {
+			es := getSchema(fv.Interface())
+			for _, ef := range es.Fields {
+				ef.Name = ft.Name + "." + ef.Name // EbededStructName.FieldName
+				ef.Tag = string(ft.Tag)           // use tag of parent
+				s.Fields = append(s.Fields, ef)
+			}
+		} else {
 			s.Fields = append(s.Fields, getField(ft))
 		}
 	}
@@ -55,49 +69,8 @@ func getSchema(i interface{}) (s Schema) {
 
 func getField(ft reflect.StructField) (sf encoder.StructField) {
 	sf.Name = ft.Name
-	sf.Type = typeName(ft.Type)
+	sf.Type = ft.Type.Name()
 	sf.Tag = string(ft.Tag)
 	sf.Kind = uint32(ft.Type.Kind())
 	return
-}
-
-func typeName(typ reflect.Type) string {
-	return strings.ToLower(typ.Name())
-}
-
-var kinds = [...]string{
-	"invalid",
-	"bool",
-	"int",
-	"int8",
-	"int16",
-	"int32",
-	"int64",
-	"uint",
-	"uint8",
-	"uint16",
-	"uint32",
-	"uint64",
-	"uintptr",
-	"float32",
-	"float64",
-	"complex64",
-	"complex128",
-	"array",
-	"chan",
-	"func",
-	"interface",
-	"map",
-	"ptr",
-	"slice",
-	"string",
-	"struct",
-	"unsafePointer",
-}
-
-func kindString(k uint32) string {
-	if k >= 0 && int(k) < len(kinds) {
-		return "<" + kinds[k] + ">"
-	}
-	return fmt.Sprintf("<kind %d>", k)
 }

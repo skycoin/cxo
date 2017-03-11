@@ -29,13 +29,15 @@ func (m *MissingError) Error() string {
 }
 
 // An InspectFuunc is used to inspect objects tree. It receives schema and
-// stringify fields of an object. Or error. The error can be ErrMissingRoot,
+// stringify fields of an object. The deep arguments is a distance from root.
+// It can receive an error. The error can be ErrMissingRoot,
 // or MissingError (with key) when required object doesn't exists
 // in database. If an InspectFunc returns an error then call of Inspect
 // terminates and returns the error. There is special error called
 // ErrStopInspection that is used to stop the call of Inspect without
-// errors
-type InspectFunc func(s *Schema, fields map[string]string, err error) error
+// errors.
+type InspectFunc func(s *Schema, fields map[string]interface{}, deep int,
+	err error) error
 
 // Inspect prints the tree. Inspect doesn't returns "missing" errors
 //
@@ -52,11 +54,11 @@ func (c *Container) Inspect(insp InspectFunc) (err error) {
 		return
 	}
 
-	err = c.inspect(c.root.Schema, c.root.Root, insp)
+	err = c.inspect(c.root.Schema, c.root.Root, 0, insp)
 	return
 }
 
-func (c *Container) inspect(schk, objk cipher.SHA256,
+func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 	insp InspectFunc) (err error) {
 
 	var (
@@ -74,7 +76,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 
 	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
 		fmt.Println("[DEBUG] misisng schema")
-		if err = insp(nil, nil, &MissingError{schk}); err != nil {
+		if err = insp(nil, nil, deep, &MissingError{schk}); err != nil {
 			return
 		}
 		return
@@ -82,7 +84,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 
 	if objd, ok = c.db.Get(objk); !ok {
 		fmt.Println("[DEBUG] misisng object")
-		if err = insp(nil, nil, &MissingError{objk}); err != nil {
+		if err = insp(nil, nil, deep, &MissingError{objk}); err != nil {
 			return
 		}
 		return
@@ -94,7 +96,8 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 	}
 
 	// --- TODO: encoder.ParseFields(objd, s.Fields) instead of hidden:hidden
-	if err = insp(&s, map[string]string{"hidden": "hidden"}, nil); err != nil {
+	err = insp(&s, map[string]interface{}{"hidden": "hidden"}, deep, nil)
+	if err != nil {
 		return
 	}
 	// ---
@@ -119,7 +122,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 			if schk, err = c.schemaByTag(tag); err != nil {
 				return
 			}
-			if err = c.inspect(schk, ref, insp); err != nil {
+			if err = c.inspect(schk, ref, deep+1, insp); err != nil {
 				return
 			}
 		case hrefArrayTypeName:
@@ -133,7 +136,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256,
 				return
 			}
 			for _, ref := range refs {
-				if err = c.inspect(schk, ref, insp); err != nil {
+				if err = c.inspect(schk, ref, deep+1, insp); err != nil {
 					return
 				}
 			}

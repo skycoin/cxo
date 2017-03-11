@@ -13,9 +13,8 @@ import (
 )
 
 var (
-	hrefTypeName        = typeName(reflect.TypeOf(cipher.SHA256{}))
-	hrefArrayTypeName   = typeName(reflect.TypeOf([]cipher.SHA256{}))
-	dynamicHrefTypeName = typeName(reflect.TypeOf(DynamicHref{}))
+	hrefTypeName      = reflect.TypeOf(cipher.SHA256{}).Name()
+	hrefArrayTypeName = reflect.TypeOf([]cipher.SHA256{}).Name()
 
 	// ErrMissingRoot occurs when a Container doesn't have
 	// a root object, but the action requires it
@@ -33,6 +32,9 @@ var (
 	// ErrMalformedRoot can occur during SetRoot call if the given
 	// root is malformed
 	ErrMalformedRoot = errors.New("malformed root")
+	// ErrMissingObjKeyField occurs when a malformed schema is used with
+	// DynamicHref.Schema field but without DynamicHref.ObjKey
+	ErrMissingObjKeyField = errors.New("missing ObjKey field")
 
 	// ErrStopInspection is used to stop Inspect
 	ErrStopInspection = errors.New("stop inspection")

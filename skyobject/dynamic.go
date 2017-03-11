@@ -1,7 +1,14 @@
 package skyobject
 
 import (
+	"reflect"
+
 	"github.com/skycoin/skycoin/src/cipher"
+)
+
+var (
+	dynamicHrefSchemaSuffix = ".Schema"
+	dynamicHrefObjKeySuffix = ".ObjKey"
 )
 
 // DynamicHref is reference to object with schema

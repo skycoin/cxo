@@ -21,7 +21,7 @@ func Test_getSchema(t *testing.T) {
 		t.Error("invalid schema name: ", s.Name)
 	}
 	if len(s.Fields) != 2 {
-		t.Error("invalid fields count: ", len(s.Fields))
+		t.Error("invalid fields count: ", len(s.Fields), s)
 		return
 	}
 	for i, f := range []struct {
@@ -51,14 +51,6 @@ func Test_getSchema(t *testing.T) {
 }
 
 func Test_getField(t *testing.T) {
-	// TODO
-}
-
-func Test_typeName(t *testing.T) {
-	// TODO
-}
-
-func Test_kindString(t *testing.T) {
 	// TODO
 }
 
