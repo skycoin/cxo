@@ -10,7 +10,7 @@ import (
 	"github.com/peterh/liner"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/rpc/client"
+	"github.com/skycoin/cxo/rpc/client"
 )
 
 var (
