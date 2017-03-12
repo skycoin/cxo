@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
+	//"github.com/skycoin/skycoin/src/cipher/encoder"
+	"github.com/logrusorgru/skycoin/src/cipher/encoder"
 )
 
 // SchemaByKey returns Schema by its reference
@@ -93,45 +94,74 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 		return
 	}
 
-	// --- TODO: encoder.ParseFields(objd, s.Fields) instead of hidden:hidden
-	if err = insp(&s, map[string]interface{}{"hidden": "hidden"}, deep, nil); err != nil {
+	var msi map[string]interface{}
+	if msi, err = encoder.ParseFields(objd, s.Fields); err != nil {
 		return
 	}
-	// ---
+	if err = insp(&s, msi, deep, nil); err != nil {
+		return
+	}
 
 	// follow references
 	for _, sf := range s.Fields {
-		var tag string
-		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
-			continue
-		}
-		switch sf.Type {
-		case hrefTypeName:
-			var ref cipher.SHA256
+		if sf.Type == hrefTypeName {
+			var (
+				ref cipher.SHA256
+				tag string = skyobjectTag(sf)
+			)
 			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
 			if err != nil {
 				return
 			}
 			if strings.Contains(tag, "schema=") {
 				// the field contains cipher.SHA256 reference
-				if schk, err = c.schemaByTag(tag); err != nil {
+				if schk, err = c.schemaByTag(tag, "schema="); err != nil {
 					return
 				}
 				if err = c.inspect(schk, ref, deep+1, insp); err != nil {
 					return
 				}
-			} else {
-				// the field contains cipher.SHA256 reference to dynamic href
-				var data []byte
-				var ok bool
-				if data, ok = c.db.Get(ref); !ok { // we don't have dh-object
-					err = insp(nil, nil, deep+1, &MissingError{ref})
+			} else if strings.Contains(tag, "array=") {
+				// the field contains reference to []cipher.SHA256 references
+				var (
+					data []byte
+					ok   bool
+
+					refs []cipher.SHA256
+				)
+				if data, ok = c.db.Get(ref); !ok {
+					err = insp(nil, nil, deep, &MissingError{ref})
 					if err != nil {
 						return
 					}
 					continue
 				}
-				var dh DynamicHref
+				if err = encoder.DeserializeRaw(data, &refs); err != nil {
+					return
+				}
+				if schk, err = c.schemaByTag(tag, "array="); err != nil {
+					return
+				}
+				for _, ref := range refs {
+					if err = c.inspect(schk, ref, deep+1, insp); err != nil {
+						return
+					}
+				}
+			} else if strings.Contains(tag, "dynamic") {
+				// the field contains cipher.SHA256 reference to dynamic href
+				var (
+					data []byte
+					ok   bool
+
+					dh DynamicHref
+				)
+				if data, ok = c.db.Get(ref); !ok { // we don't have dh-object
+					err = insp(nil, nil, deep, &MissingError{ref})
+					if err != nil {
+						return
+					}
+					continue
+				}
 				if err = encoder.DeserializeRaw(data, &dh); err != nil {
 					return
 				}
@@ -139,25 +169,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 				if err != nil {
 					return
 				}
-			}
-		case hrefArrayTypeName:
-			// the field contains []cipher.SHA256 references
-			var refs []cipher.SHA256
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &refs)
-			if err != nil {
-				return
-			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				return
-			}
-			for _, ref := range refs {
-				if err = c.inspect(schk, ref, deep+1, insp); err != nil {
-					return
-				}
-			}
-		default:
-			err = ErrUnexpectedHrefTag
-			return
+			} // else -> not a reference
 		}
 	}
 	return

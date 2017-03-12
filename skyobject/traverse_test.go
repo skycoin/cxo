@@ -20,7 +20,7 @@ func ExampleContainer_Inspect() {
 	type User struct {
 		Name   string
 		Age    int64
-		Hidden string `enc:"-"`
+		Hidden string `enc:"-"` // ignore the field
 	}
 
 	type Man struct {
@@ -31,10 +31,10 @@ func ExampleContainer_Inspect() {
 
 	type SamllGroup struct {
 		Name     string
-		Leader   cipher.SHA256   `skyobject:"href,schema=User"`
-		Outsider cipher.SHA256   // not a reference
-		FallGuy  cipher.SHA256   `skyobject:"href"` // dynamic href
-		Members  []cipher.SHA256 `skyobject:"href,schema=User"`
+		Leader   cipher.SHA256 `skyobject:"schema=User"` // single User
+		Outsider cipher.SHA256 // not a reference
+		FallGuy  cipher.SHA256 `skyobject:"dynamic"`    // dynamic href
+		Members  cipher.SHA256 `skyobject:"array=User"` // array of Users
 	}
 
 	// create database and container instance
@@ -56,7 +56,7 @@ func ExampleContainer_Inspect() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: c.Save(c.NewDynamicHref(Man{"Bob", 182, 82})),
+		FallGuy: c.SaveDynamicHref(Man{"Bob", 182, 82}),
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
@@ -100,7 +100,7 @@ func ExampleContainer_Inspect() {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintln(tw, fmt.Sprintf("%s:\t%q", k, fields[k]))
+			fmt.Fprintln(tw, fmt.Sprintf("%s: \t%v", k, fields[k]))
 		}
 		tw.Flush()
 	}
@@ -129,27 +129,28 @@ func ExampleContainer_Inspect() {
 	}
 
 	// Output:
+	//
 	// ---
 	// schema SamllGroup {
-	//     Name      string  ``                              string
-	//     Leader    sha256  `skyobject:"href,schema=User"`  array
-	//     Outsider  sha256  ``                              array
-	//     FallGuy   sha256  `skyobject:"href"`              array
-	//     Members           `skyobject:"href,schema=User"`  slice
+	//     Name      string  ``                         string
+	//     Leader    SHA256  `skyobject:"schema=User"`  array
+	//     Outsider  SHA256  ``                         array
+	//     FallGuy   SHA256  `skyobject:"dynamic"`      array
+	//     Members   SHA256  `skyobject:"array=User"`   array
 	// }
-	// FallGuy: "45bd07e2f95bd52cfd27ac56dd701e207d836b4e669788b1a15ce0aa60e54c12"
-	// Leader:  "03d9a33bd9e53cbc06db0fcb7ac015fc3ca276b291c425b3b786708753f9a604"
-	// Members: "PY,\xcf"
-	// Name:    "Average small group"
-	// Outsider:"0001020300000000000000000000000000000000000000000000000000000000"
+	// FallGuy:  45bd07e2f95bd52cfd27ac56dd701e207d836b4e669788b1a15ce0aa60e54c12
+	// Leader:   03d9a33bd9e53cbc06db0fcb7ac015fc3ca276b291c425b3b786708753f9a604
+	// Members:  d43a811b5baaec6cba0109255c7806fd82eb53979988c9912bb6a4bf6fdc45dd
+	// Name:     Average small group
+	// Outsider: 0001020300000000000000000000000000000000000000000000000000000000
 	// ---
 	// ---
 	// schema User {
 	//     Name  string  ``  string
 	//     Age   int64   ``  int64
 	// }
-	// Age: "16"
-	// Name:"Billy Kid"
+	// Age:  16
+	// Name: Billy Kid
 	// ---
 	// ---
 	// schema Man {
@@ -157,40 +158,41 @@ func ExampleContainer_Inspect() {
 	//     Height  int64   ``  int64
 	//     Weight  int64   ``  int64
 	// }
-	// Height:"182"
-	// Name:  "Bob"
-	// Weight:"82"
+	// Height: 182
+	// Name:   Bob
+	// Weight: 82
 	// ---
 	// ---
 	// schema User {
 	//     Name  string  ``  string
 	//     Age   int64   ``  int64
 	// }
-	// Age: "21"
-	// Name:"Alice"
+	// Age:  21
+	// Name: Alice
 	// ---
 	// ---
 	// schema User {
 	//     Name  string  ``  string
 	//     Age   int64   ``  int64
 	// }
-	// Age: "22"
-	// Name:"Eva"
+	// Age:  22
+	// Name: Eva
 	// ---
 	// ---
 	// schema User {
 	//     Name  string  ``  string
 	//     Age   int64   ``  int64
 	// }
-	// Age: "23"
-	// Name:"Jhon"
+	// Age:  23
+	// Name: Jhon
 	// ---
 	// ---
 	// schema User {
 	//     Name  string  ``  string
 	//     Age   int64   ``  int64
 	// }
-	// Age: "24"
-	// Name:"Michel"
+	// Age:  24
+	// Name: Michel
 	// ---
+	//
 }

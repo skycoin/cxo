@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"reflect"
-	"sort"
 	"text/tabwriter"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -28,10 +27,10 @@ type Man struct {
 
 type SamllGroup struct {
 	Name     string
-	Leader   cipher.SHA256         `skyobject:"href,schema=User"`
-	Outsider cipher.SHA256         // not a reference
-	Members  []cipher.SHA256       `skyobject:"href,schema=User"`
-	FallGuy  skyobject.DynamicHref `skyobject:"href"`
+	Leader   cipher.SHA256 `skyobject:"schema=User"` // single User
+	Outsider cipher.SHA256 // not a reference
+	FallGuy  cipher.SHA256 `skyobject:"dynamic"`    // dynamic reference
+	Members  cipher.SHA256 `skyobject:"array=User"` // aray of Users
 }
 
 func main() {
@@ -46,10 +45,6 @@ func main() {
 	// schema of User{}
 	root.Register("User", User{})
 
-	fg := c.NewDynamicHref(Man{"Bob", 182, 82})
-	fmt.Println("[FG] schema key:", fg.Schema.Hex())
-	fmt.Println("[FG] object key:", fg.ObjKey.Hex())
-
 	// Set SmallGroup as root
 	root.Set(SamllGroup{
 		Name: "Average small group",
@@ -58,7 +53,7 @@ func main() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: fg,
+		FallGuy: c.SaveDynamicHref(Man{"Bob", 182, 82}),
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
@@ -94,22 +89,16 @@ func main() {
 	}
 
 	// prepare fields printer for inspect function
-	printFields := func(fields map[string]string) {
-		// sorted by key
-		keys := make([]string, 0, len(fields))
-		for k := range fields {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintln(tw, fmt.Sprintf("%s:\t%q", k, fields[k]))
+	printFields := func(fields map[string]interface{}) {
+		for k, v := range fields {
+			fmt.Fprintln(tw, fmt.Sprintf("%s: \t%v", k, v))
 		}
 		tw.Flush()
 	}
 
 	// create function to inspecting
-	inspect := func(s *skyobject.Schema, fields map[string]string,
-		err error) error {
+	inspect := func(s *skyobject.Schema, fields map[string]interface{},
+		deep int, err error) error {
 
 		fmt.Println("---")
 
@@ -134,12 +123,14 @@ func main() {
 	// members:               4
 	// leader:               +1
 	// small group:          +1
+	// dynamic reference     +1
+	// array of Users        +1
 	// man:                  +1
 	// schema of Man         +1
 	// schema of User:       +1
 	// schema of SmallGroup: +1
 	// ------------------------
-	//                       10
+	//                       12
 	fmt.Println("===\n", db.Stat(), "\n===")
 
 	//

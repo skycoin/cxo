@@ -1,14 +1,7 @@
 package skyobject
 
 import (
-	"reflect"
-
 	"github.com/skycoin/skycoin/src/cipher"
-)
-
-var (
-	dynamicHrefSchemaSuffix = ".Schema"
-	dynamicHrefObjKeySuffix = ".ObjKey"
 )
 
 // DynamicHref is reference to object with schema
@@ -19,9 +12,9 @@ type DynamicHref struct {
 
 // NewDynamicHref creates DynamicHref from given object saving serialized
 // object in DB
-func (c *Container) NewDynamicHref(i interface{}) DynamicHref {
-	return DynamicHref{
+func (c *Container) SaveDynamicHref(i interface{}) cipher.SHA256 {
+	return c.Save(DynamicHref{
 		Schema: c.Save(getSchema(i)),
 		ObjKey: c.Save(i),
-	}
+	})
 }

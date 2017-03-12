@@ -33,5 +33,3 @@ cmd/cli/cli
 cmd/cxod/cxod
 cmd/*.out
 tests/tests
-
-encoder/

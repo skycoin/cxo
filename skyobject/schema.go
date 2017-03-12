@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/skycoin/skycoin/src/cipher/encoder"
+	//"github.com/skycoin/skycoin/src/cipher/encoder"
+	"github.com/logrusorgru/skycoin/src/cipher/encoder"
 )
 
 type Schema struct {
@@ -33,12 +34,9 @@ func (s *Schema) String() string {
 
 func getSchema(i interface{}) (s Schema) {
 	var (
-		val reflect.Value
-		typ reflect.Type
-		nf  int
+		typ reflect.Type = reflect.Indirect(reflect.ValueOf(i)).Type()
+		nf  int          = typ.NumField()
 	)
-	typ = reflect.Indirect(reflect.ValueOf(i)).Type()
-	nf = typ.NumField()
 	s.Name = typ.Name()
 	if nf == 0 {
 		return

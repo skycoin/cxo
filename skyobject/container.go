@@ -7,23 +7,20 @@ import (
 	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
+	//"github.com/skycoin/skycoin/src/cipher/encoder"
+	"github.com/logrusorgru/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
 )
 
 var (
-	hrefTypeName      = reflect.TypeOf(cipher.SHA256{}).Name()
-	hrefArrayTypeName = reflect.TypeOf([]cipher.SHA256{}).Name()
+	hrefTypeName = reflect.TypeOf(cipher.SHA256{}).Name()
 
 	// ErrMissingRoot occurs when a Container doesn't have
 	// a root object, but the action requires it
 	ErrMissingRoot = errors.New("missing root object")
-	// ErrUnexpectedHrefTag occurs when there is `skyobject:"href"`
-	// tag but type of the field is not cipher.SHA256 nor []cipher.SHA256
-	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
-	// ErrMissingSchemaName occurs when a field has got `skyobject:"href"`
-	// tag, but doesn't have "schema=xxx" tag
+	// ErrMissingSchemaName occurs when a tag constains "schema=" or "array="
+	// key but does't contain a value
 	ErrMissingSchemaName = errors.New("missing schema name")
 	// ErrMissingObject occurs where requested object is not received yet
 	ErrMissingObject = errors.New("missing object")
@@ -99,14 +96,15 @@ func (c *Container) Save(i interface{}) cipher.SHA256 {
 }
 
 // SaveArray saves array of objects and retursn references to them
-func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
+func (c *Container) SaveArray(i ...interface{}) (a cipher.SHA256) {
 	if len(i) == 0 {
 		return // nil
 	}
-	ch = make([]cipher.SHA256, 0, len(i))
+	var ch []cipher.SHA256 = make([]cipher.SHA256, 0, len(i))
 	for _, x := range i {
 		ch = append(ch, c.Save(x))
 	}
+	a = c.Save(ch)
 	return
 }
 
@@ -148,20 +146,18 @@ func (c *Container) want(schk,
 	}
 
 	for _, sf := range s.Fields {
-		var tag string
-		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
-			continue
-		}
-		switch sf.Type {
-		case hrefTypeName:
-			var ref cipher.SHA256
+		if sf.Type == hrefTypeName {
+			var (
+				ref cipher.SHA256
+				tag string = skyobjectTag(sf)
+			)
 			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
 			if err != nil {
 				goto Error
 			}
 			if strings.Contains(tag, "schema=") {
 				// the field contains cipher.SHA256 reference
-				if schk, err = c.schemaByTag(tag); err != nil {
+				if schk, err = c.schemaByTag(tag, "schema="); err != nil {
 					goto Error
 				}
 				var w map[cipher.SHA256]struct{}
@@ -169,7 +165,32 @@ func (c *Container) want(schk,
 					goto Error
 				}
 				mergeMaps(want, w)
-			} else {
+			} else if strings.Contains(tag, "array=") {
+				// the field contains reference to []cipher.SHA256 references
+				var (
+					data []byte
+					ok   bool
+
+					refs []cipher.SHA256
+				)
+				if data, ok = c.db.Get(ref); !ok {
+					want[ref] = struct{}{}
+					continue
+				}
+				if err = encoder.DeserializeRaw(data, &refs); err != nil {
+					goto Error
+				}
+				if schk, err = c.schemaByTag(tag, "array="); err != nil {
+					goto Error
+				}
+				var w map[cipher.SHA256]struct{}
+				for _, ref := range refs {
+					if w, err = c.want(schk, ref); err != nil {
+						goto Error
+					}
+					mergeMaps(want, w)
+				}
+			} else if strings.Contains(tag, "dynamic") {
 				// the field contains cipher.SHA256 reference to dynamic href
 				var data []byte
 				var ok bool
@@ -186,27 +207,7 @@ func (c *Container) want(schk,
 					goto Error
 				}
 				mergeMaps(want, w)
-			}
-		case hrefArrayTypeName:
-			// the field contains []cipher.SHA256 references
-			var refs []cipher.SHA256
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &refs)
-			if err != nil {
-				goto Error
-			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				goto Error
-			}
-			var w map[cipher.SHA256]struct{}
-			for _, ref := range refs {
-				if w, err = c.want(schk, ref); err != nil {
-					goto Error
-				}
-				mergeMaps(want, w)
-			}
-		default:
-			err = ErrUnexpectedHrefTag
-			goto Error
+			} // else -> not a reference
 		}
 	}
 	return
@@ -242,9 +243,9 @@ func skyobjectTag(sf encoder.StructField) string {
 // tagSchemaName returns schema name or error if there is no
 // schema=xxx in given tag, it returns an error if given tag
 // is invalid
-func tagSchemaName(tag string) (s string, err error) {
+func tagSchemaName(tag, key string) (s string, err error) {
 	for _, p := range strings.Split(tag, ",") {
-		if strings.HasPrefix(p, "schema=") {
+		if strings.HasPrefix(p, key) {
 			ss := strings.Split(p, "=")
 			if len(ss) != 2 {
 				err = fmt.Errorf("invalid schema tag: %s", p)
@@ -262,12 +263,14 @@ func tagSchemaName(tag string) (s string, err error) {
 
 // if given tag contains schema=xxx then it reutrns appropriate schema or
 // error if the schema is not registered
-func (c *Container) schemaByTag(tag string) (s cipher.SHA256, err error) {
+func (c *Container) schemaByTag(tag string, key string) (s cipher.SHA256,
+	err error) {
+
 	var (
 		schemaName string
 		ok         bool
 	)
-	if schemaName, err = tagSchemaName(tag); err != nil {
+	if schemaName, err = tagSchemaName(tag, key); err != nil {
 		return
 	}
 	if c.root == nil {
