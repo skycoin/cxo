@@ -58,7 +58,7 @@ func main() {
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
 			User{"Eva", 22, ""},
-			User{"Jhon", 23, ""},
+			User{"John", 23, ""},
 			User{"Michel", 24, ""},
 		),
 	})

@@ -5,40 +5,9 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
 )
-
-////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////// T Y P E S //////////////////////////////////////
-
-type User struct {
-	Name   string
-	Age    int64
-	Hidden string `enc:"-"`
-}
-
-type Man struct {
-	Name   string
-	Height int64
-	Weight int64
-}
-
-type SamllGroup struct {
-	Name     string
-	Leader   cipher.SHA256   `skyobject:"href,schema=User"`
-	Outsider cipher.SHA256   // not a reference
-	FallGuy  cipher.SHA256   `skyobject:"href"`
-	Members  []cipher.SHA256 `skyobject:"href,schema=User"`
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////// HELPERS ///////////////////////////////////////
-
-func shaOf(i interface{}) cipher.SHA256 {
-	return cipher.SumSHA256(encoder.Serialize(i))
-}
 
 func isRegisteriesEqual(r1, r2 map[string]cipher.SHA256) bool {
 	if len(r1) != len(r2) {
@@ -51,9 +20,6 @@ func isRegisteriesEqual(r1, r2 map[string]cipher.SHA256) bool {
 	}
 	return true
 }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 
 func TestContainer_NewRoot(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
@@ -105,10 +71,10 @@ func TestRoot_Set(t *testing.T) {
 		if stat := c.db.Stat(); stat.Total != 2 {
 			t.Error("wrong object count: want 2, got ", stat.Total)
 		}
-		if _, ok := c.db.Get(shaOf(getSchema(User{}))); !ok {
+		if _, ok := c.db.Get(getHash(getSchema(User{}))); !ok {
 			t.Error("wrong or misisng schema in db")
 		}
-		if _, ok := c.db.Get(shaOf(val)); !ok {
+		if _, ok := c.db.Get(getHash(val)); !ok {
 			t.Error("wrong or misisng value in db")
 		}
 	})
@@ -135,7 +101,7 @@ func TestRoot_Register(t *testing.T) {
 			if k != "User" {
 				t.Errorf("unexpected key: %q", k)
 			}
-			if v != shaOf(getSchema(User{})) {
+			if v != getHash(getSchema(User{})) {
 				t.Error("unexpected value")
 			}
 		}
@@ -153,7 +119,7 @@ func TestRoot_SchemaKey(t *testing.T) {
 	root.Register("User", User{})
 	if k, ok := root.SchemaKey("User"); !ok {
 		t.Error("missing registered schema")
-	} else if k != shaOf(getSchema(User{})) {
+	} else if k != getHash(getSchema(User{})) {
 		t.Error("wrong schema key")
 	}
 	if _, ok := root.SchemaKey("Man"); ok {

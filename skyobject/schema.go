@@ -31,11 +31,16 @@ func (s *Schema) String() string {
 	return w.String()
 }
 
-func getSchema(i interface{}) (s Schema) {
-	var (
-		typ reflect.Type = reflect.Indirect(reflect.ValueOf(i)).Type()
-		nf  int          = typ.NumField()
+func getSchema(i interface{}) Schema {
+	return getSchemaOfType(
+		reflect.Indirect(
+			reflect.ValueOf(i),
+		).Type(),
 	)
+}
+
+func getSchemaOfType(typ reflect.Type) (s Schema) {
+	var nf int = typ.NumField()
 	s.Name = typ.Name()
 	if nf == 0 {
 		return
@@ -46,7 +51,15 @@ func getSchema(i interface{}) (s Schema) {
 		if ft.Tag.Get("enc") == "-" || ft.Name == "_" || ft.PkgPath != "" {
 			continue
 		}
-		s.Fields = append(s.Fields, getField(ft))
+		if ft.Type.Kind() == reflect.Struct {
+			nt := getSchemaOfType(ft.Type)
+			for _, nf := range nt.Fields {
+				nf.Name = ft.Name + "." + nf.Name
+				s.Fields = append(s.Fields, nf)
+			}
+		} else {
+			s.Fields = append(s.Fields, getField(ft))
+		}
 	}
 	return
 }

@@ -11,11 +11,13 @@ import (
 )
 
 func Test_getSchema(t *testing.T) {
-	// type User struct {
-	// 	Name   string
-	// 	Age    int64
-	// 	Hidden string `enc:"-"`
-	// }
+
+	type User struct {
+		Name   string
+		Age    int64
+		Hidden string `enc:"-"`
+	}
+
 	s := getSchema(User{})
 	if s.Name != reflect.TypeOf(User{}).Name() {
 		t.Error("invalid schema name: ", s.Name)
@@ -55,6 +57,14 @@ func Test_getField(t *testing.T) {
 }
 
 func ExampleSchema_String() {
+
+	type User struct {
+		Name   string
+		Age    int64
+		Hidden string `enc:"-"`
+		Any    Dynamic
+	}
+
 	db := data.NewDB()
 	c := NewContainer(db)
 	r := c.NewRoot()
@@ -77,5 +87,5 @@ func ExampleSchema_String() {
 	fmt.Println(s.String())
 
 	// Output:
-	// User {Name string `` <string>; Age int64 `` <int64>}
+	// User {Name string `` <string>; Age int64 `` <int64>; Any.Schema SHA256 `skyobject:"dynamic_schema"` <array>; Any.ObjKey SHA256 `skyobject:"dynamic_objkey"` <array>}
 }

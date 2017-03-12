@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	hrefTypeName = reflect.TypeOf(cipher.SHA256{}).Name()
+	hrefTypeName      = reflect.TypeOf(cipher.SHA256{}).Name()
+	hrefArrayTypeName = reflect.TypeOf([]cipher.SHA256{}).Name()
 
 	// ErrMissingRoot occurs when a Container doesn't have
 	// a root object, but the action requires it
@@ -29,7 +30,7 @@ var (
 	// root is malformed
 	ErrMalformedRoot = errors.New("malformed root")
 	// ErrMissingObjKeyField occurs when a malformed schema is used with
-	// DynamicHref.Schema field but without DynamicHref.ObjKey
+	// Dynamic.Schema field but without Dynamic.ObjKey
 	ErrMissingObjKeyField = errors.New("missing ObjKey field")
 
 	// ErrStopInspection is used to stop Inspect
@@ -113,11 +114,13 @@ func (c *Container) Want() (want map[cipher.SHA256]struct{}, err error) {
 	if c.root == nil {
 		return
 	}
-	return c.want(c.root.Schema, c.root.Root)
+	want = make(map[cipher.SHA256]struct{})
+	err = c.want(c.root.Schema, c.root.Root, want)
+	return
 }
 
-func (c *Container) want(schk,
-	objk cipher.SHA256) (want map[cipher.SHA256]struct{}, err error) {
+func (c *Container) want(schk, objk cipher.SHA256,
+	want map[cipher.SHA256]struct{}) (err error) {
 
 	var (
 		schd, objd []byte
@@ -125,8 +128,6 @@ func (c *Container) want(schk,
 
 		s Schema
 	)
-
-	want = make(map[cipher.SHA256]struct{})
 
 	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
 		want[schk] = struct{}{}
@@ -144,69 +145,42 @@ func (c *Container) want(schk,
 		return
 	}
 
-	for _, sf := range s.Fields {
+	for i := 0; i < len(s.Fields); i++ {
+		var (
+			sf  encoder.StructField = s.Fields[i]
+			tag string              = skyobjectTag(sf)
+		)
+		if tag == "" {
+			continue
+		}
 		if sf.Type == hrefTypeName {
-			var (
-				ref cipher.SHA256
-				tag string = skyobjectTag(sf)
-			)
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
-			if err != nil {
+			var ref cipher.SHA256
+			if ref, err = getRefField(objd, s.Fields, sf.Name); err != nil {
 				goto Error
 			}
 			if strings.Contains(tag, "schema=") {
 				// the field contains cipher.SHA256 reference
-				if schk, err = c.schemaByTag(tag, "schema="); err != nil {
+				err = c.mergeRefWants(want, tag, ref)
+				if err != nil {
 					goto Error
 				}
-				var w map[cipher.SHA256]struct{}
-				if w, err = c.want(schk, ref); err != nil {
+			} else if strings.Contains(tag, "dynamic_schema") {
+				i++
+				if i >= len(s.Fields) {
+					err = ErrMissingObjKeyField
 					goto Error
 				}
-				mergeMaps(want, w)
-			} else if strings.Contains(tag, "array=") {
-				// the field contains reference to []cipher.SHA256 references
-				var (
-					data []byte
-					ok   bool
-
-					refs []cipher.SHA256
-				)
-				if data, ok = c.db.Get(ref); !ok {
-					want[ref] = struct{}{}
-					continue
-				}
-				if err = encoder.DeserializeRaw(data, &refs); err != nil {
+				err = c.mergeDynamicWants(objd, s.Fields, s.Fields[i], want, ref)
+				if err != nil {
 					goto Error
 				}
-				if schk, err = c.schemaByTag(tag, "array="); err != nil {
-					goto Error
-				}
-				var w map[cipher.SHA256]struct{}
-				for _, ref := range refs {
-					if w, err = c.want(schk, ref); err != nil {
-						goto Error
-					}
-					mergeMaps(want, w)
-				}
-			} else if strings.Contains(tag, "dynamic") {
-				// the field contains cipher.SHA256 reference to dynamic href
-				var data []byte
-				var ok bool
-				if data, ok = c.db.Get(ref); !ok { // we don't have dh-object
-					want[ref] = struct{}{}
-					continue
-				}
-				var dh DynamicHref
-				if err = encoder.DeserializeRaw(data, &dh); err != nil {
-					goto Error
-				}
-				var w map[cipher.SHA256]struct{}
-				if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
-					goto Error
-				}
-				mergeMaps(want, w)
 			} // else -> not a reference
+		} else if sf.Type == hrefArrayTypeName {
+			// the field contains reference to []cipher.SHA256 references
+			err = c.mergeArrayWants(objd, s.Fields, sf.Name, want, tag)
+			if err != nil {
+				goto Error
+			}
 		}
 	}
 	return
@@ -215,11 +189,78 @@ Error:
 	return
 }
 
-// mergeMaps merges appention to dst
-func mergeMaps(dst, appention map[cipher.SHA256]struct{}) {
-	for k := range appention {
-		dst[k] = struct{}{}
+func (c *Container) mergeDynamicWants(objd []byte,
+	fs []encoder.StructField,
+	sf encoder.StructField,
+	want map[cipher.SHA256]struct{},
+	ref cipher.SHA256) (err error) {
+
+	var tag string = skyobjectTag(sf)
+	if !strings.Contains(tag, "dynamic_objkey") ||
+		sf.Type != hrefTypeName {
+		err = ErrMissingObjKeyField
+		return
 	}
+	var objRef cipher.SHA256
+	objRef, err = getRefField(objd, fs, sf.Name)
+	if err != nil {
+		return
+	}
+	if err = c.want(ref, objRef, want); err != nil {
+		return
+	}
+	return
+}
+
+func (c *Container) mergeRefWants(want map[cipher.SHA256]struct{},
+	tag string,
+	ref cipher.SHA256) (err error) {
+
+	var schk cipher.SHA256
+
+	if schk, err = c.schemaByTag(tag, "schema="); err != nil {
+		return
+	}
+	if err = c.want(schk, ref, want); err != nil {
+		return
+	}
+	return
+}
+
+func (c *Container) mergeArrayWants(objd []byte,
+	fs []encoder.StructField,
+	name string,
+	want map[cipher.SHA256]struct{},
+	tag string) (err error) {
+
+	var (
+		refs []cipher.SHA256
+		schk cipher.SHA256
+	)
+	if refs, err = getRefsField(objd, fs, name); err != nil {
+		return
+	}
+	if schk, err = c.schemaByTag(tag, "array="); err != nil {
+		return
+	}
+	for _, ref := range refs {
+		if err = c.want(schk, ref, want); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func getRefField(data []byte, fs []encoder.StructField,
+	fname string) (ref cipher.SHA256, err error) {
+	err = encoder.DeserializeField(data, fs, fname, &ref)
+	return
+}
+
+func getRefsField(data []byte, fs []encoder.StructField,
+	fname string) (refs []cipher.SHA256, err error) {
+	err = encoder.DeserializeField(data, fs, fname, &refs)
+	return
 }
 
 // append key to array if it is not exist in db

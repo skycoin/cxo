@@ -1,5 +1,6 @@
 package skyobject
 
+/*
 import (
 	"fmt"
 	"os"
@@ -56,12 +57,12 @@ func ExampleContainer_Inspect() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: c.SaveDynamicHref(Man{"Bob", 182, 82}),
+		FallGuy: c.NewDynamic(Man{"Bob", 182, 82}),
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
 			User{"Eva", 22, ""},
-			User{"Jhon", 23, ""},
+			User{"John", 23, ""},
 			User{"Michel", 24, ""},
 		),
 	})
@@ -140,7 +141,7 @@ func ExampleContainer_Inspect() {
 	// }
 	// FallGuy:  45bd07e2f95bd52cfd27ac56dd701e207d836b4e669788b1a15ce0aa60e54c12
 	// Leader:   03d9a33bd9e53cbc06db0fcb7ac015fc3ca276b291c425b3b786708753f9a604
-	// Members:  d43a811b5baaec6cba0109255c7806fd82eb53979988c9912bb6a4bf6fdc45dd
+	// Members:  19d0e110e79b5406bacb7d97911bda3bc2e91388d943cb63cbb69b77da99d673
 	// Name:     Average small group
 	// Outsider: 0001020300000000000000000000000000000000000000000000000000000000
 	// ---
@@ -184,7 +185,7 @@ func ExampleContainer_Inspect() {
 	//     Age   int64   ``  int64
 	// }
 	// Age:  23
-	// Name: Jhon
+	// Name: John
 	// ---
 	// ---
 	// schema User {
@@ -196,3 +197,4 @@ func ExampleContainer_Inspect() {
 	// ---
 	//
 }
+*/
