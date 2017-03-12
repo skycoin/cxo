@@ -120,16 +120,15 @@ func main() {
 	}
 
 	// database statistic
+	// ------------------------
 	// members:               4
 	// leader:               +1
 	// small group:          +1
-	// dynamic reference     +1
-	// array of Users        +1
 	// man:                  +1
 	// schema of Man         +1
 	// schema of User:       +1
 	// schema of SmallGroup: +1
 	// ------------------------
-	//                       12
+	//                       10
 	fmt.Println("===\n", db.Stat(), "\n===")
 }
