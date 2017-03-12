@@ -7,11 +7,11 @@ Skyobject
 
 Use `Container` to manage skyobjects. Any object can contains references to
 another object. But we need to register type of objects we refer and provide
-appropriate tags:
+appropriate tags (except dynamic references).
 
 + `skyobject:"schema=User"` refers to single object, type of which is User
 + `skyobject:"array=User" refers to array of objects
-+ `skyobject:"dynamic"` refers to dynamic reference
++ `skyobject.Dynamic` refers to dynamic reference
 
 Anyway the field type must be `cipher.SHA256`. For example
 
@@ -20,8 +20,8 @@ Anyway the field type must be `cipher.SHA256`. For example
 type Wrap struct {
 	Name string
 	Single cipher.SHA256 `skyobject:"schema=Nest"`
-	Array  cipher.SHA256 `skyobject:"array=Element"`
-	Any    cipher.SHA256 `skyobject:"dynamic"`
+	Array  []cipher.SHA256 `skyobject:"array=Element"`
+	Any    skyobject.Dynamic
 	Not    cipher.SHA256 // not a reference
 }
 
@@ -64,7 +64,7 @@ root.Set(Wrap{
 		Element{1},
 		Element{2},
 	),
-	Any: c.SaveDynamicHref(Random{234, 456}), // not registered
+	Any: c.NewDynamic(Random{234, 456}), // not registered
 	Not: cipher.SHA256{0,1,2,3},
 })
 
@@ -103,7 +103,7 @@ if err != nil {
 
 // if the list is empty then (one of):
 //  - we haven't got a root
-//  - we have all objects of the tree
+//  - we already have all objects of the tree
 ```
 
 + Inspect the tree
