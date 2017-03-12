@@ -43,10 +43,16 @@ type User struct {
 	Age  int64
 }
 
+type Man struct {
+	Name   string
+	Soname string
+}
+
 type SmallGroup struct {
 	Header  string
-	Leader  cipher.SHA256   `skyobject:"href,schema=User"`
-	Members []cipher.SHA256 `skyobject:"href,schema=User"`
+	Leader  cipher.SHA256 `skyobject:"schema=User"`
+	Members cipher.SHA256 `skyobject:"array=User"`
+	FallGuy cipher.SHA256 `skyobject:"dynamic"`
 }
 
 //                                                                            //
@@ -71,6 +77,10 @@ func filledDownNode() *Node {
 			User{"Dan'l Whiddon", 54},
 			User{"Harry Hawke", 55},
 		),
+		FallGuy: so.SaveDynamicHref(Man{
+			Name:   "Bob",
+			Soname: "Cobley",
+		}),
 	})
 	so.SetRoot(root)
 	return n
