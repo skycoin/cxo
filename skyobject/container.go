@@ -90,7 +90,7 @@ func (c *Container) SetEncodedRoot(data []byte) (ok bool, err error) {
 
 // Save serializes given object and sotres it in DB returning
 // key of the object
-func (c *Container) Save(i interface{}) cipher.SHA256 {
+func (c *Container) Save(i interface{}) (k cipher.SHA256) {
 	return c.db.AddAutoKey(encoder.Serialize(i))
 }
 
