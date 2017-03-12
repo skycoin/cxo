@@ -190,6 +190,17 @@ func (n *Node) handle(quit, done chan struct{},
 	connecte chan connectEvent, msge chan msgEvent, rpce chan rpcEvent) {
 	n.Debug("[DBG] start handling events")
 
+	var (
+		pingsTicker *time.Ticker
+		pings       <-chan time.Time
+	)
+
+	if n.conf.Ping > 0 {
+		pingsTicker = time.NewTicker(n.conf.Ping / 2)
+		defer pingsTicker.Stop()
+		pings = pingsTicker.C
+	}
+
 	defer close(done)
 	defer n.pool.Shutdown()
 
@@ -216,10 +227,8 @@ func (n *Node) handle(quit, done chan struct{},
 			rpce()
 		case <-quit:
 			return
-		default:
-			if n.conf.Ping > 0 {
-				n.pool.SendPings(n.conf.Ping, &Ping{})
-			}
+		case <-pings:
+			n.pool.SendPings(n.conf.Ping/2, &Ping{})
 		}
 	}
 }
