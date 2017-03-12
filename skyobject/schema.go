@@ -37,8 +37,7 @@ func getSchema(i interface{}) (s Schema) {
 		typ reflect.Type
 		nf  int
 	)
-	val = reflect.Indirect(reflect.ValueOf(i))
-	typ = val.Type()
+	typ = reflect.Indirect(reflect.ValueOf(i)).Type()
 	nf = typ.NumField()
 	s.Name = typ.Name()
 	if nf == 0 {
@@ -47,22 +46,10 @@ func getSchema(i interface{}) (s Schema) {
 	s.Fields = make([]encoder.StructField, 0, nf)
 	for i := 0; i < nf; i++ {
 		ft := typ.Field(i)
-		fv := val.Field(i)
 		if ft.Tag.Get("enc") == "-" || ft.Name == "_" || ft.PkgPath != "" {
 			continue
 		}
-		// use fields of embeded struct as
-		// field of the struct
-		if fv.Kind() == reflect.Struct {
-			es := getSchema(fv.Interface())
-			for _, ef := range es.Fields {
-				ef.Name = ft.Name + "." + ef.Name // EbededStructName.FieldName
-				ef.Tag = string(ft.Tag)           // use tag of parent
-				s.Fields = append(s.Fields, ef)
-			}
-		} else {
-			s.Fields = append(s.Fields, getField(ft))
-		}
+		s.Fields = append(s.Fields, getField(ft))
 	}
 	return
 }

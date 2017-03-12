@@ -29,15 +29,15 @@ func (m *MissingError) Error() string {
 }
 
 // An InspectFuunc is used to inspect objects tree. It receives schema and
-// stringify fields of an object. The deep arguments is a distance from root.
-// It can receive an error. The error can be ErrMissingRoot,
+// fields of an object, and distance from root called deep.
+// Or error. The error can be ErrMissingRoot,
 // or MissingError (with key) when required object doesn't exists
 // in database. If an InspectFunc returns an error then call of Inspect
 // terminates and returns the error. There is special error called
 // ErrStopInspection that is used to stop the call of Inspect without
-// errors.
-type InspectFunc func(s *Schema, fields map[string]interface{}, deep int,
-	err error) error
+// errors
+type InspectFunc func(s *Schema, fields map[string]interface{},
+	deep int, err error) error
 
 // Inspect prints the tree. Inspect doesn't returns "missing" errors
 //
@@ -75,7 +75,6 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 	}()
 
 	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
-		fmt.Println("[DEBUG] misisng schema")
 		if err = insp(nil, nil, deep, &MissingError{schk}); err != nil {
 			return
 		}
@@ -83,7 +82,6 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 	}
 
 	if objd, ok = c.db.Get(objk); !ok {
-		fmt.Println("[DEBUG] misisng object")
 		if err = insp(nil, nil, deep, &MissingError{objk}); err != nil {
 			return
 		}
@@ -96,8 +94,7 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 	}
 
 	// --- TODO: encoder.ParseFields(objd, s.Fields) instead of hidden:hidden
-	err = insp(&s, map[string]interface{}{"hidden": "hidden"}, deep, nil)
-	if err != nil {
+	if err = insp(&s, map[string]interface{}{"hidden": "hidden"}, deep, nil); err != nil {
 		return
 	}
 	// ---
@@ -108,22 +105,40 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
 			continue
 		}
-		//
-		// TODO: DRY
-		//
 		switch sf.Type {
 		case hrefTypeName:
-			// the field contains cipher.SHA256 reference
 			var ref cipher.SHA256
 			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
 			if err != nil {
 				return
 			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				return
-			}
-			if err = c.inspect(schk, ref, deep+1, insp); err != nil {
-				return
+			if strings.Contains(tag, "schema=") {
+				// the field contains cipher.SHA256 reference
+				if schk, err = c.schemaByTag(tag); err != nil {
+					return
+				}
+				if err = c.inspect(schk, ref, deep+1, insp); err != nil {
+					return
+				}
+			} else {
+				// the field contains cipher.SHA256 reference to dynamic href
+				var data []byte
+				var ok bool
+				if data, ok = c.db.Get(ref); !ok { // we don't have dh-object
+					err = insp(nil, nil, deep+1, &MissingError{ref})
+					if err != nil {
+						return
+					}
+					continue
+				}
+				var dh DynamicHref
+				if err = encoder.DeserializeRaw(data, &dh); err != nil {
+					return
+				}
+				err = c.inspect(dh.Schema, dh.ObjKey, deep+1, insp)
+				if err != nil {
+					return
+				}
 			}
 		case hrefArrayTypeName:
 			// the field contains []cipher.SHA256 references
@@ -139,18 +154,6 @@ func (c *Container) inspect(schk, objk cipher.SHA256, deep int,
 				if err = c.inspect(schk, ref, deep+1, insp); err != nil {
 					return
 				}
-			}
-		case dynamicHrefTypeName:
-			// the field containe dynamic reference
-			var dh DynamicHref
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
-			if err != nil {
-				return
-			}
-			fmt.Println("[FG INSPECT] schema key:", dh.Schema.Hex())
-			fmt.Println("[FG INSPECT] object key:", dh.ObjKey.Hex())
-			if err = c.inspect(dh.Schema, dh.ObjKey, insp); err != nil {
-				return
 			}
 		default:
 			err = ErrUnexpectedHrefTag

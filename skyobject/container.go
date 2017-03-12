@@ -152,25 +152,41 @@ func (c *Container) want(schk,
 		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
 			continue
 		}
-		//
-		// TODO: DRY
-		//
 		switch sf.Type {
 		case hrefTypeName:
-			// the field contains cipher.SHA256 reference
 			var ref cipher.SHA256
 			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
 			if err != nil {
 				goto Error
 			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				goto Error
+			if strings.Contains(tag, "schema=") {
+				// the field contains cipher.SHA256 reference
+				if schk, err = c.schemaByTag(tag); err != nil {
+					goto Error
+				}
+				var w map[cipher.SHA256]struct{}
+				if w, err = c.want(schk, ref); err != nil {
+					goto Error
+				}
+				mergeMaps(want, w)
+			} else {
+				// the field contains cipher.SHA256 reference to dynamic href
+				var data []byte
+				var ok bool
+				if data, ok = c.db.Get(ref); !ok { // we don't have dh-object
+					want[ref] = struct{}{}
+					continue
+				}
+				var dh DynamicHref
+				if err = encoder.DeserializeRaw(data, &dh); err != nil {
+					goto Error
+				}
+				var w map[cipher.SHA256]struct{}
+				if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
+					goto Error
+				}
+				mergeMaps(want, w)
 			}
-			var w map[cipher.SHA256]struct{}
-			if w, err = c.want(schk, ref); err != nil {
-				goto Error
-			}
-			mergeMaps(want, w)
 		case hrefArrayTypeName:
 			// the field contains []cipher.SHA256 references
 			var refs []cipher.SHA256
@@ -188,18 +204,6 @@ func (c *Container) want(schk,
 				}
 				mergeMaps(want, w)
 			}
-		case dynamicHrefTypeName:
-			// the field refer to dynamic schema
-			var dh DynamicHref
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
-			if err != nil {
-				goto Error
-			}
-			var w map[cipher.SHA256]struct{}
-			if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
-				goto Error
-			}
-			mergeMaps(want, w)
 		default:
 			err = ErrUnexpectedHrefTag
 			goto Error

@@ -33,7 +33,7 @@ func ExampleContainer_Inspect() {
 		Name     string
 		Leader   cipher.SHA256   `skyobject:"href,schema=User"`
 		Outsider cipher.SHA256   // not a reference
-		FallGuy  DynamicHref     `skyobject:"href"`
+		FallGuy  cipher.SHA256   `skyobject:"href"` // dynamic href
 		Members  []cipher.SHA256 `skyobject:"href,schema=User"`
 	}
 
@@ -56,7 +56,7 @@ func ExampleContainer_Inspect() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: c.NewDynamicHref(Man{"Bob", 182, 82}),
+		FallGuy: c.Save(c.NewDynamicHref(Man{"Bob", 182, 82})),
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},
@@ -92,7 +92,7 @@ func ExampleContainer_Inspect() {
 	}
 
 	// prepare fields printer for inspect function
-	printFields := func(fields map[string]string) {
+	printFields := func(fields map[string]interface{}) {
 		// sorted by key
 		keys := make([]string, 0, len(fields))
 		for k := range fields {
@@ -106,7 +106,7 @@ func ExampleContainer_Inspect() {
 	}
 
 	// create function to inspecting
-	inspect := func(s *Schema, fields map[string]string,
+	inspect := func(s *Schema, fields map[string]interface{}, deep int,
 		err error) error {
 
 		fmt.Println("---")
