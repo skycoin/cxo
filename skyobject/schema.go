@@ -37,7 +37,7 @@ func getSchema(i interface{}) (s Schema) {
 		typ reflect.Type
 		nf  int
 	)
-	typ = reflect.TypeOf(i)
+	typ = reflect.Indirect(reflect.ValueOf(i)).Type()
 	nf = typ.NumField()
 	s.Name = typ.Name()
 	if nf == 0 {
@@ -46,9 +46,10 @@ func getSchema(i interface{}) (s Schema) {
 	s.Fields = make([]encoder.StructField, 0, nf)
 	for i := 0; i < nf; i++ {
 		ft := typ.Field(i)
-		if ft.Tag.Get("enc") != "-" {
-			s.Fields = append(s.Fields, getField(ft))
+		if ft.Tag.Get("enc") == "-" || ft.Name == "_" || ft.PkgPath != "" {
+			continue
 		}
+		s.Fields = append(s.Fields, getField(ft))
 	}
 	return
 }
