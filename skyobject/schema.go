@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	//"github.com/skycoin/skycoin/src/cipher/encoder"
-	"github.com/logrusorgru/skycoin/src/cipher/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 type Schema struct {
