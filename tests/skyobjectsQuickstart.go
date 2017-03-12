@@ -16,7 +16,7 @@ import (
 type User struct {
 	Name   string
 	Age    int64
-	Hidden string `enc:"-"`
+	Hidden string `enc:"-"` // ignore the field
 }
 
 type Man struct {
@@ -27,10 +27,10 @@ type Man struct {
 
 type SamllGroup struct {
 	Name     string
-	Leader   cipher.SHA256 `skyobject:"schema=User"` // single User
-	Outsider cipher.SHA256 // not a reference
-	FallGuy  cipher.SHA256 `skyobject:"dynamic"`    // dynamic reference
-	Members  cipher.SHA256 `skyobject:"array=User"` // aray of Users
+	Leader   cipher.SHA256   `skyobject:"schema=User"` // single User
+	Outsider cipher.SHA256   // not a reference
+	FallGuy  Dynamic         // dynamic href
+	Members  []cipher.SHA256 `skyobject:"array=User"` // array of Users
 }
 
 func main() {
@@ -41,7 +41,7 @@ func main() {
 	// create new empty root (that is, actually, wrapper of root, but who cares)
 	root := c.NewRoot()
 	// register schema of User{} with name "User",
-	// thus, tags like `skyobject:"href,schema=User"` will refer to
+	// thus, tags like `skyobject:"schema=User"` will refer to
 	// schema of User{}
 	root.Register("User", User{})
 
@@ -53,7 +53,7 @@ func main() {
 		// Outsider is not a reference, it's just a SHA256
 		Outsider: cipher.SHA256{0, 1, 2, 3},
 		// Create and save dynamic reference to the Man
-		FallGuy: c.SaveDynamicHref(Man{"Bob", 182, 82}),
+		FallGuy: c.NewDynamic(Man{"Bob", 182, 82}),
 		// Save objects and get array of their references
 		Members: c.SaveArray(
 			User{"Alice", 21, ""},

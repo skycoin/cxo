@@ -1,6 +1,5 @@
 package skyobject
 
-/*
 import (
 	"fmt"
 	"os"
@@ -32,10 +31,10 @@ func ExampleContainer_Inspect() {
 
 	type SamllGroup struct {
 		Name     string
-		Leader   cipher.SHA256 `skyobject:"schema=User"` // single User
-		Outsider cipher.SHA256 // not a reference
-		FallGuy  cipher.SHA256 `skyobject:"dynamic"`    // dynamic href
-		Members  cipher.SHA256 `skyobject:"array=User"` // array of Users
+		Leader   cipher.SHA256   `skyobject:"schema=User"` // single User
+		Outsider cipher.SHA256   // not a reference
+		FallGuy  Dynamic         // dynamic href
+		Members  []cipher.SHA256 `skyobject:"array=User"` // array of Users
 	}
 
 	// create database and container instance
@@ -101,6 +100,10 @@ func ExampleContainer_Inspect() {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
+			if k == "Members" {
+				fmt.Fprintln(tw, fmt.Sprintf("%s: \t<binary>", k))
+				continue
+			}
 			fmt.Fprintln(tw, fmt.Sprintf("%s: \t%v", k, fields[k]))
 		}
 		tw.Flush()
@@ -133,17 +136,19 @@ func ExampleContainer_Inspect() {
 	//
 	// ---
 	// schema SamllGroup {
-	//     Name      string  ``                         string
-	//     Leader    SHA256  `skyobject:"schema=User"`  array
-	//     Outsider  SHA256  ``                         array
-	//     FallGuy   SHA256  `skyobject:"dynamic"`      array
-	//     Members   SHA256  `skyobject:"array=User"`   array
+	//     Name            string  ``                            string
+	//     Leader          SHA256  `skyobject:"schema=User"`     array
+	//     Outsider        SHA256  ``                            array
+	//     FallGuy.Schema  SHA256  `skyobject:"dynamic_schema"`  array
+	//     FallGuy.ObjKey  SHA256  `skyobject:"dynamic_objkey"`  array
+	//     Members                 `skyobject:"array=User"`      slice
 	// }
-	// FallGuy:  45bd07e2f95bd52cfd27ac56dd701e207d836b4e669788b1a15ce0aa60e54c12
-	// Leader:   03d9a33bd9e53cbc06db0fcb7ac015fc3ca276b291c425b3b786708753f9a604
-	// Members:  19d0e110e79b5406bacb7d97911bda3bc2e91388d943cb63cbb69b77da99d673
-	// Name:     Average small group
-	// Outsider: 0001020300000000000000000000000000000000000000000000000000000000
+	// FallGuy.ObjKey: dd4a77107ed51ab122bb85ffc43fb4fc59fba545528430107ad70b702c08ca1c
+	// FallGuy.Schema: 9d53ca9f46576992f0bdb8fd355985515107026e06d091673fa327e4e1d73c9f
+	// Leader:         03d9a33bd9e53cbc06db0fcb7ac015fc3ca276b291c425b3b786708753f9a604
+	// Members:        <binary>
+	// Name:           Average small group
+	// Outsider:       0001020300000000000000000000000000000000000000000000000000000000
 	// ---
 	// ---
 	// schema User {
@@ -197,4 +202,3 @@ func ExampleContainer_Inspect() {
 	// ---
 	//
 }
-*/

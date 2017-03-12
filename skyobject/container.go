@@ -96,15 +96,13 @@ func (c *Container) Save(i interface{}) (k cipher.SHA256) {
 }
 
 // SaveArray saves array of objects and retursn references to them
-func (c *Container) SaveArray(i ...interface{}) (a cipher.SHA256) {
+func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 	if len(i) == 0 {
 		return // nil
 	}
-	var ch []cipher.SHA256 = make([]cipher.SHA256, 0, len(i))
 	for _, x := range i {
 		ch = append(ch, c.Save(x))
 	}
-	a = c.Save(ch)
 	return
 }
 

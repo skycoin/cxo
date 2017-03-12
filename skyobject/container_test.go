@@ -128,28 +128,14 @@ func TestContainer_SaveArray(t *testing.T) {
 		User{"John", 23, ""},
 		User{"Michel", 24, ""},
 	}
-	ary := c.SaveArray(users...)
-	if data, ok := c.db.Get(ary); !ok {
-		t.Error("missing value in db")
-	} else {
-		var refs []cipher.SHA256
-		if err := encoder.DeserializeRaw(data, &refs); err != nil {
-			t.Error("unexpected error: ", err)
-			return
+	for i, ref := range c.SaveArray(users...) {
+		d, ok := c.db.Get(ref)
+		if !ok {
+			t.Error("missisng member of array in db")
+			continue
 		}
-		if len(refs) != len(users) {
-			t.Error("missmatch length of references and length of array")
-			return
-		}
-		for i, ref := range refs {
-			d, ok := c.db.Get(ref)
-			if !ok {
-				t.Error("missisng member of array in db")
-				continue
-			}
-			if bytes.Compare(d, encoder.Serialize(users[i])) != 0 {
-				t.Error("wrong value in db")
-			}
+		if bytes.Compare(d, encoder.Serialize(users[i])) != 0 {
+			t.Error("wrong value in db")
 		}
 	}
 }
