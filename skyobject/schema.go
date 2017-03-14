@@ -1,12 +1,9 @@
 package skyobject
 
 import (
-	"bytes"
-	"fmt"
 	"reflect"
 	"strings"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -27,7 +24,7 @@ type Field struct {
 func getField(ft reflect.StructField) (sf Field) {
 	sf.Name = ft.Name
 	sf.Schema = getSchemaOfType(ft.Type)
-	if tag := skyobjectTag(ft.Tag); strings.Contains(tag, "href") {
+	if tag := ft.Tag.Get(TAG); strings.Contains(tag, "href") {
 		if !(sf.Schema.Name == refTypeName ||
 			sf.Schema.Name == refsTypeName ||
 			sf.Schema.Name == dynamicTypeName) {
@@ -91,10 +88,7 @@ func (s *Schema) Size(p []byte) (sz int) {
 	case reflect.Int64, reflect.Uint64, reflect.Float64:
 		sz = 8
 	case reflect.Slice, reflect.String:
-		var (
-			ln  uint32
-			err error
-		)
+		var ln uint32
 		defer func() {
 			if recover() != nil {
 				sz = -1
@@ -107,7 +101,13 @@ func (s *Schema) Size(p []byte) (sz int) {
 			sz = -1
 			break
 		}
-		sz = int(s.Len) * s.Elem[0].Size(p)
+		for i, al := 0, int(s.Len); i < al; i++ {
+			if sl := s.Elem[0].Size(p[sz:]); sl < 0 {
+				return -1
+			} else {
+				sz += sl
+			}
+		}
 	case reflect.Struct:
 		for _, sf := range s.Fields {
 			if x := sf.Schema.Size(p[sz:]); x < 0 {

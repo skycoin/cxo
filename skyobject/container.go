@@ -2,7 +2,6 @@ package skyobject
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 
@@ -11,6 +10,8 @@ import (
 
 	"github.com/skycoin/cxo/data"
 )
+
+const TAG = "skyobject"
 
 var (
 	refTypeName     = reflect.TypeOf(cipher.SHA256{}).Name()
@@ -37,6 +38,8 @@ var (
 	ErrInvalidSchema = errors.New("invalid schema")
 	//
 	ErrMalformedData = errors.New("malformed data")
+	//
+	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
 
 	// ErrStopInspection is used to stop Inspect
 	ErrStopInspection = errors.New("stop inspection")
@@ -111,6 +114,23 @@ func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
 	return
 }
 
+func (c *Container) SaveSchema(i interface{}) (k cipher.SHA256) {
+	return c.db.AddAutoKey(encoder.Serialize(c.getSchema(i)))
+}
+
+func (c *Container) getSchemaByKey(sk cipher.SHA256) (s *Schema,
+	ok bool, err error) {
+
+	var p []byte
+	if p, ok = c.db.Get(sk); !ok {
+		return
+	}
+
+	s = new(Schema)
+	err = encoder.DeserializeRaw(p, s)
+	return
+}
+
 // Want returns slice of nessessary references that
 // doesn't exist in db but required
 func (c *Container) Want() (want map[cipher.SHA256]struct{}, err error) {
@@ -142,17 +162,12 @@ func (c *Container) want(schk, objk cipher.SHA256,
 		return
 	}
 
-	if objd, ok = c.db.Get(objk); !ok {
-		want[objk] = struct{}{}
-		return
-	}
-
 	// we have both schema and object
 	if err = encoder.DeserializeRaw(schd, &s); err != nil {
 		return
 	}
 
-	err = c.getReferences(objd, s.Fields, want)
+	err = c.wantSchema(&s, objk, want)
 	return
 }
 
@@ -160,8 +175,8 @@ func (c *Container) wantSchema(s *Schema, objk cipher.SHA256,
 	want map[cipher.SHA256]struct{}) (err error) {
 
 	var (
-		schd, objd []byte
-		ok         bool
+		objd []byte
+		ok   bool
 	)
 
 	if objd, ok = c.db.Get(objk); !ok {
@@ -169,34 +184,21 @@ func (c *Container) wantSchema(s *Schema, objk cipher.SHA256,
 		return
 	}
 
-	err = c.getReferences(objd, s.Fields, want)
+	err = c.getReferences(s, objd, want)
 	return
 }
 
-func (c *Container) getReferences(objd []byte, fs []Field,
+func (c *Container) getReferences(s *Schema, objd []byte,
 	want map[cipher.SHA256]struct{}) (err error) {
 
-	for i := 0; i < len(fs); i++ {
-		var (
-			sf    Field = fs[i]
-			shift int
-		)
-		if !strings.Contains(sf.Tag.Get("skyobject"), "href") {
-			continue
-		}
-		switch kind := reflect.Kind(sf.Schema.Kind); kind {
-		case reflect.Array:
+	switch reflect.Kind(s.Kind) {
+	case reflect.Array:
+		if strings.Contains(sf.Tag.Get(TAG), "href") {
 			if sf.Schema.Name != refTypeName { // todo
-				continue
-			}
-			var (
-				ref cipher.SHA256
-				ln  int
-			)
-			if ln = sf.Schema.Size(objd[shift:]); ln < 0 {
-				err = ErrMalformedData
+				err = ErrUnexpectedHrefTag
 				return
 			}
+			var ref cipher.SHA256
 			err = encoder.DeserializeRaw(objd[shift:shift+ln], &ref)
 			if err != nil {
 				return
@@ -204,25 +206,37 @@ func (c *Container) getReferences(objd []byte, fs []Field,
 			if err = c.wantSchema(&sf.Schema, ref, want); err != nil {
 				return
 			}
-			shift += ln
-			continue
-		case reflect.Slice:
+		} else {
+			if len(sf.Schema.Elem) != 1 {
+				err = ErrInvalidSchema
+				return
+			}
+			var sh, l int = shift, 0
+			for i, al := 0, int(sf.Schema.Len); i < al; i++ {
+				if l = sf.Schema.Elem[0].Size(objd[sh:]); l < 0 {
+					err = ErrMalformedData
+					return
+				}
+				err = c.getReferences(&sf.Schema.Elem[0], objd[sh:sh+l],
+					want)
+				if err != nil {
+					return
+				}
+				sh += l
+			}
+		}
+	case reflect.Slice:
+		if strings.Contains(sf.Tag.Get(TAG), "href") {
 			if sf.Schema.Name != refsTypeName { // todo
-				continue
+				err = ErrUnexpectedHrefTag
+				return
 			}
 			if len(sf.Schema.Elem) != 1 {
 				err = ErrInvalidSchema
 				return
 			}
-			var (
-				refs []cipher.SHA256
-				ln   int
-			)
-			if ln = sf.Schema.Size(objd[shift:]); ln < 0 {
-				err = ErrMalformedData
-				return
-			}
-			err = encoder.DeserializeRaw(objd[shift:shift+ln], &ref)
+			var refs []cipher.SHA256
+			err = encoder.DeserializeRaw(objd[shift:shift+ln], &refs)
 			if err != nil {
 				return
 			}
@@ -232,33 +246,37 @@ func (c *Container) getReferences(objd []byte, fs []Field,
 					return
 				}
 			}
-			shift += ln
-			continue
-		case reflect.Struct:
-			var ln int
-			if ln = sf.Schema.Size(objd[shift:]); ln < 0 {
-				err = ErrMalformedData
+		} else {
+			//
+		}
+	case reflect.Struct:
+		if sf.Schema.Name == dynamicTypeName { // todo
+			if !strings.Contains(sf.Tag.Get(TAG), "href") {
+				continue
+			}
+			var dn Dynamic
+			err = encoder.DeserializeRaw(objd[shift:shift+ln], &dn)
+			if err != nil {
 				return
 			}
-			if sf.Schema.Name == dynamicTypeName { // todo
-				var dn Dynamic
-				err = encoder.DeserializeRaw(objd[shift:shift+ln], &dn)
-				if err != nil {
-					return
-				}
-				if err = c.want(dn.Schema, dn.ObjKey, want); err != nil {
-					return
-				}
-			} else {
-				err = c.getReferences(objd[shift:shift+ln],
-					sf.Schema.Fields, want)
-				if err != nil {
-					return
-				}
+			if err = c.want(dn.Schema, dn.ObjKey, want); err != nil {
+				return
 			}
-			shift += ln
-			continue
+		} else {
+			for i := 0; i < len(s.Fields); i++ {
+				var (
+					sf    Field = fs[i]
+					shift int
+					ln    int
+				)
+				if ln = sf.Schema.Size(objd[shift:]); ln < 0 {
+					err = ErrMalformedData
+					return
+				}
+				//
+				shift += ln
+			}
 		}
-		shift += sf.Schema.Size(objd[shift:])
 	}
+	return
 }

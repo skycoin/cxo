@@ -10,7 +10,7 @@ import (
 // A Root represetns wrapper of root object. The real root object is
 // serialized to []byte
 type Root struct {
-	container *Container
+	container *Container `enc:"-"`
 	Schema    cipher.SHA256
 	Root      cipher.SHA256
 	Time      int64

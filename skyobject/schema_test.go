@@ -1,14 +1,15 @@
 package skyobject
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
-
-	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/data"
 )
+
+func Test_typeNames(t *testing.T) {
+	t.Log("refTypeName:     ", refTypeName)
+	t.Log("refsTypeName:    ", refsTypeName)
+	t.Log("dynamicTypeName: ", dynamicTypeName)
+}
 
 func Test_getSchema(t *testing.T) {
 
@@ -30,7 +31,7 @@ func Test_getSchema(t *testing.T) {
 		name string
 		kind uint32
 		typ  string
-		tag  string
+		tag  reflect.StructTag
 	}{
 		{"Name", uint32(reflect.String), "string", ""},
 		{"Age", uint32(reflect.Int64), "int64", ""},
@@ -39,10 +40,10 @@ func Test_getSchema(t *testing.T) {
 		if x.Name != f.name {
 			t.Error("wrong field name")
 		}
-		if x.Kind != f.kind {
+		if x.Schema.Kind != f.kind {
 			t.Error("wrong field kind")
 		}
-		if x.Type != f.typ {
+		if x.Schema.Name != f.typ {
 			t.Error("wrong field type")
 		}
 		if x.Tag != f.tag {
@@ -50,42 +51,4 @@ func Test_getSchema(t *testing.T) {
 		}
 	}
 
-}
-
-func Test_getField(t *testing.T) {
-	// TODO
-}
-
-func ExampleSchema_String() {
-
-	type User struct {
-		Name   string
-		Age    int64
-		Hidden string `enc:"-"`
-		Any    Dynamic
-	}
-
-	db := data.NewDB()
-	c := NewContainer(db)
-	r := c.NewRoot()
-	r.Register("User", User{})
-	schk, ok := r.SchemaKey("User")
-	if !ok {
-		// fatal error
-		return
-	}
-	data, ok := db.Get(schk)
-	if !ok {
-		// fatal error
-		return
-	}
-	var s Schema
-	if err := encoder.DeserializeRaw(data, &s); err != nil {
-		// fatal error
-		return
-	}
-	fmt.Println(s.String())
-
-	// Output:
-	// User {Name string `` <string>; Age int64 `` <int64>; Any.Schema SHA256 `skyobject:"dynamic_schema"` <array>; Any.ObjKey SHA256 `skyobject:"dynamic_objkey"` <array>}
 }

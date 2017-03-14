@@ -149,5 +149,80 @@ func TestContainer_Want(t *testing.T) {
 	if len(list) != 0 {
 		t.Error("non-empty list for empty container")
 	}
-	// todo
+
+	// type User struct {
+	// 	Name   string
+	// 	Age    int64
+	// 	Hidden string `enc:"-"` // ignore the field
+	// }
+
+	// type Man struct {
+	// 	Name   string
+	// 	Height int64
+	// 	Weight int64
+	// }
+
+	// type SamllGroup struct {
+	// 	Name     string
+	// 	Leader   cipher.SHA256   `skyobject:"href"` // single User
+	// 	Outsider cipher.SHA256   // not a reference
+	// 	FallGuy  Dynamic         `skyobject:"href"` // dynamic href
+	// 	Members  []cipher.SHA256 `skyobject:"href"` // array of Users
+	// }
+
+	leader := User{"Billy Kid", 16, ""}
+	man := Dynamic{
+		Schema: getHash(getSchema(Man{})),
+		ObjKey: getHash(Man{"Bob Simple", 182, 82}),
+	}
+	users := []interface{}{
+		User{"Alice", 21, ""},
+		User{"Eva", 22, ""},
+		User{"John", 23, ""},
+		User{"Michel", 24, ""},
+	}
+
+	group := SamllGroup{
+		Name:     "the group",
+		Leader:   getHash(leader),
+		Outsider: cipher.SHA256{9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
+		FallGuy:  man,
+		Members: []cipher.SHA256{
+			getHash(users[0]),
+			getHash(users[1]),
+			getHash(users[2]),
+			getHash(users[3]),
+		},
+	}
+
+	root := c.NewRoot()
+	root.Set(group)
+	c.SetRoot(root)
+
+	data, ok := c.db.Get(getHash(group))
+	if !ok {
+		t.Fatal("missing")
+	}
+	var gr SamllGroup
+	if err = encoder.DeserializeRaw(data, &gr); err != nil {
+		t.Fatal(err)
+	}
+
+	// --------------------
+	// scheme of user    +1
+	// leader            -1 w
+	// schema of man     -1 w
+	// man               -1 w
+	// members           -4 w
+	// --------------------
+	//                   -7
+	list, err = c.Want()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(list) != 7 {
+		t.Error("wrong len: want 7, got ", len(list))
+	}
+
 }
