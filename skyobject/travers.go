@@ -19,7 +19,7 @@ func (c *Container) SchemaByKey(sk cipher.SHA256) (s Schema, err error) {
 	return
 }
 
-// Missing error is used for InspectFunc
+// MissingError is used for InspectFunc
 type MissingError struct {
 	Key cipher.SHA256
 }

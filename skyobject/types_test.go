@@ -23,8 +23,8 @@ type Man struct {
 
 type SamllGroup struct {
 	Name     string
-	Leader   cipher.SHA256   `skyobject:"schema=User"` // single User
+	Leader   cipher.SHA256   `skyobject:"href"` // single User
 	Outsider cipher.SHA256   // not a reference
-	FallGuy  Dynamic         // dynamic href
-	Members  []cipher.SHA256 `skyobject:"array=User"` // array of Users
+	FallGuy  Dynamic         `skyobject:"href"` // dynamic href
+	Members  []cipher.SHA256 `skyobject:"href"` // array of Users
 }

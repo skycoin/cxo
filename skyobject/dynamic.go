@@ -6,8 +6,8 @@ import (
 
 // Dynamic is reference to object with schema
 type Dynamic struct {
-	Schema cipher.SHA256 `skyobject:"dynamic_schema"`
-	ObjKey cipher.SHA256 `skyobject:"dynamic_objkey"`
+	Schema cipher.SHA256
+	ObjKey cipher.SHA256
 }
 
 // NewDynamic creates Dynamic from given object saving serialized

@@ -5,8 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	//"github.com/skycoin/skycoin/src/cipher/encoder"
-	"github.com/logrusorgru/skycoin/src/cipher/encoder"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
 )
