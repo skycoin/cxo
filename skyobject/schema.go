@@ -35,6 +35,18 @@ func (s *schemaReg) Register(name string, typ interface{}) {
 	// registered name -> type name -> schema key -> schema data -> schema
 }
 
+func (s *schemaReg) schemaByRegisteredName(name string) (sv *Schema,
+	err error) {
+
+	var ex bool
+	if name, ex = s.nmr[name]; !ex {
+		err = ErrUnregisteredSchema
+		return
+	}
+	sv, err = s.schemaByName(name)
+	return
+}
+
 // by typme name (not by registered name)
 func (s *schemaReg) schemaByName(name string) (sv *Schema, err error) {
 	sk, ok := s.reg[name]

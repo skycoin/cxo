@@ -2,12 +2,14 @@ package skyobject
 
 import (
 	"errors"
-	// "fmt"
-	// "reflect"
-	// "strings"
-	// "github.com/skycoin/skycoin/src/cipher"
-	// "github.com/skycoin/skycoin/src/cipher/encoder"
-	// "github.com/skycoin/cxo/data"
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
 
 var (
@@ -17,7 +19,6 @@ var (
 	ErrMissingInDB        = errors.New("missing in db")
 	ErrUnregisteredSchema = errors.New("unregistered schema")
 )
-
 
 type Container struct {
 	root *Root
@@ -111,17 +112,25 @@ func (c *Container) wantSchemaObjData(s *Schema,
 		}
 		n += 4 + l
 	case reflect.Array:
-		// TODO:
-		var elem *Schema = s.Elem()
-		if elem == nil {
-			err = ErrInvalidSchema
-			return
-		}
-		if kind := elem.Kind(); isBasic(kind) {
-			n = s.Len() * basicSize(kind)
+		// it is not a field and we can't see tags and treat it as cipher.SHA256
+		var elem *Schema
+		if elem, err = s.Elem(); err != nil {
 			return
 		}
 		var l int = s.Len()
+		if kind := elem.Kind(); isBasic(kind) {
+			n = l * basicSize(kind)
+			return
+		} else if kind == reflect.String { // can't contain references
+			var sl int
+			for i := 0; i < l; i++ {
+				if sl, err = getLength(od[n:]); err != nil {
+					return
+				}
+				n += sl
+			}
+			return // we're done
+		}
 		var m int
 		for i := 0; i < l; i++ {
 			if m, err = c.wantSchemaObj(elem, od[n:], set); err != nil {
@@ -130,9 +139,8 @@ func (c *Container) wantSchemaObjData(s *Schema,
 			n += m
 		}
 	case reflect.Slice:
-		var elem *Schema = s.Elem()
-		if elem == nil {
-			err = ErrInvalidSchema
+		var elem *Schema
+		if elem, err = s.Elem(); err != nil {
 			return
 		}
 		var l int
@@ -141,8 +149,17 @@ func (c *Container) wantSchemaObjData(s *Schema,
 		}
 		n += 4 // length
 		if kind := elem.Kind(); isBasic(kind) {
-			n = l * basicSize(kind)
+			n += l * basicSize(kind)
 			return
+		} else if kind == reflect.String { // can't contain references
+			var sl int
+			for i := 0; i < l; i++ {
+				if sl, err = getLength(od[n:]); err != nil {
+					return
+				}
+				n += sl
+			}
+			return // we're done
 		}
 		var m int
 		for i := 0; i < l; i++ {
@@ -168,10 +185,9 @@ func (c *Container) wantSchemaObjData(s *Schema,
 
 func (c *Container) wantField(f *Field, od []byte, set Set) (n int, err error) {
 
-	var s *Schema = f.Schema()
+	var s *Schema
 
-	if s == nil {
-		err = ErrInvalidSchema
+	if s, err = f.Schema(); err != nil {
 		return
 	}
 
@@ -191,37 +207,35 @@ func (c *Container) wantField(f *Field, od []byte, set Set) (n int, err error) {
 		}
 		n += 4 + l
 	case reflect.Array:
-		var elem *Schema = s.Elem()
-		if elem == nil {
-			err = ErrInvalidSchema
-			return
-		}
-		// short curcit for cipher.SHA256
-		if s.Name() == htSingle {
-			if strings.Contains(f.Tag().Get(TAG), "href") { // a reference
-				// unfortunately the encoder can't deserialize arrays, but can
-				// deserialize a struc; stupid but true
-				var keeper struct {
-					Ref cipher.SHA256
-				}
-				if len(od) < 32 {
-					err = ErrShortBuffer
-					return
-				}
-				if err = encoder.DeserializeRaw(od[:32], &keeper); err != nil {
-					return
-				}
-			} else {
-				n += 32 // not a reference (skip)
+		if s.Name() == htSingle { // cipher.SHA256
+			var keeper struct {
+				Ref cipher.SHA256
 			}
-			return
+			//
+			var tag string = f.Tag().Get(TAG)
+			if strings.Contains(tag, "schema") {
+				var sn string = schemaNameFromTag(tag)
+				//
+			}
 		}
-		//
-		if kind := elem.Kind(); isBasic(kind) {
-			n = s.Len() * basicSize(kind)
+		var elem *Schema
+		if elem, err = s.Elem(); err != nil {
 			return
 		}
 		var l int = s.Len()
+		if kind := elem.Kind(); isBasic(kind) {
+			n = l * basicSize(kind)
+			return
+		} else if kind == reflect.String { // can't contain references
+			var sl int
+			for i := 0; i < l; i++ {
+				if sl, err = getLength(od[n:]); err != nil {
+					return
+				}
+				n += sl
+			}
+			return // we're done
+		}
 		var m int
 		for i := 0; i < l; i++ {
 			if m, err = c.wantSchemaObj(elem, od[n:], set); err != nil {
@@ -230,9 +244,8 @@ func (c *Container) wantField(f *Field, od []byte, set Set) (n int, err error) {
 			n += m
 		}
 	case reflect.Slice:
-		var elem *Schema = s.Elem()
-		if elem == nil {
-			err = ErrInvalidSchema
+		var elem *Schema
+		if elem, err = s.Elem(); err != nil {
 			return
 		}
 		var l int
@@ -241,8 +254,17 @@ func (c *Container) wantField(f *Field, od []byte, set Set) (n int, err error) {
 		}
 		n += 4 // length
 		if kind := elem.Kind(); isBasic(kind) {
-			n = l * basicSize(kind)
+			n += l * basicSize(kind)
 			return
+		} else if kind == reflect.String { // can't contain references
+			var sl int
+			for i := 0; i < l; i++ {
+				if sl, err = getLength(od[n:]); err != nil {
+					return
+				}
+				n += sl
+			}
+			return // we're done
 		}
 		var m int
 		for i := 0; i < l; i++ {
@@ -264,6 +286,7 @@ func (c *Container) wantField(f *Field, od []byte, set Set) (n int, err error) {
 	}
 
 	return
+
 }
 
 func getLength(p []byte) (l int, err error) {
@@ -286,4 +309,16 @@ func recoveredError(x interface{}) error {
 	}
 	return errors.New(fmt.Print(z))
 }
-*/
+
+func basicSize(kinf reflect.Kind) int {
+	switch kind {
+	case reflect.Bool, reflect.Int8, reflect.Uint8:
+		n += 1
+	case reflect.Int16, reflect.Uint16:
+		n += 2
+	case reflect.Int32, reflect.Uint32, reflect.Float32:
+		n += 4
+	case reflect.Int64, reflect.Uint64, reflect.Float64:
+		n += 8
+	}
+}
