@@ -21,9 +21,21 @@ var (
 
 type schemaReg struct {
 	db  *data.DB                 // store schemas
+	nmr map[string]string        // registered name -> type name
 	reg map[string]cipher.SHA256 // type name -> schema key
 }
 
+// TODO: performance of the solution
+func (s *schemaReg) Register(name string, typ interface{}) {
+	sch := s.getSchema(typ)
+	if !sch.IsNamed() {
+		panic("unnamed type registering")
+	}
+	s.nmr[name] = sch.Name()
+	// registered name -> type name -> schema key -> schema data -> schema
+}
+
+// by typme name (not by registered name)
 func (s *schemaReg) schemaByName(name string) (sv *Schema, err error) {
 	sk, ok := s.reg[name]
 	if !ok {
@@ -216,12 +228,44 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 			if fl.Tag.Get("enc") == "-" || fl.Name == "_" || fl.PkgPath != "" {
 				continue
 			}
-			//
+			sv.fields = append(sv.fields, s.getField(fl))
 		}
 	default:
 		panic("invalid type: " + typ.String())
 	}
-	//
+	// save named type to registery and db
+	if name != "" { // named type
+		if name == htSingle || name == htDynamic { // htArray is unnamed
+			return // we don't register special types
+		}
+		s.reg[name] = s.db.AddAutoKey(encoder.Serialize(sv))
+	}
+	return
+}
+
+func (s *schemaReg) getField(fl reflect.StructField) (sf Field) {
+	sf.name = []byte(fl.Name)
+	sf.tag = []byte(fl.Tag)
+	sf.shortSchema = *s.getSchemaOfType(fl.Type).toShort()
+	var tag string = fl.Tag.Get(TAG)
+	if strings.Contains(tag, "schema=") {
+		if sf.TypeName() == htSingle {
+			schemaNameFromTag(tag) // validate the tag
+		} else if fl.Type == reflect.TypeOf([]cipher.SHA256{}) {
+			schemaNameFromTag(tag) // validate the tag
+		} else {
+			panic("unexpected schema= in tag: " + tag)
+		}
+	}
+	return
+}
+
+//
+// string
+//
+
+func (s *Schema) String() (x string) {
+	// TODO
 	return
 }
 

@@ -18,7 +18,7 @@ var (
 	ErrUnregisteredSchema = errors.New("unregistered schema")
 )
 
-/*
+
 type Container struct {
 	root *Root
 	db   *data.DB
@@ -72,7 +72,7 @@ func (c *Container) wantKeys(sk, ok cipher.SHA256, set Set) (err error) {
 	if err = encoder.DeserializeRaw(sd, &s); err != nil {
 		return
 	}
-	err = c.wantSchema(&s, ok, set)
+	err = c.wantSchemaObjKey(&s, ok, set)
 	return
 }
 
@@ -87,12 +87,12 @@ func (c *Container) wantSchemaObjKey(s *Schema,
 		return
 	}
 
-	n, err = c.wantSchemaObj(s, od, set)
+	n, err = c.wantSchemaObjData(s, od, set)
 	return
 }
 
 // by schema and object data
-func (c *Container) wantSchemaObj(s *Schema,
+func (c *Container) wantSchemaObjData(s *Schema,
 	od []byte, set Set) (n int, err error) {
 
 	switch s.Kind() {
@@ -111,6 +111,7 @@ func (c *Container) wantSchemaObj(s *Schema,
 		}
 		n += 4 + l
 	case reflect.Array:
+		// TODO:
 		var elem *Schema = s.Elem()
 		if elem == nil {
 			err = ErrInvalidSchema
