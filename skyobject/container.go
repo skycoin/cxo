@@ -2,14 +2,12 @@ package skyobject
 
 import (
 	"errors"
-	"fmt"
-	"reflect"
-	"strings"
-
-	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/data"
+	// "fmt"
+	// "reflect"
+	// "strings"
+	// "github.com/skycoin/skycoin/src/cipher"
+	// "github.com/skycoin/skycoin/src/cipher/encoder"
+	// "github.com/skycoin/cxo/data"
 )
 
 var (
@@ -20,6 +18,7 @@ var (
 	ErrUnregisteredSchema = errors.New("unregistered schema")
 )
 
+/*
 type Container struct {
 	root *Root
 	db   *data.DB
@@ -286,3 +285,4 @@ func recoveredError(x interface{}) error {
 	}
 	return errors.New(fmt.Print(z))
 }
+*/

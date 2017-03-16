@@ -15,8 +15,8 @@ const TAG = "skyobject"
 // href types
 var (
 	htSingle  = typeName(reflect.TypeOf(cipher.SHA256{}))
-	htArray   = typeName(reflect.TypeOf([]cipher.SHA256{}))
 	htDynamic = typeName(reflect.TypeOf(Dynamic{}))
+	// htArray is unnamed
 )
 
 type schemaReg struct {
@@ -43,6 +43,8 @@ func (s *schemaReg) schemaByKey(sk cipher.SHA256) (sv *Schema, err error) {
 	return
 }
 
+// TODO: register
+
 //
 // schema head
 //
@@ -50,6 +52,8 @@ func (s *schemaReg) schemaByKey(sk cipher.SHA256) (sv *Schema, err error) {
 type schemaHead struct {
 	kind     uint32 // used to filter flat types
 	typeName []byte // for named types
+	//
+	sr *schemaReg `enc:"-"` // back reference
 }
 
 func (s *schemaHead) Kind() reflect.Kind {
@@ -57,7 +61,7 @@ func (s *schemaHead) Kind() reflect.Kind {
 }
 
 // is the type nemed
-func (s *schemaHead) IsNamed() {
+func (s *schemaHead) IsNamed() bool {
 	return len(s.typeName) > 0
 }
 
@@ -81,8 +85,6 @@ func (s *schemaHead) Name() (n string) {
 type shortSchema struct {
 	schemaHead
 	schema []Schema // pointer (single element) of empty slice
-	//
-	sr *schemaReg `enc:"-"` // back reference
 }
 
 func (s *shortSchema) Schema() (sv *Schema, err error) {
@@ -90,7 +92,6 @@ func (s *shortSchema) Schema() (sv *Schema, err error) {
 		// no elemnts, length, and fields for flat types
 		sv = &Schema{
 			schemaHead: s.schemaHead,
-			sr:         s.sr, // not necessary
 		}
 	} else if s.IsNamed() { // get from db
 		sv, err = s.sr.schemaByName(s.Name())
@@ -126,6 +127,18 @@ func (s *Schema) Fields() []Field {
 	return s.fields
 }
 
+// if a type is flat or named we don't need to keep entire schema
+func (s *Schema) toShort() (sho *shortSchema) {
+	sho = new(shortSchema)
+	sho.kind = s.kind
+	sho.typeName = s.typeName
+	if isFlat(s.Kind()) || s.IsNamed() {
+		return // we don't need the schema
+	}
+	sho.schema = []Schema{*s} // non-flat unnamed type
+	return
+}
+
 //
 // fields
 //
@@ -150,11 +163,66 @@ func (f *Field) Schema() (sv *Schema, err error) {
 }
 
 // field.Kind() -> relfect.Kind of the field type
-// field.IsNamed() -> is the type of the field named
+// field.IsNamed() -> is the type of the field named?
 
 // name of the field type
 func (f *Field) TypeName() string {
 	return f.shortSchema.Name()
+}
+
+//
+// get
+//
+
+func (s *schemaReg) getSchema(i interface{}) (sv *Schema) {
+	sv = s.getSchemaOfType(
+		reflect.Indirect(reflect.ValueOf(i)).Type(),
+	)
+	return
+}
+
+func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
+	sv = new(Schema)
+	name := typeName(typ)
+	sv.typeName = []byte(name)
+	sv.kind = uint32(typ.Kind())
+	if name != "" { // named type
+		if name == htSingle || name == htDynamic { // htArray is unnamed
+			return // we don't register special types
+		}
+		if _, ok := s.reg[name]; !ok {
+			s.reg[name] = cipher.SHA256{} // temporary (hold the place)
+		} else { // already registered (or holded)
+			return // only name and kind
+		}
+	}
+	if isFlat(typ.Kind()) {
+		return // we're done
+	}
+	switch typ.Kind() {
+	case reflect.Array:
+		// it never be cipher.SHA256
+		sv.length = uint32(typ.Len())
+		sv.elem = *s.getSchemaOfType(typ.Elem()).toShort()
+	case reflect.Slice:
+		// it can be a []cipher.SHA256 (because it's unnamed type)
+		sv.elem = *s.getSchemaOfType(typ.Elem()).toShort()
+	case reflect.Struct:
+		// it never be Dynamic
+		var nf int = typ.NumField()
+		sv.fields = make([]Field, 0, nf)
+		for i := 0; i < nf; i++ {
+			fl := typ.Field(i)
+			if fl.Tag.Get("enc") == "-" || fl.Name == "_" || fl.PkgPath != "" {
+				continue
+			}
+			//
+		}
+	default:
+		panic("invalid type: " + typ.String())
+	}
+	//
+	return
 }
 
 //
@@ -186,4 +254,20 @@ func isBasic(kind reflect.Kind) bool {
 // basic or string (can't has references)
 func isFlat(kind reflect.Kind) bool {
 	return isBasic(kind) || kind == reflect.String
+}
+
+func schemaNameFromTag(tag string) (name string) {
+	for _, part := range strings.Split(tag, ",") {
+		if strings.HasPrefix(part, "schema=") {
+			ss := strings.Split(part, "=")
+			if len(ss) != 2 {
+				panic("invalid schema tag: " + part)
+			}
+			if name = ss[1]; name != "" {
+				panic("empty schema name in tag")
+			}
+			break
+		}
+	}
+	return
 }

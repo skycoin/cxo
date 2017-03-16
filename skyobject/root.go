@@ -7,7 +7,7 @@ import (
 )
 
 type Root struct {
-	Time   uint64
+	Time   int64
 	Seq    uint64
 	Schema cipher.SHA256
 	Object cipher.SHA256
