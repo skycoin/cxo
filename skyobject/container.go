@@ -3,7 +3,6 @@ package skyobject
 import (
 	"errors"
 	"reflect"
-	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -11,272 +10,94 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-const TAG = "skyobject"
-
 var (
-	refTypeName     = reflect.TypeOf(cipher.SHA256{}).Name()
-	refsTypeName    = reflect.TypeOf([]cipher.SHA256{}).Name()
-	dynamicTypeName = reflect.TypeOf(Dynamic{}).Name()
-
-	// ErrMissingRoot occurs when a Container doesn't have
-	// a root object, but the action requires it
-	ErrMissingRoot = errors.New("missing root object")
-	// ErrMissingSchemaName occurs when a tag constains "schema=" or "array="
-	// key but does't contain a value
-	ErrMissingSchemaName = errors.New("missing schema name")
-	// ErrMissingObject occurs where requested object is not received yet
-	ErrMissingObject = errors.New("missing object")
-	// ErrInvalidArgument occurs when given argument is not valid
-	ErrInvalidArgument = errors.New("invalid argument")
-	// ErrMalformedRoot can occur during SetRoot call if the given
-	// root is malformed
-	ErrMalformedRoot = errors.New("malformed root")
-	// ErrMissingObjKeyField occurs when a malformed schema is used with
-	// Dynamic.Schema field but without Dynamic.ObjKey
-	ErrMissingObjKeyField = errors.New("missing ObjKey field")
-	//
-	ErrInvalidSchema = errors.New("invalid schema")
-	//
-	ErrMalformedData = errors.New("malformed data")
-	//
-	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
-
-	// ErrStopInspection is used to stop Inspect
-	ErrStopInspection = errors.New("stop inspection")
+	ErrMissingRoot = errors.New("misisng root object")
 )
 
-// A Container is a helper type to manage skyobjects. The container is not
-// thread safe
 type Container struct {
-	db   *data.DB
 	root *Root
+	db   *data.DB
 }
 
-// NewContainer creates new Container that will use provided database.
-// The database must not be nil
-func NewContainer(db *data.DB) (c *Container) {
-	if db == nil {
-		panic("NewContainer tooks in nil-db")
-	}
-	c = &Container{
-		db: db,
-	}
-	return
-}
-
-// Root returns root object or nil
 func (c *Container) Root() *Root {
 	return c.root
 }
 
-// SetRoot replaces existing root from given one if timespamp of the given root
-// is greater. The given root must not be nil
 func (c *Container) SetRoot(root *Root) (ok bool) {
-	if root == nil {
-		panic(ErrMissingRoot)
-	}
 	if c.root == nil {
 		c.root, ok = root, true
 		return
 	}
 	if c.root.Time < root.Time {
 		c.root, ok = root, true
-	}
-	return
-}
-
-// SetEncodedRoot decodes given data to Root and set it as root of the
-// Container. It returns (ok, nil) if root of the container replaced,
-// (false, nil) if not and (false, err) if there is a decoding error
-func (c *Container) SetEncodedRoot(data []byte) (ok bool, err error) {
-	var root *Root
-	if root, err = decodeRoot(data); err != nil {
 		return
 	}
-	ok = c.SetRoot(root)
-	return
+	return // false
 }
 
-// Save serializes given object and sotres it in DB returning
-// key of the object
-func (c *Container) Save(i interface{}) (k cipher.SHA256) {
-	return c.db.AddAutoKey(encoder.Serialize(i))
+// keys set
+type Set map[cipher.SHA256]struct{}
+
+func (s Set) Add(k cipher.SHA256) {
+	s[k] = struct{}{}
 }
 
-// SaveArray saves array of objects and retursn references to them
-func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
-	if len(i) == 0 {
-		return // nil
-	}
-	for _, x := range i {
-		ch = append(ch, c.Save(x))
-	}
-	return
-}
-
-func (c *Container) SaveSchema(i interface{}) (k cipher.SHA256) {
-	return c.db.AddAutoKey(encoder.Serialize(c.getSchema(i)))
-}
-
-func (c *Container) getSchemaByKey(sk cipher.SHA256) (s *Schema,
-	ok bool, err error) {
-
-	var p []byte
-	if p, ok = c.db.Get(sk); !ok {
-		return
-	}
-
-	s = new(Schema)
-	err = encoder.DeserializeRaw(p, s)
-	return
-}
-
-// Want returns slice of nessessary references that
-// doesn't exist in db but required
-func (c *Container) Want() (want map[cipher.SHA256]struct{}, err error) {
+// missing objects
+func (c *Container) Want() (set Set, err error) {
 	if c.root == nil {
-		return
+		return // don't want anything (has no root object)
 	}
-	want = make(map[cipher.SHA256]struct{})
-	if err = c.want(c.root.Schema, c.root.Root, want); err != nil {
-		want = nil
-	}
+	set = make(Set)
+	err = c.wantKeys(c.root.Schema, c.root.Object, set)
 	return
 }
 
-func (c *Container) want(schk, objk cipher.SHA256,
-	want map[cipher.SHA256]struct{}) (err error) {
-
-	var (
-		schd, objd []byte
-		ok         bool
-
-		s Schema
-	)
-
-	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
-		want[schk] = struct{}{}
-		if _, ok := c.db.Get(objk); !ok { // add objk if it's missing
-			want[objk] = struct{}{}
+// want by schema key and object key
+func (c *Container) wantKeys(sk, ok cipher.SHA256, set Set) (err error) {
+	var sd, od []byte // shcema data and object data
+	var ex bool       // exist
+	if sd, ex = c.db.Get(sk); !ex {
+		set.Add(sk)
+		if _, ex = c.db.Get(ok); ex {
+			set.Add(ok)
 		}
 		return
 	}
-
-	// we have both schema and object
-	if err = encoder.DeserializeRaw(schd, &s); err != nil {
+	var s Schema
+	if err = encoder.DeserializeRaw(sd, &s); err != nil {
 		return
 	}
-
-	err = c.wantSchema(&s, objk, want)
+	err = c.wantSchema(&s, ok, set)
 	return
 }
 
-func (c *Container) wantSchema(s *Schema, objk cipher.SHA256,
-	want map[cipher.SHA256]struct{}) (err error) {
+func (c *Container) wantSchema(s *Schema,
+	ok cipher.SHA256, set Set) (err error) {
 
-	var (
-		objd []byte
-		ok   bool
-	)
-
-	if objd, ok = c.db.Get(objk); !ok {
-		want[objk] = struct{}{}
+	var od []byte // object data
+	var ex bool   // exist
+	if _, ex = c.db.Get(ok); ex {
+		set.Add(ok)
 		return
 	}
 
-	err = c.getReferences(s, objd, want)
-	return
-}
-
-func (c *Container) getReferences(s *Schema, objd []byte,
-	want map[cipher.SHA256]struct{}) (err error) {
-
-	switch reflect.Kind(s.Kind) {
+	switch typ.Kind() {
+	case reflect.Bool,
+		reflect.Int8, reflect.Uint8,
+		reflect.Int16, reflect.Uint16,
+		reflect.Int32, reflect.Uint32,
+		reflect.Int64, reflect.Uint64,
+		reflect.Float32, reflect.Float64,
+		reflect.String:
+		//
 	case reflect.Array:
-		if strings.Contains(sf.Tag.Get(TAG), "href") {
-			if sf.Schema.Name != refTypeName { // todo
-				err = ErrUnexpectedHrefTag
-				return
-			}
-			var ref cipher.SHA256
-			err = encoder.DeserializeRaw(objd[shift:shift+ln], &ref)
-			if err != nil {
-				return
-			}
-			if err = c.wantSchema(&sf.Schema, ref, want); err != nil {
-				return
-			}
-		} else {
-			if len(sf.Schema.Elem) != 1 {
-				err = ErrInvalidSchema
-				return
-			}
-			var sh, l int = shift, 0
-			for i, al := 0, int(sf.Schema.Len); i < al; i++ {
-				if l = sf.Schema.Elem[0].Size(objd[sh:]); l < 0 {
-					err = ErrMalformedData
-					return
-				}
-				err = c.getReferences(&sf.Schema.Elem[0], objd[sh:sh+l],
-					want)
-				if err != nil {
-					return
-				}
-				sh += l
-			}
-		}
+		//
 	case reflect.Slice:
-		if strings.Contains(sf.Tag.Get(TAG), "href") {
-			if sf.Schema.Name != refsTypeName { // todo
-				err = ErrUnexpectedHrefTag
-				return
-			}
-			if len(sf.Schema.Elem) != 1 {
-				err = ErrInvalidSchema
-				return
-			}
-			var refs []cipher.SHA256
-			err = encoder.DeserializeRaw(objd[shift:shift+ln], &refs)
-			if err != nil {
-				return
-			}
-			for _, ref := range refs {
-				err = c.wantSchema(&sf.Schema.Elem[0], ref, want)
-				if err != nil {
-					return
-				}
-			}
-		} else {
-			//
-		}
+		//
 	case reflect.Struct:
-		if sf.Schema.Name == dynamicTypeName { // todo
-			if !strings.Contains(sf.Tag.Get(TAG), "href") {
-				continue
-			}
-			var dn Dynamic
-			err = encoder.DeserializeRaw(objd[shift:shift+ln], &dn)
-			if err != nil {
-				return
-			}
-			if err = c.want(dn.Schema, dn.ObjKey, want); err != nil {
-				return
-			}
-		} else {
-			for i := 0; i < len(s.Fields); i++ {
-				var (
-					sf    Field = fs[i]
-					shift int
-					ln    int
-				)
-				if ln = sf.Schema.Size(objd[shift:]); ln < 0 {
-					err = ErrMalformedData
-					return
-				}
-				//
-				shift += ln
-			}
-		}
+		//
+	default:
+		//
 	}
-	return
+
 }
