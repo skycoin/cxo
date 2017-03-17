@@ -203,6 +203,7 @@ func (f *Field) Schema() (sv *Schema, err error) {
 	return
 }
 
+// TORM: never used
 // IsReference reports that the field contains references
 func (f *Field) IsReference() bool {
 	switch f.TypeName() {
@@ -409,7 +410,7 @@ func (s *schemaHead) encode() []byte {
 	}
 	x.Kind = s.kind
 	x.TypeName = s.typeName
-	return encoder.Serialize(x)
+	return encoder.Serialize(&x)
 }
 
 func (s *shortSchema) encode() []byte {
@@ -421,7 +422,7 @@ func (s *shortSchema) encode() []byte {
 	if len(s.schema) == 1 {
 		x.Schema = s.schema[0].encode()
 	}
-	return encoder.Serialize(x)
+	return encoder.Serialize(&x)
 }
 
 func (f *Field) encode() []byte {
@@ -433,7 +434,7 @@ func (f *Field) encode() []byte {
 	x.Name = f.name
 	x.Tag = f.tag
 	x.Short = f.shortSchema.encode()
-	return encoder.Serialize(x)
+	return encoder.Serialize(&x)
 }
 
 func (s *Schema) Encode() []byte {
@@ -449,7 +450,7 @@ func (s *Schema) Encode() []byte {
 	for _, sf := range s.fields {
 		x.Fields = append(x.Fields, sf.encode())
 	}
-	return encoder.Serialize(x)
+	return encoder.Serialize(&x)
 }
 
 func (s *schemaHead) decode(p []byte) (err error) {

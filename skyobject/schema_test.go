@@ -15,7 +15,8 @@ func shouldPanic(t *testing.T) {
 	}
 }
 
-func Test_schemaEncodingDecoding(t *testing.T) {
+// and Decode
+func TestSchema_Encode(t *testing.T) {
 	var reg schemaReg
 	sv := Schema{
 		schemaHead: schemaHead{
@@ -103,7 +104,9 @@ func Test_schemaReg_schemaByRegisteredName(t *testing.T) {
 		if len(sv.Fields()) != 5 {
 			t.Error("wrong fields count: ", len(sv.Fields()))
 		}
-		// TODO
+		//
+		// TODO: fields
+		//
 	}
 }
 

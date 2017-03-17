@@ -27,6 +27,13 @@ type Container struct {
 // root object
 //
 
+func (c *Container) NewRoot() (root *Root) {
+	root = new(Root)
+	root.reg = newSchemaReg(c.db)
+	root.cnt = c
+	return
+}
+
 func (c *Container) Root() *Root {
 	return c.root
 }
@@ -34,10 +41,12 @@ func (c *Container) Root() *Root {
 func (c *Container) SetRoot(root *Root) (ok bool) {
 	if c.root == nil {
 		c.root, ok = root, true
+		root.cnt = c // be sure that the root referes to the container
 		return
 	}
 	if c.root.Time < root.Time {
 		c.root, ok = root, true
+		root.cnt = c // be sure that the root referes to the container
 		return
 	}
 	return // false
