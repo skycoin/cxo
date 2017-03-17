@@ -9,10 +9,10 @@ import (
 
 // A Root represents wrapper around root object
 type Root struct {
-	Time   int64
-	Seq    uint64
-	Schema Reference
-	Object Reference
+	Time int64
+	Seq  uint64
+
+	Refs []Dynamic // all references of the root
 
 	// TODO
 	Sign cipher.Sig    // signature
@@ -28,11 +28,9 @@ func (r *Root) Touch() {
 	r.Seq++
 }
 
-// Set given object as root
+// Add given object to root
 func (r *Root) Set(i interface{}) {
-	dn := r.Dynamic(i)
-	r.Schema = dn.Schema
-	r.Object = dn.Object
+	r.Refs = append(r.Refs, r.Dynamic(i))
 }
 
 // Encode convertes a root to []byte
@@ -83,6 +81,6 @@ func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
 	for _, v := range x.Reg {
 		root.reg.reg[v.K] = v.V
 	}
-	ok = c.SetRoot(root)
+	ok = c.AddRoot(root)
 	return
 }

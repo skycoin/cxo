@@ -19,33 +19,34 @@ func (s Set) Add(k Reference) {
 	s[k] = struct{}{}
 }
 
-//
-// find missing objects
-//
-
 // missing objects
-func (c *Container) Want() (set Set, err error) {
-	if c.root == nil {
+func (c *Root) Want() (set Set, err error) {
+	if c == nil {
 		return // don't want anything (has no root object)
 	}
 	set = make(Set)
-	err = c.wantKeys(c.root.Schema, c.root.Object, set)
+	for _, dn := range c.Refs {
+		if err = c.wantKeys(dn.Schema, dn.Object, set); err != nil {
+			return
+		}
+	}
 	return
 }
 
 // want by schema key and object key
-func (c *Container) wantKeys(sk, ok Reference, set Set) (err error) {
+func (c *Root) wantKeys(sk, ok Reference, set Set) (err error) {
 	var sd []byte // shcema data and object data
 	var ex bool   // exist
-	if sd, ex = c.get(sk); !ex {
+	if sd, ex = c.cnt.get(sk); !ex {
 		set.Add(sk)
-		if _, ex = c.get(ok); ex {
+		if _, ex = c.cnt.get(ok); ex {
 			set.Add(ok)
 		}
 		return
 	}
 	var s Schema
-	if err = encoder.DeserializeRaw(sd, &s); err != nil {
+	s.sr = c.reg
+	if err = s.Decode(c.reg, sd); err != nil {
 		return
 	}
 	err = c.wantSchemaObjKey(&s, ok, set)
@@ -53,7 +54,7 @@ func (c *Container) wantKeys(sk, ok Reference, set Set) (err error) {
 }
 
 // by schema and object key
-func (c *Container) wantSchemaObjKey(s *Schema,
+func (c *Root) wantSchemaObjKey(s *Schema,
 	ok Reference, set Set) (err error) {
 
 	if ok == (Reference{}) { // empty key -> nil
@@ -62,7 +63,7 @@ func (c *Container) wantSchemaObjKey(s *Schema,
 
 	var od []byte // object data
 	var ex bool   // exist
-	if _, ex = c.get(ok); !ex {
+	if od, ex = c.cnt.get(ok); !ex {
 		set.Add(ok)
 		return
 	}
@@ -72,7 +73,7 @@ func (c *Container) wantSchemaObjKey(s *Schema,
 }
 
 // by schema and object data
-func (c *Container) wantSchemaObjData(s *Schema,
+func (c *Root) wantSchemaObjData(s *Schema,
 	od []byte, set Set) (n int, err error) {
 
 	switch s.Kind() {
@@ -132,8 +133,13 @@ func (c *Container) wantSchemaObjData(s *Schema,
 			}
 		}
 	case reflect.Struct:
-		if s.Name() == dynamicRef { // not a field -> not a reference
-			n = RLEN * 2
+		if s.Name() == dynamicRef {
+			n = RLEN * 2 // len(cipher.SHA256{}) * 2
+			var dh Dynamic
+			if err = encoder.DeserializeRaw(od, &dh); err != nil {
+				return
+			}
+			err = c.wantKeys(dh.Schema, dh.Object, set)
 		} else {
 			var m int
 			for _, sf := range s.Fields() {
@@ -150,7 +156,7 @@ func (c *Container) wantSchemaObjData(s *Schema,
 	return
 }
 
-func (c *Container) wantField(f *Field, od []byte, set Set) (n int, err error) {
+func (c *Root) wantField(f *Field, od []byte, set Set) (n int, err error) {
 
 	var s *Schema
 

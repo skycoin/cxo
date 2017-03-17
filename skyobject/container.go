@@ -20,8 +20,8 @@ var (
 
 // A Container represents type helper to manage root objects
 type Container struct {
-	root *Root
-	db   *data.DB
+	roots map[cipher.PubKey]*Root // feed -> root of the feed
+	db    *data.DB
 }
 
 // NewContainer creates container using given db. If the db is nil
@@ -32,6 +32,7 @@ func NewContainer(db *data.DB) (c *Container) {
 	}
 	c = new(Container)
 	c.db = db
+	c.roots = make(map[cipher.PubKey]*Root)
 	return
 }
 
@@ -41,32 +42,30 @@ func NewContainer(db *data.DB) (c *Container) {
 
 // NewRoot creates new empty root object. The method doesn't put the root
 // to the Container
-func (c *Container) NewRoot() (root *Root) {
+func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 	root = new(Root)
 	root.reg = newSchemaReg(c.db)
 	root.cnt = c
+	root.Pub = pk
 	return
 }
 
 // Root returns root object of the Container
-func (c *Container) Root() *Root {
-	return c.root
+func (c *Container) Root(pk cipher.PubKey) *Root {
+	return c.roots[pk]
 }
 
-// SetRoot set given root object to the Container if timestamp of
+// AddRoot add/replace given root object to the Container if timestamp of
 // given root is greater than timestamp of existsing root object
-func (c *Container) SetRoot(root *Root) (ok bool) {
-	if c.root == nil {
-		c.root, ok = root, true
-		root.cnt = c // be sure that the root referes to the container
-		return
+func (c *Container) AddRoot(root *Root) (set bool) {
+	if rt, ex := c.roots[root.Pub]; !ex {
+		root.cnt = c
+		c.roots[root.Pub], set = root, true
+	} else if rt.Time < root.Time {
+		root.cnt = c
+		c.roots[root.Pub], set = root, true
 	}
-	if c.root.Time < root.Time {
-		c.root, ok = root, true
-		root.cnt = c // be sure that the root referes to the container
-		return
-	}
-	return // false
+	return
 }
 
 //

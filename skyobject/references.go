@@ -20,6 +20,10 @@ func (r *Root) Save(i interface{}) Reference {
 	return Reference(r.cnt.db.AddAutoKey(encoder.Serialize(i)))
 }
 
+func (r *Reference) String() string {
+	return cipher.SHA256(*r).Hex()
+}
+
 // A References type represents references to array of another objects.
 // If a References is a type of a field then the field must have schema=XXX tag
 type References []Reference

@@ -76,7 +76,7 @@ func (s *schemaReg) schemaByKey(sk cipher.SHA256) (sv *Schema, err error) {
 		err = ErrMissingInDB
 	}
 	sv = new(Schema)
-	err = sv.Decode(data)
+	err = sv.Decode(s, data)
 	sv.sr = s
 	return
 }
@@ -128,11 +128,14 @@ type shortSchema struct {
 func (s *shortSchema) Schema() (sv *Schema, err error) {
 	if isFlat(s.Kind()) { // create schema
 		// no elemnts, length, and fields for flat types
-		sv = &Schema{
-			schemaHead: s.schemaHead,
-		}
+		sv = &Schema{schemaHead: s.schemaHead} // kind + possible name
 	} else if s.IsNamed() { // get from db
-		sv, err = s.sr.schemaByName(s.Name())
+		switch s.Name() {
+		case singleRef, arrayRef, dynamicRef: // special types
+			sv = &Schema{schemaHead: s.schemaHead} // kind + name
+		default:
+			sv, err = s.sr.schemaByName(s.Name())
+		}
 	} else if len(s.schema) == 1 { // get from slice
 		sv = &s.schema[0]
 	} else {
@@ -199,7 +202,7 @@ func (f *Field) Tag() reflect.StructTag {
 
 // Schema returns schema of the field or error if any
 func (f *Field) Schema() (sv *Schema, err error) {
-	sv, err = f.Schema()
+	sv, err = f.shortSchema.Schema()
 	return
 }
 
@@ -251,10 +254,12 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 	if isFlat(typ.Kind()) {
 		return // we're done (don't need a schema for flat types)
 	}
-	if name != "" { // named type
-		if name == singleRef || name == dynamicRef || name == arrayRef {
-			return // we don't register special types
-		}
+	switch name {
+	case singleRef, dynamicRef, arrayRef: // special types
+		return // we don't register special types
+	case "":
+		break // encode
+	default: // named type
 		if _, ok := s.reg[name]; !ok {
 			s.reg[name] = cipher.SHA256{} // temporary (hold the place)
 		} else { // already registered (or holded)
@@ -263,14 +268,11 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 	}
 	switch typ.Kind() {
 	case reflect.Array:
-		// it never be cipher.SHA256
 		sv.length = uint32(typ.Len())
 		sv.elem = *s.getSchemaOfType(typ.Elem()).toShort()
 	case reflect.Slice:
-		// it can be a []cipher.SHA256 (because it's unnamed type)
 		sv.elem = *s.getSchemaOfType(typ.Elem()).toShort()
 	case reflect.Struct:
-		// it never be Dynamic
 		var nf int = typ.NumField()
 		sv.fields = make([]Field, 0, nf)
 		for i := 0; i < nf; i++ {
@@ -453,7 +455,7 @@ func (s *Schema) Encode() []byte {
 	return encoder.Serialize(&x)
 }
 
-func (s *schemaHead) decode(p []byte) (err error) {
+func (s *schemaHead) decode(sr *schemaReg, p []byte) (err error) {
 	var x struct {
 		Kind     uint32
 		TypeName []byte
@@ -461,12 +463,13 @@ func (s *schemaHead) decode(p []byte) (err error) {
 	if err = encoder.DeserializeRaw(p, &x); err != nil {
 		return
 	}
+	s.sr = sr
 	s.kind = x.Kind
 	s.typeName = x.TypeName
 	return
 }
 
-func (s *shortSchema) decode(p []byte) (err error) {
+func (s *shortSchema) decode(sr *schemaReg, p []byte) (err error) {
 	var x struct {
 		Head   []byte
 		Schema []byte
@@ -476,16 +479,16 @@ func (s *shortSchema) decode(p []byte) (err error) {
 	}
 	if len(s.schema) > 0 {
 		var ns Schema
-		if err = ns.Decode(x.Schema); err != nil {
+		if err = ns.Decode(s.sr, x.Schema); err != nil {
 			return
 		}
 		s.schema = []Schema{ns}
 	}
-	err = s.schemaHead.decode(x.Head)
+	err = s.schemaHead.decode(sr, x.Head)
 	return
 }
 
-func (f *Field) decode(p []byte) (err error) {
+func (f *Field) decode(sr *schemaReg, p []byte) (err error) {
 	var x struct {
 		Name  []byte
 		Tag   []byte
@@ -496,11 +499,12 @@ func (f *Field) decode(p []byte) (err error) {
 	}
 	f.name = x.Name
 	f.tag = x.Tag
-	err = f.shortSchema.decode(x.Short)
+	err = f.shortSchema.decode(sr, x.Short)
 	return
 }
 
-func (s *Schema) Decode(p []byte) (err error) {
+func (s *Schema) Decode(sr *schemaReg, p []byte) (err error) {
+	s.sr = sr
 	var x struct {
 		Head   []byte
 		Elem   []byte
@@ -510,17 +514,17 @@ func (s *Schema) Decode(p []byte) (err error) {
 	if err = encoder.DeserializeRaw(p, &x); err != nil {
 		return
 	}
-	if err = s.schemaHead.decode(x.Head); err != nil {
+	if err = s.schemaHead.decode(s.sr, x.Head); err != nil {
 		return
 	}
-	if err = s.elem.decode(x.Elem); err != nil {
+	if err = s.elem.decode(s.sr, x.Elem); err != nil {
 		return
 	}
 	s.length = x.Len
 	s.fields = nil // clear
 	for _, fv := range x.Fields {
 		var f Field
-		if err = f.decode(fv); err != nil {
+		if err = f.decode(s.sr, fv); err != nil {
 			return
 		}
 		s.fields = append(s.fields, f)

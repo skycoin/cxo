@@ -41,7 +41,7 @@ func TestSchema_Encode(t *testing.T) {
 		length: 12,
 	}
 	var sr Schema
-	if err := sr.Decode(sv.Encode()); err != nil {
+	if err := sr.Decode(&reg, sv.Encode()); err != nil {
 		t.Error("encoding error: ", err)
 		return
 	}
