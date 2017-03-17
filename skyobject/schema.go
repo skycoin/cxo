@@ -76,7 +76,8 @@ func (s *schemaReg) schemaByKey(sk cipher.SHA256) (sv *Schema, err error) {
 		err = ErrMissingInDB
 	}
 	sv = new(Schema)
-	err = encoder.DeserializeRaw(data, sv)
+	err = sv.Decode(data)
+	sv.sr = s
 	return
 }
 
@@ -131,14 +132,12 @@ func (s *shortSchema) Schema() (sv *Schema, err error) {
 			schemaHead: s.schemaHead,
 		}
 	} else if s.IsNamed() { // get from db
-		debug("schema from shortSchema: named type: ", s.Name())
 		sv, err = s.sr.schemaByName(s.Name())
 	} else if len(s.schema) == 1 { // get from slice
 		sv = &s.schema[0]
 	} else {
 		err = ErrInvalidSchema // missing schema in the slice
 	}
-	debug("kind of schema (by shortSchema):", s.Kind().String())
 	return
 }
 
@@ -155,7 +154,6 @@ type Schema struct {
 
 func (s *Schema) Elem() (sv *Schema, err error) {
 	sv, err = s.elem.Schema()
-	debug("kind of Elem schema (by Schema):", s.Kind().String())
 	return
 }
 
@@ -269,8 +267,6 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 		sv.elem = *s.getSchemaOfType(typ.Elem()).toShort()
 	case reflect.Slice:
 		// it can be a []cipher.SHA256 (because it's unnamed type)
-		debug("getSchemaOfType: slice: ", typ.String())
-		debug("getSchemaOfType: elem: ", typ.Elem().String())
 		sv.elem = *s.getSchemaOfType(typ.Elem()).toShort()
 	case reflect.Struct:
 		// it never be Dynamic
@@ -288,7 +284,7 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 	}
 	// save named type to registery and db
 	if name != "" { // named type
-		s.reg[name] = s.db.AddAutoKey(encoder.Serialize(sv))
+		s.reg[name] = s.db.AddAutoKey(sv.Encode())
 	}
 	return
 }
@@ -319,22 +315,18 @@ func (s *schemaReg) getField(fl reflect.StructField) (sf Field) {
 //
 
 func (s *Schema) String() (x string) {
-	debug("string (schema) of: ", s.Kind().String())
 	if s == nil {
 		x = "<Missing>"
 	} else {
 		if s.IsNamed() {
 			x = s.Name()
 		} else {
-			debug("schema of: ", s.Kind().String())
 			switch kind := s.Kind(); kind {
 			case reflect.Array:
 				elem, _ := s.Elem()
-				debug("elem of array:", elem.Kind())
 				x = fmt.Sprintf("[%d]%s", s.Len(), elem.String())
 			case reflect.Slice:
 				elem, _ := s.Elem()
-				debug("elem of slice:", elem.Kind())
 				x = "[]" + elem.String()
 			case reflect.Struct:
 				x += "struct {"
@@ -350,7 +342,7 @@ func (s *Schema) String() (x string) {
 				}
 				x += "}"
 			default:
-				x = kind.String() + "<string of kind>"
+				x = kind.String()
 			}
 		}
 	}
@@ -402,6 +394,135 @@ func schemaNameFromTag(tag string) (name string, err error) {
 	}
 	if name == "" {
 		err = ErrMissingSchemaTag
+	}
+	return
+}
+
+//
+// serialize and deserialze (TODO: simplify, DRY)
+//
+
+func (s *schemaHead) encode() []byte {
+	var x struct {
+		Kind     uint32
+		TypeName []byte
+	}
+	x.Kind = s.kind
+	x.TypeName = s.typeName
+	return encoder.Serialize(x)
+}
+
+func (s *shortSchema) encode() []byte {
+	var x struct {
+		Head   []byte
+		Schema []byte
+	}
+	x.Head = s.schemaHead.encode()
+	if len(s.schema) == 1 {
+		x.Schema = s.schema[0].encode()
+	}
+	return encoder.Serialize(x)
+}
+
+func (f *Field) encode() []byte {
+	var x struct {
+		Name  []byte
+		Tag   []byte
+		Short []byte
+	}
+	x.Name = f.name
+	x.Tag = f.tag
+	x.Short = f.shortSchema.encode()
+	return encoder.Serialize(x)
+}
+
+func (s *Schema) Encode() []byte {
+	var x struct {
+		Head   []byte
+		Elem   []byte
+		Len    uint32
+		Fields [][]byte
+	}
+	x.Head = s.schemaHead.encode()
+	x.Elem = s.elem.encode()
+	x.Len = s.length
+	for _, sf := range s.fields {
+		x.Fields = append(x.Fields, sf.encode())
+	}
+	return encoder.Serialize(x)
+}
+
+func (s *schemaHead) decode(p []byte) (err error) {
+	var x struct {
+		Kind     uint32
+		TypeName []byte
+	}
+	if err = encoder.DeserializeRaw(p, &x); err != nil {
+		return
+	}
+	s.kind = x.Kind
+	s.typeName = x.TypeName
+	return
+}
+
+func (s *shortSchema) decode(p []byte) (err error) {
+	var x struct {
+		Head   []byte
+		Schema []byte
+	}
+	if err = encoder.DeserializeRaw(p, &x); err != nil {
+		return
+	}
+	if len(s.schema) > 0 {
+		var ns Schema
+		if err = ns.Decode(x.Schema); err != nil {
+			return
+		}
+		s.schema = []Schema{ns}
+	}
+	err = s.schemaHead.decode(x.Head)
+	return
+}
+
+func (f *Field) decode(p []byte) (err error) {
+	var x struct {
+		Name  []byte
+		Tag   []byte
+		Short []byte
+	}
+	if err = encoder.DeserializeRaw(p, &x); err != nil {
+		return
+	}
+	f.name = x.Name
+	f.tag = x.Tag
+	err = f.shortSchema.decode(x.Short)
+	return
+}
+
+func (s *Schema) Decode(p []byte) (err error) {
+	var x struct {
+		Head   []byte
+		Elem   []byte
+		Len    uint32
+		Fields [][]byte
+	}
+	if err = encoder.DeserializeRaw(p, &x); err != nil {
+		return
+	}
+	if err = s.schemaHead.decode(x.Head); err != nil {
+		return
+	}
+	if err = s.elem.decode(x.Elem); err != nil {
+		return
+	}
+	s.length = x.Len
+	s.fields = nil // clear
+	for _, fv := range x.Fields {
+		var f Field
+		if err = f.decode(fv); err != nil {
+			return
+		}
+		s.fields = append(s.fields, f)
 	}
 	return
 }

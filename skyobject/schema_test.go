@@ -4,12 +4,48 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
 )
 
 func shouldPanic(t *testing.T) {
 	if recover() == nil {
 		t.Error("missing panic")
+	}
+}
+
+func Test_schemaEncodingDecoding(t *testing.T) {
+	var reg schemaReg
+	sv := Schema{
+		schemaHead: schemaHead{
+			kind:     uint32(reflect.Array),
+			typeName: []byte("Zorro"),
+			sr:       &reg,
+		},
+		elem: shortSchema{
+			schemaHead: schemaHead{
+				kind: uint32(reflect.Array),
+			},
+			schema: []Schema{
+				Schema{
+					schemaHead: schemaHead{
+						kind:     uint32(reflect.Int8),
+						typeName: []byte("Age"),
+						sr:       &reg,
+					},
+				},
+			},
+		},
+		length: 12,
+	}
+	var sr Schema
+	if err := sr.Decode(sv.Encode()); err != nil {
+		t.Error("encoding error: ", err)
+		return
+	}
+	if sr.kind != uint32(reflect.Array) {
+		t.Error("wrong kind decoded:", sr.Kind())
 	}
 }
 
@@ -32,16 +68,43 @@ func Test_newSchemaReg(t *testing.T) {
 func Test_schemaReg_Register(t *testing.T) {
 	reg := newSchemaReg(data.NewDB())
 	reg.Register("Man", Man{})
-	sv, err := reg.schemaByRegisteredName("Man")
-	if err != nil {
-		t.Error("unexpected error: ", err)
-		return
+	if name, ok := reg.nmr["Man"]; !ok {
+		t.Error("missing registered name")
+	} else if name != typeName(reflect.TypeOf(Man{})) {
+		t.Error("wrong registered type name: ", name)
+	} else if sk, ok := reg.reg[name]; !ok {
+		t.Error("missing registered type")
+	} else if sk == (cipher.SHA256{}) {
+		t.Error("empty key of registered type")
 	}
-	t.Log(sv.String())
 }
 
 func Test_schemaReg_schemaByRegisteredName(t *testing.T) {
-	//
+	reg := newSchemaReg(data.NewDB())
+	reg.Register("Man", Man{})
+	if sv, err := reg.schemaByRegisteredName("Man"); err != nil {
+		t.Error("unexpected error: ", err)
+	} else {
+		if !sv.IsNamed() {
+			t.Error("named type is unnamed")
+		}
+		if sv.Name() != typeName(reflect.TypeOf(Man{})) {
+			t.Error("wrong type name: ", sv.Name())
+		}
+		if sv.Len() != 0 {
+			t.Error("non-zero length for struct: ", sv.Len())
+		}
+		if sv.Kind() != reflect.Struct {
+			t.Error("wrong kind of struct: ", sv.Kind())
+		}
+		if _, err := sv.Elem(); err == nil {
+			t.Error("a struct has element type")
+		}
+		if len(sv.Fields()) != 5 {
+			t.Error("wrong fields count: ", len(sv.Fields()))
+		}
+		// TODO
+	}
 }
 
 func Test_schemaReg_schemaByName(t *testing.T) {
@@ -223,4 +286,28 @@ func Test_schemaNameFromTag(t *testing.T) {
 			t.Error("wrong schema name: want User, got ", name)
 		}
 	})
+}
+
+func inspectSchema(s *Schema, t *testing.T) {
+	var elem = func(e *Schema, err error) string {
+		if e == nil {
+			return "<nil>"
+		}
+		return e.Name()
+	}
+	t.Logf(`Schema{
+	Kind:   %s
+	Name:   %s,
+	sr:     %p,
+	Elem:   %s,
+	Len:    %d,
+	Fields: %v,
+}`,
+		s.Kind(),
+		s.Name(),
+		s.sr,
+		elem(s.Elem()),
+		s.Len(),
+		s.fields,
+	)
 }
