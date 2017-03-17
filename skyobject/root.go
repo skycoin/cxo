@@ -9,8 +9,8 @@ import (
 type Root struct {
 	Time   int64
 	Seq    uint64
-	Schema cipher.SHA256
-	Object cipher.SHA256
+	Schema Reference
+	Object Reference
 
 	// TODO
 	Sign cipher.Sig    // signature

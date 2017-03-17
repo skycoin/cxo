@@ -12,11 +12,11 @@ import (
 type Reference cipher.SHA256
 
 // A References type represents references to array of another objects
-type References []cipher.SHA256
+type References []Reference
 
 // A Dynamic represents dynamic reference to any object and reference to its
 // schema
 type Dynamic struct {
-	Schema cipher.SHA256
-	Object cipher.SHA256
+	Schema Reference
+	Object Reference
 }

@@ -1,17 +1,15 @@
 package skyobject
 
 import (
-	"testing"
-
-	"github.com/skycoin/skycoin/src/cipher"
+	"fmt"
 )
 
 type Age uint32
 
 type Group struct {
 	Name    string
-	Leader  cipher.SHA256   `skyobject:"schema=User"`
-	Members []cipher.SHA256 `skyobject:"schema=User"`
+	Leader  Reference  `skyobject:"schema=User"`
+	Members References `skyobject:"schema=User"`
 	Curator Dynamic
 }
 
@@ -22,13 +20,32 @@ type User struct {
 }
 
 type List struct {
-	Name    string
-	Members []cipher.SHA256 `skyobject:"schema=User"`
+	Name     string
+	Members  References `skyobject:"schema=User"`
+	MemberOf []Group
 }
 
 type Man struct {
 	Name    string
 	Age     Age
 	Seecret []byte
+	Owner   Group
 	Friends List
+}
+
+//
+
+func schemaRegString(reg *schemaReg) (s string) {
+	s = fmt.Sprintf(`schemaReg{
+  db:  %p
+  nmr: %v
+  reg: {
+`,
+		reg.db,
+		reg.nmr)
+	for k, v := range reg.reg {
+		s += "    " + k + ": " + v.Hex() + "\n"
+	}
+	s += "  }\n}"
+	return
 }
