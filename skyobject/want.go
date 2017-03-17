@@ -56,6 +56,10 @@ func (c *Container) wantKeys(sk, ok Reference, set Set) (err error) {
 func (c *Container) wantSchemaObjKey(s *Schema,
 	ok Reference, set Set) (err error) {
 
+	if ok == (Reference{}) { // empty key -> nil
+		return
+	}
+
 	var od []byte // object data
 	var ex bool   // exist
 	if _, ex = c.get(ok); !ex {

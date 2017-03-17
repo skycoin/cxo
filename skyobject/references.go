@@ -64,3 +64,8 @@ func (r *Root) Dynamic(i interface{}) (dn Dynamic) {
 	dn.Schema = r.SaveSchema(i)
 	return
 }
+
+// RegisterSchema with given name
+func (r *Root) RegisterSchema(name string, i interface{}) {
+	r.reg.Register(name, i)
+}

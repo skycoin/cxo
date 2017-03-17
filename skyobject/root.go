@@ -28,6 +28,13 @@ func (r *Root) Touch() {
 	r.Seq++
 }
 
+// Set given object as root
+func (r *Root) Set(i interface{}) {
+	dn := r.Dynamic(i)
+	r.Schema = dn.Schema
+	r.Object = dn.Object
+}
+
 // Encode convertes a root to []byte
 func (r *Root) Encode() (p []byte) {
 	var x struct {
