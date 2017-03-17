@@ -11,7 +11,8 @@ import (
 // use special named types for references
 //
 
-// A Reference type represents reference to another object
+// A Reference type represents reference to another object. If a Reference
+// is a type of a field then the field must have schema=XXX tag
 type Reference cipher.SHA256
 
 // Save an object to db and get reference-key to it
@@ -19,7 +20,8 @@ func (r *Root) Save(i interface{}) Reference {
 	return Reference(r.cnt.db.AddAutoKey(encoder.Serialize(i)))
 }
 
-// A References type represents references to array of another objects
+// A References type represents references to array of another objects.
+// If a References is a type of a field then the field must have schema=XXX tag
 type References []Reference
 
 // SaveArray of objects and get array of references-keys to them
