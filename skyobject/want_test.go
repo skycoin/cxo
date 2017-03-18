@@ -5,8 +5,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/data"
+	//"github.com/skycoin/cxo/data"
 )
 
 func getHash(i interface{}) Reference {
@@ -143,13 +142,5 @@ func TestContainer_wantSchemaObjData(t *testing.T) {
 }
 
 func TestContainer_wantField(t *testing.T) {
-	//
-}
-
-func Test_getLength(t *testing.T) {
-	//
-}
-
-func Test_basicSize(t *testing.T) {
 	//
 }

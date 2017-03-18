@@ -74,7 +74,7 @@ func (s *schemaReg) schemaByName(name string) (sv *Schema, err error) {
 func (s *schemaReg) schemaByKey(sk cipher.SHA256) (sv *Schema, err error) {
 	data, ok := s.db.Get(sk)
 	if !ok {
-		err = MissingSchema{sk}
+		err = &MissingSchema{Reference(sk)}
 		return
 	}
 	sv = new(Schema)
@@ -257,8 +257,8 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 	}
 	switch name {
 	case singleRef, dynamicRef, arrayRef: // special types
-		sv.kind == uint32(reflect.Ptr) // use ptr kind for references
-		return                         // we don't register special types
+		sv.kind = uint32(reflect.Ptr) // use ptr kind for references
+		return                        // we don't register special types
 	case "":
 		break // encode
 	default: // named type

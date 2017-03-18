@@ -29,7 +29,7 @@ func (r *Root) Touch() {
 }
 
 // Add given object to root
-func (r *Root) Set(i interface{}) {
+func (r *Root) Inject(i interface{}) {
 	r.Refs = append(r.Refs, r.Dynamic(i))
 }
 
@@ -93,7 +93,7 @@ func (r *Root) Schema(sk Reference) (s *Schema, err error) {
 	var sd []byte // shcema data and object data
 	var ok bool   // exist
 	if sd, ok = r.cnt.get(sk); !ok {
-		err = MissingSchema{sk}
+		err = &MissingSchema{sk}
 		return
 	}
 	s = new(Schema)

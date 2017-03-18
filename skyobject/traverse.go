@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -21,34 +20,25 @@ type MissingSchema struct {
 	key Reference
 }
 
+func (m *MissingSchema) Key() Reference {
+	return m.key
+}
+
 func (m *MissingSchema) Error() string {
-	return fmt.Sprintf("missing schema: %s", m.name, m.key.String())
+	return "missing schema: " + m.key.String()
 }
 
 type MissingObject struct {
 	key        Reference
-	keys       References
 	schemaName string
-}
-
-func (m *MissingObject) Error() string {
-	if len(m.keys) > 0 {
-		return fmt.Sprintf("missing %d objects %q",
-			len(m.keys),
-			m.schemaName)
-	} else {
-		return fmt.Sprintf("missing object %q: %s",
-			m.schemaName,
-			m.key.String())
-	}
 }
 
 func (m *MissingObject) Key() Reference {
 	return m.key
 }
 
-func (m *MissingObject) Keys() References {
-	return m.keys
+func (m *MissingObject) Error() string {
+	return fmt.Sprintf("missing object %q: %s", m.schemaName, m.key.String())
 }
 
 type Value interface {
@@ -214,7 +204,7 @@ func (x *value) String() (s string, err error) {
 
 // Bytes returns []byte of underlying value if the value is []byte or string
 func (x *value) Bytes() (p []byte, err error) {
-	if x.Kind() == reflect.Slice {
+	if kind := x.Kind(); kind == reflect.Slice {
 		var el *Schema
 		if el, err = x.s.Elem(); err != nil {
 			return // invalid schema
@@ -224,7 +214,7 @@ func (x *value) Bytes() (p []byte, err error) {
 		} else {
 			err = ErrInvalidType
 		}
-	} else if x.Kind == reflect.String {
+	} else if kind == reflect.String {
 		var s string
 		if err = encoder.DeserializeRaw(x.od, &s); err != nil {
 			return
@@ -325,7 +315,7 @@ func (x *value) Len() (l int, err error) {
 		} else {
 			var m int
 			for shift < len(x.od) {
-				if m, err = el.Size(p[shift:]); err != nil {
+				if m, err = el.Size(x.od[shift:]); err != nil {
 					return
 				}
 				l++
@@ -369,7 +359,7 @@ func (x *value) Index(idx int) (v Value, err error) {
 				err = ErrInvalidSchemaOrData
 				return
 			}
-			v = &value{x.r, el, od[shift : shift+s]}
+			v = &value{x.r, el, x.od[shift : shift+s]}
 		} else {
 			var m int
 			for ; idx >= 0; idx-- {
@@ -430,9 +420,17 @@ func (x *value) Index(idx int) (v Value, err error) {
 						// and element of the single reference must points to
 						// type the reference points to
 						el = &Schema{
-							kind:     uint32(reflect.Ptr),
-							typeName: []byte(singleRef),
-							elem:     []Schema{*el},
+							schemaHead: schemaHead{
+								kind:     uint32(reflect.Ptr),
+								typeName: []byte(singleRef),
+							},
+							elem: shortSchema{
+								schemaHead: schemaHead{
+									kind:     el.kind,
+									typeName: el.typeName,
+								},
+								schema: []Schema{*el},
+							},
 						}
 					}
 					v = &value{x.r, el, x.od[shift : shift+m]}
@@ -456,7 +454,34 @@ func (x *value) Schema() *Schema {
 //
 
 func (r *Root) Values() (vs []Value, err error) {
-	//
+	if r == nil {
+		return
+	}
+	if len(r.Refs) == 0 {
+		return
+	}
+	vs = make([]Value, 0, len(r.Refs))
+	var (
+		s Schema
+
+		sd, od []byte
+		ok     bool
+	)
+	for _, dr := range r.Refs {
+		if sd, ok = r.cnt.get(dr.Schema); !ok {
+			err = &MissingSchema{dr.Schema}
+			return
+		}
+		if err = s.Decode(r.reg, sd); err != nil {
+			return
+		}
+		if od, ok = r.cnt.get(dr.Object); !ok {
+			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
+			return
+		}
+		vs = append(vs, &value{r, &s, od})
+	}
+	return
 }
 
 //
@@ -542,7 +567,7 @@ func fixedSize(kind reflect.Kind) (n int) {
 	case reflect.Int64, reflect.Uint64, reflect.Float64:
 		n = 8
 	default:
-		-1
+		n = -1
 	}
 	return
 }
