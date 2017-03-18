@@ -50,8 +50,14 @@ type Dynamic struct {
 // SaveSchema and get reference-key to it
 func (r *Root) SaveSchema(i interface{}) (ref Reference) {
 	typ := reflect.Indirect(reflect.ValueOf(i)).Type()
+	name := typeName(typ)
+	switch name {
+	case singleRef, arrayRef, dynamicRef:
+		panic("can't save special type")
+	default:
+	}
 FromMap:
-	if sk, ok := r.reg.reg[typeName(typ)]; ok {
+	if sk, ok := r.reg.reg[name]; ok {
 		ref = Reference(sk)
 		return
 	}

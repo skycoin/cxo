@@ -12,10 +12,10 @@ var (
 	ErrMissingRoot        = errors.New("misisng root object")
 	ErrShortBuffer        = errors.New("short buffer")
 	ErrInvalidSchema      = errors.New("invalid schema")
-	ErrMissingInDB        = errors.New("missing in db")
 	ErrUnregisteredSchema = errors.New("unregistered schema")
 	ErrInvalidTag         = errors.New("invalid tag")
 	ErrMissingSchemaTag   = errors.New("missing schema tag")
+	ErrEmptySchemaKey     = errors.New("empty schema key")
 )
 
 // A Container represents type helper to manage root objects

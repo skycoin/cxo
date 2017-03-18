@@ -26,15 +26,16 @@ type schemaReg struct {
 	reg map[string]cipher.SHA256 // type name -> schema key
 }
 
-func newSchemaReg(db *data.DB) *schemaReg {
+func newSchemaReg(db *data.DB) (sr *schemaReg) {
 	if db == nil {
 		panic("misisng db")
 	}
-	return &schemaReg{
+	sr = &schemaReg{
 		db:  db,
 		nmr: make(map[string]string),
 		reg: make(map[string]cipher.SHA256),
 	}
+	return
 }
 
 // TODO: performance of the solution
@@ -73,7 +74,8 @@ func (s *schemaReg) schemaByName(name string) (sv *Schema, err error) {
 func (s *schemaReg) schemaByKey(sk cipher.SHA256) (sv *Schema, err error) {
 	data, ok := s.db.Get(sk)
 	if !ok {
-		err = ErrMissingInDB
+		err = MissingSchema{sk}
+		return
 	}
 	sv = new(Schema)
 	err = sv.Decode(s, data)

@@ -35,17 +35,22 @@ func (c *Root) Want() (set Set, err error) {
 
 // want by schema key and object key
 func (c *Root) wantKeys(sk, ok Reference, set Set) (err error) {
+	if sk == (Reference{}) {
+		err = ErrEmptySchemaKey
+		return
+	}
 	var sd []byte // shcema data and object data
 	var ex bool   // exist
 	if sd, ex = c.cnt.get(sk); !ex {
 		set.Add(sk)
-		if _, ex = c.cnt.get(ok); ex {
-			set.Add(ok)
+		if ok != (Reference{}) {
+			if _, ex = c.cnt.get(ok); ex {
+				set.Add(ok)
+			}
 		}
 		return
 	}
 	var s Schema
-	s.sr = c.reg
 	if err = s.Decode(c.reg, sd); err != nil {
 		return
 	}
@@ -276,25 +281,4 @@ func (c *Root) wantField(f *Field, od []byte, set Set) (n int, err error) {
 
 	return
 
-}
-
-func getLength(p []byte) (l int, err error) {
-	var u uint32
-	err = encoder.DeserializeRaw(p, &u)
-	l = int(u)
-	return
-}
-
-func basicSize(kind reflect.Kind) (n int) {
-	switch kind {
-	case reflect.Bool, reflect.Int8, reflect.Uint8:
-		n = 1
-	case reflect.Int16, reflect.Uint16:
-		n = 2
-	case reflect.Int32, reflect.Uint32, reflect.Float32:
-		n = 4
-	case reflect.Int64, reflect.Uint64, reflect.Float64:
-		n = 8
-	}
-	return
 }

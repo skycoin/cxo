@@ -1,5 +1,491 @@
 package skyobject
 
-func (r *Root) Traverse() (err error) {
+import (
+	"errors"
+	"fmt"
+	"reflect"
+
+	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
+)
+
+var (
+	ErrStopTraversing      = errors.New("stop traversing")
+	ErrInvalidType         = errors.New("invalid type of value")
+	ErrNoSuchField         = errors.New("no such field")
+	ErrInvalidSchemaOrData = errors.New("invalid schema or data")
+	ErrIndexOutOfRange     = errors.New("index out of range")
+)
+
+type MissingSchema struct {
+	key Reference
+}
+
+func (m *MissingSchema) Error() string {
+	return fmt.Sprintf("missing schema: %s", m.name, m.key.String())
+}
+
+type MissingObject struct {
+	key        Reference
+	keys       References
+	schemaName string
+}
+
+func (m *MissingObject) Error() string {
+	if len(m.keys) > 0 {
+		return fmt.Sprintf("missing %d objects %q",
+			len(m.keys),
+			m.schemaName)
+	} else {
+		return fmt.Sprintf("missing object %q: %s",
+			m.schemaName,
+			m.key.String())
+	}
+}
+
+func (m *MissingObject) Key() Reference {
+	return m.key
+}
+
+func (m *MissingObject) Keys() References {
+	return m.keys
+}
+
+type Value interface {
+	Kind() reflect.Kind // reflect.Ptr for references
+
+	// Dereference returns value by reference. A value is reference if
+	// its kind is reflect.Ptr
+	Dereference() (v Value, err error)
+
+	// scalar values
+	Bool() (b bool, err error)     // reflect.Bool
+	Int() (i int64, err error)     // reflect.Int(8|16|32|64)
+	Uint() (u uint64, err error)   // reflect.Uint(8|16|32|64)
+	String() (s string, err error) // reflect.String
+	Bytes() (p []byte, err error)  // reflect.Slice of bytes or reflect.String
+	Float() (f float64, err error) // reflect.Ptr
+
+	// structs
+	Fields() []string // names of fields
+	FieldByName(name string) (v Value, err error)
+
+	// slices and arrays
+	Len() (l int, err error)
+	Index(idx int) (v Value, err error)
+
+	Schema() *Schema
+}
+
+type value struct {
+	r  *Root // back reference
+	s  *Schema
+	od []byte
+}
+
+func (x *value) Kind() reflect.Kind {
+	return x.s.Kind()
+}
+
+func (x *value) dereference() (v Value, err error) {
+	switch x.s.Name() {
+	case dynamicRef:
+		var dr Dynamic
+		if err = encoder.DeserializeRaw(x.od, &dr); err != nil {
+			return
+		}
+		var s Schema
+		if sd, ok := x.r.cnt.get(dr.Schema); !ok {
+			err = &MissingSchema{dr.Schema}
+			return
+		} else {
+			if err = s.Decode(x.r.reg, sd); err != nil {
+				return
+			}
+		}
+		if od, ok := x.r.cnt.get(dr.Object); !ok {
+			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
+			return
+		}
+		v = &value{x.r, &s, od}
+	case singleRef:
+		var ref Reference
+		if err = encoder.DeserializeRaw(x.od, &ref); err != nil {
+			return
+		}
+		if od, ok := x.r.cnt.get(ref); !ok {
+			err = &MissingObject{key: ref, schemaName: x.s.Name()}
+			return
+		} else {
+			//
+		}
+	case arrayRef:
+		//
+	default:
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Bool() (b bool, err error) {
+	if x.Kind() != reflect.Bool {
+		err = ErrInvalidType
+		return
+	}
+	err = encoder.DeserializeRaw(x.od, &b)
+	return
+}
+
+func (x *value) Int() (i int64, err error) {
+	switch x.Kind() {
+	case reflect.Int8:
+		var t int8
+		err = encoder.DeserializeRaw(x.od, &t)
+		i = int64(t)
+	case reflect.Int16:
+		var t int16
+		err = encoder.DeserializeRaw(x.od, &t)
+		i = int64(t)
+	case reflect.Int32:
+		var t int32
+		err = encoder.DeserializeRaw(x.od, &t)
+		i = int64(t)
+	case reflect.Int64:
+		err = encoder.DeserializeRaw(x.od, &i)
+	default:
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Uint() (u uint64, err error) {
+	switch x.Kind() {
+	case reflect.Uint8:
+		var t uint8
+		err = encoder.DeserializeRaw(x.od, &t)
+		u = uint64(t)
+	case reflect.Uint16:
+		var t uint16
+		err = encoder.DeserializeRaw(x.od, &t)
+		u = uint64(t)
+	case reflect.Uint32:
+		var t uint32
+		err = encoder.DeserializeRaw(x.od, &t)
+		u = uint64(t)
+	case reflect.Uint64:
+		err = encoder.DeserializeRaw(x.od, &u)
+	default:
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) String() (s string, err error) {
+	if x.Kind() == reflect.String {
+		err = encoder.DeserializeRaw(x.od, &s)
+	} else {
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Bytes() (p []byte, err error) {
+	if x.Kind() == reflect.Slice {
+		var el *Schema
+		if el, err = x.s.Elem(); err != nil {
+			return // invalid schema
+		}
+		if el.Kind() == reflect.Uint8 {
+			err = encoder.DeserializeRaw(x.od, &p)
+		} else {
+			err = ErrInvalidType
+		}
+	} else if x.Kind == reflect.String {
+		var s string
+		if err = encoder.DeserializeRaw(x.od, &s); err != nil {
+			return
+		}
+		p = []byte(s)
+	} else {
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Float() (f float64, err error) {
+	switch x.Kind() {
+	case reflect.Float32:
+		var t float32
+		err = encoder.DeserializeRaw(x.od, &t)
+		f = float64(t)
+	case reflect.Float64:
+		err = encoder.DeserializeRaw(x.od, &f)
+	default:
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Fields() (fs []string) {
+	if len(x.s.fields) == 0 {
+		return
+	}
+	fs = make([]string, 0, len(x.s.fields))
+	for _, sf := range x.s.Fields() {
+		fs = append(fs, sf.Name())
+	}
+	return
+}
+
+func (x *value) FieldByName(name string) (v Value, err error) {
+	if x.Kind() != reflect.Struct {
+		err = ErrInvalidType
+		return
+	}
+	var shift int
+	for _, sf := range x.s.fields {
+		var fs *Schema
+		if fs, err = sf.Schema(); err != nil {
+			return
+		}
+		var n int
+		if shift >= len(x.od) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		n, err = fs.Size(x.od[shift:])
+		if sf.Name() != name {
+			shift += n
+			continue
+		}
+		if shift+n >= len(x.od) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		v = &value{x.r, fs, x.od[shift : shift+n]}
+		return
+	}
+	err = ErrNoSuchField
+	return
+}
+
+func (x *value) Len() (l int, err error) {
+	switch x.Kind() {
+	case reflect.Array:
+		l = x.s.Len()
+	case reflect.Slice:
+		var el *Schema
+		if el, err = x.s.Elem(); err != nil {
+			return
+		}
+		var ln int
+		if ln, err = getLength(x.od); err != nil {
+			return
+		}
+		var shift int = 4 // length encoded as uint32 - 4 byte
+		if s := fixedSize(el.Kind()); s > 0 {
+			if (ln/s)*s != ln {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			l = ln / s
+		} else {
+			var m int
+			for shift < len(x.od) {
+				if m, err = el.Size(p[shift:]); err != nil {
+					return
+				}
+				l++
+				shift += m
+			}
+			if shift != len(x.od) {
+				err = ErrInvalidSchemaOrData
+			}
+		}
+	case reflect.String:
+		l, err = getLength(x.od)
+	default:
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Index(idx int) (v Value, err error) {
+	switch x.Kind() {
+	case reflect.Array:
+		var (
+			ln int = x.s.Len()
+			el *Schema
+
+			shift int
+		)
+		if idx >= ln {
+			err = ErrIndexOutOfRange
+			return
+		}
+		if el, err = x.s.Elem(); err != nil {
+			return
+		}
+		if s := fixedSize(el.Kind()); s > 0 {
+			shift = idx * s
+			if shift+s > len(x.od) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			v = &value{x.r, el, od[shift : shift+s]}
+		} else {
+			var m int
+			for ; idx >= 0; idx-- {
+				if shift >= len(x.od) {
+					err = ErrInvalidSchemaOrData
+					return
+				}
+				if m, err = el.Size(x.od[shift:]); err != nil {
+					return
+				}
+				if idx == 0 {
+					v = &value{x.r, el, x.od[shift : shift+m]}
+					break
+				}
+				shift += m
+			}
+		}
+	case reflect.Slice:
+		var el *Schema
+		if el, err = x.s.Elem(); err != nil {
+			return
+		}
+		var ln int // length of encoded data, bytes
+		if ln, err = getLength(x.od); err != nil {
+			return
+		}
+		var shift int = 4 // length encoded as uint32 - 4 byte
+		if s := fixedSize(el.Kind()); s > 0 {
+			var l = ln / s // length of the slice, elements
+			if (l)*s != ln {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if idx >= l {
+				err = ErrIndexOutOfRange
+				return
+			}
+			v = &value{x.r, el, x.od[shift+s*idx : shift+s*idx+s]}
+		} else {
+			var m int
+			for ; idx >= 0; idx-- {
+				if shift >= len(x.od) {
+					err = ErrInvalidSchemaOrData
+					return
+				}
+				if m, err = el.Size(x.od[shift:]); err != nil {
+					return
+				}
+				if idx == 0 {
+					v = &value{x.r, el, x.od[shift : shift+m]}
+					break
+				}
+				shift += m
+			}
+		}
+	default:
+		err = ErrInvalidType
+	}
+	return
+}
+
+func (x *value) Schema() *Schema {
+	return x.s
+}
+
+func (r *Root) Values() (vs []Value, err error) {
+	//
+}
+
+//
+// schema size
+//
+
+func (s *Schema) Size(p []byte) (n int, err error) {
+	switch s.Kind() {
+	case reflect.Bool, reflect.Int8, reflect.Uint8:
+		n = 1
+	case reflect.Int16, reflect.Uint16:
+		n = 2
+	case reflect.Int32, reflect.Uint32, reflect.Float32:
+		n = 4
+	case reflect.Int64, reflect.Uint64, reflect.Float64:
+		n = 8
+	case reflect.String, reflect.Slice:
+		// it's not length of a slice;
+		// it's length of encoded slice
+		n, err = getLength(p)
+	case reflect.Array:
+		var l int = s.Len()
+		var el *Schema
+		if el, err = s.Elem(); err != nil {
+			return
+		}
+		if s := fixedSize(el.Kind()); s > 0 {
+			n = l * s
+		} else {
+			var m int
+			for i := 0; i < l; i++ {
+				if n >= len(p) {
+					err = ErrInvalidSchemaOrData
+					return
+				}
+				if m, err = el.Size(p[n:]); err != nil {
+					return
+				}
+				n += m
+			}
+		}
+	case reflect.Struct:
+		var m int
+		for _, sf := range s.Fields() {
+			var ss *Schema
+			if ss, err = sf.Schema(); err != nil {
+				return
+			}
+			if n >= len(p) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if m, err = ss.Size(p[n:]); err != nil {
+				return
+			}
+			n += m
+		}
+	default:
+		err = ErrInvalidSchema
+	}
+	return
+}
+
+//
+// helpers
+//
+
+func getLength(p []byte) (l int, err error) {
+	var u uint32
+	err = encoder.DeserializeRaw(p, &u)
+	l = int(u)
+	return
+}
+
+func fixedSize(kind reflect.Kind) (n int) {
+	switch kind {
+	case reflect.Bool, reflect.Int8, reflect.Uint8:
+		n = 1
+	case reflect.Int16, reflect.Uint16:
+		n = 2
+	case reflect.Int32, reflect.Uint32, reflect.Float32:
+		n = 4
+	case reflect.Int64, reflect.Uint64, reflect.Float64:
+		n = 8
+	default:
+		-1
+	}
 	return
 }

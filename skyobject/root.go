@@ -84,3 +84,21 @@ func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
 	ok = c.AddRoot(root)
 	return
 }
+
+func (r *Root) Schema(sk Reference) (s *Schema, err error) {
+	if sk == (Reference{}) {
+		err = ErrEmptySchemaKey
+		return
+	}
+	var sd []byte // shcema data and object data
+	var ok bool   // exist
+	if sd, ok = r.cnt.get(sk); !ok {
+		err = MissingSchema{sk}
+		return
+	}
+	s = new(Schema)
+	if err = s.Decode(r.reg, sd); err != nil {
+		s = nil
+	}
+	return
+}
