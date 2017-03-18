@@ -128,20 +128,15 @@ type shortSchema struct {
 }
 
 func (s *shortSchema) Schema() (sv *Schema, err error) {
-	if isFlat(s.Kind()) { // create schema
+	if kind := s.Kind(); isFlat(kind) || kind == reflect.Ptr { // create schema
 		// no elemnts, length, and fields for flat types
 		sv = &Schema{schemaHead: s.schemaHead} // kind + possible name
 	} else if s.IsNamed() { // get from db
-		switch s.Name() {
-		case singleRef, arrayRef, dynamicRef: // special types
-			sv = &Schema{schemaHead: s.schemaHead} // kind + name
-		default:
-			sv, err = s.sr.schemaByName(s.Name())
-		}
+		sv, err = s.sr.schemaByName(s.Name())
 	} else if len(s.schema) == 1 { // get from slice
 		sv = &s.schema[0]
 	} else {
-		err = ErrInvalidSchema // missing schema in the slice
+		err = ErrInvalidSchema // missing schema in the slice (or array)
 	}
 	return
 }
@@ -174,7 +169,7 @@ func (s *Schema) Fields() []Field {
 func (s *Schema) toShort() (sho *shortSchema) {
 	sho = new(shortSchema)
 	sho.schemaHead = s.schemaHead
-	if isFlat(s.Kind()) || s.IsNamed() {
+	if kind := s.Kind(); isFlat(kind) || kind == reflect.Ptr || s.IsNamed() {
 		return // we don't need the schema
 	}
 	sho.schema = []Schema{*s} // non-flat unnamed type
@@ -205,16 +200,20 @@ func (f *Field) Tag() reflect.StructTag {
 // Schema returns schema of the field or error if any
 func (f *Field) Schema() (sv *Schema, err error) {
 	sv, err = f.shortSchema.Schema()
+	if f.IsReference() {
+		var rs *Schema
+		if rs, err = f.SchemaOfReference(); err != nil {
+			sv = nil
+			return
+		}
+		sv.elem.schema = []Schema{*rs}
+	}
 	return
 }
 
-// TORM: never used
 // IsReference reports that the field contains references
 func (f *Field) IsReference() bool {
-	switch f.TypeName() {
-	case singleRef, arrayRef, dynamicRef:
-	}
-	return false
+	return f.Kind() == reflect.Ptr
 }
 
 // SchemaOfReference returns schema of type, to which the field refer to.
@@ -258,7 +257,8 @@ func (s *schemaReg) getSchemaOfType(typ reflect.Type) (sv *Schema) {
 	}
 	switch name {
 	case singleRef, dynamicRef, arrayRef: // special types
-		return // we don't register special types
+		sv.kind == uint32(reflect.Ptr) // use ptr kind for references
+		return                         // we don't register special types
 	case "":
 		break // encode
 	default: // named type
@@ -403,8 +403,14 @@ func schemaNameFromTag(tag string) (name string, err error) {
 	return
 }
 
+// ========================================================================== //
+//                                                                            //
+//                       serialize and deserialze                             //
+//                                                                            //
+// ========================================================================== //
+
 //
-// serialize and deserialze (TODO: simplify, DRY)
+// encode
 //
 
 func (s *schemaHead) encode() []byte {
@@ -456,6 +462,10 @@ func (s *Schema) Encode() []byte {
 	}
 	return encoder.Serialize(&x)
 }
+
+//
+// decode
+//
 
 func (s *schemaHead) decode(sr *schemaReg, p []byte) (err error) {
 	var x struct {

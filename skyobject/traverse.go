@@ -70,12 +70,16 @@ type Value interface {
 	Fields() []string // names of fields
 	FieldByName(name string) (v Value, err error)
 
-	// slices and arrays
+	// slices, arrays and slice of references
 	Len() (l int, err error)
 	Index(idx int) (v Value, err error)
 
 	Schema() *Schema
 }
+
+//
+// data value
+//
 
 type value struct {
 	r  *Root // back reference
@@ -84,43 +88,61 @@ type value struct {
 }
 
 func (x *value) Kind() reflect.Kind {
-	return x.s.Kind()
+	var kind reflect.Kind = x.s.Kind()
+	if kind == reflect.Ptr && x.s.Name() == arrayRef {
+		return reflect.Slice // treat a slice of references as slice
+	}
+	return kind
 }
 
-func (x *value) dereference() (v Value, err error) {
+// If
+func (x *value) Dereference() (v Value, err error) {
+	if x.Kind() != reflect.Ptr {
+		err = ErrInvalidType
+		return
+	}
 	switch x.s.Name() {
 	case dynamicRef:
 		var dr Dynamic
 		if err = encoder.DeserializeRaw(x.od, &dr); err != nil {
 			return
 		}
-		var s Schema
-		if sd, ok := x.r.cnt.get(dr.Schema); !ok {
+		var (
+			s Schema
+
+			sd, od []byte
+			ok     bool
+		)
+		if sd, ok = x.r.cnt.get(dr.Schema); !ok {
 			err = &MissingSchema{dr.Schema}
 			return
-		} else {
-			if err = s.Decode(x.r.reg, sd); err != nil {
-				return
-			}
 		}
-		if od, ok := x.r.cnt.get(dr.Object); !ok {
+		if err = s.Decode(x.r.reg, sd); err != nil {
+			return
+		}
+		if od, ok = x.r.cnt.get(dr.Object); !ok {
 			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
 			return
 		}
 		v = &value{x.r, &s, od}
 	case singleRef:
+		var el *Schema
+		if el, err = x.s.Elem(); err != nil {
+			return
+		}
 		var ref Reference
 		if err = encoder.DeserializeRaw(x.od, &ref); err != nil {
 			return
 		}
-		if od, ok := x.r.cnt.get(ref); !ok {
+		var (
+			od []byte
+			ok bool
+		)
+		if od, ok = x.r.cnt.get(ref); !ok {
 			err = &MissingObject{key: ref, schemaName: x.s.Name()}
 			return
-		} else {
-			//
 		}
-	case arrayRef:
-		//
+		v = &value{x.r, el, od}
 	default:
 		err = ErrInvalidType
 	}
@@ -180,6 +202,7 @@ func (x *value) Uint() (u uint64, err error) {
 	return
 }
 
+// String returns string if underlying value is string
 func (x *value) String() (s string, err error) {
 	if x.Kind() == reflect.String {
 		err = encoder.DeserializeRaw(x.od, &s)
@@ -189,6 +212,7 @@ func (x *value) String() (s string, err error) {
 	return
 }
 
+// Bytes returns []byte of underlying value if the value is []byte or string
 func (x *value) Bytes() (p []byte, err error) {
 	if x.Kind() == reflect.Slice {
 		var el *Schema
@@ -212,6 +236,8 @@ func (x *value) Bytes() (p []byte, err error) {
 	return
 }
 
+// Float returns float64 if type of underlying encoded value is float32 or
+// float64
 func (x *value) Float() (f float64, err error) {
 	switch x.Kind() {
 	case reflect.Float32:
@@ -226,6 +252,8 @@ func (x *value) Float() (f float64, err error) {
 	return
 }
 
+// Fields returns list of name of all fields. It returns empty slice for
+// structs without fields and for non-struct values
 func (x *value) Fields() (fs []string) {
 	if len(x.s.fields) == 0 {
 		return
@@ -237,6 +265,9 @@ func (x *value) Fields() (fs []string) {
 	return
 }
 
+// FieldByName returns value of the field by given name. It returns
+// ErrInvalidType if type of the value is not a struct. It returns
+// ErrNoSuchField if field with given name doesn't exist
 func (x *value) FieldByName(name string) (v Value, err error) {
 	if x.Kind() != reflect.Struct {
 		err = ErrInvalidType
@@ -269,6 +300,8 @@ func (x *value) FieldByName(name string) (v Value, err error) {
 	return
 }
 
+// Len returns length of array, slice or string. It returns ErrInvalidType
+// for another types
 func (x *value) Len() (l int, err error) {
 	switch x.Kind() {
 	case reflect.Array:
@@ -310,7 +343,11 @@ func (x *value) Len() (l int, err error) {
 	return
 }
 
+// Index returns value by index. It returns ErrInvalidType if type of the
+// value is not array, slice or slice of references (that treated as slice)
 func (x *value) Index(idx int) (v Value, err error) {
+	// (*value).Kind returns reflect.Slice for slice of references too,
+	// but (*value).s.Kind() returns actual kind of its schema
 	switch x.Kind() {
 	case reflect.Array:
 		var (
@@ -351,6 +388,8 @@ func (x *value) Index(idx int) (v Value, err error) {
 			}
 		}
 	case reflect.Slice:
+		// any slice or slice of references too;
+		// a slice of references must have element that set by field;
 		var el *Schema
 		if el, err = x.s.Elem(); err != nil {
 			return
@@ -382,6 +421,20 @@ func (x *value) Index(idx int) (v Value, err error) {
 					return
 				}
 				if idx == 0 {
+					// short curcit; actually, kind of arrayRef is allways
+					// reflect.Ptr
+					if x.s.Kind() == reflect.Ptr && x.s.Name() == arrayRef {
+						// for references the el contains schema of type
+						// the reference points to; but the Dereference
+						// method requires schema of single reference;
+						// and element of the single reference must points to
+						// type the reference points to
+						el = &Schema{
+							kind:     uint32(reflect.Ptr),
+							typeName: []byte(singleRef),
+							elem:     []Schema{*el},
+						}
+					}
 					v = &value{x.r, el, x.od[shift : shift+m]}
 					break
 				}
@@ -397,6 +450,10 @@ func (x *value) Index(idx int) (v Value, err error) {
 func (x *value) Schema() *Schema {
 	return x.s
 }
+
+//
+// reference value
+//
 
 func (r *Root) Values() (vs []Value, err error) {
 	//
