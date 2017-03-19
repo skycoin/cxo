@@ -51,7 +51,7 @@ func (r *Registry) Register(name string, i interface{}) {
 	}
 	if rn, ok := r.nmr[name]; ok && rn != tn {
 		panic("another type aready registered with given name")
-	} else if rn == rn {
+	} else if rn == tn {
 		return // the same name, the same type,  already registered
 	}
 	if _, ok := r.reg[tn]; !ok {
@@ -114,6 +114,13 @@ func (r *Registry) getSchema(typ reflect.Type) (s *Schema) {
 		case singleRef, arrayRef, dynamicRef:
 			s._kind = uint32(reflect.Ptr)
 			return
+		}
+		// solve problem of recursion
+		if _, ok := r.reg[s.Name()]; ok {
+			// already saved or holded
+			return
+		} else { // hold
+			r.reg[s.Name()] = cipher.SHA256{}
 		}
 	}
 	switch typ.Kind() {
@@ -345,6 +352,12 @@ func (s *Schema) Decode(sr *Registry, p []byte) (err error) {
 		return
 	}
 	s.sr = sr
+	if len(s._elem) > 0 {
+		s._elem[0].sr = sr
+	}
+	for i := 0; i < len(s._fields); i++ {
+		s._fields[i]._schema.sr = sr
+	}
 	return
 }
 
