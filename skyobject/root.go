@@ -18,7 +18,7 @@ type Root struct {
 	Sign cipher.Sig    // signature
 	Pub  cipher.PubKey // public key
 
-	reg *schemaReg `enc:"-"` // TODO: encoding and decoding
+	reg *Registry  `enc:"-"` // TODO: encoding and decoding
 	cnt *Container `enc:"-"` // back reference
 }
 
@@ -74,7 +74,7 @@ func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
 	}
 	var root *Root = &x.Root
 	root.cnt = c
-	root.reg = newSchemaReg(c.db)
+	root.reg = NewRegistery(c.db)
 	for _, v := range x.Nmr {
 		root.reg.nmr[v.K] = v.V
 	}
@@ -85,20 +85,11 @@ func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
 	return
 }
 
-func (r *Root) Schema(sk Reference) (s *Schema, err error) {
-	if sk == (Reference{}) {
+func (r *Root) SchemaByReference(sr Reference) (s *Schema, err error) {
+	if sr == (Reference{}) {
 		err = ErrEmptySchemaKey
 		return
 	}
-	var sd []byte // shcema data and object data
-	var ok bool   // exist
-	if sd, ok = r.cnt.get(sk); !ok {
-		err = &MissingSchema{sk}
-		return
-	}
-	s = new(Schema)
-	if err = s.Decode(r.reg, sd); err != nil {
-		s = nil
-	}
+	s, err = r.reg.SchemaByReference(sr)
 	return
 }

@@ -25,7 +25,7 @@ func pubKey() (pk cipher.PubKey) {
 	return
 }
 
-func findSchemaName(sr *schemaReg, ref Reference) (name string, ok bool) {
+func findSchemaName(sr *Registry, ref Reference) (name string, ok bool) {
 	for n, sk := range sr.reg {
 		if cipher.SHA256(ref) == sk {
 			name, ok = n, true

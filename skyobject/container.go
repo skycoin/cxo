@@ -16,6 +16,7 @@ var (
 	ErrInvalidTag         = errors.New("invalid tag")
 	ErrMissingSchemaTag   = errors.New("missing schema tag")
 	ErrEmptySchemaKey     = errors.New("empty schema key")
+	ErrNotFound           = errors.New("not found")
 )
 
 // A Container represents type helper to manage root objects
@@ -44,7 +45,7 @@ func NewContainer(db *data.DB) (c *Container) {
 // to the Container
 func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 	root = new(Root)
-	root.reg = newSchemaReg(c.db)
+	root.reg = NewRegistery(c.db)
 	root.cnt = c
 	root.Pub = pk
 	return

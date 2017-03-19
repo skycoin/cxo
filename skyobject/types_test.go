@@ -1,9 +1,5 @@
 package skyobject
 
-import (
-	"fmt"
-)
-
 type Age uint32
 
 type Group struct {
@@ -31,21 +27,4 @@ type Man struct {
 	Seecret []byte
 	Owner   Group
 	Friends List
-}
-
-//
-
-func schemaRegString(reg *schemaReg) (s string) {
-	s = fmt.Sprintf(`schemaReg{
-  db:  %p
-  nmr: %v
-  reg: {
-`,
-		reg.db,
-		reg.nmr)
-	for k, v := range reg.reg {
-		s += "    " + k + ": " + v.Hex() + "\n"
-	}
-	s += "  }\n}"
-	return
 }

@@ -245,10 +245,10 @@ func (x *value) Float() (f float64, err error) {
 // Fields returns list of name of all fields. It returns empty slice for
 // structs without fields and for non-struct values
 func (x *value) Fields() (fs []string) {
-	if len(x.s.fields) == 0 {
+	if len(x.s.Fields()) == 0 {
 		return
 	}
-	fs = make([]string, 0, len(x.s.fields))
+	fs = make([]string, 0, len(x.s.Fields()))
 	for _, sf := range x.s.Fields() {
 		fs = append(fs, sf.Name())
 	}
@@ -264,7 +264,7 @@ func (x *value) FieldByName(name string) (v Value, err error) {
 		return
 	}
 	var shift int
-	for _, sf := range x.s.fields {
+	for _, sf := range x.s.Fields() {
 		var fs *Schema
 		if fs, err = sf.Schema(); err != nil {
 			return
@@ -411,27 +411,20 @@ func (x *value) Index(idx int) (v Value, err error) {
 					return
 				}
 				if idx == 0 {
-					// short curcit; actually, kind of arrayRef is allways
-					// reflect.Ptr
+					// short curcit; actually, kind of arrayRef is reflect.Ptr
+					// allways
 					if x.s.Kind() == reflect.Ptr && x.s.Name() == arrayRef {
 						// for references the el contains schema of type
 						// the reference points to; but the Dereference
 						// method requires schema of single reference;
 						// and element of the single reference must points to
 						// type the reference points to
+						x := *el // copy
 						el = &Schema{
-							schemaHead: schemaHead{
-								kind:     uint32(reflect.Ptr),
-								typeName: []byte(singleRef),
-							},
-							elem: shortSchema{
-								schemaHead: schemaHead{
-									kind:     el.kind,
-									typeName: el.typeName,
-								},
-								schema: []Schema{*el},
-							},
+							_kind: uint32(reflect.Ptr),
+							_name: []byte(singleRef),
 						}
+						el.setElem(&x)
 					}
 					v = &value{x.r, el, x.od[shift : shift+m]}
 					break

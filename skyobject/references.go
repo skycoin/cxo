@@ -1,8 +1,6 @@
 package skyobject
 
 import (
-	"reflect"
-
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
@@ -49,24 +47,7 @@ type Dynamic struct {
 
 // SaveSchema and get reference-key to it
 func (r *Root) SaveSchema(i interface{}) (ref Reference) {
-	typ := reflect.Indirect(reflect.ValueOf(i)).Type()
-	name := typeName(typ)
-	switch name {
-	case singleRef, arrayRef, dynamicRef:
-		panic("can't save special type")
-	default:
-	}
-FromMap:
-	if sk, ok := r.reg.reg[name]; ok {
-		ref = Reference(sk)
-		return
-	}
-	sv := r.reg.getSchema(i)
-	if sv.IsNamed() { // getSchema registers named type automatically
-		goto FromMap
-	}
-	ref = Reference(r.reg.db.AddAutoKey(sv.Encode())) // save manually
-	return
+	return r.reg.SaveSchema(i)
 }
 
 func (r *Root) Dynamic(i interface{}) (dn Dynamic) {
