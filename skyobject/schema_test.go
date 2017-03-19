@@ -116,6 +116,11 @@ func TestRegistry_SaveSchema(t *testing.T) {
 		defer shouldPanic(t)
 		r.SaveSchema(x)
 	})
+	t.Run("unnamed type", func(t *testing.T) {
+		r := NewRegistery(data.NewDB())
+		defer shouldPanic(t)
+		r.SaveSchema(int(0))
+	})
 	t.Run("valid", func(t *testing.T) {
 		r := NewRegistery(data.NewDB())
 		ur := r.SaveSchema(User{})
@@ -332,18 +337,6 @@ func TestRegistry_getSchema(t *testing.T) {
 		}
 	})
 	t.Run("flat named", func(t *testing.T) {
-		type Bool bool
-		type Int8 int8
-		type Int16 int16
-		type Int32 int32
-		type Int64 int64
-		type Uint8 uint8
-		type Uint16 uint16
-		type Uint32 uint32
-		type Uint64 uint64
-		type Float32 float32
-		type Float64 float64
-		type String string
 		r := NewRegistery(data.NewDB())
 		for _, i := range []interface{}{
 			Bool(false),
@@ -574,7 +567,17 @@ func TestSchema_isSaved(t *testing.T) {
 }
 
 func TestSchema_load(t *testing.T) {
-	// TODO
+	r := NewRegistery(data.NewDB())
+	r.Register("User", User{})
+	s := r.getSchema(reflect.TypeOf(User{}))
+	// s already registered
+	if len(s.fields) != 0 {
+		t.Error("wrong fields count: ", len(s.fields))
+	}
+	s.load()
+	if len(s.fields) != 2 {
+		t.Error("wrong fields count: ", len(s.fields))
+	}
 }
 
 func TestSchema_String(t *testing.T) {

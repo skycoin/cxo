@@ -64,6 +64,9 @@ func (r *Registry) Register(name string, i interface{}) {
 func (r *Registry) SaveSchema(i interface{}) (ref Reference) {
 	typ := reflect.Indirect(reflect.ValueOf(i)).Type()
 	tn := typeName(typ)
+	if tn == "" {
+		panic("schema of unnamed and builtin types is not allowed for saving")
+	}
 	var ok bool
 	var ch cipher.SHA256
 	if ch, ok = r.reg[tn]; ok {
@@ -239,7 +242,9 @@ func (s *Schema) isSaved() (yep bool) {
 }
 
 func (s *Schema) load() (err error) {
-	s, err = s.sr.SchemaByTypeName(s.Name())
+	var x *Schema
+	x, err = s.sr.SchemaByTypeName(s.Name())
+	*s = *x
 	return
 }
 

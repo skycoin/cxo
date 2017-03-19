@@ -274,7 +274,9 @@ func (x *value) FieldByName(name string) (v Value, err error) {
 			err = ErrInvalidSchemaOrData
 			return
 		}
-		n, err = fs.Size(x.od[shift:])
+		if n, err = fs.Size(x.od[shift:]); err != nil {
+			return
+		}
 		if sf.Name() != name {
 			shift += n
 			continue
@@ -455,7 +457,7 @@ func (r *Root) Values() (vs []Value, err error) {
 	}
 	vs = make([]Value, 0, len(r.Refs))
 	var (
-		s Schema
+		s *Schema
 
 		sd, od []byte
 		ok     bool
@@ -465,6 +467,7 @@ func (r *Root) Values() (vs []Value, err error) {
 			err = &MissingSchema{dr.Schema}
 			return
 		}
+		s = new(Schema)
 		if err = s.Decode(r.reg, sd); err != nil {
 			return
 		}
@@ -472,7 +475,7 @@ func (r *Root) Values() (vs []Value, err error) {
 			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
 			return
 		}
-		vs = append(vs, &value{r, &s, od})
+		vs = append(vs, &value{r, s, od})
 	}
 	return
 }
@@ -531,6 +534,17 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 				return
 			}
 			n += m
+		}
+	case reflect.Ptr:
+		switch s.Name() {
+		case singleRef:
+			n = len(Reference{})
+		case arrayRef:
+			n, err = getLength(p)
+		case dynamicRef:
+			n = 2 * len(Reference{})
+		default:
+			err = ErrInvalidSchema
 		}
 	default:
 		err = ErrInvalidSchema
