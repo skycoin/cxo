@@ -50,11 +50,11 @@ func cmpSchemes(a, b *Schema, t *testing.T) (equal bool) {
 				equal = false
 			}
 			if af.Tag() != bf.Tag() {
-				t.Error("missmatch tags: %q - %q", af.Tag(), bf.Tag())
+				t.Errorf("missmatch tags: `%s` - `%s`", af.Tag(), bf.Tag())
 				equal = false
 			}
 			if string(af.ref) != string(bf.ref) {
-				t.Error("missmatch reference: %q - %q",
+				t.Errorf("missmatch reference: %q - %q",
 					string(af.ref), string(bf.ref))
 				equal = false
 			}
@@ -193,8 +193,99 @@ func TestRegistry_SchemaByReference(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		// TODO
-		t.Log("Schema: ", s)
+		if s.Kind() != reflect.Struct {
+			t.Error("wrong kind")
+		}
+		if s.Name() != typeName(reflect.TypeOf(User{})) {
+			t.Error("wrong type name")
+		}
+		if len(s.fields) != 2 {
+			t.Error("wrong fields coount")
+			return
+		}
+		// Name string
+		name := s.fields[0]
+		if name.Kind() != reflect.String {
+			t.Error("#1 wrong kind")
+		}
+		if name.Name() != "Name" {
+			t.Error("#1 wrong name")
+		}
+		if name.TypeName() != "" {
+			t.Error("#1 wrong type name")
+		}
+		// Age Age
+		age := s.fields[1]
+		if age.Kind() != reflect.Uint32 {
+			t.Error("#2 wrong kind")
+		}
+		if age.Name() != "Age" {
+			t.Error("#1 wrong name")
+		}
+		if age.TypeName() != typeName(reflect.TypeOf(Age(0))) {
+			t.Error("#2 wrong type name")
+		}
+	})
+	t.Run("complex", func(t *testing.T) {
+		r := NewRegistery(data.NewDB())
+		r.Register("User", User{})
+		gr := r.SaveSchema(Group{})
+		s, err := r.SchemaByReference(gr)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		cmpSchemes(s, &Schema{
+			name: []byte(typeName(reflect.TypeOf(Group{}))),
+			kind: uint32(reflect.Struct),
+			fields: []Field{
+				Field{
+					name: []byte("Name"),
+				},
+				Field{
+					name: []byte("Leader"),
+					tag:  []byte(`skyobject:"schema=User"`),
+					ref:  []byte("github.com/logrusorgru/cxo/skyobject.User"),
+				},
+				Field{
+					name: []byte("Members"),
+					tag:  []byte(`skyobject:"schema=User"`),
+					ref:  []byte("github.com/logrusorgru/cxo/skyobject.User"),
+				},
+				Field{
+					name: []byte("Curator"),
+				},
+			},
+		}, t)
+		// schema of User
+		us := r.getSchema(reflect.TypeOf(User{}))
+		if err := us.load(); err != nil {
+			t.Error("error loading User: ", err)
+		}
+		// Leader
+		if leader, err := s.fields[1].Schema(); err != nil {
+			t.Error(err)
+		} else {
+			if el, err := leader.Elem(); err != nil {
+				t.Error(err)
+			} else {
+				if !cmpSchemes(el, us, t) {
+					t.Error("leader is not equal")
+				}
+			}
+		}
+		// Members
+		if members, err := s.fields[1].Schema(); err != nil {
+			t.Error(err)
+		} else {
+			if el, err := members.Elem(); err != nil {
+				t.Error(err)
+			} else {
+				if !cmpSchemes(el, us, t) {
+					t.Error("leader is not equal")
+				}
+			}
+		}
 	})
 }
 
@@ -503,7 +594,7 @@ func TestField_Name(t *testing.T) {
 }
 
 func TestField_Schema(t *testing.T) {
-	// TODO
+	// TODO --------------------------------------------------------------------
 }
 
 func TestField_Tag(t *testing.T) {

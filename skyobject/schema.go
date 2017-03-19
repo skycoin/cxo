@@ -118,10 +118,9 @@ func (r *Registry) getSchema(typ reflect.Type) (s *Schema) {
 		}
 		// solve problem of recursion
 		if _, ok := r.reg[s.Name()]; ok {
-			// already saved or holded
-			return
-		} else { // hold
-			r.reg[s.Name()] = cipher.SHA256{}
+			return // already saved or holded
+		} else {
+			r.reg[s.Name()] = cipher.SHA256{} // hold using empty reference
 		}
 	}
 	switch typ.Kind() {

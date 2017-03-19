@@ -1,6 +1,5 @@
 package skyobject
 
-/*
 import (
 	"reflect"
 	"testing"
@@ -43,7 +42,7 @@ func TestValue_Kind(t *testing.T) {
 			reflect.Ptr,
 		} {
 			kind := (&value{nil, &Schema{
-				_kind: uint32(k),
+				kind: uint32(k),
 			}, nil}).Kind()
 			if kind != k {
 				t.Error("wrong kind: want %s, got %s", k, kind)
@@ -53,8 +52,8 @@ func TestValue_Kind(t *testing.T) {
 	})
 	t.Run("references", func(t *testing.T) {
 		s := &Schema{
-			_kind: uint32(reflect.Ptr), // <- pointer
-			_name: []byte(arrayRef),    // <- reference
+			kind: uint32(reflect.Ptr), // <- pointer
+			name: []byte(arrayRef),    // <- reference
 		}
 		kind := (&value{nil, s, nil}).Kind()
 		if kind != reflect.Slice { // <- slice
@@ -98,8 +97,10 @@ func TestValue_Dereference(t *testing.T) {
 		t.Error("unexpected kind of group: ", group.Kind())
 		return
 	}
+	if len(group.Fields()) != 4 {
+		t.Error("wrong number of fields: ", len(group.Fields()))
+	}
 	for _, fn := range group.Fields() {
-		t.Log("FIELD: ", fn)
 		fl, err := group.FieldByName(fn)
 		if err != nil {
 			t.Errorf("get field %q error: %v", fn, err)
@@ -177,4 +178,3 @@ func Test_getLength(t *testing.T) {
 func Test_fixedSize(t *testing.T) {
 	//
 }
-*/
