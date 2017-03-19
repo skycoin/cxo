@@ -433,8 +433,12 @@ func TestRegistry_getField(t *testing.T) {
 				if sf.TypeName() != dynamicRef {
 					t.Error("wrong field type: ", sf.TypeName())
 				}
-				if _, err := sf.Schema(); err == nil {
-					t.Error("missing error")
+				if fs, err := sf.Schema(); err != nil {
+					t.Error(err)
+				} else {
+					if _, err := fs.Elem(); err == nil {
+						t.Error("missing error")
+					}
 				}
 			default:
 				t.Errorf("wrong kind of field %q: want %s, got %s",

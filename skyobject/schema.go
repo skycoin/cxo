@@ -107,6 +107,7 @@ func (r *Registry) SchemaByReference(sr Reference) (s *Schema, err error) {
 
 func (r *Registry) getSchema(typ reflect.Type) (s *Schema) {
 	s = new(Schema)
+	s.sr = r
 	s.kind = uint32(typ.Kind())
 	s.name = []byte(typeName(typ))
 	if s.isNamed() {
@@ -367,7 +368,7 @@ func newEncodingSchema(s *Schema) (e encodingSchema) {
 	e.Name = s.name
 	e.Length = s.length
 	if len(s.elem) == 1 {
-		e.Elem = []encodingSchema{newEncodingSchema(&s.elem[1])}
+		e.Elem = []encodingSchema{newEncodingSchema(&s.elem[0])}
 	}
 	for _, sf := range s.fields {
 		e.Fields = append(e.Fields, newEncodingField(&sf))
