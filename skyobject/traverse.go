@@ -269,11 +269,11 @@ func (x *value) FieldByName(name string) (v Value, err error) {
 		if fs, err = sf.Schema(); err != nil {
 			return
 		}
-		var n int
 		if shift >= len(x.od) {
 			err = ErrInvalidSchemaOrData
 			return
 		}
+		var n int
 		if n, err = fs.Size(x.od[shift:]); err != nil {
 			return
 		}
@@ -281,7 +281,7 @@ func (x *value) FieldByName(name string) (v Value, err error) {
 			shift += n
 			continue
 		}
-		if shift+n >= len(x.od) {
+		if shift+n > len(x.od) {
 			err = ErrInvalidSchemaOrData
 			return
 		}
@@ -497,7 +497,10 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 	case reflect.String, reflect.Slice:
 		// it's not length of a slice;
 		// it's length of encoded slice
-		n, err = getLength(p)
+		if n, err = getLength(p); err != nil {
+			return
+		}
+		n += 4
 	case reflect.Array:
 		var l int = s.Len()
 		var el *Schema
@@ -540,7 +543,9 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 		case singleRef:
 			n = len(Reference{})
 		case arrayRef:
-			n, err = getLength(p)
+			if n, err = getLength(p); err == nil {
+				n += 4
+			}
 		case dynamicRef:
 			n = 2 * len(Reference{})
 		default:

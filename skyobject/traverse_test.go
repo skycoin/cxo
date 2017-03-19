@@ -451,19 +451,23 @@ func TestValue_Fields(t *testing.T) {
 			return
 		}
 		sizes := []int{
+			// # Group
 			// Name    string
 			// Leader  Reference  `skyobject:"schema=User"`
 			// Members References `skyobject:"schema=User"`
 			// Curator Dynamic
 			4 + len(Reference{}) + 4 + 2*len(Reference{}),
-			// Name   string ``
-			// Age    Age    `json:"age"`
-			// Hidden int    `enc:"-"`
-			4 + 4 + 4,
+			// # List
 			// Name     string
 			// Members  References `skyobject:"schema=User"`
 			// MemberOf []Group
+			4 + 4 + 4,
+			// # User
+			// Name   string ``
+			// Age    Age    `json:"age"`
+			// Hidden int    `enc:"-"`
 			4 + 4,
+			// # Man
 			// Name    string
 			// Age     Age
 			// Seecret []byte
@@ -503,7 +507,51 @@ func TestValue_Fields(t *testing.T) {
 }
 
 func TestValue_FieldByName(t *testing.T) {
-	//
+	t.Run("simple", func(t *testing.T) {
+		root := getRoot()
+		name := "Alice"
+		age := Age(21)
+		root.Inject(User{name, age, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		// Name   string ``
+		// Age    Age    `json:"age"`
+		// Hidden int    `enc:"-"`
+		// 4 + 4
+		val := vs[0]
+		if val.Kind() != reflect.Struct {
+			t.Error("unexpected kind: ", val.Kind())
+		}
+		if ln := len(val.(*value).od); ln != len(name)+4+4 {
+			t.Error("wrong length of data: ", ln)
+		}
+		// Name
+		if fname, err := val.FieldByName("Name"); err != nil {
+			t.Error(err)
+		} else if ln := len(fname.(*value).od); ln != 4+len(name) {
+			t.Error("wrong length of encoded field: ", ln)
+		} else if s, err := fname.String(); err != nil {
+			t.Error(err)
+		} else if s != name {
+			t.Error("wrong name: ", s)
+		}
+		// Age
+		if fage, err := val.FieldByName("Age"); err != nil {
+			t.Error(err)
+		} else if ln := len(fage.(*value).od); ln != 4 {
+			t.Error("wrong length of encoded field: ", ln)
+		} else if i, err := fage.Uint(); err != nil {
+		} else if i != uint64(age) {
+			t.Error("wrong age: ", i)
+		}
+	})
 }
 
 func TestValue_Len(t *testing.T) {
