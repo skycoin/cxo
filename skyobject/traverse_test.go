@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/skycoin/skycoin/src/cipher/encoder"
+
 	"github.com/skycoin/cxo/data"
 )
 
@@ -359,11 +361,145 @@ func TestValue_Bytes(t *testing.T) {
 }
 
 func TestValue_Float(t *testing.T) {
-	//
+	t.Run("another", func(t *testing.T) {
+		root := getRoot()
+		root.Inject(Int16(0))
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		if _, err := vs[0].Bytes(); err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("all", func(t *testing.T) {
+		root := getRoot()
+		root.Inject(Float32(5.5))
+		root.Inject(Float64(7.7))
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 2 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		kinds := []reflect.Kind{
+			reflect.Float32,
+			reflect.Float64,
+		}
+		sizes := []int{4, 8}
+		for i, want := range []float64{5.5, 7.7} {
+			val := vs[i]
+			if val.Kind() != kinds[i] {
+				t.Error("unexpected kind: ", val.Kind())
+			}
+			if ln := len(val.(*value).od); ln != sizes[i] {
+				t.Error("wrong length of data: ", ln)
+			}
+			if x, err := val.Float(); err != nil {
+				t.Error(err)
+			} else if x != want {
+				t.Errorf("wrong value: want %t, got %t", want, x)
+			}
+		}
+	})
 }
 
 func TestValue_Fields(t *testing.T) {
-	//
+	t.Run("another", func(t *testing.T) {
+		root := getRoot()
+		root.Inject(Int16(0))
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		if len(vs[0].Fields()) != 0 {
+			t.Error("got fields on non-struct type")
+		}
+	})
+	t.Run("all", func(t *testing.T) {
+		root := getRoot()
+		root.RegisterSchema("User", User{})
+		strucures := []interface{}{
+			Group{},
+			List{},
+			User{},
+			Man{},
+		}
+		for _, s := range strucures {
+			root.Inject(s)
+		}
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != len(strucures) {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		sizes := []int{
+			// Name    string
+			// Leader  Reference  `skyobject:"schema=User"`
+			// Members References `skyobject:"schema=User"`
+			// Curator Dynamic
+			4 + len(Reference{}) + 4 + 2*len(Reference{}),
+			// Name   string ``
+			// Age    Age    `json:"age"`
+			// Hidden int    `enc:"-"`
+			4 + 4 + 4,
+			// Name     string
+			// Members  References `skyobject:"schema=User"`
+			// MemberOf []Group
+			4 + 4,
+			// Name    string
+			// Age     Age
+			// Seecret []byte
+			// Owner   Group
+			// Friends List
+			4 + 4 + 4 +
+				(4 + len(Reference{}) + 4 + 2*len(Reference{})) + // Group
+				(4 + 4 + 4), // List
+		}
+		for i, want := range strucures {
+			val := vs[i]
+			if val.Kind() != reflect.Struct {
+				t.Error("unexpected kind: ", val.Kind())
+			}
+			if ln := len(val.(*value).od); ln != len(encoder.Serialize(want)) {
+				t.Error("wrong length of data: ", ln)
+			} else {
+				if ln != sizes[i] {
+					t.Error("unexpected size: ", ln, sizes[i])
+				}
+			}
+			fields := val.Fields()
+			typ := reflect.TypeOf(want)
+			if g, w := len(fields), typ.NumField(); g != w {
+				if typ.Name() == "User" && g != 2 {
+					t.Errorf("wrong number of fields: %d - %d", w, g)
+					continue
+				}
+			}
+			for i, n := range fields {
+				if n != typ.Field(i).Name {
+					t.Error("wrong field name")
+				}
+			}
+		}
+	})
 }
 
 func TestValue_FieldByName(t *testing.T) {
