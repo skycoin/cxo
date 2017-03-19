@@ -15,6 +15,55 @@ func shouldPanic(t *testing.T) {
 	}
 }
 
+func cmpSchemes(a, b *Schema, t *testing.T) (equal bool) {
+	equal = true
+	if a.Kind() != b.Kind() {
+		t.Errorf("missmatch kind: %s - %s", a.Kind(), b.Kind())
+		equal = false
+	}
+	if a.Name() != b.Name() {
+		t.Errorf("missmatch name: %q - %q", a.Name(), b.Name())
+		equal = false
+	}
+	if len(a.elem) != len(b.elem) {
+		t.Errorf("missmatch elements length: %d - %d",
+			len(a.elem), len(b.elem))
+		equal = false
+	} else if len(a.elem) == 1 {
+		equal = equal || cmpSchemes(&a.elem[0], &b.elem[0], t)
+	}
+	if a.length != b.length {
+		t.Errorf("missmatch length: %d - %d",
+			a.length, b.length)
+		equal = false
+	}
+	if len(a.fields) != len(b.fields) {
+		t.Errorf("missmatch fields length: %d - %d",
+			len(a.fields), len(b.fields))
+		equal = false
+	} else {
+		for i := range a.fields {
+			af := a.fields[i]
+			bf := b.fields[i]
+			if af.Name() != bf.Name() {
+				t.Errorf("missmatch field name: %q - %q", af.Name(), bf.Name())
+				equal = false
+			}
+			if af.Tag() != bf.Tag() {
+				t.Error("missmatch tags: %q - %q", af.Tag(), bf.Tag())
+				equal = false
+			}
+			if string(af.ref) != string(bf.ref) {
+				t.Error("missmatch reference: %q - %q",
+					string(af.ref), string(bf.ref))
+				equal = false
+			}
+			equal = equal || cmpSchemes(&af.schema, &bf.schema, t)
+		}
+	}
+	return
+}
+
 func TestNewRegistery(t *testing.T) {
 	t.Run("nil db", func(t *testing.T) {
 		defer shouldPanic(t)
@@ -331,91 +380,188 @@ func TestRegistry_getSchema(t *testing.T) {
 func TestRegistry_getField(t *testing.T) {
 	r := NewRegistery(data.NewDB())
 	r.Register("User", User{})
-	//
+	typ := reflect.TypeOf(Group{})
+	s := r.getSchema(typ)
+	if len(s.Fields()) != 4 {
+		t.Error("wrong fields count: want 4, got: ", len(s.Fields()))
+		return
+	}
+	for i, sf := range s.Fields() {
+		fl := typ.Field(i)
+		if sf.Name() != fl.Name {
+			t.Error("wrong name of field #", i)
+		}
+		if sf.Tag() != fl.Tag {
+			t.Errorf("wrong tag of field %q", sf.Name())
+		}
+		if sf.Kind() != fl.Type.Kind() {
+			if i == 1 || i == 2 || i == 3 {
+				if sf.Kind() != reflect.Ptr {
+					t.Error("wrong kind of reference")
+				} else if !sf.isReference() {
+					t.Error("isReference wrong")
+				}
+			}
+			switch i {
+			case 1:
+				if sf.TypeName() != singleRef {
+					t.Error("wrong field type: ", sf.TypeName())
+				}
+				if fs, err := sf.Schema(); err != nil {
+					t.Error(err)
+				} else {
+					if el, err := fs.Elem(); err != nil {
+						t.Error(err)
+					} else if el.Name() != typeName(reflect.TypeOf(User{})) {
+						t.Error("wrong schema of element of reference")
+					}
+				}
+			case 2:
+				if sf.TypeName() != arrayRef {
+					t.Error("wrong field type: ", sf.TypeName())
+				}
+				if fs, err := sf.Schema(); err != nil {
+					t.Error(err)
+				} else {
+					if el, err := fs.Elem(); err != nil {
+						t.Error(err)
+					} else if el.Name() != typeName(reflect.TypeOf(User{})) {
+						t.Error("wrong schema of element of reference")
+					}
+				}
+			case 3:
+				if sf.TypeName() != dynamicRef {
+					t.Error("wrong field type: ", sf.TypeName())
+				}
+				if _, err := sf.Schema(); err == nil {
+					t.Error("missing error")
+				}
+			default:
+				t.Errorf("wrong kind of field %q: want %s, got %s",
+					sf.Name(),
+					fl.Type.Kind().String(),
+					sf.Kind().String())
+			}
+		}
+	}
 }
 
 func TestSchema_Name(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_Kind(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_Elem(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_Len(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_Fields(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_setElem(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_isNamed(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_isSaved(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_load(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestSchema_String(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_Kind(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_TypeName(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_Name(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_Schema(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_Tag(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_tagSchemaName(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_isReference(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestField_String(t *testing.T) {
-	//
+	// TODO
 }
 
-func TestSchema_reset(t *testing.T) {
-	//
+func Test_encodingSchema_Schema(t *testing.T) {
+	// to do or not to do
+}
+
+func Test_newEncodingSchema(t *testing.T) {
+	// to do or not to do
+}
+
+func Test_newEncodingField(t *testing.T) {
+	// to do or not to do
+}
+
+func Test_encodingField_Field(t *testing.T) {
+	// to do or not to do
 }
 
 func TestSchema_Encode(t *testing.T) {
-	//
+	r := NewRegistery(data.NewDB())
+	typ := reflect.TypeOf(User{})
+	s := r.getSchema(typ)
+	sd := s.Encode()
+	t.Log("(*Schema).Encode() length: ", len(sd))
+	if len(sd) == 0 {
+		t.Error("encode to zero length value")
+	}
 }
 
 func TestSchema_Decode(t *testing.T) {
-	//
+	// encode
+	r := NewRegistery(data.NewDB())
+	typ := reflect.TypeOf(User{})
+	s := r.getSchema(typ)
+	sd := s.Encode()
+	if len(sd) == 0 {
+		t.Error("encode to zero length value")
+	}
+	// decode
+	var ns Schema
+	if err := ns.Decode(r, sd); err != nil {
+		t.Error("decoding error: ", err)
+	}
+	if !cmpSchemes(s, &ns, t) {
+		//
+	}
 }
 
 func Test_typeName(t *testing.T) {

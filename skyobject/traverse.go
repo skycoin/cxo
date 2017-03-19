@@ -421,8 +421,8 @@ func (x *value) Index(idx int) (v Value, err error) {
 						// type the reference points to
 						x := *el // copy
 						el = &Schema{
-							_kind: uint32(reflect.Ptr),
-							_name: []byte(singleRef),
+							kind: uint32(reflect.Ptr),
+							name: []byte(singleRef),
 						}
 						el.setElem(&x)
 					}

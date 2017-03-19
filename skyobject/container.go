@@ -23,6 +23,7 @@ var (
 type Container struct {
 	roots map[cipher.PubKey]*Root // feed -> root of the feed
 	db    *data.DB
+	reg   *Registry
 }
 
 // NewContainer creates container using given db. If the db is nil
@@ -34,6 +35,7 @@ func NewContainer(db *data.DB) (c *Container) {
 	c = new(Container)
 	c.db = db
 	c.roots = make(map[cipher.PubKey]*Root)
+	c.reg = NewRegistery(db)
 	return
 }
 
@@ -45,7 +47,7 @@ func NewContainer(db *data.DB) (c *Container) {
 // to the Container
 func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 	root = new(Root)
-	root.reg = NewRegistery(c.db)
+	root.reg = c.reg // shared registery
 	root.cnt = c
 	root.Pub = pk
 	return
