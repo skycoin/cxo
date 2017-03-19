@@ -552,6 +552,70 @@ func TestValue_FieldByName(t *testing.T) {
 			t.Error("wrong age: ", i)
 		}
 	})
+	t.Run("references", func(t *testing.T) {
+		root := getRoot()
+		root.RegisterSchema("User", User{})
+		root.Inject(Group{
+			Name:   "The Group",
+			Leader: root.Save(User{"Alice", 21, 0}),
+			Members: root.SaveArray(
+				User{"Bob", 32, 0},
+				User{"Eva", 33, 0},
+				User{"Tom", 34, 0},
+				User{"Amy", 35, 0},
+			),
+			Curator: root.Dynamic(Man{
+				Name: "Tony Hawk",
+			}),
+		})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		// Name
+		if fname, err := val.FieldByName("Name"); err != nil {
+			t.Error(err)
+		} else if ln := len(fname.(*value).od); ln != 4+len("The Group") {
+			t.Error("wrong length of encoded field: ", ln)
+		} else if s, err := fname.String(); err != nil {
+			t.Error(err)
+		} else if s != "The Group" {
+			t.Error("wrong name: ", s)
+		}
+		// Leader
+		if fleader, err := val.FieldByName("Leader"); err != nil {
+			t.Error(err)
+		} else if ln := len(fleader.(*value).od); ln != len(Reference{}) {
+			t.Error("wrong length of encoded field: ", ln)
+		} else if fleader.Kind() != reflect.Ptr {
+			t.Error("invalid kind of reference: ", fleader.Kind())
+		}
+		// TODO: check reference
+		// Members
+		if fmembers, err := val.FieldByName("Members"); err != nil {
+			t.Error(err)
+		} else if ln := len(fmembers.(*value).od); ln != 4+4*len(Reference{}) {
+			t.Error("wrong length of encoded field: ", ln)
+		} else if fmembers.Kind() != reflect.Slice {
+			t.Error("invalid kind of references: ", fmembers.Kind())
+		}
+		// TODO: check reference
+		// Curator
+		if fcurator, err := val.FieldByName("Curator"); err != nil {
+			t.Error(err)
+		} else if ln := len(fcurator.(*value).od); ln != 2*len(Reference{}) {
+			t.Error("wrong length of encoded field: ", ln)
+		} else if fcurator.Kind() != reflect.Ptr {
+			t.Error("invalid kind of reference: ", fcurator.Kind())
+		}
+		// TODO: check reference
+	})
 }
 
 func TestValue_Len(t *testing.T) {
