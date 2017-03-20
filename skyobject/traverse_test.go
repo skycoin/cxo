@@ -102,20 +102,74 @@ func TestValue_Dereference(t *testing.T) {
 	if len(group.Fields()) != 4 {
 		t.Error("wrong number of fields: ", len(group.Fields()))
 	}
-	for _, fn := range group.Fields() {
-		fl, err := group.FieldByName(fn)
-		if err != nil {
-			t.Errorf("get field %q error: %v", fn, err)
-			continue
-		}
-		if fl.Kind() == reflect.Ptr { // if reference
-			var d Value
-			if d, err = fl.Dereference(); err != nil {
+	// Leader
+	if fl, err := group.FieldByName("Leader"); err != nil {
+		t.Errorf("get field 'Leader' error: %v", err)
+	} else if fl.Kind() != reflect.Ptr {
+		t.Error("expected reference, got ", fl.Kind())
+	} else if d, err := fl.Dereference(); err != nil {
+		t.Error(err)
+	} else if d.Kind() != reflect.Struct {
+		t.Error("wrong kind of dereferenced value ", d.Kind())
+	} else if v, err := d.FieldByName("Name"); err != nil {
+		t.Error(err)
+	} else if un, err := v.String(); err != nil {
+		t.Error(err)
+	} else if un != "Billy Kid" {
+		t.Error("wrong field value")
+	}
+	// Members
+	if fl, err := group.FieldByName("Members"); err != nil {
+		t.Errorf("get field 'Members' error: %v", err)
+	} else {
+		if fl.Kind() != reflect.Slice {
+			t.Error("expected slice, got ", fl.Kind())
+		} else {
+			if l, err := fl.Len(); err != nil {
 				t.Error(err)
-				continue
+			} else if l != 3 {
+				t.Error("wrong count of references:", l)
+			} else {
+				names := []string{
+					"Bob Marley",
+					"Alice Cooper",
+					"Eva Brown",
+				}
+				for i := 0; i < l; i++ {
+					if idx, err := fl.Index(i); err != nil {
+						t.Error(err)
+					} else if idx.Kind() != reflect.Ptr {
+						t.Error("expected reference, got", idx.Kind())
+					} else if d, err := idx.Dereference(); err != nil {
+						t.Error(err)
+					} else if d.Kind() != reflect.Struct {
+						t.Error("wrong kind of dereferenced value", d.Kind())
+					} else if v, err := d.FieldByName("Name"); err != nil {
+						t.Error(err)
+					} else if un, err := v.String(); err != nil {
+						t.Error(err)
+					} else if un != names[i] {
+						t.Error("wrong field value")
+					}
+				}
 			}
-			_ = d
 		}
+	}
+	// Curator
+	if fl, err := group.FieldByName("Curator"); err != nil {
+		t.Errorf("get field 'Curator' error: %v", err)
+	} else if fl.Kind() != reflect.Ptr {
+		t.Error("expected reference, got ", fl.Kind())
+	} else if d, err := fl.Dereference(); err != nil {
+		t.Error(err)
+	} else if d.Kind() != reflect.Struct {
+		t.Error("wrong kind of dereferenced value ", d.Kind())
+	} else if v, err := d.FieldByName("Name"); err != nil {
+		t.Error(err)
+	} else if un, err := v.String(); err != nil {
+		t.Error(err)
+	} else if un != "Ned Kelly" {
+		t.Error("wrong field value")
 	}
 }
 
@@ -619,11 +673,124 @@ func TestValue_FieldByName(t *testing.T) {
 }
 
 func TestValue_Len(t *testing.T) {
-	//
+	t.Run("another", func(t *testing.T) {
+		root := getRoot()
+		values := []interface{}{
+			User{},
+			Bool(false),
+			Int8(0), Int16(1), Int32(2), Int64(3),
+			Uint8(4), Uint16(5), Uint32(6), Uint64(7),
+			Float32(8), Float64(9),
+		}
+		for _, i := range values {
+			root.Inject(i)
+		}
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != len(values) {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		for i := range values {
+			if _, err := vs[i].Len(); err == nil {
+				t.Error("missing error")
+			}
+		}
+	})
+	t.Run("all", func(t *testing.T) {
+		root := getRoot()
+		type Users []User
+		type Bools []Bool
+		type Ary [10]User
+		type X [3]int32
+		values := []interface{}{
+			Users{User{}, User{}, User{}, User{}},
+			Bools{Bool(false), Bool(true)},
+			Ary{},
+			X{},
+			String("hi"),
+		}
+		for _, i := range values {
+			root.Inject(i)
+		}
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != len(values) {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		lengths := []int{4, 2, 10, 3, 2}
+		for i := range values {
+			if l, err := vs[i].Len(); err != nil {
+				t.Error(err)
+			} else if l != lengths[i] {
+				t.Errorf("unexpected length: want %d, got %d", lengths[i], l)
+			}
+		}
+	})
 }
 
 func TestValue_Index(t *testing.T) {
-	//
+	root := getRoot()
+	type Users []User
+	type Bools []Bool
+	type Ary [10]uint32
+	type X [3]int32
+	values := []interface{}{
+		Users{
+			User{"Bob", 32, 0},
+			User{"Eva", 33, 0},
+			User{"Tom", 34, 0},
+			User{"Amy", 35, 0},
+		},
+		Bools{Bool(false), Bool(true)},
+		Ary{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+		X{3, 2, 1},
+	}
+	for _, i := range values {
+		root.Inject(i)
+	}
+	vs, err := root.Values()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(vs) != len(values) {
+		t.Error("unexpected values length: ", len(vs))
+		return
+	}
+	lengths := []int{4, 2, 10, 3}
+	for i := range values {
+		val := vs[i]
+		if l, err := val.Len(); err != nil {
+			t.Error(err)
+		} else if l != lengths[i] {
+			t.Errorf("unexpected length: want %d, got %d", lengths[i], l)
+		} else {
+			// negative
+			if _, err := val.Index(-1); err == nil {
+				t.Error("missing error")
+			}
+			// legal
+			for j := 0; j < l; j++ {
+				if d, err := val.Index(j); err != nil {
+					t.Error(err)
+				} else {
+					cmpValue(d, byIndexes(values, i, j), t)
+				}
+			}
+			// greater
+			if _, err := val.Index(l + 1); err == nil {
+				t.Error("missing error")
+			}
+		}
+	}
 }
 
 func TestValue_Schema(t *testing.T) {
@@ -644,4 +811,27 @@ func Test_getLength(t *testing.T) {
 
 func Test_fixedSize(t *testing.T) {
 	//
+}
+
+// ========================================================================== //
+//                                                                            //
+//                                helpers                                     //
+//                                                                            //
+// ========================================================================== //
+
+func byIndexes(a []interface{}, i, j int) interface{} {
+	return reflect.ValueOf(a[i]).Index(j).Interface()
+}
+
+func cmpValue(val Value, i interface{}, t *testing.T) bool {
+	typ := reflect.TypeOf(i)
+	if val.Kind() != typ.Kind() {
+		t.Errorf("wrong kind: expected %s, got %s", val.Kind(), typ.Kind())
+		return false
+	}
+	if sn, tn := val.Schema().Name(), typeName(typ); sn != tn {
+		t.Errorf("wrong type name: expected %q, got %q", tn, sn)
+		return false
+	}
+	return true
 }

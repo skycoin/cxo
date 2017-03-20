@@ -302,36 +302,7 @@ func (x *value) Len() (l int, err error) {
 	switch x.Kind() {
 	case reflect.Array:
 		l = x.s.Len()
-	case reflect.Slice:
-		var el *Schema
-		if el, err = x.s.Elem(); err != nil {
-			return
-		}
-		var ln int
-		if ln, err = getLength(x.od); err != nil {
-			return
-		}
-		var shift int = 4 // length encoded as uint32 - 4 byte
-		if s := fixedSize(el.Kind()); s > 0 {
-			if (ln/s)*s != ln {
-				err = ErrInvalidSchemaOrData
-				return
-			}
-			l = ln / s
-		} else {
-			var m int
-			for shift < len(x.od) {
-				if m, err = el.Size(x.od[shift:]); err != nil {
-					return
-				}
-				l++
-				shift += m
-			}
-			if shift != len(x.od) {
-				err = ErrInvalidSchemaOrData
-			}
-		}
-	case reflect.String:
+	case reflect.String, reflect.Slice:
 		l, err = getLength(x.od)
 	default:
 		err = ErrInvalidType
@@ -342,6 +313,10 @@ func (x *value) Len() (l int, err error) {
 // Index returns value by index. It returns ErrInvalidType if type of the
 // value is not array, slice or slice of references (that treated as slice)
 func (x *value) Index(idx int) (v Value, err error) {
+	if idx < 0 {
+		err = ErrIndexOutOfRange
+		return
+	}
 	// (*value).Kind returns reflect.Slice for slice of references too,
 	// but (*value).s.Kind() returns actual kind of its schema
 	switch x.Kind() {
@@ -390,26 +365,29 @@ func (x *value) Index(idx int) (v Value, err error) {
 	case reflect.Slice:
 		// any slice or slice of references too;
 		// a slice of references must have element that set by field;
-		var el *Schema
-		if el, err = x.s.Elem(); err != nil {
-			return
-		}
-		var ln int // length of encoded data, bytes
+		var (
+			ln int
+			el *Schema
+
+			shift int = 4 // length prefix
+		)
 		if ln, err = getLength(x.od); err != nil {
 			return
 		}
-		var shift int = 4 // length encoded as uint32 - 4 byte
+		if idx >= ln {
+			err = ErrIndexOutOfRange
+			return
+		}
+		if el, err = x.s.Elem(); err != nil {
+			return
+		}
 		if s := fixedSize(el.Kind()); s > 0 {
-			var l = ln / s // length of the slice, elements
-			if (l)*s != ln {
+			shift = idx * s
+			if shift+s > len(x.od) {
 				err = ErrInvalidSchemaOrData
 				return
 			}
-			if idx >= l {
-				err = ErrIndexOutOfRange
-				return
-			}
-			v = &value{x.r, el, x.od[shift+s*idx : shift+s*idx+s]}
+			v = &value{x.r, el, x.od[shift : shift+s]}
 		} else {
 			var m int
 			for ; idx >= 0; idx-- {
@@ -417,28 +395,26 @@ func (x *value) Index(idx int) (v Value, err error) {
 					err = ErrInvalidSchemaOrData
 					return
 				}
-				if m, err = el.Size(x.od[shift:]); err != nil {
-					return
+				// real kind
+				if x.s.Kind() == reflect.Ptr {
+					m = len(Reference{})
+				} else {
+					if m, err = el.Size(x.od[shift:]); err != nil {
+						return
+					}
 				}
 				if idx == 0 {
 					if shift+m > len(x.od) {
 						err = ErrInvalidSchemaOrData
 						return
 					}
-					// short curcit; actually, kind of arrayRef is reflect.Ptr
-					// allways
-					if x.s.Kind() == reflect.Ptr && x.s.Name() == arrayRef {
-						// for references the el contains schema of type
-						// the reference points to; but the Dereference
-						// method requires schema of single reference;
-						// and element of the single reference must points to
-						// type the reference points to
-						x := *el // copy
+					// real kind
+					if x.s.Kind() == reflect.Ptr {
 						el = &Schema{
 							kind: uint32(reflect.Ptr),
 							name: []byte(singleRef),
+							elem: []Schema{*el},
 						}
-						el.setElem(&x)
 					}
 					v = &value{x.r, el, x.od[shift : shift+m]}
 					break
@@ -497,7 +473,7 @@ func (r *Root) Values() (vs []Value, err error) {
 //
 
 func (s *Schema) Size(p []byte) (n int, err error) {
-	switch kind := s.Kind(); kind {
+	switch s.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8:
 		n = 1
 	case reflect.Int16, reflect.Uint16:
@@ -506,97 +482,94 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 		n = 4
 	case reflect.Int64, reflect.Uint64, reflect.Float64:
 		n = 8
-	default:
-		switch kind {
-		case reflect.String:
-			if n, err = getLength(p); err != nil {
-				return
-			}
-			n += 4
-		case reflect.Slice:
-			var l int
-			if l, err = getLength(p); err != nil {
-				return
-			}
-			n += 4
-			var el *Schema
-			if el, err = s.Elem(); err != nil {
-				return
-			}
-			if s := fixedSize(el.Kind()); s > 0 {
-				n += l * s
-			} else {
-				var m int
-				for i := 0; i < l; i++ {
-					if n >= len(p) {
-						err = ErrInvalidSchemaOrData
-						return
-					}
-					if m, err = el.Size(p[n:]); err != nil {
-						return
-					}
-					n += m
-				}
-			}
-		case reflect.Array:
-			var l int = s.Len()
-			var el *Schema
-			if el, err = s.Elem(); err != nil {
-				return
-			}
-			if s := fixedSize(el.Kind()); s > 0 {
-				n = l * s
-			} else {
-				var m int
-				for i := 0; i < l; i++ {
-					if n >= len(p) {
-						err = ErrInvalidSchemaOrData
-						return
-					}
-					if m, err = el.Size(p[n:]); err != nil {
-						return
-					}
-					n += m
-				}
-			}
-		case reflect.Struct:
+	case reflect.String:
+		if n, err = getLength(p); err != nil {
+			return
+		}
+		n += 4
+	case reflect.Slice:
+		var l int
+		if l, err = getLength(p); err != nil {
+			return
+		}
+		n += 4
+		var el *Schema
+		if el, err = s.Elem(); err != nil {
+			return
+		}
+		if s := fixedSize(el.Kind()); s > 0 {
+			n += l * s
+		} else {
 			var m int
-			for _, sf := range s.Fields() {
-				var ss *Schema
-				if ss, err = sf.Schema(); err != nil {
-					return
-				}
+			for i := 0; i < l; i++ {
 				if n >= len(p) {
 					err = ErrInvalidSchemaOrData
 					return
 				}
-				if m, err = ss.Size(p[n:]); err != nil {
+				if m, err = el.Size(p[n:]); err != nil {
 					return
 				}
 				n += m
 			}
-		case reflect.Ptr:
-			switch s.Name() {
-			case singleRef:
-				n = len(Reference{})
-			case arrayRef:
-				if n, err = getLength(p); err == nil {
-					n *= len(Reference{})
-					n += 4
+		}
+	case reflect.Array:
+		var l int = s.Len()
+		var el *Schema
+		if el, err = s.Elem(); err != nil {
+			return
+		}
+		if s := fixedSize(el.Kind()); s > 0 {
+			n = l * s
+		} else {
+			var m int
+			for i := 0; i < l; i++ {
+				if n >= len(p) {
+					err = ErrInvalidSchemaOrData
+					return
 				}
-			case dynamicRef:
-				n = 2 * len(Reference{})
-			default:
-				err = ErrInvalidSchema
+				if m, err = el.Size(p[n:]); err != nil {
+					return
+				}
+				n += m
+			}
+		}
+	case reflect.Struct:
+		var m int
+		for _, sf := range s.Fields() {
+			var ss *Schema
+			if ss, err = sf.Schema(); err != nil {
 				return
 			}
+			if n >= len(p) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if m, err = ss.Size(p[n:]); err != nil {
+				return
+			}
+			n += m
+		}
+	case reflect.Ptr:
+		switch s.Name() {
+		case singleRef:
+			n = len(Reference{})
+		case arrayRef:
+			if n, err = getLength(p); err == nil {
+				n *= len(Reference{})
+				n += 4 // length prefix
+			}
+		case dynamicRef:
+			n = 2 * len(Reference{})
 		default:
 			err = ErrInvalidSchema
 			return
 		}
-		if n > len(p) {
-			err = ErrInvalidSchemaOrData
-		}
+	default:
+		err = ErrInvalidSchema
+		return
+	}
+	if n > len(p) {
+		err = ErrInvalidSchemaOrData
 	}
 	return
 }
