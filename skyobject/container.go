@@ -2,8 +2,10 @@ package skyobject
 
 import (
 	"errors"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
 )
@@ -23,7 +25,7 @@ var (
 type Container struct {
 	roots map[cipher.PubKey]*Root // feed -> root of the feed
 	db    *data.DB
-	reg   *Registry
+	reg   *Registry // shared registery
 }
 
 // NewContainer creates container using given db. If the db is nil
@@ -50,24 +52,55 @@ func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 	root.reg = c.reg // shared registery
 	root.cnt = c
 	root.Pub = pk
+	root.Time = time.Now().UnixNano()
 	return
 }
 
-// Root returns root object of the Container
+// Root returns root object by its public key
 func (c *Container) Root(pk cipher.PubKey) *Root {
 	return c.roots[pk]
 }
 
 // AddRoot add/replace given root object to the Container if timestamp of
-// given root is greater than timestamp of existsing root object
+// given root is greater than timestamp of existsing root object. It's
+// possible to add a root object only if the root created by this container
 func (c *Container) AddRoot(root *Root) (set bool) {
+	if root.cnt != c {
+		panic("trying to add root object from a side")
+	}
 	if rt, ex := c.roots[root.Pub]; !ex {
-		root.cnt = c
 		c.roots[root.Pub], set = root, true
 	} else if rt.Time < root.Time {
-		root.cnt = c
 		c.roots[root.Pub], set = root, true
 	}
+	return
+}
+
+// SetEncodedRoot set given data as root object of the container.
+// It returns an error if the data can't be encoded. It returns
+// true if the root is set
+func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
+	var x struct {
+		Root Root
+		Nmr  []struct{ K, V string } // map[string]string
+		Reg  []struct {              // map[string]cipher.SHA256
+			K string
+			V cipher.SHA256
+		}
+	}
+	if err = encoder.DeserializeRaw(p, &x); err != nil {
+		return
+	}
+	var root *Root = &x.Root
+	root.cnt = c
+	root.reg = c.reg
+	for _, v := range x.Nmr {
+		root.reg.nmr[v.K] = v.V
+	}
+	for _, v := range x.Reg {
+		root.reg.reg[v.K] = v.V
+	}
+	ok = c.AddRoot(root)
 	return
 }
 

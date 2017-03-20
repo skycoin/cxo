@@ -57,34 +57,6 @@ func (r *Root) Encode() (p []byte) {
 	return
 }
 
-// SetEncodedRoot set given data as root object of the container.
-// It returns an error if the data can't be encoded. It returns
-// true if the root is set
-func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
-	var x struct {
-		Root Root
-		Nmr  []struct{ K, V string } // map[string]string
-		Reg  []struct {              // map[string]cipher.SHA256
-			K string
-			V cipher.SHA256
-		}
-	}
-	if err = encoder.DeserializeRaw(p, &x); err != nil {
-		return
-	}
-	var root *Root = &x.Root
-	root.cnt = c
-	root.reg = NewRegistery(c.db)
-	for _, v := range x.Nmr {
-		root.reg.nmr[v.K] = v.V
-	}
-	for _, v := range x.Reg {
-		root.reg.reg[v.K] = v.V
-	}
-	ok = c.AddRoot(root)
-	return
-}
-
 func (r *Root) SchemaByReference(sr Reference) (s *Schema, err error) {
 	if sr == (Reference{}) {
 		err = ErrEmptySchemaKey
