@@ -159,13 +159,17 @@ func (n *Node) Start() {
 //     	Value int64
 //     }
 //
-//     root := so.NewRoot()
+//     pub, sec := cipher.GenerateKeyPair()
+//
+//     root := so.NewRoot(pub)
 //     root.Set(Root{
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })
+//     root.Touch()
+//     root.Sign(sec)
 //     so.AddRoot(root)
-//     n.Share()
+//     n.Share(pub)
 //
 //     //
 //     // stuff
@@ -173,11 +177,15 @@ func (n *Node) Start() {
 //
 //     return
 //
-func (n *Node) Share() {
+func (n *Node) Share(pub cipher.PubKey) {
 	n.enqueueEvent(func() {
-		if root := n.so.Root(); root != nil {
-			n.Debug("[DBG] boadcast root object")
-			r := &Root{root.Encode()}
+		if root := n.so.Root(pub); root != nil {
+			n.Debug("[DBG] broadcast root object: ", root.Pub.Hex())
+			r := &Root{
+				Pub:  root.Pub,
+				Sig:  root.Sig,
+				Root: root.Encode(),
+			}
 			n.pool.BroadcastMessage(r)
 		}
 	})

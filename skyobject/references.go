@@ -2,21 +2,20 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 // A Reference type represents reference to another object. If a Reference
 // is a type of a field then the field must have schema=XXX tag
 type Reference cipher.SHA256
 
-// String returns hexadecimal representation of the reference
-func (r *Reference) String() string {
-	return cipher.SHA256(*r).Hex()
-}
-
 // IsBlank returns true if the reference is blank
 func (r *Reference) IsBlank() bool {
 	return *r == (Reference{})
+}
+
+// String returns hexadecimal representation of the reference
+func (r *Reference) String() string {
+	return cipher.SHA256(*r).Hex()
 }
 
 // A References type represents references to array of another objects.

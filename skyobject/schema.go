@@ -192,9 +192,9 @@ type Schema struct {
 	sr *Registry `enc:"-"`
 }
 
-// IsNil reports that the schema is not a schema of a type.
+// IsNil reports that the schema is an empty schema.
 func (s *Schema) IsNil() bool {
-	return *s == Schema{}
+	return s.kind == uint32(reflect.Invalid)
 }
 
 // Name returns name for named types

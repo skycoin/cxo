@@ -13,90 +13,87 @@ import (
 //
 
 var (
-	ErrStopTraversing      = errors.New("stop traversing")
-	ErrInvalidType         = errors.New("invalid type of value")
-	ErrNoSuchField         = errors.New("no such field")
+	// ErrInvalidType occurs when you call some mehtod like (*Value).Int()
+	// when the value is not integer, etc
+	ErrInvalidType = errors.New("invalid type of value")
+	// ErrNoSuchField relates to (*Value).FieldByName()
+	ErrNoSuchField = errors.New("no such field")
+	// ErrInvalidSchemaOrData occurs any time encoding of a data failed
 	ErrInvalidSchemaOrData = errors.New("invalid schema or data")
-	ErrIndexOutOfRange     = errors.New("index out of range")
+	// ErrIndexOutOfRange relates to (*Value).Index()
+	ErrIndexOutOfRange = errors.New("index out of range")
 )
 
+// MissingObject occurs when a schema is not in db
 type MissingSchema struct {
 	key Reference
 }
 
+// Key return key of missing schema
 func (m *MissingSchema) Key() Reference {
 	return m.key
 }
 
+// Error implements error interface
 func (m *MissingSchema) Error() string {
 	return "missing schema: " + m.key.String()
 }
 
+// MissingObject occurs when an object is not in db
 type MissingObject struct {
 	key        Reference
 	schemaName string
 }
 
+// Key returns kye of missing object
 func (m *MissingObject) Key() Reference {
 	return m.key
 }
 
+// Error implements error interface
 func (m *MissingObject) Error() string {
 	return fmt.Sprintf("missing object %q: %s", m.schemaName, m.key.String())
 }
 
-type Value interface {
-	// Kind returns reflect.Kind of value:
-	//  - reflect.Ptr for references
-	//  - reflect.Invalid for nil-values
-	//  ...and appropriate kinds for other values
-	Kind() reflect.Kind
+// ========================================================================== //
+//                                                                            //
+//                                data value                                  //
+//                                                                            //
+// ========================================================================== //
 
-	// Dereference returns value by reference. A value is reference if
-	// its kind is reflect.Ptr
-	Dereference() (v Value, err error)
-
-	// scalar values
-	Bool() (b bool, err error)     // reflect.Bool
-	Int() (i int64, err error)     // reflect.Int(8|16|32|64)
-	Uint() (u uint64, err error)   // reflect.Uint(8|16|32|64)
-	String() (s string, err error) // reflect.String
-	Bytes() (p []byte, err error)  // reflect.Slice of bytes or reflect.String
-	Float() (f float64, err error) // reflect.Float(32|64)
-
-	// TODO: fast range over fields
-
-	// structs
-	Fields() []string // names of fields
-	FieldByName(name string) (v Value, err error)
-
-	// slices, arrays and slice of references
-	Len() (l int, err error)
-	Index(idx int) (v Value, err error)
-
-	Schema() *Schema
-}
-
-//
-// data value
-//
-
-type value struct {
+// A Value represent any value from tree of objects
+type Value struct {
 	r  *Root // back reference
 	s  *Schema
 	od []byte
 }
 
-func (x *value) Kind() reflect.Kind {
+// Kind returns reflect.Kind of value:
+//  - reflect.Ptr for references
+//  - reflect.Invalid for nil-values
+//  ...and appropriate kinds for other values
+// Use (*Value).Schema().Kind() to get appropriate schema of value if the
+// value is nil. The schema can be nil-schema for nil-dynamic-references.
+// But, be careful, the (*Value).Schema().Kind() returns relfect.Ptr for
+// instead of reflect.Slice for array of references
+func (x *Value) Kind() reflect.Kind {
 	var kind reflect.Kind = x.s.Kind()
 	if kind == reflect.Ptr && x.s.Name() == arrayRef {
 		return reflect.Slice // treat a slice of references as slice
 	}
+	if x.od == nil { // nil
+		return reflect.Invalid
+	}
 	return kind
 }
 
-// If
-func (x *value) Dereference() (v Value, err error) {
+// ========================================================================== //
+//                                references                                  //
+// ========================================================================== //
+
+// Dereference returns value by reference. A value is reference if
+// its kind is reflect.Ptr
+func (x *Value) Dereference() (v *Value, err error) {
 	if x.Kind() != reflect.Ptr {
 		err = ErrInvalidType
 		return
@@ -111,8 +108,8 @@ func (x *value) Dereference() (v Value, err error) {
 			err = ErrInvalidReference
 			return
 		}
-		if dr.Schema == (Reference{}) {
-			v = nilValue(x.r)
+		if dr.IsBlank() {
+			v = nilValue(x.r, nil) // no value nor schema
 			return
 		}
 		var (
@@ -132,7 +129,7 @@ func (x *value) Dereference() (v Value, err error) {
 			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
 			return
 		}
-		v = &value{x.r, &s, od}
+		v = &Value{x.r, &s, od}
 	case singleRef:
 		var el *Schema
 		if el, err = x.s.Elem(); err != nil {
@@ -142,8 +139,8 @@ func (x *value) Dereference() (v Value, err error) {
 		if err = encoder.DeserializeRaw(x.od, &ref); err != nil {
 			return
 		}
-		if ref == (Reference{}) {
-			v = nilValue(x.r)
+		if ref.IsBlank() {
+			v = nilValue(x.r, el) // with appropriate schema
 			return
 		}
 		var (
@@ -154,14 +151,19 @@ func (x *value) Dereference() (v Value, err error) {
 			err = &MissingObject{key: ref, schemaName: x.s.Name()}
 			return
 		}
-		v = &value{x.r, el, od}
+		v = &Value{x.r, el, od}
 	default:
 		err = ErrInvalidType
 	}
 	return
 }
 
-func (x *value) Bool() (b bool, err error) {
+// ========================================================================== //
+//                              scalar values                                 //
+// ========================================================================== //
+
+// Bool returns bolean of the value or an error
+func (x *Value) Bool() (b bool, err error) {
 	if x.Kind() != reflect.Bool {
 		err = ErrInvalidType
 		return
@@ -170,7 +172,9 @@ func (x *value) Bool() (b bool, err error) {
 	return
 }
 
-func (x *value) Int() (i int64, err error) {
+// Int returns int64 of the value if type of underlying value is
+// one of int8, int16, int32 or int64
+func (x *Value) Int() (i int64, err error) {
 	switch x.Kind() {
 	case reflect.Int8:
 		var t int8
@@ -192,7 +196,9 @@ func (x *value) Int() (i int64, err error) {
 	return
 }
 
-func (x *value) Uint() (u uint64, err error) {
+// Uint returns int64 of the value if type of underlying value is
+// one of uint8, uint16, uint32 or uint64
+func (x *Value) Uint() (u uint64, err error) {
 	switch x.Kind() {
 	case reflect.Uint8:
 		var t uint8
@@ -215,7 +221,7 @@ func (x *value) Uint() (u uint64, err error) {
 }
 
 // String returns string if underlying value is string
-func (x *value) String() (s string, err error) {
+func (x *Value) String() (s string, err error) {
 	if x.Kind() == reflect.String {
 		err = encoder.DeserializeRaw(x.od, &s)
 	} else {
@@ -225,7 +231,7 @@ func (x *value) String() (s string, err error) {
 }
 
 // Bytes returns []byte of underlying value if the value is []byte or string
-func (x *value) Bytes() (p []byte, err error) {
+func (x *Value) Bytes() (p []byte, err error) {
 	if kind := x.Kind(); kind == reflect.Slice {
 		var el *Schema
 		if el, err = x.s.Elem(); err != nil {
@@ -250,7 +256,7 @@ func (x *value) Bytes() (p []byte, err error) {
 
 // Float returns float64 if type of underlying encoded value is float32 or
 // float64
-func (x *value) Float() (f float64, err error) {
+func (x *Value) Float() (f float64, err error) {
 	switch x.Kind() {
 	case reflect.Float32:
 		var t float32
@@ -264,9 +270,13 @@ func (x *value) Float() (f float64, err error) {
 	return
 }
 
+// ========================================================================== //
+//                                structures                                  //
+// ========================================================================== //
+
 // Fields returns list of name of all fields. It returns empty slice for
 // structs without fields and for non-struct values
-func (x *value) Fields() (fs []string) {
+func (x *Value) Fields() (fs []string) {
 	if len(x.s.Fields()) == 0 {
 		return
 	}
@@ -280,7 +290,7 @@ func (x *value) Fields() (fs []string) {
 // FieldByName returns value of the field by given name. It returns
 // ErrInvalidType if type of the value is not a struct. It returns
 // ErrNoSuchField if field with given name doesn't exist
-func (x *value) FieldByName(name string) (v Value, err error) {
+func (x *Value) FieldByName(name string) (v *Value, err error) {
 	if x.Kind() != reflect.Struct {
 		err = ErrInvalidType
 		return
@@ -307,16 +317,20 @@ func (x *value) FieldByName(name string) (v Value, err error) {
 			err = ErrInvalidSchemaOrData
 			return
 		}
-		v = &value{x.r, fs, x.od[shift : shift+n]}
+		v = &Value{x.r, fs, x.od[shift : shift+n]}
 		return
 	}
 	err = ErrNoSuchField
 	return
 }
 
+// ========================================================================== //
+//                            slices and arrays                               //
+// ========================================================================== //
+
 // Len returns length of array, slice or string. It returns ErrInvalidType
 // for another types
-func (x *value) Len() (l int, err error) {
+func (x *Value) Len() (l int, err error) {
 	switch x.Kind() {
 	case reflect.Array:
 		l = x.s.Len()
@@ -330,7 +344,7 @@ func (x *value) Len() (l int, err error) {
 
 // Index returns value by index. It returns ErrInvalidType if type of the
 // value is not array, slice or slice of references (that treated as slice)
-func (x *value) Index(idx int) (v Value, err error) {
+func (x *Value) Index(idx int) (v *Value, err error) {
 	if idx < 0 {
 		err = ErrIndexOutOfRange
 		return
@@ -358,7 +372,7 @@ func (x *value) Index(idx int) (v Value, err error) {
 				err = ErrInvalidSchemaOrData
 				return
 			}
-			v = &value{x.r, el, x.od[shift : shift+s]}
+			v = &Value{x.r, el, x.od[shift : shift+s]}
 		} else {
 			var m int
 			for ; idx >= 0; idx-- {
@@ -374,7 +388,7 @@ func (x *value) Index(idx int) (v Value, err error) {
 						err = ErrInvalidSchemaOrData
 						return
 					}
-					v = &value{x.r, el, x.od[shift : shift+m]}
+					v = &Value{x.r, el, x.od[shift : shift+m]}
 					break
 				}
 				shift += m
@@ -405,7 +419,7 @@ func (x *value) Index(idx int) (v Value, err error) {
 				err = ErrInvalidSchemaOrData
 				return
 			}
-			v = &value{x.r, el, x.od[shift : shift+s]}
+			v = &Value{x.r, el, x.od[shift : shift+s]}
 		} else {
 			var m int
 			for ; idx >= 0; idx-- {
@@ -434,7 +448,7 @@ func (x *value) Index(idx int) (v Value, err error) {
 							elem: []Schema{*el},
 						}
 					}
-					v = &value{x.r, el, x.od[shift : shift+m]}
+					v = &Value{x.r, el, x.od[shift : shift+m]}
 					break
 				}
 				shift += m
@@ -446,7 +460,9 @@ func (x *value) Index(idx int) (v Value, err error) {
 	return
 }
 
-func (x *value) Schema() *Schema {
+// Schema returns schema of the value. It can be a nil-schema if value got from
+// blank dynamic reference. Check it out using (*Schema).IsNil()
+func (x *Value) Schema() *Schema {
 	return x.s
 }
 
@@ -560,8 +576,11 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 // helpers
 //
 
-func nilValue(r *Root) Value {
-	return &value{r, &Schema{kind: uint32(reflect.Invalid)}, nil}
+func nilValue(r *Root, s *Schema) *Value {
+	if s == nil {
+		s = &Schema{}
+	}
+	return &Value{r, s, nil}
 }
 
 func getLength(p []byte) (l int, err error) {

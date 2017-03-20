@@ -48,7 +48,7 @@ func TestRoot_Want(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		root := c.NewRoot(pubKey())
-		root.RegisterSchema("User", User{})
+		root.Register("User", User{})
 		root.Inject(Group{
 			Name: "a group",
 			Leader: root.Save(User{
@@ -83,7 +83,7 @@ func TestRoot_Want(t *testing.T) {
 	t.Run("no", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		root := c.NewRoot(pubKey())
-		root.RegisterSchema("User", User{})
+		root.Register("User", User{})
 		leader := User{
 			"Billy Kid", 16, 90,
 		}

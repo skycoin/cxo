@@ -84,8 +84,7 @@ func (c *Container) AddRoot(root *Root) (set bool) {
 func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
 	var x struct {
 		Root Root
-		Nmr  []struct{ K, V string } // map[string]string
-		Reg  []struct {              // map[string]cipher.SHA256
+		Reg  []struct { // map[string]cipher.SHA256
 			K string
 			V cipher.SHA256
 		}
@@ -96,9 +95,6 @@ func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
 	var root *Root = &x.Root
 	root.cnt = c
 	root.reg = c.reg
-	for _, v := range x.Nmr {
-		root.reg.nmr[v.K] = v.V
-	}
 	for _, v := range x.Reg {
 		root.reg.reg[v.K] = v.V
 	}

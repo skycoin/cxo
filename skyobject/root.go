@@ -15,12 +15,17 @@ type Root struct {
 	// All of the references points to Dynamic objects
 	Refs []Reference // all references of the root
 
-	// TODO
-	Sign cipher.Sig    // signature
-	Pub  cipher.PubKey // public key
+	Sig cipher.Sig    `enc:"-"` // signature
+	Pub cipher.PubKey `enc:"-"` // public key
 
-	reg *Registry  `enc:"-"` // TODO: encoding and decoding
-	cnt *Container `enc:"-"` // back reference
+	reg *Registry  `enc:"-"` // bak reference to registery
+	cnt *Container `enc:"-"` // back reference to container
+}
+
+// Sing encodes the root and calculate signature of hash of encoded data
+// using given secret key
+func (r *Root) Sign(sec cipher.SecKey) {
+	r.Sig = cipher.SignHash(cipher.SumSHA256(r.Encode()), sec)
 }
 
 // Touch set timestamp to now and increment seq
@@ -102,14 +107,14 @@ func (r *Root) Register(name string, i interface{}) {
 // reference value
 //
 
-func (r *Root) Values() (vs []Value, err error) {
+func (r *Root) Values() (vs []*Value, err error) {
 	if r == nil {
 		return
 	}
 	if len(r.Refs) == 0 {
 		return
 	}
-	vs = make([]Value, 0, len(r.Refs))
+	vs = make([]*Value, 0, len(r.Refs))
 	var (
 		s *Schema
 
@@ -118,35 +123,48 @@ func (r *Root) Values() (vs []Value, err error) {
 		ok     bool
 	)
 	for _, rd := range r.Refs {
-		if dd, ok = r.cnt.get(rd); !ok {
-			err = &MissingObject{rd}
+		// take a look at the reference
+		if rd.IsBlank() {
+			err = ErrInvalidReference // nil-references are not allowed for root
 			return
 		}
+		// obtain dynamic reference, the reference points to
+		if dd, ok = r.cnt.get(rd); !ok {
+			err = &MissingObject{rd, ""}
+			return
+		}
+		// decode the dynamic reference
 		var dr Dynamic
 		if err = encoder.DeserializeRaw(dd, &dr); err != nil {
 			return
 		}
+		// is the dynamic reference valid
 		if !dr.IsValid() {
 			err = ErrInvalidReference
 			return
 		}
+		// is it blank
 		if dr.IsBlank() {
-			vs = append(vs, nilValue(r))
+			vs = append(vs, nilValue(r, nil)) // no value, nor schema
 			continue
 		}
+		// obtain schema of the dynamic reference
 		if sd, ok = r.cnt.get(dr.Schema); !ok {
 			err = &MissingSchema{dr.Schema}
 			return
 		}
+		// decode the schema
 		s = new(Schema)
 		if err = s.Decode(r.reg, sd); err != nil {
 			return
 		}
+		// obtain object of the dynamic reference
 		if od, ok = r.cnt.get(dr.Object); !ok {
 			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
 			return
 		}
-		vs = append(vs, &value{r, s, od})
+		// create value
+		vs = append(vs, &Value{r, s, od})
 	}
 	return
 }

@@ -34,7 +34,7 @@ func (r *Root) Want() (set Set, err error) {
 		return // don't want anything (has no root object)
 	}
 	set = make(Set)
-	var vs []Value
+	var vs []*Value
 	if vs, err = r.Values(); err != nil {
 		err = set.Err(err)
 		return
@@ -47,7 +47,7 @@ func (r *Root) Want() (set Set, err error) {
 	return
 }
 
-func wantValue(val Value, set Set) (err error) {
+func wantValue(val *Value, set Set) (err error) {
 	switch val.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8,
 		reflect.Int16, reflect.Uint16,
@@ -60,7 +60,7 @@ func wantValue(val Value, set Set) (err error) {
 			return
 		}
 		for i := 0; i < l; i++ {
-			var d Value
+			var d *Value
 			if d, err = val.Index(i); err != nil {
 				return
 			}
@@ -76,7 +76,7 @@ func wantValue(val Value, set Set) (err error) {
 			return
 		}
 		for i := 0; i < l; i++ {
-			var d Value
+			var d *Value
 			if d, err = val.Index(i); err != nil {
 				return
 			}
@@ -88,7 +88,7 @@ func wantValue(val Value, set Set) (err error) {
 		}
 	case reflect.Struct:
 		for _, name := range val.Fields() {
-			var d Value
+			var d *Value
 			if d, err = val.FieldByName(name); err != nil {
 				return
 			}
@@ -99,7 +99,7 @@ func wantValue(val Value, set Set) (err error) {
 			}
 		}
 	case reflect.Ptr:
-		var d Value
+		var d *Value
 		if d, err = val.Dereference(); err != nil {
 			return
 		}

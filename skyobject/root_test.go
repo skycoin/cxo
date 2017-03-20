@@ -17,7 +17,7 @@ func TestRoot_Encode(t *testing.T) {
 	// encode
 	c1 := getCont()
 	r1 := c1.NewRoot(pk)
-	r1.RegisterSchema("User", User{})
+	r1.Register("User", User{})
 	r1.SaveSchema(Group{})
 	p := r1.Encode()
 	// decode
@@ -32,5 +32,29 @@ func TestRoot_Encode(t *testing.T) {
 }
 
 func TestRoot_SchemaByReference(t *testing.T) {
+	//
+}
+
+func TestRoot_Save(t *testing.T) {
+	//
+}
+
+func TestRoot_SaveArray(t *testing.T) {
+	//
+}
+
+func TestRoot_SaveSchema(t *testing.T) {
+	//
+}
+
+func TestRoot_Dynamic(t *testing.T) {
+	//
+}
+
+func TestRoot_Register(t *testing.T) {
+	//
+}
+
+func TestRoot_Values(t *testing.T) {
 	//
 }

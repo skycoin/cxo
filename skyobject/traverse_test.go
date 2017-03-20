@@ -14,24 +14,9 @@ func getRoot() *Root {
 	return c.NewRoot(pubKey())
 }
 
-func TestMissingSchema_Error(t *testing.T) {
-	// TODO
-}
-
-func TestMissingSchema_Key(t *testing.T) {
-	// TODO
-}
-
-func TestMissingObject_Error(t *testing.T) {
-	// TODO
-}
-
-func TestMissingObject_Key(t *testing.T) {
-	// TODO
-}
-
 func TestValue_Kind(t *testing.T) {
 	t.Run("any", func(t *testing.T) {
+		slice := []byte{} // should be non-nil
 		for _, k := range []reflect.Kind{
 			reflect.Bool,
 			reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
@@ -43,30 +28,41 @@ func TestValue_Kind(t *testing.T) {
 			reflect.Struct,
 			reflect.Ptr,
 		} {
-			kind := (&value{nil, &Schema{
+			kind := (&Value{nil, &Schema{
 				kind: uint32(k),
-			}, nil}).Kind()
+			}, slice}).Kind()
 			if kind != k {
 				t.Error("wrong kind: want %s, got %s", k, kind)
 			}
 		}
 
 	})
+	// TODO: nil value s and nil references
 	t.Run("references", func(t *testing.T) {
 		s := &Schema{
 			kind: uint32(reflect.Ptr), // <- pointer
 			name: []byte(arrayRef),    // <- reference
 		}
-		kind := (&value{nil, s, nil}).Kind()
+		kind := (&Value{nil, s, nil}).Kind()
 		if kind != reflect.Slice { // <- slice
 			t.Error("wrong kind: want %s, got %s", reflect.Slice, kind)
 		}
 	})
+	// t.Run("nils", func(t *testing.T) {
+	// 	s := &Schema{
+	// 		kind: uint32(reflect.Ptr), // <- pointer
+	// 		name: []byte(arrayRef),    // <- reference
+	// 	}
+	// 	kind := (&Value{nil, s, nil}).Kind()
+	// 	if kind != reflect.Slice { // <- slice
+	// 		t.Error("wrong kind: want %s, got %s", reflect.Slice, kind)
+	// 	}
+	// })
 }
 
 func TestValue_Dereference(t *testing.T) {
 	root := getRoot()
-	root.RegisterSchema("User", User{})
+	root.Register("User", User{})
 	root.Inject(Group{
 		Name: "a group",
 		Leader: root.Save(User{
@@ -193,7 +189,7 @@ func TestValue_Bool(t *testing.T) {
 			t.Error("unexpected kind of bool: ", val.Kind())
 			return
 		}
-		if ln := len(val.(*value).od); ln != 1 {
+		if ln := len(val.od); ln != 1 {
 			t.Error("wrong length of boolend data: ", ln)
 		}
 		if b, err := val.Bool(); err != nil {
@@ -248,7 +244,7 @@ func TestValue_Int(t *testing.T) {
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind of int: ", val.Kind())
 			}
-			if ln := len(val.(*value).od); ln != sizes[i] {
+			if ln := len(val.od); ln != sizes[i] {
 				t.Error("wrong length of boolend data: ", ln)
 			}
 			if x, err := val.Int(); err != nil {
@@ -304,7 +300,7 @@ func TestValue_Uint(t *testing.T) {
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind of int: ", val.Kind())
 			}
-			if ln := len(val.(*value).od); ln != sizes[i] {
+			if ln := len(val.od); ln != sizes[i] {
 				t.Error("wrong length of boolend data: ", ln)
 			}
 			if x, err := val.Uint(); err != nil {
@@ -350,7 +346,7 @@ func TestValue_String(t *testing.T) {
 		if val.Kind() != reflect.String {
 			t.Error("unexpected kind of int: ", val.Kind())
 		}
-		if ln := len(val.(*value).od); ln != len(hello)+4 {
+		if ln := len(val.od); ln != len(hello)+4 {
 			t.Error("wrong length of boolend data: ", ln)
 		}
 		if x, err := val.String(); err != nil {
@@ -402,7 +398,7 @@ func TestValue_Bytes(t *testing.T) {
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind: ", val.Kind())
 			}
-			if ln := len(val.(*value).od); ln != sizes[i] {
+			if ln := len(val.od); ln != sizes[i] {
 				t.Error("wrong length of data: ", ln)
 			}
 			if x, err := val.Bytes(); err != nil {
@@ -454,7 +450,7 @@ func TestValue_Float(t *testing.T) {
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind: ", val.Kind())
 			}
-			if ln := len(val.(*value).od); ln != sizes[i] {
+			if ln := len(val.od); ln != sizes[i] {
 				t.Error("wrong length of data: ", ln)
 			}
 			if x, err := val.Float(); err != nil {
@@ -485,7 +481,7 @@ func TestValue_Fields(t *testing.T) {
 	})
 	t.Run("all", func(t *testing.T) {
 		root := getRoot()
-		root.RegisterSchema("User", User{})
+		root.Register("User", User{})
 		strucures := []interface{}{
 			Group{},
 			List{},
@@ -536,7 +532,7 @@ func TestValue_Fields(t *testing.T) {
 			if val.Kind() != reflect.Struct {
 				t.Error("unexpected kind: ", val.Kind())
 			}
-			if ln := len(val.(*value).od); ln != len(encoder.Serialize(want)) {
+			if ln := len(val.od); ln != len(encoder.Serialize(want)) {
 				t.Error("wrong length of data: ", ln)
 			} else {
 				if ln != sizes[i] {
@@ -583,13 +579,13 @@ func TestValue_FieldByName(t *testing.T) {
 		if val.Kind() != reflect.Struct {
 			t.Error("unexpected kind: ", val.Kind())
 		}
-		if ln := len(val.(*value).od); ln != len(name)+4+4 {
+		if ln := len(val.od); ln != len(name)+4+4 {
 			t.Error("wrong length of data: ", ln)
 		}
 		// Name
 		if fname, err := val.FieldByName("Name"); err != nil {
 			t.Error(err)
-		} else if ln := len(fname.(*value).od); ln != 4+len(name) {
+		} else if ln := len(fname.od); ln != 4+len(name) {
 			t.Error("wrong length of encoded field: ", ln)
 		} else if s, err := fname.String(); err != nil {
 			t.Error(err)
@@ -599,7 +595,7 @@ func TestValue_FieldByName(t *testing.T) {
 		// Age
 		if fage, err := val.FieldByName("Age"); err != nil {
 			t.Error(err)
-		} else if ln := len(fage.(*value).od); ln != 4 {
+		} else if ln := len(fage.od); ln != 4 {
 			t.Error("wrong length of encoded field: ", ln)
 		} else if i, err := fage.Uint(); err != nil {
 		} else if i != uint64(age) {
@@ -608,7 +604,7 @@ func TestValue_FieldByName(t *testing.T) {
 	})
 	t.Run("references", func(t *testing.T) {
 		root := getRoot()
-		root.RegisterSchema("User", User{})
+		root.Register("User", User{})
 		root.Inject(Group{
 			Name:   "The Group",
 			Leader: root.Save(User{"Alice", 21, 0}),
@@ -635,7 +631,7 @@ func TestValue_FieldByName(t *testing.T) {
 		// Name
 		if fname, err := val.FieldByName("Name"); err != nil {
 			t.Error(err)
-		} else if ln := len(fname.(*value).od); ln != 4+len("The Group") {
+		} else if ln := len(fname.od); ln != 4+len("The Group") {
 			t.Error("wrong length of encoded field: ", ln)
 		} else if s, err := fname.String(); err != nil {
 			t.Error(err)
@@ -645,7 +641,7 @@ func TestValue_FieldByName(t *testing.T) {
 		// Leader
 		if fleader, err := val.FieldByName("Leader"); err != nil {
 			t.Error(err)
-		} else if ln := len(fleader.(*value).od); ln != len(Reference{}) {
+		} else if ln := len(fleader.od); ln != len(Reference{}) {
 			t.Error("wrong length of encoded field: ", ln)
 		} else if fleader.Kind() != reflect.Ptr {
 			t.Error("invalid kind of reference: ", fleader.Kind())
@@ -654,7 +650,7 @@ func TestValue_FieldByName(t *testing.T) {
 		// Members
 		if fmembers, err := val.FieldByName("Members"); err != nil {
 			t.Error(err)
-		} else if ln := len(fmembers.(*value).od); ln != 4+4*len(Reference{}) {
+		} else if ln := len(fmembers.od); ln != 4+4*len(Reference{}) {
 			t.Error("wrong length of encoded field: ", ln)
 		} else if fmembers.Kind() != reflect.Slice {
 			t.Error("invalid kind of references: ", fmembers.Kind())
@@ -663,7 +659,7 @@ func TestValue_FieldByName(t *testing.T) {
 		// Curator
 		if fcurator, err := val.FieldByName("Curator"); err != nil {
 			t.Error(err)
-		} else if ln := len(fcurator.(*value).od); ln != 2*len(Reference{}) {
+		} else if ln := len(fcurator.od); ln != 2*len(Reference{}) {
 			t.Error("wrong length of encoded field: ", ln)
 		} else if fcurator.Kind() != reflect.Ptr {
 			t.Error("invalid kind of reference: ", fcurator.Kind())
@@ -797,19 +793,7 @@ func TestValue_Schema(t *testing.T) {
 	//
 }
 
-func TestRoot_Values(t *testing.T) {
-	//
-}
-
 func TestSchema_Size(t *testing.T) {
-	//
-}
-
-func Test_getLength(t *testing.T) {
-	//
-}
-
-func Test_fixedSize(t *testing.T) {
 	//
 }
 
@@ -823,7 +807,7 @@ func byIndexes(a []interface{}, i, j int) interface{} {
 	return reflect.ValueOf(a[i]).Index(j).Interface()
 }
 
-func cmpValue(val Value, i interface{}, t *testing.T) bool {
+func cmpValue(val *Value, i interface{}, t *testing.T) bool {
 	typ := reflect.TypeOf(i)
 	if val.Kind() != typ.Kind() {
 		t.Errorf("wrong kind: expected %s, got %s", val.Kind(), typ.Kind())
