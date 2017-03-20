@@ -10,10 +10,14 @@ import (
 type rpcEvent func()
 
 // enqueue rpc event
-func (n *Node) enqueueEvent(done <-chan struct{}, evt rpcEvent) (err error) {
+func (n *Node) enqueueEvent(evt rpcEvent) (err error) {
+	var done = make(chan struct{})
 	// enquue
 	select {
-	case n.rpce <- evt:
+	case n.rpce <- func() {
+		defer close(done)
+		evt()
+	}:
 	case <-n.quit:
 		err = ErrClosed
 		return
@@ -58,9 +62,7 @@ func (n *Node) List() (list []string, err error) {
 // Info is for RPC. It returns all useful inforamtions about the node
 // except statistic. I.e. it returns listening address
 func (n *Node) Info() (address string, err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
+	err = n.enqueueEvent(func() {
 		var a net.Addr
 		if a, err = n.pool.ListeningAddress(); err != nil {
 			return
@@ -72,9 +74,7 @@ func (n *Node) Info() (address string, err error) {
 
 // Stat is for RPC. It returns database statistic
 func (n *Node) Stat() (stat data.Stat, err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
+	err = n.enqueueEvent(func() {
 		stat = n.db.Stat()
 	})
 	return
@@ -86,9 +86,7 @@ func (n *Node) Terminate() (err error) {
 		err = ErrNotAllowed
 		return
 	}
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
+	err = n.enqueueEvent(func() {
 		n.close()
 	})
 	// we will have got ErrClosed from enqueueEvent that

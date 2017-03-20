@@ -11,15 +11,16 @@ import (
 )
 
 var (
-	ErrMissingRoot        = errors.New("misisng root object")
-	ErrShortBuffer        = errors.New("short buffer")
-	ErrInvalidSchema      = errors.New("invalid schema")
-	ErrUnregisteredSchema = errors.New("unregistered schema")
-	ErrInvalidTag         = errors.New("invalid tag")
-	ErrMissingSchemaTag   = errors.New("missing schema tag")
-	ErrEmptySchemaKey     = errors.New("empty schema key")
-	ErrNotFound           = errors.New("not found")
-	ErrInvalidReference   = errors.New("invalid reference")
+	// ErrInvalidSchema occurs any time using the schema that is invalid
+	ErrInvalidSchema = errors.New("invalid schema")
+	// ErrEmptySchemaKey occurs if you want to get schema by its key, but
+	// the key is empty
+	ErrEmptySchemaKey = errors.New("empty schema key")
+	// ErrTypeNameNotFound oocurs if you want to get schema by type name
+	// but the Container knows nothing about the name
+	ErrTypeNameNotFound = errors.New("type name not found")
+	// ErrInvalidReference occurs when some dynamic reference is invalid
+	ErrInvalidReference = errors.New("invalid reference")
 )
 
 // A Container represents type helper to manage root objects
@@ -47,7 +48,7 @@ func NewContainer(db *data.DB) (c *Container) {
 //
 
 // NewRoot creates new empty root object. The method doesn't put the root
-// to the Container
+// to the Container. Seq of the root is 0, Timestamp of the root set to now.
 func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 	root = new(Root)
 	root.reg = c.reg // shared registery
@@ -58,7 +59,7 @@ func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 }
 
 // Root returns root object by its public key
-func (c *Container) Root(pk cipher.PubKey) *Root {
+func (c *Container) Root(pk cipher.PubKey) (r *Root) {
 	return c.roots[pk]
 }
 

@@ -62,7 +62,7 @@ type Value interface {
 	Uint() (u uint64, err error)   // reflect.Uint(8|16|32|64)
 	String() (s string, err error) // reflect.String
 	Bytes() (p []byte, err error)  // reflect.Slice of bytes or reflect.String
-	Float() (f float64, err error) // reflect.Ptr
+	Float() (f float64, err error) // reflect.Float(32|64)
 
 	// TODO: fast range over fields
 

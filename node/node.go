@@ -71,6 +71,13 @@ type Node struct {
 
 	pool *gnet.ConnectionPool
 
+	// 1) feeds is list of known addresses per feed
+	// 2) subs is subscriptions
+
+	// public key of a feed -> known addresses
+	feeds map[cipher.PubKey][]string
+	subs  map[cipher.PubKey]struct{}
+
 	rpce     chan rpcEvent     // RPC events
 	connecte chan connectEvent // new connection
 	msge     chan msgEvent     // new message received
@@ -99,6 +106,8 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 		conf:   conf,
 		db:     db,
 		so:     so,
+		feeds:  make(map[cipher.PubKey][]string),
+		subs:   make(map[cipher.PubKey]struct{}),
 	}
 }
 
@@ -155,7 +164,7 @@ func (n *Node) Start() {
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })
-//     so.SetRoot(root)
+//     so.AddRoot(root)
 //     n.Share()
 //
 //     //
@@ -165,9 +174,7 @@ func (n *Node) Start() {
 //     return
 //
 func (n *Node) Share() {
-	done := make(chan struct{}) // used by enqueueEvent
-	n.enqueueEvent(done, func() {
-		defer close(done) // required for enqueueEvent
+	n.enqueueEvent(func() {
 		if root := n.so.Root(); root != nil {
 			n.Debug("[DBG] boadcast root object")
 			r := &Root{root.Encode()}
@@ -205,7 +212,7 @@ func (n *Node) handle(quit, done chan struct{},
 	defer n.pool.Shutdown()
 
 	// hot list
-	var want map[cipher.SHA256]struct{}
+	var want skyobject.Set
 
 	// initialize list of wanted objects
 	want, _ = n.so.Want()
@@ -254,7 +261,7 @@ func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
 }
 
 func (n *Node) handleMsgEvent(me msgEvent,
-	want *map[cipher.SHA256]struct{}) {
+	want *skyobject.Set) {
 	switch x := me.Msg.(type) {
 	case *Announce:
 		if len(*want) > 0 {
@@ -284,6 +291,7 @@ func (n *Node) handleMsgEvent(me msgEvent,
 			n.pool.BroadcastMessage(&Request{k})
 		}
 	case *Root:
+		// TODO: are we subscribed to the public key of the root
 		var ok bool
 		var terminate error
 		if ok, terminate = n.so.SetEncodedRoot(x.Root); terminate != nil {

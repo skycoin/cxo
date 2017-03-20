@@ -13,24 +13,33 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+type Age uint32
+
+type Group struct {
+	Name    string
+	Leader  Reference  `skyobject:"schema=User"`
+	Members References `skyobject:"schema=User"`
+	Curator Dynamic
+}
+
 type User struct {
-	Name   string
-	Age    int64
-	Hidden string `enc:"-"` // ignore the field
+	Name   string ``
+	Age    Age    `json:"age"`
+	Hidden int    `enc:"-"`
+}
+
+type List struct {
+	Name     string
+	Members  References `skyobject:"schema=User"`
+	MemberOf []Group
 }
 
 type Man struct {
-	Name   string
-	Height int64
-	Weight int64
-}
-
-type SamllGroup struct {
-	Name     string
-	Leader   cipher.SHA256   `skyobject:"schema=User"` // single User
-	Outsider cipher.SHA256   // not a reference
-	FallGuy  Dynamic         // dynamic href
-	Members  []cipher.SHA256 `skyobject:"array=User"` // array of Users
+	Name    string
+	Age     Age
+	Seecret []byte
+	Owner   Group
+	Friends List
 }
 
 func main() {
@@ -38,12 +47,14 @@ func main() {
 	db := data.NewDB()
 	c := skyobject.NewContainer(db)
 
+	pk, _ := cipher.GenerateKeyPair() // public key
+
 	// create new empty root (that is, actually, wrapper of root, but who cares)
-	root := c.NewRoot()
+	root := c.NewRoot(pk)
 	// register schema of User{} with name "User",
 	// thus, tags like `skyobject:"schema=User"` will refer to
 	// schema of User{}
-	root.Register("User", User{})
+	root.RegisterSchema("User", User{})
 
 	// Set SmallGroup as root
 	root.Set(SamllGroup{
