@@ -230,6 +230,8 @@ func (s *Schema) isNamed() bool {
 	return len(s.name) > 0
 }
 
+// TODO: check if a schema already loaded
+
 // if a type
 // - is not reference
 // - is not flat

@@ -26,18 +26,6 @@ func (r *Reference) String() string {
 // If a References is a type of a field then the field must have schema=XXX tag
 type References []Reference
 
-// SaveArray of objects and get array of references-keys to them
-func (r *Root) SaveArray(ary ...interface{}) (rs References) {
-	if len(ary) == 0 {
-		return
-	}
-	rs = make(References, 0, len(ary))
-	for _, a := range ary {
-		rs = append(rs, r.Save(a))
-	}
-	return
-}
-
 // A Dynamic represents dynamic reference to any object and reference to its
 // schema
 type Dynamic struct {
@@ -45,18 +33,9 @@ type Dynamic struct {
 	Object Reference
 }
 
-// SaveSchema and get reference-key to it
-func (r *Root) SaveSchema(i interface{}) (ref Reference) {
-	return r.reg.SaveSchema(i)
-}
-
-func (r *Root) Dynamic(i interface{}) (dn Dynamic) {
-	dn.Object = r.Save(i)
-	dn.Schema = r.SaveSchema(i)
-	return
-}
-
-// RegisterSchema with given name
-func (r *Root) RegisterSchema(name string, i interface{}) {
-	r.reg.Register(name, i)
+func (d *Dynamic) IsValid() bool {
+	if d.Schema == (Reference{}) {
+		return d.Object == (Reference{})
+	}
+	return d.Object != (Reference{})
 }

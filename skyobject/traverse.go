@@ -46,7 +46,11 @@ func (m *MissingObject) Error() string {
 }
 
 type Value interface {
-	Kind() reflect.Kind // reflect.Ptr for references
+	// Kind returns reflect.Kind of value:
+	//  - reflect.Ptr for references
+	//  - reflect.Invalid for nil-values
+	//  ...and appropriate kinds for other values
+	Kind() reflect.Kind
 
 	// Dereference returns value by reference. A value is reference if
 	// its kind is reflect.Ptr
@@ -59,6 +63,8 @@ type Value interface {
 	String() (s string, err error) // reflect.String
 	Bytes() (p []byte, err error)  // reflect.Slice of bytes or reflect.String
 	Float() (f float64, err error) // reflect.Ptr
+
+	// TODO: fast range over fields
 
 	// structs
 	Fields() []string // names of fields
@@ -101,6 +107,14 @@ func (x *value) Dereference() (v Value, err error) {
 		if err = encoder.DeserializeRaw(x.od, &dr); err != nil {
 			return
 		}
+		if !dr.IsValid() {
+			err = ErrInvalidReference
+			return
+		}
+		if dr.Schema == (Reference{}) {
+			v = nilValue(x.r)
+			return
+		}
 		var (
 			s Schema
 
@@ -126,6 +140,10 @@ func (x *value) Dereference() (v Value, err error) {
 		}
 		var ref Reference
 		if err = encoder.DeserializeRaw(x.od, &ref); err != nil {
+			return
+		}
+		if ref == (Reference{}) {
+			v = nilValue(x.r)
 			return
 		}
 		var (
@@ -433,42 +451,6 @@ func (x *value) Schema() *Schema {
 }
 
 //
-// reference value
-//
-
-func (r *Root) Values() (vs []Value, err error) {
-	if r == nil {
-		return
-	}
-	if len(r.Refs) == 0 {
-		return
-	}
-	vs = make([]Value, 0, len(r.Refs))
-	var (
-		s *Schema
-
-		sd, od []byte
-		ok     bool
-	)
-	for _, dr := range r.Refs {
-		if sd, ok = r.cnt.get(dr.Schema); !ok {
-			err = &MissingSchema{dr.Schema}
-			return
-		}
-		s = new(Schema)
-		if err = s.Decode(r.reg, sd); err != nil {
-			return
-		}
-		if od, ok = r.cnt.get(dr.Object); !ok {
-			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
-			return
-		}
-		vs = append(vs, &value{r, s, od})
-	}
-	return
-}
-
-//
 // schema size
 //
 
@@ -577,6 +559,10 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 //
 // helpers
 //
+
+func nilValue(r *Root) Value {
+	return &value{r, &Schema{kind: uint32(reflect.Invalid)}, nil}
+}
 
 func getLength(p []byte) (l int, err error) {
 	var u uint32

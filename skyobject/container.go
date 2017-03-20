@@ -19,6 +19,7 @@ var (
 	ErrMissingSchemaTag   = errors.New("missing schema tag")
 	ErrEmptySchemaKey     = errors.New("empty schema key")
 	ErrNotFound           = errors.New("not found")
+	ErrInvalidReference   = errors.New("invalid reference")
 )
 
 // A Container represents type helper to manage root objects
