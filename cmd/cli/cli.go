@@ -10,7 +10,7 @@ import (
 	"github.com/peterh/liner"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/rpc/client"
+	"github.com/skycoin/cxo/rpc/client"
 )
 
 var (
@@ -177,22 +177,22 @@ func executeCommand(command string, rpc *client.Client,
 func showHelp() {
 	fmt.Println(`
 
-	list
-		list connections
-	connect <address>
-		add connection to given address
-	disconnect	<address>
-		disconnect from given address
-	info
-		obtain information about the node
-	stat
-		obtain database statistic
-	terminate
-		close the node
-	help
-		show this help message
-	quit or exit
-		leave the cli
+  list
+    list connections
+  connect <address>
+    add connection to given address
+  disconnect	<address>
+    disconnect from given address
+  info
+    obtain information about the node
+  stat
+    obtain database statistic
+  terminate
+    close the node
+  help
+    show this help message
+  quit or exit
+    leave the cli
 
 `)
 }

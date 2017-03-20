@@ -6,70 +6,82 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
+func getCont() *Container {
+	return NewContainer(data.NewDB())
+}
+
 func TestNewContainer(t *testing.T) {
-	t.Run("nil-db", func(t *testing.T) {
-		defer func() {
-			if recover() == nil {
-				t.Error("missing panic")
-			}
-		}()
+	t.Run("nil db", func(t *testing.T) {
+		defer shouldPanic(t)
 		NewContainer(nil)
 	})
-	t.Run("pass", func(t *testing.T) {
-		c := NewContainer(data.NewDB())
-		if c == nil {
-			t.Error("misisng container")
-			return
+	t.Run("norm", func(t *testing.T) {
+		db := data.NewDB()
+		c := NewContainer(db)
+		if c.roots == nil {
+			t.Error("nil roots map")
 		}
-		if c.db == nil {
-			t.Error("missing db")
+		if c.reg == nil {
+			t.Error("nil regitry")
 		}
-		if c.root != nil {
-			t.Error("unexpecte root")
+		if c.db != db {
+			t.Error("wrong db")
 		}
 	})
+}
+
+func TestContainer_NewRoot(t *testing.T) {
+	c := getCont()
+	pk := pubKey()
+	root := c.NewRoot(pk)
+	if root.cnt != c {
+		t.Error("wrong back reference")
+	}
+	if root.reg != c.reg {
+		t.Error("wrong registry reference")
+	}
+	if root.Pub != pk {
+		t.Error("wrong pub key")
+	}
 }
 
 func TestContainer_Root(t *testing.T) {
-	c := NewContainer(data.NewDB())
-	if c.Root() != nil {
-		t.Error("unexpected root")
+	c := getCont()
+	pk := pubKey()
+	root := c.NewRoot(pk)
+	c.AddRoot(root)
+	if c.Root(pk) != root {
+		t.Error("wrong root by pk")
 	}
-	// TODO
+	if c.Root(pubKey()) != nil {
+		t.Error("expected nil, got a root")
+	}
 }
 
-func TestContainer_SetRoot(t *testing.T) {
-	// TODO
+func TestContainer_AddRoot(t *testing.T) {
+	t.Run("aside", func(t *testing.T) {
+		c := getCont()
+		defer shouldPanic(t)
+		c.AddRoot(&Root{})
+	})
+	t.Run("newer", func(t *testing.T) {
+		c := getCont()
+		pk := pubKey()
+		r1 := c.NewRoot(pk)
+		if !c.AddRoot(r1) {
+			t.Error("can't add root")
+		}
+		if c.AddRoot(r1) {
+			t.Error("add with same time")
+		}
+		r2 := c.NewRoot(pk)
+		r2.Touch()
+		if !c.AddRoot(r2) {
+			t.Error("can't add newer root")
+		}
+	})
 }
 
-func TestContainer_Save(t *testing.T) {
-	// TODO
-}
-
-func TestContainer_SaveArray(t *testing.T) {
-	// TODO
-}
-
-func TestContainer_Want(t *testing.T) {
-	// TODO
-}
-
-func TestContainer_want(t *testing.T) {
-	// TODO
-}
-
-func TestContainer_addMissing(t *testing.T) {
-	// TODO
-}
-
-func Test_skyobjectTag(t *testing.T) {
-	// TODO
-}
-
-func Test_tagSchemaName(t *testing.T) {
-	// TODO
-}
-
-func TestContainer_schemaByTag(t *testing.T) {
+func TestContainer_SetEncodedRoot(t *testing.T) {
 	// TODO
 }

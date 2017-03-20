@@ -87,31 +87,12 @@ func (d *DB) Range(fn func(key cipher.SHA256)) {
 	}
 }
 
-type QueryFunc func(key cipher.SHA256, data []byte) bool
-
-func (d *DB) Where(query QueryFunc) (result []cipher.SHA256) {
-	d.RLock()
-	defer d.RUnlock()
-	for k, v := range d.data {
-		if query(k, v) {
-			result = append(result, k)
-		}
-	}
-	return
-}
-
 func (d *DB) AddAutoKey(data []byte) (key cipher.SHA256) {
 	key = cipher.SumSHA256(data)
 	d.Lock()
 	defer d.Unlock()
 	d.data[key] = data
 	return
-}
-
-func (d *DB) Remove(key cipher.SHA256) {
-	d.Lock()
-	defer d.Unlock()
-	delete(d.data, key)
 }
 
 // Stat return statistic of the DB

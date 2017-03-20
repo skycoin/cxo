@@ -2,9 +2,7 @@ package skyobject
 
 import (
 	"errors"
-	"fmt"
-	"reflect"
-	"strings"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -13,263 +11,105 @@ import (
 )
 
 var (
-	hrefTypeName        = typeName(reflect.TypeOf(cipher.SHA256{}))
-	hrefArrayTypeName   = typeName(reflect.TypeOf([]cipher.SHA256{}))
-	dynamicHrefTypeName = typeName(reflect.TypeOf(DynamicHref{}))
-
-	// ErrMissingRoot occurs when a Container doesn't have
-	// a root object, but the action requires it
-	ErrMissingRoot = errors.New("missing root object")
-	// ErrUnexpectedHrefTag occurs when there is `skyobject:"href"`
-	// tag but type of the field is not cipher.SHA256 nor []cipher.SHA256
-	ErrUnexpectedHrefTag = errors.New("unexpected href tag")
-	// ErrMissingSchemaName occurs when a field has got `skyobject:"href"`
-	// tag, but doesn't have "schema=xxx" tag
-	ErrMissingSchemaName = errors.New("missing schema name")
-	// ErrMissingObject occurs where requested object is not received yet
-	ErrMissingObject = errors.New("missing object")
-	// ErrInvalidArgument occurs when given argument is not valid
-	ErrInvalidArgument = errors.New("invalid argument")
-	// ErrMalformedRoot can occur during SetRoot call if the given
-	// root is malformed
-	ErrMalformedRoot = errors.New("malformed root")
-
-	// ErrStopInspection is used to stop Inspect
-	ErrStopInspection = errors.New("stop inspection")
+	ErrMissingRoot        = errors.New("misisng root object")
+	ErrShortBuffer        = errors.New("short buffer")
+	ErrInvalidSchema      = errors.New("invalid schema")
+	ErrUnregisteredSchema = errors.New("unregistered schema")
+	ErrInvalidTag         = errors.New("invalid tag")
+	ErrMissingSchemaTag   = errors.New("missing schema tag")
+	ErrEmptySchemaKey     = errors.New("empty schema key")
+	ErrNotFound           = errors.New("not found")
+	ErrInvalidReference   = errors.New("invalid reference")
 )
 
-// A Container is a helper type to manage skyobjects. The container is not
-// thread safe
+// A Container represents type helper to manage root objects
 type Container struct {
-	db   *data.DB
-	root *Root
+	roots map[cipher.PubKey]*Root // feed -> root of the feed
+	db    *data.DB
+	reg   *Registry // shared registery
 }
 
-// NewContainer creates new Container that will use provided database.
-// The database must not be nil
+// NewContainer creates container using given db. If the db is nil
+// then the function panics
 func NewContainer(db *data.DB) (c *Container) {
 	if db == nil {
-		panic("NewContainer tooks in nil-db")
+		panic("missisng db")
 	}
-	c = &Container{
-		db: db,
+	c = new(Container)
+	c.db = db
+	c.roots = make(map[cipher.PubKey]*Root)
+	c.reg = NewRegistery(db)
+	return
+}
+
+//
+// root object
+//
+
+// NewRoot creates new empty root object. The method doesn't put the root
+// to the Container
+func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
+	root = new(Root)
+	root.reg = c.reg // shared registery
+	root.cnt = c
+	root.Pub = pk
+	root.Time = time.Now().UnixNano()
+	return
+}
+
+// Root returns root object by its public key
+func (c *Container) Root(pk cipher.PubKey) *Root {
+	return c.roots[pk]
+}
+
+// AddRoot add/replace given root object to the Container if timestamp of
+// given root is greater than timestamp of existsing root object. It's
+// possible to add a root object only if the root created by this container
+func (c *Container) AddRoot(root *Root) (set bool) {
+	if root.cnt != c {
+		panic("trying to add root object from a side")
+	}
+	if rt, ex := c.roots[root.Pub]; !ex {
+		c.roots[root.Pub], set = root, true
+	} else if rt.Time < root.Time {
+		c.roots[root.Pub], set = root, true
 	}
 	return
 }
 
-// Root returns root object or nil
-func (c *Container) Root() *Root {
-	return c.root
-}
-
-// SetRoot replaces existing root from given one if timespamp of the given root
-// is greater. The given root must not be nil
-func (c *Container) SetRoot(root *Root) (ok bool) {
-	if root == nil {
-		panic(ErrMissingRoot)
-	}
-	if c.root == nil {
-		c.root, ok = root, true
-		return
-	}
-	if c.root.Time < root.Time {
-		c.root, ok = root, true
-	}
-	return
-}
-
-// SetEncodedRoot decodes given data to Root and set it as root of the
-// Container. It returns (ok, nil) if root of the container replaced,
-// (false, nil) if not and (false, err) if there is a decoding error
-func (c *Container) SetEncodedRoot(data []byte) (ok bool, err error) {
-	var root *Root
-	if root, err = decodeRoot(data); err != nil {
-		return
-	}
-	ok = c.SetRoot(root)
-	return
-}
-
-// Save serializes given object and sotres it in DB returning
-// key of the object
-func (c *Container) Save(i interface{}) cipher.SHA256 {
-	return c.db.AddAutoKey(encoder.Serialize(i))
-}
-
-// SaveArray saves array of objects and retursn references to them
-func (c *Container) SaveArray(i ...interface{}) (ch []cipher.SHA256) {
-	if len(i) == 0 {
-		return // nil
-	}
-	ch = make([]cipher.SHA256, 0, len(i))
-	for _, x := range i {
-		ch = append(ch, c.Save(x))
-	}
-	return
-}
-
-// Want returns slice of nessessary references that
-// doesn't exist in db but required
-func (c *Container) Want() (want map[cipher.SHA256]struct{}, err error) {
-	if c.root == nil {
-		return
-	}
-	return c.want(c.root.Schema, c.root.Root)
-}
-
-func (c *Container) want(schk,
-	objk cipher.SHA256) (want map[cipher.SHA256]struct{}, err error) {
-
-	var (
-		schd, objd []byte
-		ok         bool
-
-		s Schema
-	)
-
-	want = make(map[cipher.SHA256]struct{})
-
-	if schd, ok = c.db.Get(schk); !ok { // don't have the schema
-		want[schk] = struct{}{}
-		c.addMissing(want, objk)
-		return
-	}
-
-	if objd, ok = c.db.Get(objk); !ok {
-		want[objk] = struct{}{}
-		return
-	}
-
-	// we have both schema and object
-	if err = encoder.DeserializeRaw(schd, &s); err != nil {
-		return
-	}
-
-	for _, sf := range s.Fields {
-		var tag string
-		if tag = skyobjectTag(sf); !strings.Contains(tag, "href") {
-			continue
-		}
-		//
-		// TODO: DRY
-		//
-		switch sf.Type {
-		case hrefTypeName:
-			// the field contains cipher.SHA256 reference
-			var ref cipher.SHA256
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &ref)
-			if err != nil {
-				goto Error
-			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				goto Error
-			}
-			var w map[cipher.SHA256]struct{}
-			if w, err = c.want(schk, ref); err != nil {
-				goto Error
-			}
-			mergeMaps(want, w)
-		case hrefArrayTypeName:
-			// the field contains []cipher.SHA256 references
-			var refs []cipher.SHA256
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &refs)
-			if err != nil {
-				goto Error
-			}
-			if schk, err = c.schemaByTag(tag); err != nil {
-				goto Error
-			}
-			var w map[cipher.SHA256]struct{}
-			for _, ref := range refs {
-				if w, err = c.want(schk, ref); err != nil {
-					goto Error
-				}
-				mergeMaps(want, w)
-			}
-		case dynamicHrefTypeName:
-			// the field refer to dynamic schema
-			var dh DynamicHref
-			err = encoder.DeserializeField(objd, s.Fields, sf.Name, &dh)
-			if err != nil {
-				goto Error
-			}
-			var w map[cipher.SHA256]struct{}
-			if w, err = c.want(dh.Schema, dh.ObjKey); err != nil {
-				goto Error
-			}
-			mergeMaps(want, w)
-		default:
-			err = ErrUnexpectedHrefTag
-			goto Error
+// SetEncodedRoot set given data as root object of the container.
+// It returns an error if the data can't be encoded. It returns
+// true if the root is set
+func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
+	var x struct {
+		Root Root
+		Nmr  []struct{ K, V string } // map[string]string
+		Reg  []struct {              // map[string]cipher.SHA256
+			K string
+			V cipher.SHA256
 		}
 	}
-	return
-Error:
-	want = nil // set want to nil if we have got an error
-	return
-}
-
-// mergeMaps merges appention to dst
-func mergeMaps(dst, appention map[cipher.SHA256]struct{}) {
-	for k := range appention {
-		dst[k] = struct{}{}
-	}
-}
-
-// append key to array if it is not exist in db
-func (c *Container) addMissing(w map[cipher.SHA256]struct{},
-	keys ...cipher.SHA256) {
-
-	for _, key := range keys {
-		if _, ok := c.db.Get(key); !ok {
-			w[key] = struct{}{}
-		}
-	}
-
-}
-
-// get vlaue of `skyobjet:"xxx"` tag or empty string
-func skyobjectTag(sf encoder.StructField) string {
-	return reflect.StructTag(sf.Tag).Get("skyobject")
-}
-
-// tagSchemaName returns schema name or error if there is no
-// schema=xxx in given tag, it returns an error if given tag
-// is invalid
-func tagSchemaName(tag string) (s string, err error) {
-	for _, p := range strings.Split(tag, ",") {
-		if strings.HasPrefix(p, "schema=") {
-			ss := strings.Split(p, "=")
-			if len(ss) != 2 {
-				err = fmt.Errorf("invalid schema tag: %s", p)
-				return
-			}
-			s = ss[1]
-			return
-		}
-	}
-	if s == "" {
-		err = ErrMissingSchemaName
-	}
-	return
-}
-
-// if given tag contains schema=xxx then it reutrns appropriate schema or
-// error if the schema is not registered
-func (c *Container) schemaByTag(tag string) (s cipher.SHA256, err error) {
-	var (
-		schemaName string
-		ok         bool
-	)
-	if schemaName, err = tagSchemaName(tag); err != nil {
+	if err = encoder.DeserializeRaw(p, &x); err != nil {
 		return
 	}
-	if c.root == nil {
-		err = ErrMissingRoot
-		return
+	var root *Root = &x.Root
+	root.cnt = c
+	root.reg = c.reg
+	for _, v := range x.Nmr {
+		root.reg.nmr[v.K] = v.V
 	}
-	if s, ok = c.root.registry[schemaName]; !ok {
-		err = fmt.Errorf("unregistered schema: %s", schemaName)
+	for _, v := range x.Reg {
+		root.reg.reg[v.K] = v.V
 	}
+	ok = c.AddRoot(root)
+	return
+}
+
+//
+// database wrappers (Reference <-> cipher.SHA256)
+//
+
+func (c *Container) get(r Reference) (v []byte, ok bool) {
+	v, ok = c.db.Get(cipher.SHA256(r))
 	return
 }
