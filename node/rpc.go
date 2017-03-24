@@ -98,18 +98,31 @@ func (n *Node) Disconnect(address string) (err error) {
 	return
 }
 
-func (n *Node) Inject(hash cipher.SHA256, sec cipher.SecKey) (err error) {
-	if hash == (cipher.SHA256{}) {
-		err = ErrEmptyHash
-		return
-	}
+func (n *Node) Inject(hash cipher.SHA256,
+	pub cipher.PubKey, sec cipher.SecKey) (err error) {
+
 	if sec == (cipher.SecKey{}) {
 		err = ErrEmptySecret
 		return
 	}
+	if pub == (cipher.PubKey{}) {
+		err = ErrNotFound
+		return
+	}
 	n.enqueueRpcEvent(func() {
-		//
+		root := n.so.Root(pub) // get root by public key
+		if root == nil {
+			err = ErrNotFound
+			return
+		}
+		if err = root.InjectHash(hash); err != nil { // inject hash
+			return
+		}
+		root.Touch()            // update timestamp and seq
+		n.so.AddRoot(root, sec) // replace with previous and sign
+		n.Share(pub)            // send the new root to subscribers
 	})
+	return
 }
 
 // List should be called from RPC server. The List returns all

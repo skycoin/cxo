@@ -18,7 +18,6 @@ var (
 	ErrNotFound   = errors.New("not found")
 	ErrNotAllowed = errors.New("not allowed")
 
-	ErrEmptyHash   = errors.New("empty hash")
 	ErrEmptySecret = errors.New("empty secret key")
 
 	ErrManualDisconnect gnet.DisconnectReason = errors.New(
