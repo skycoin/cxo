@@ -165,6 +165,8 @@ func TestNode_replication(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		// subscribe to the feed first
+		nd.Subscribe(pub)
 		for j, ns := range []*Node{n1, n2, n3, n4} {
 			if i == j {
 				continue
@@ -172,10 +174,8 @@ func TestNode_replication(t *testing.T) {
 			if err = ns.Connect(info.Address); err != nil {
 				t.Error("connecting error: ", err)
 			}
+			time.Sleep(sleep) // wait
 		}
-		// wait
-		time.Sleep(sleep)
-		nd.Subscribe(pub) // subscribe to the feed
 	}
 	// connect n1 to source
 	info, err := source.Info()
@@ -188,7 +188,7 @@ func TestNode_replication(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(sleep)
+	time.Sleep(sleep + sleep + sleep)
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
