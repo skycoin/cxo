@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"sort"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -8,7 +9,7 @@ import (
 )
 
 // an entity of map[string]cipher.SHA256
-type registryEntity struct {
+type RegistryEntity struct {
 	K string
 	V cipher.SHA256
 }
@@ -18,7 +19,7 @@ type rootEncoding struct {
 	Time int64
 	Seq  uint64
 	Refs []Reference
-	Reg  []registryEntity // registery
+	Reg  []RegistryEntity // registery
 }
 
 // A Root represents wrapper around root object
@@ -62,11 +63,14 @@ func (r *Root) Encode() (p []byte) {
 	x.Seq = r.Seq
 	x.Refs = r.Refs
 	if len(r.reg.reg) > 0 {
-		x.Reg = make([]registryEntity, 0, len(r.reg.reg))
+		x.Reg = make([]RegistryEntity, 0, len(r.reg.reg))
 	}
 	for k, v := range r.reg.reg {
-		x.Reg = append(x.Reg, registryEntity{k, v})
+		x.Reg = append(x.Reg, RegistryEntity{k, v})
 	}
+	sort.Slice(x.Reg, func(i, j int) bool {
+		return x.Reg[i].K < x.Reg[j].K
+	})
 	p = encoder.Serialize(&x)
 	return
 }
