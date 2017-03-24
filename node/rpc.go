@@ -98,6 +98,20 @@ func (n *Node) Disconnect(address string) (err error) {
 	return
 }
 
+func (n *Node) Inject(hash cipher.SHA256, sec cipher.SecKey) (err error) {
+	if hash == (cipher.SHA256{}) {
+		err = ErrEmptyHash
+		return
+	}
+	if sec == (cipher.SecKey{}) {
+		err = ErrEmptySecret
+		return
+	}
+	n.enqueueRpcEvent(func() {
+		//
+	})
+}
+
 // List should be called from RPC server. The List returns all
 // connections
 func (n *Node) List() (list []string, err error) {

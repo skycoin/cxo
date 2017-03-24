@@ -55,6 +55,16 @@ func (r *Root) Inject(i interface{}) {
 	r.Refs = append(r.Refs, r.Save(r.Dynamic(i)))
 }
 
+// InjectHash injects hash of Dynamic object
+func (r *Root) InjectHash(hash Reference) (err error) {
+	if hash == (Reference{}) {
+		err = ErrInvalidReference
+		return
+	}
+	r.Refs = append(r.Refs, hash)
+	return
+}
+
 // Encode convertes a root to []byte
 func (r *Root) Encode() (p []byte) {
 	var x rootEncoding
