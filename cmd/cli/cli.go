@@ -9,6 +9,8 @@ import (
 
 	"github.com/peterh/liner"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/rpc/client"
 )
@@ -21,6 +23,7 @@ var (
 	commands = []string{
 		"list",
 		"connect",
+		"subscribe",
 		"disconnect",
 		"info",
 		"stat",
@@ -151,6 +154,8 @@ func executeCommand(command string, rpc *client.Client,
 		err = list(rpc)
 	case "connect":
 		err = connect(rpc, ss)
+	case "subscribe":
+		err = subscribe(rpc, ss)
 	case "disconnect":
 		err = disconnect(rpc, ss)
 	case "info":
@@ -181,6 +186,8 @@ func showHelp() {
     list connections
   connect <address>
     add connection to given address
+  subscribe <public key>
+  	subscribe to feed
   disconnect	<address>
     disconnect from given address
   info
@@ -231,6 +238,22 @@ func connect(rpc *client.Client, ss []string) (err error) {
 		return
 	}
 	fmt.Println("  connected")
+	return
+}
+
+func subscribe(rpc *client.Client, ss []string) (err error) {
+	var hex string
+	if hex, err = args(ss); err != nil {
+		return
+	}
+	var pub cipher.PubKey
+	if pub, err = cipher.PubKeyFromHex(hex); err != nil {
+		return
+	}
+	if err = rpc.Subscribe(pub); err != nil {
+		return
+	}
+	fmt.Println("  subscribed")
 	return
 }
 

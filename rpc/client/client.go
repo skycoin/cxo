@@ -1,7 +1,5 @@
 // Package client is RPC-client for CXO daemon. For example
 // see cmd/cli
-//
-//
 package client
 
 import (
@@ -9,6 +7,7 @@ import (
 	"net/rpc"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/rpc/comm"
 )
 
 //     "rpc.Connect",     address string,    _       *struct{}
@@ -59,8 +58,8 @@ func (c *Client) List() (list []string, err error) {
 }
 
 // Info returns listening address of remote node
-func (c *Client) Info() (address string, err error) {
-	err = c.r.Call("rpc.Info", struct{}{}, &address)
+func (c *Client) Info() (info comm.Info, err error) {
+	err = c.r.Call("rpc.Info", struct{}{}, &info)
 	return
 }
 

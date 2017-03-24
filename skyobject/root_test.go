@@ -2,6 +2,8 @@ package skyobject
 
 import (
 	"testing"
+
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 func TestRoot_Touch(t *testing.T) {
@@ -13,16 +15,17 @@ func TestRoot_Inject(t *testing.T) {
 }
 
 func TestRoot_Encode(t *testing.T) {
-	pk := pubKey()
+	pub, sec := cipher.GenerateKeyPair()
 	// encode
 	c1 := getCont()
-	r1 := c1.NewRoot(pk)
+	r1 := c1.NewRoot(pub)
 	r1.Register("User", User{})
 	r1.SaveSchema(Group{})
+	r1.Sign(sec)
 	p := r1.Encode()
 	// decode
 	c2 := getCont()
-	if ok, err := c2.SetEncodedRoot(p); err != nil {
+	if ok, err := c2.SetEncodedRoot(p, r1.Pub, r1.Sig); err != nil {
 		t.Error(err)
 	} else if !ok {
 		t.Error("can't set encoded root")

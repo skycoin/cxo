@@ -71,7 +71,7 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 
 // A Root contains encoded ([]byte) root object
 type Root struct {
-	Sign cipher.Sig
+	Sig  cipher.Sig
 	Pub  cipher.PubKey
 	Root []byte
 }

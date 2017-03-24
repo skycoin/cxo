@@ -3,24 +3,46 @@ package node
 import (
 	"net"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/rpc/comm"
 )
 
 // An rpcEvent represent RPC event
-type rpcEvent func()
+type rpcEvent interface{}
 
 // enqueue rpc event
-func (n *Node) enqueueEvent(evt rpcEvent) (err error) {
+func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
+	if pub, ok := evt.(cipher.PubKey); ok {
+		n.rpce <- pub // subscribe
+		return
+	}
 	var done = make(chan struct{})
 	// enquue
-	select {
-	case n.rpce <- func() {
-		defer close(done)
-		evt()
-	}:
-	case <-n.quit:
-		err = ErrClosed
-		return
+	switch e := evt.(type) {
+	case func(): //
+		select {
+		case n.rpce <- func() {
+			defer close(done)
+			e()
+		}:
+		case <-n.quit:
+			err = ErrClosed
+			return
+		}
+	case func(map[cipher.PubKey]struct{}): //
+		select {
+		case n.rpce <- func(subs map[cipher.PubKey]struct{}) {
+			defer close(done)
+			e(subs)
+		}:
+		case <-n.quit:
+			err = ErrClosed
+			return
+		}
+	default: //
+		n.Panicf("[CRITICAL] invalid type of rpc event %T", evt)
 	}
 	// wait
 	select {
@@ -29,6 +51,11 @@ func (n *Node) enqueueEvent(evt rpcEvent) (err error) {
 		err = ErrClosed
 	}
 	return
+}
+
+// Subscribe to a feed by public key
+func (n *Node) Subscribe(pub cipher.PubKey) {
+	n.enqueueRpcEvent(pub)
 }
 
 // Connect should be called from RPC server. It trying
@@ -61,20 +88,30 @@ func (n *Node) List() (list []string, err error) {
 
 // Info is for RPC. It returns all useful inforamtions about the node
 // except statistic. I.e. it returns listening address
-func (n *Node) Info() (address string, err error) {
-	err = n.enqueueEvent(func() {
+func (n *Node) Info() (info comm.Info, err error) {
+	err = n.enqueueRpcEvent(func(subs map[cipher.PubKey]struct{}) {
 		var a net.Addr
 		if a, err = n.pool.ListeningAddress(); err != nil {
 			return
 		}
-		address = a.String()
+		info.Address = a.String()
+		info.Feeds = make(map[cipher.PubKey][]string)
+		for pk := range subs {
+			list := make([]string, 0, 5)
+			for _, address := range n.conf.Known[pk] {
+				if n.pool.IsConnExist(address) {
+					list = append(list, address)
+				}
+			}
+			info.Feeds[pk] = list
+		}
 	})
 	return
 }
 
 // Stat is for RPC. It returns database statistic
 func (n *Node) Stat() (stat data.Stat, err error) {
-	err = n.enqueueEvent(func() {
+	err = n.enqueueRpcEvent(func() {
 		stat = n.db.Stat()
 	})
 	return
@@ -86,10 +123,10 @@ func (n *Node) Terminate() (err error) {
 		err = ErrNotAllowed
 		return
 	}
-	err = n.enqueueEvent(func() {
+	err = n.enqueueRpcEvent(func() {
 		n.close()
 	})
-	// we will have got ErrClosed from enqueueEvent that
+	// we will have got ErrClosed from enqueueRpcEvent that
 	// is not actual error
 	if err == ErrClosed {
 		err = nil

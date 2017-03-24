@@ -18,7 +18,7 @@ type Root struct {
 	Sig cipher.Sig    `enc:"-"` // signature
 	Pub cipher.PubKey `enc:"-"` // public key
 
-	reg *Registry  `enc:"-"` // bak reference to registery
+	reg *Registry  `enc:"-"` // back reference to registery
 	cnt *Container `enc:"-"` // back reference to container
 }
 
@@ -107,6 +107,7 @@ func (r *Root) Register(name string, i interface{}) {
 // reference value
 //
 
+// Values returns set of values the root object refers to
 func (r *Root) Values() (vs []*Value, err error) {
 	if r == nil {
 		return

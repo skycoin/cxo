@@ -3,6 +3,8 @@ package skyobject
 import (
 	"testing"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
 )
 
@@ -83,5 +85,17 @@ func TestContainer_AddRoot(t *testing.T) {
 }
 
 func TestContainer_SetEncodedRoot(t *testing.T) {
-	// TODO
+	c := getCont()
+	pub, sec := cipher.GenerateKeyPair()
+	root := c.NewRoot(pub)
+	root.Touch()
+	root.Sign(sec)
+	p := root.Encode()
+	ok, err := c.SetEncodedRoot(p, root.Pub, root.Sig)
+	if err != nil {
+		t.Error(err)
+	}
+	if !ok {
+		t.Error("don't set")
+	}
 }

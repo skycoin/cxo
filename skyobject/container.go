@@ -58,6 +58,18 @@ func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
 	return
 }
 
+// Roots retusn list of all public keys of the Container
+func (c *Container) Roots() (list []cipher.PubKey) {
+	if len(c.roots) == 0 {
+		return
+	}
+	list = make([]cipher.PubKey, 0, len(c.roots))
+	for pub := range c.roots {
+		list = append(list, pub)
+	}
+	return
+}
+
 // Root returns root object by its public key
 func (c *Container) Root(pk cipher.PubKey) (r *Root) {
 	return c.roots[pk]
@@ -81,7 +93,14 @@ func (c *Container) AddRoot(root *Root) (set bool) {
 // SetEncodedRoot set given data as root object of the container.
 // It returns an error if the data can't be encoded. It returns
 // true if the root is set
-func (c *Container) SetEncodedRoot(p []byte) (ok bool, err error) {
+func (c *Container) SetEncodedRoot(p []byte,
+	pub cipher.PubKey, sig cipher.Sig) (ok bool, err error) {
+
+	err = cipher.VerifySignature(pub, sig, cipher.SumSHA256(p))
+	if err != nil {
+		return
+	}
+
 	var x struct {
 		Root Root
 		Reg  []struct { // map[string]cipher.SHA256

@@ -16,8 +16,11 @@ import (
 
 	"golang.org/x/net/netutil"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
+	"github.com/skycoin/cxo/rpc/comm"
 )
 
 // A Config contains RPC-server configurations
@@ -98,6 +101,11 @@ func (s *Server) Connect(address string, _ *struct{}) (err error) {
 	return
 }
 
+func (s *Server) Subscribe(pub cipher.PubKey, _ *struct{}) (_ error) {
+	s.n.Subscribe(pub)
+	return
+}
+
 func (s *Server) Disconnect(address string, _ *struct{}) (err error) {
 	err = s.n.Disconnect(address)
 	return
@@ -112,12 +120,12 @@ func (s *Server) List(_ struct{}, list *[]string) (err error) {
 	return
 }
 
-func (s *Server) Info(_ struct{}, address *string) (err error) {
-	var a string
-	if a, err = s.n.Info(); err != nil {
+func (s *Server) Info(_ struct{}, info *comm.Info) (err error) {
+	var inf comm.Info
+	if inf, err = s.n.Info(); err != nil {
 		return
 	}
-	*address = a
+	*info = inf
 	return
 }
 
