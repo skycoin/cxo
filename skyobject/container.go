@@ -99,6 +99,11 @@ func (c *Container) addRoot(root *Root) (set bool) {
 	return
 }
 
+func decodeRoot(p []byte) (re rootEncoding, err error) {
+	err = encoder.DeserializeRaw(p, &re)
+	return
+}
+
 // SetEncodedRoot set given data as root object of the container.
 // It returns an error if the data can't be encoded. It returns
 // true if the root is set
@@ -110,22 +115,20 @@ func (c *Container) SetEncodedRoot(p []byte, // root.Encode()
 		return
 	}
 
-	var x struct {
-		Root Root
-		Reg  []struct { // map[string]cipher.SHA256
-			K string
-			V cipher.SHA256
-		}
-	}
-	if err = encoder.DeserializeRaw(p, &x); err != nil {
+	var re rootEncoding
+	if re, err = decodeRoot(p); err != nil {
 		return
 	}
-	var root *Root = &x.Root
+	var root *Root = &Root{
+		Time: re.Time,
+		Seq:  re.Seq,
+		Refs: re.Refs,
+	}
 	root.Pub = pub
 	root.Sig = sig
 	root.cnt = c
 	root.reg = c.reg
-	for _, v := range x.Reg {
+	for _, v := range re.Reg {
 		root.reg.reg[v.K] = v.V
 	}
 	ok = c.addRoot(root)

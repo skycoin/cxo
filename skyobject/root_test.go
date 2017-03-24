@@ -1,7 +1,6 @@
 package skyobject
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -25,11 +24,37 @@ func Test_signature(t *testing.T) {
 	}
 }
 
-func Test_encodeEqual(t *testing.T) {
+func Test_encodeDecode(t *testing.T) {
 	c := getCont()
 	r := c.NewRoot(pubKey())
-	if bytes.Compare(r.Encode(), r.Encode()) != 0 {
-		t.Error("not equal")
+	r.Register("User", User{})
+	p := r.Encode()
+	re, err := decodeRoot(p)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if re.Time != r.Time {
+		t.Error("wrong time")
+	}
+	if re.Seq != r.Seq {
+		t.Error("wrong seq")
+	}
+	if len(re.Refs) != len(r.Refs) {
+		t.Error("wrong Refs length")
+	}
+	for i, ref := range re.Refs {
+		if r.Refs[i] != ref {
+			t.Error("wrong reference", i)
+		}
+	}
+	if len(r.reg.reg) != len(re.Reg) {
+		t.Error("wrong Reg length")
+	}
+	for _, ent := range re.Reg {
+		if r.reg.reg[ent.K] != ent.V {
+			t.Error("wrong entity ", ent.K)
+		}
 	}
 }
 
@@ -41,7 +66,14 @@ func TestRoot_Encode(t *testing.T) {
 	r1.Register("User", User{})
 	r1.SaveSchema(Group{})
 	r1.Sign(sec)
+	sig := r1.Sig
 	p := r1.Encode()
+	if r1.Pub != pub {
+		t.Error("pub key was changed during encoding")
+	}
+	if r1.Sig != sig {
+		t.Error("signature was changed during encoding")
+	}
 	// decode
 	c2 := getCont()
 	if ok, err := c2.SetEncodedRoot(p, r1.Pub, r1.Sig); err != nil {

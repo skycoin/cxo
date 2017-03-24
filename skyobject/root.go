@@ -7,6 +7,20 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// an entity of map[string]cipher.SHA256
+type registryEntity struct {
+	K string
+	V cipher.SHA256
+}
+
+// rootEncoding is used to encode and decode the Root
+type rootEncoding struct {
+	Time int64
+	Seq  uint64
+	Refs []Reference
+	Reg  []registryEntity // registery
+}
+
 // A Root represents wrapper around root object
 type Root struct {
 	Time int64
@@ -42,24 +56,16 @@ func (r *Root) Inject(i interface{}) {
 
 // Encode convertes a root to []byte
 func (r *Root) Encode() (p []byte) {
-	var x struct {
-		Root Root
-		Reg  []struct { // map[string]cipher.SHA256
-			K string
-			V cipher.SHA256
-		}
-	}
+	var x rootEncoding
 	// by unknown reasons Pub and Sig of original was changed after encoding
-	x.Root = Root{
-		Time: r.Time,
-		Seq:  r.Seq,
-		Refs: r.Refs,
+	x.Time = r.Time
+	x.Seq = r.Seq
+	x.Refs = r.Refs
+	if len(r.reg.reg) > 0 {
+		x.Reg = make([]registryEntity, 0, len(r.reg.reg))
 	}
 	for k, v := range r.reg.reg {
-		x.Reg = append(x.Reg, struct {
-			K string
-			V cipher.SHA256
-		}{k, v})
+		x.Reg = append(x.Reg, registryEntity{k, v})
 	}
 	p = encoder.Serialize(&x)
 	return

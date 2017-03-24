@@ -82,9 +82,8 @@ func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 			Soname: "Cobley",
 		}),
 	})
-	root.Touch()   // update timestamp
-	root.Sign(sec) // sign
-	so.AddRoot(root)
+	root.Touch() // update timestamp
+	so.AddRoot(root, sec)
 	return n
 }
 
@@ -123,7 +122,7 @@ func TestNode_sourceDrain(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(5000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)

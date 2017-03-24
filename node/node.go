@@ -161,8 +161,7 @@ func (n *Node) Start() {
 //     	Value: 411,
 //     })
 //     root.Touch()
-//     root.Sign(sec)
-//     so.AddRoot(root)
+//     so.AddRoot(root, sec)
 //     n.Share(pub)
 //
 //     //
