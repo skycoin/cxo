@@ -139,6 +139,8 @@ func TestNode_sourceDrain(t *testing.T) {
 }
 
 func TestNode_replication(t *testing.T) {
+	//
+	sleep := 500 * time.Millisecond
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
@@ -154,6 +156,8 @@ func TestNode_replication(t *testing.T) {
 		nd.Start()
 		defer nd.Close()
 	}
+	// wait
+	time.Sleep(sleep)
 	// connect n1-n4
 	for i, nd := range []*Node{n1, n2, n3, n4} {
 		info, err := nd.Info()
@@ -169,6 +173,8 @@ func TestNode_replication(t *testing.T) {
 				t.Error("connecting error: ", err)
 			}
 		}
+		// wait
+		time.Sleep(sleep)
 		nd.Subscribe(pub) // subscribe to the feed
 	}
 	// connect n1 to source
@@ -182,7 +188,7 @@ func TestNode_replication(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(5000 * time.Millisecond)
+	time.Sleep(sleep)
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
