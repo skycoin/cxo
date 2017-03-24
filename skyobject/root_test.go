@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -21,6 +22,35 @@ func Test_signature(t *testing.T) {
 	sig := cipher.SignHash(hash, sec)
 	if err := cipher.VerifySignature(pub, sig, hash); err != nil {
 		t.Error(err)
+	}
+}
+
+func Test_encodeEqual(t *testing.T) {
+	c := getCont()
+	r := c.NewRoot(pubKey())
+	p := r.Encode()
+	if bytes.Compare(p, r.Encode()) != 0 {
+		t.Error("encode produce different result")
+	}
+	r.Register("User", User{})
+	p = r.Encode()
+	if bytes.Compare(p, r.Encode()) != 0 {
+		t.Error("encode produce different result")
+	}
+	r.SaveSchema(Group{})
+	p = r.Encode()
+	if bytes.Compare(p, r.Encode()) != 0 {
+		t.Error("encode produce different result")
+	}
+	r.SaveSchema(List{})
+	p = r.Encode()
+	if bytes.Compare(p, r.Encode()) != 0 {
+		t.Error("encode produce different result")
+	}
+	r.SaveSchema(Man{})
+	p = r.Encode()
+	if bytes.Compare(p, r.Encode()) != 0 {
+		t.Error("encode produce different result")
 	}
 }
 
