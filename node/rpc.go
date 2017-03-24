@@ -14,10 +14,6 @@ type rpcEvent interface{}
 
 // enqueue rpc event
 func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
-	if pub, ok := evt.(cipher.PubKey); ok {
-		n.rpce <- pub // subscribe
-		return
-	}
 	var done = make(chan struct{})
 	// enquue
 	switch e := evt.(type) {
@@ -55,7 +51,34 @@ func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
 
 // Subscribe to a feed by public key
 func (n *Node) Subscribe(pub cipher.PubKey) {
-	n.enqueueRpcEvent(pub)
+	n.enqueueRpcEvent(func(subs map[cipher.PubKey]struct{}) {
+		subs[pub] = struct{}{}
+		exc := []string{} // existing connections
+		for _, address := range n.conf.Known[pub] {
+			if !n.pool.IsConnExist(address) {
+				n.Debug("[DBG] connecting to ", address)
+				n.pool.Connect(address)
+			} else {
+				exc = append(exc, address)
+			}
+		}
+		if root := n.so.Root(pub); root != nil {
+			// Broadcast root of the feed (if we have it)
+			// to all existing connections. The root will be
+			// send to new connections automatically
+			msg := &Root{
+				Pub:  root.Pub,
+				Sig:  root.Sig,
+				Root: root.Encode(),
+			}
+			for _, address := range exc {
+				n.Debugf("[DBG] send root of %s to: %s",
+					pub.Hex(),
+					address)
+				n.pool.SendMessage(address, msg)
+			}
+		}
+	})
 }
 
 // Connect should be called from RPC server. It trying

@@ -78,10 +78,19 @@ func (c *Container) Root(pk cipher.PubKey) (r *Root) {
 // AddRoot add/replace given root object to the Container if timestamp of
 // given root is greater than timestamp of existsing root object. It's
 // possible to add a root object only if the root created by this container
-func (c *Container) AddRoot(root *Root) (set bool) {
+func (c *Container) AddRoot(root *Root, sec cipher.SecKey) (set bool) {
 	if root.cnt != c {
 		panic("trying to add root object from a side")
 	}
+	if root.Pub == (cipher.PubKey{}) {
+		panic("AddRoot: the root with empty public key")
+	}
+	root.Sign(sec) // sign the root
+	set = c.addRoot(root)
+	return
+}
+
+func (c *Container) addRoot(root *Root) (set bool) {
 	if rt, ex := c.roots[root.Pub]; !ex {
 		c.roots[root.Pub], set = root, true
 	} else if rt.Time < root.Time {
@@ -93,7 +102,7 @@ func (c *Container) AddRoot(root *Root) (set bool) {
 // SetEncodedRoot set given data as root object of the container.
 // It returns an error if the data can't be encoded. It returns
 // true if the root is set
-func (c *Container) SetEncodedRoot(p []byte,
+func (c *Container) SetEncodedRoot(p []byte, // root.Encode()
 	pub cipher.PubKey, sig cipher.Sig) (ok bool, err error) {
 
 	err = cipher.VerifySignature(pub, sig, cipher.SumSHA256(p))
@@ -112,12 +121,14 @@ func (c *Container) SetEncodedRoot(p []byte,
 		return
 	}
 	var root *Root = &x.Root
+	root.Pub = pub
+	root.Sig = sig
 	root.cnt = c
 	root.reg = c.reg
 	for _, v := range x.Reg {
 		root.reg.reg[v.K] = v.V
 	}
-	ok = c.AddRoot(root)
+	ok = c.addRoot(root)
 	return
 }
 

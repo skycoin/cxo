@@ -34,7 +34,8 @@ func (r *Root) Touch() {
 	r.Seq++
 }
 
-// Add given object to root
+// Add given object to root. The Inject creates Dynamic object from given one
+// and appends the Dynamic to the Root
 func (r *Root) Inject(i interface{}) {
 	r.Refs = append(r.Refs, r.Save(r.Dynamic(i)))
 }
@@ -48,7 +49,12 @@ func (r *Root) Encode() (p []byte) {
 			V cipher.SHA256
 		}
 	}
-	x.Root = *r
+	// by unknown reasons Pub and Sig of original was changed after encoding
+	x.Root = Root{
+		Time: r.Time,
+		Seq:  r.Seq,
+		Refs: r.Refs,
+	}
 	for k, v := range r.reg.reg {
 		x.Reg = append(x.Reg, struct {
 			K string

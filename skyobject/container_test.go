@@ -49,10 +49,10 @@ func TestContainer_NewRoot(t *testing.T) {
 
 func TestContainer_Root(t *testing.T) {
 	c := getCont()
-	pk := pubKey()
-	root := c.NewRoot(pk)
-	c.AddRoot(root)
-	if c.Root(pk) != root {
+	pub, sec := cipher.GenerateKeyPair()
+	root := c.NewRoot(pub)
+	c.AddRoot(root, sec)
+	if c.Root(pub) != root {
 		t.Error("wrong root by pk")
 	}
 	if c.Root(pubKey()) != nil {
@@ -64,21 +64,21 @@ func TestContainer_AddRoot(t *testing.T) {
 	t.Run("aside", func(t *testing.T) {
 		c := getCont()
 		defer shouldPanic(t)
-		c.AddRoot(&Root{})
+		c.AddRoot(&Root{}, cipher.SecKey{})
 	})
 	t.Run("newer", func(t *testing.T) {
 		c := getCont()
-		pk := pubKey()
+		pk, sk := cipher.GenerateKeyPair()
 		r1 := c.NewRoot(pk)
-		if !c.AddRoot(r1) {
+		if !c.AddRoot(r1, sk) {
 			t.Error("can't add root")
 		}
-		if c.AddRoot(r1) {
+		if c.AddRoot(r1, sk) {
 			t.Error("add with same time")
 		}
 		r2 := c.NewRoot(pk)
 		r2.Touch()
-		if !c.AddRoot(r2) {
+		if !c.AddRoot(r2, sk) {
 			t.Error("can't add newer root")
 		}
 	})

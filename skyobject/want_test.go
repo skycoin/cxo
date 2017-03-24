@@ -47,7 +47,8 @@ func TestSet_Err(t *testing.T) {
 func TestRoot_Want(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
-		root := c.NewRoot(pubKey())
+		pk, sk := cipher.GenerateKeyPair()
+		root := c.NewRoot(pk)
 		root.Register("User", User{})
 		root.Inject(Group{
 			Name: "a group",
@@ -67,7 +68,7 @@ func TestRoot_Want(t *testing.T) {
 				Friends: List{},
 			}),
 		})
-		c.AddRoot(root)
+		c.AddRoot(root, sk)
 		set, err := root.Want()
 		if err != nil {
 			t.Error("unexpected error:", err)
@@ -82,7 +83,8 @@ func TestRoot_Want(t *testing.T) {
 	})
 	t.Run("no", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
-		root := c.NewRoot(pubKey())
+		pk, sk := cipher.GenerateKeyPair()
+		root := c.NewRoot(pk)
 		root.Register("User", User{})
 		leader := User{
 			"Billy Kid", 16, 90,
@@ -104,7 +106,7 @@ func TestRoot_Want(t *testing.T) {
 				Friends: List{},
 			}),
 		})
-		c.AddRoot(root)
+		c.AddRoot(root, sk)
 		set, err := root.Want()
 		if err != nil {
 			t.Error("unexpected error:", err)

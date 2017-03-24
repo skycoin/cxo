@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -12,6 +13,24 @@ func TestRoot_Touch(t *testing.T) {
 
 func TestRoot_Inject(t *testing.T) {
 	//
+}
+
+func Test_signature(t *testing.T) {
+	pub, sec := cipher.GenerateKeyPair()
+	b := []byte("hello")
+	hash := cipher.SumSHA256(b)
+	sig := cipher.SignHash(hash, sec)
+	if err := cipher.VerifySignature(pub, sig, hash); err != nil {
+		t.Error(err)
+	}
+}
+
+func Test_encodeEqual(t *testing.T) {
+	c := getCont()
+	r := c.NewRoot(pubKey())
+	if bytes.Compare(r.Encode(), r.Encode()) != 0 {
+		t.Error("not equal")
+	}
 }
 
 func TestRoot_Encode(t *testing.T) {

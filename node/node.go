@@ -246,14 +246,6 @@ func (n *Node) handleRpcEvt(evt rpcEvent, subs map[cipher.PubKey]struct{}) {
 	switch x := evt.(type) {
 	case func():
 		x()
-	case cipher.PubKey:
-		subs[x] = struct{}{}
-		for _, address := range n.conf.Known[x] {
-			if !n.pool.IsConnExist(address) {
-				n.Debug("[INF] connecting to ", address)
-				n.pool.Connect(address)
-			}
-		}
 	case func(map[cipher.PubKey]struct{}):
 		x(subs)
 	default:
@@ -321,6 +313,7 @@ func (n *Node) handleMsgEvent(me msgEvent,
 			n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
 		}
 	case *Root:
+		n.Debug("[DBG] got Root meesage from: ", me.Address)
 		// add address of the subscription to known
 		n.addToKnown(x.Pub, me.Address)
 		// do we subscribed to the feed?
@@ -334,6 +327,7 @@ func (n *Node) handleMsgEvent(me msgEvent,
 			n.pool.Disconnect(me.Address, ErrMalformedMessage)
 			return
 		} else if !ok { // older or the same
+			n.Debug("[DBG] received root is older or the same we already have")
 			return
 		}
 		// broadcast the root

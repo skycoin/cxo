@@ -58,7 +58,7 @@ type SmallGroup struct {
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-func filledDownNode(pub cipher.PubKey, sec cipher.SecKey, t *testing.T) *Node {
+func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 	conf := newConfig()
@@ -66,7 +66,6 @@ func filledDownNode(pub cipher.PubKey, sec cipher.SecKey, t *testing.T) *Node {
 	n := NewNode(conf, db, so)
 	root := so.NewRoot(pub)
 	root.Register("User", User{})
-	t.Log("[INJECTION]")
 	root.Inject(SmallGroup{
 		Header: "Widdecombe Fair",
 		Leader: root.Save(User{"Old Uncle Tom Cobley", 75}),
@@ -97,28 +96,62 @@ func newNode(name string) *Node {
 	return NewNode(conf, db, so)
 }
 
-func Test_filledDownNode(t *testing.T) {
-	pub, sec := cipher.GenerateKeyPair()
-	filledDownNode(pub, sec, t)
-}
-
-func TestNode_replication(t *testing.T) {
-	t.Log("[START]")
+func TestNode_sourceDrain(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
-	source := filledDownNode(pub, sec, t)
-	t.Log("starting source node")
+	source := filledDownNode(pub, sec)
+	source.Start()
+	defer source.Close()
+	// we need to subscribe to the node to make it share the feed
+	source.Subscribe(pub) // subscribe to and share the feed
+	// drain node
+	drain := newNode("drain")
+	drain.Start()
+	defer drain.Close()
+	// subscribe to the feed
+	drain.Subscribe(pub)
+	// connect to source
+	info, err := source.Info()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// we don't have known hosts: use Connect method
+	if err = drain.Connect(info.Address); err != nil {
+		t.Error(err)
+		return
+	}
+	// wait
+	time.Sleep(5000 * time.Millisecond)
+	// inspect
+	ss := source.db.Stat()
+	t.Log("source: ", ss)
+	xs := drain.db.Stat()
+	t.Logf("drain: %v", xs)
+	if xs.Total != ss.Total {
+		t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+	}
+	if xs.Memory != ss.Memory {
+		t.Errorf("wrong amount of memory: want %s, got %s",
+			data.HumanMemory(ss.Memory),
+			data.HumanMemory(xs.Total))
+	}
+}
+
+func TestNode_replication(t *testing.T) {
+	// the feed an downer
+	pub, sec := cipher.GenerateKeyPair()
+	// create filled down node
+	source := filledDownNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	//
-	t.Log("subscribe and shre the feed by source node")
 	source.Subscribe(pub) // subscribe to and share the feed
 	// other nodes
 	n1, n2, n3, n4 := newNode("n1"), newNode("n2"), newNode("n3"), newNode("n4")
 	// start n1-n4
 	for _, nd := range []*Node{n1, n2, n3, n4} {
-		t.Log("starting pipe-node")
 		nd.Start()
 		defer nd.Close()
 	}
@@ -133,12 +166,10 @@ func TestNode_replication(t *testing.T) {
 			if i == j {
 				continue
 			}
-			t.Logf("%d connect to %s", i, info.Address)
 			if err = ns.Connect(info.Address); err != nil {
 				t.Error("connecting error: ", err)
 			}
 		}
-		t.Logf("%d subscribe to %s", i, pub.Hex())
 		nd.Subscribe(pub) // subscribe to the feed
 	}
 	// connect n1 to source
@@ -147,13 +178,11 @@ func TestNode_replication(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	t.Log("connect 1 to source")
 	if err = n1.Connect(info.Address); err != nil {
 		t.Error(err)
 		return
 	}
 	// wait
-	t.Log("sleep")
 	time.Sleep(5000 * time.Millisecond)
 	// inspect
 	ss := source.db.Stat()
