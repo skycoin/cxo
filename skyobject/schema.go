@@ -49,10 +49,12 @@ func (r *Registry) Register(name string, i interface{}) {
 	if tn == "" {
 		panic("unnamed types are not allowed for registering")
 	}
-	if rn, ok := r.nmr[name]; ok && rn != tn {
-		panic("another type aready registered with given name")
-	} else if rn == tn {
-		return // the same name, the same type,  already registered
+	if rn, ok := r.nmr[name]; ok {
+		if rn != tn {
+			panic("another type aready registered with given name")
+		} else if rn == tn {
+			return // the same name, the same type,  already registered
+		}
 	}
 	if _, ok := r.reg[tn]; !ok {
 		r.SaveSchema(i)
@@ -89,7 +91,7 @@ func (r *Registry) SchemaByTypeName(tn string) (s *Schema, err error) {
 	var sr cipher.SHA256 // schema reference
 	var ok bool
 	if sr, ok = r.reg[tn]; !ok {
-		err = ErrNotFound
+		err = ErrTypeNameNotFound
 		return
 	}
 	s, err = r.SchemaByReference(Reference(sr))
@@ -188,6 +190,11 @@ type Schema struct {
 	fields []Field  // for structs
 
 	sr *Registry `enc:"-"`
+}
+
+// IsNil reports that the schema is an empty schema.
+func (s *Schema) IsNil() bool {
+	return s.kind == uint32(reflect.Invalid)
 }
 
 // Name returns name for named types

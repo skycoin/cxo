@@ -13,24 +13,33 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+type Age uint32
+
+type Group struct {
+	Name    string
+	Leader  Reference  `skyobject:"schema=User"` // single User object
+	Members References `skyobject:"schema=User"` // slice of Users
+	Curator Dynamic    // a dynamic reference
+}
+
 type User struct {
-	Name   string
-	Age    int64
-	Hidden string `enc:"-"` // ignore the field
+	Name   string ``
+	Age    Age    `json:"age"`
+	Hidden int    `enc:"-"` // don't use the field
+}
+
+type List struct {
+	Name     string
+	Members  References `skyobject:"schema=User"` // alice of Users
+	MemberOf []Group
 }
 
 type Man struct {
-	Name   string
-	Height int64
-	Weight int64
-}
-
-type SamllGroup struct {
-	Name     string
-	Leader   cipher.SHA256   `skyobject:"schema=User"` // single User
-	Outsider cipher.SHA256   // not a reference
-	FallGuy  Dynamic         // dynamic href
-	Members  []cipher.SHA256 `skyobject:"array=User"` // array of Users
+	Name    string
+	Age     Age
+	Seecret []byte
+	Owner   Group // not a reference
+	Friends List  // not a reference
 }
 
 func main() {
@@ -38,36 +47,65 @@ func main() {
 	db := data.NewDB()
 	c := skyobject.NewContainer(db)
 
-	// create new empty root (that is, actually, wrapper of root, but who cares)
-	root := c.NewRoot()
+	pk, sec := cipher.GenerateKeyPair() // public and secret keys
+
+	// create new empty root object deteched from the container
+	root := c.NewRoot(pk)
+
 	// register schema of User{} with name "User",
 	// thus, tags like `skyobject:"schema=User"` will refer to
-	// schema of User{}
-	root.Register("User", User{})
+	// schema of the User{}
+	root.RegisterSchema("User", User{})
 
-	// Set SmallGroup as root
-	root.Set(SamllGroup{
-		Name: "Average small group",
-		// Save the Leader and get its key
-		Leader: c.Save(User{"Billy Kid", 16, ""}),
-		// Outsider is not a reference, it's just a SHA256
-		Outsider: cipher.SHA256{0, 1, 2, 3},
-		// Create and save dynamic reference to the Man
-		FallGuy: c.NewDynamic(Man{"Bob", 182, 82}),
-		// Save objects and get array of their references
-		Members: c.SaveArray(
-			User{"Alice", 21, ""},
-			User{"Eva", 22, ""},
-			User{"John", 23, ""},
-			User{"Michel", 24, ""},
+	// Inject the Group to the root
+	root.Inject(Group{
+		Name: "a group",
+		Leader: root.Save(User{
+			"Billy Kid", 16, 90,
+		}),
+		Members: root.SaveArray(
+			User{"Bob Marley", 21, 0},
+			User{"Alice Cooper", 19, 0},
+			User{"Eva Brown", 30, 0},
 		),
+		Curator: root.Dynamic(Man{
+			Name:    "Ned Kelly",
+			Age:     28,
+			Seecret: []byte("secret key"),
+			Owner:   Group{},
+			Friends: List{},
+		}),
 	})
 
-	// Set the root as root of the container
-	c.SetRoot(root)
+	// Note: feel free to use empty references they are treated as "nil"
+
+	root.Touch() // update timestamp of the root and increment seq number
+
+	// attach the root to container
+
+	// Add/replace with older. The AddRoot method also signs the root object
+	c.AddRoot(root, sec)
+
+	// Common tricks
+	// 1) Create new root
+	//      root := c.NewRoot(pubKey)
+	//      root.Inject(Blah{})
+	//      c.AddRoot(root, secKey)
+	// 2) Replace existing root with new one (the same)
+	//      root := c.NewRoot(pubKey)
+	//      root.Inject(Blah{})
+	//      c.AddRoot(root, secKey)
+	// 3) Inject some object to existing root
+	//      root := c.Root(pubKey)
+	//      root.Inject(Blah{})
+	//      root.Touch()
+	//      c.AddRoot(root, secKey) // replace
 
 	// prepare writer for inspect function
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 0, ' ', 0)
+
+	// TODO: |
+	//      \/
 
 	// prepare schema printer for inspect fucntion
 	printSchema := func(s *skyobject.Schema) {

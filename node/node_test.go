@@ -25,11 +25,11 @@ func TestNode_connecting(t *testing.T) {
 	defer n1.Close()
 	n2.Start()
 	defer n2.Close()
-	if address, err := n1.Info(); err != nil {
+	if info, err := n1.Info(); err != nil {
 		t.Error(err)
 		return
 	} else {
-		if err := n2.Connect(address); err != nil {
+		if err := n2.Connect(info.Address); err != nil {
 			t.Error(err)
 		}
 	}
@@ -50,26 +50,26 @@ type Man struct {
 
 type SmallGroup struct {
 	Header  string
-	Leader  cipher.SHA256 `skyobject:"schema=User"`
-	Members cipher.SHA256 `skyobject:"array=User"`
-	FallGuy cipher.SHA256 `skyobject:"dynamic"`
+	Leader  skyobject.Reference  `skyobject:"schema=User"`
+	Members skyobject.References `skyobject:"schema=User"`
+	FallGuy skyobject.Dynamic
 }
 
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-func filledDownNode() *Node {
+func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 	conf := newConfig()
 	conf.Name = "source"
 	n := NewNode(conf, db, so)
-	root := so.NewRoot()
+	root := so.NewRoot(pub)
 	root.Register("User", User{})
-	root.Set(SmallGroup{
+	root.Inject(SmallGroup{
 		Header: "Widdecombe Fair",
-		Leader: so.Save(User{"Old Uncle Tom Cobley", 75}),
-		Members: so.SaveArray(
+		Leader: root.Save(User{"Old Uncle Tom Cobley", 75}),
+		Members: root.SaveArray(
 			User{"Bill Brewer", 50},
 			User{"Jan Stewer", 51},
 			User{"Peter Gurney", 52},
@@ -77,12 +77,13 @@ func filledDownNode() *Node {
 			User{"Dan'l Whiddon", 54},
 			User{"Harry Hawke", 55},
 		),
-		FallGuy: so.SaveDynamicHref(Man{
+		FallGuy: root.Dynamic(Man{
 			Name:   "Bob",
 			Soname: "Cobley",
 		}),
 	})
-	so.SetRoot(root)
+	root.Touch() // update timestamp
+	so.AddRoot(root, sec)
 	return n
 }
 
@@ -94,11 +95,58 @@ func newNode(name string) *Node {
 	return NewNode(conf, db, so)
 }
 
-func TestNode_replication(t *testing.T) {
+func TestNode_sourceDrain(t *testing.T) {
+	// the feed an downer
+	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
-	source := filledDownNode()
+	source := filledDownNode(pub, sec)
 	source.Start()
 	defer source.Close()
+	// we need to subscribe to the node to make it share the feed
+	source.Subscribe(pub) // subscribe to and share the feed
+	// drain node
+	drain := newNode("drain")
+	drain.Start()
+	defer drain.Close()
+	// subscribe to the feed
+	drain.Subscribe(pub)
+	// connect to source
+	info, err := source.Info()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// we don't have known hosts: use Connect method
+	if err = drain.Connect(info.Address); err != nil {
+		t.Error(err)
+		return
+	}
+	// wait
+	time.Sleep(500 * time.Millisecond)
+	// inspect
+	ss := source.db.Stat()
+	t.Log("source: ", ss)
+	xs := drain.db.Stat()
+	t.Logf("drain: %v", xs)
+	if xs.Total != ss.Total {
+		t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+	}
+	if xs.Memory != ss.Memory {
+		t.Errorf("wrong amount of memory: want %s, got %s",
+			data.HumanMemory(ss.Memory),
+			data.HumanMemory(xs.Total))
+	}
+}
+
+func TestNode_replication(t *testing.T) {
+	// the feed an downer
+	pub, sec := cipher.GenerateKeyPair()
+	// create filled down node
+	source := filledDownNode(pub, sec)
+	source.Start()
+	defer source.Close()
+	//
+	source.Subscribe(pub) // subscribe to and share the feed
 	// other nodes
 	n1, n2, n3, n4 := newNode("n1"), newNode("n2"), newNode("n3"), newNode("n4")
 	// start n1-n4
@@ -108,7 +156,7 @@ func TestNode_replication(t *testing.T) {
 	}
 	// connect n1-n4
 	for i, nd := range []*Node{n1, n2, n3, n4} {
-		address, err := nd.Info()
+		info, err := nd.Info()
 		if err != nil {
 			t.Error(err)
 			return
@@ -117,23 +165,24 @@ func TestNode_replication(t *testing.T) {
 			if i == j {
 				continue
 			}
-			if err = ns.Connect(address); err != nil {
+			if err = ns.Connect(info.Address); err != nil {
 				t.Error("connecting error: ", err)
 			}
 		}
+		nd.Subscribe(pub) // subscribe to the feed
 	}
 	// connect n1 to source
-	address, err := source.Info()
+	info, err := source.Info()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if err = n1.Connect(address); err != nil {
+	if err = n1.Connect(info.Address); err != nil {
 		t.Error(err)
 		return
 	}
 	// wait
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(5000 * time.Millisecond)
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
