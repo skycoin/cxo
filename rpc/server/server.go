@@ -1,12 +1,13 @@
 // Package server is used to control a cxo/node using RPC.
 // The list of remote procedures:
 //
-//     "rpc.Connect",     address string,    _       *struct{}
-//     "rpc.Disconnect",  address string,    _       *struct{}
-//     "rpc.List"         _       struct{},  list    *[]string
-//     "rpc.Info",        _       struct{},  address *string
-//     "rpc.Stat",        _       struct{},  stat    *data.Stat
-//     "rpc.Terminate",   _       struct{},  _       *struct{}
+//     "rpc.Connect",     address      string,  _       *struct{}
+//     "rpc.Disconnect",  address      string,  _       *struct{}
+//     "rpc.Inject",      params  comm.Inject,  _       *struct{}
+//     "rpc.List"         _          struct{},  list    *[]string
+//     "rpc.Info",        _          struct{},  info    *comm.Info
+//     "rpc.Stat",        _          struct{},  stat    *data.Stat
+//     "rpc.Terminate",   _          struct{},  _       *struct{}
 //
 package server
 
@@ -108,6 +109,11 @@ func (s *Server) Subscribe(pub cipher.PubKey, _ *struct{}) (_ error) {
 
 func (s *Server) Disconnect(address string, _ *struct{}) (err error) {
 	err = s.n.Disconnect(address)
+	return
+}
+
+func (s *Server) Inject(args comm.Inject, _ *struct{}) (err error) {
+	err = s.n.Inject(args.Hash, args.Pub, args.Sec)
 	return
 }
 

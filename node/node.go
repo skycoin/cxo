@@ -158,7 +158,7 @@ func (n *Node) Start() {
 //     pub, sec := cipher.GenerateKeyPair()
 //
 //     root := so.NewRoot(pub)
-//     root.Set(Root{
+//     root.Inject(Root{
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })

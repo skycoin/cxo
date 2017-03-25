@@ -7,6 +7,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/rpc/comm"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 // An rpcEvent represent RPC event
@@ -115,7 +116,8 @@ func (n *Node) Inject(hash cipher.SHA256,
 			err = ErrNotFound
 			return
 		}
-		if err = root.InjectHash(hash); err != nil { // inject hash
+		// inject the hash
+		if err = root.InjectHash(skyobject.Reference(hash)); err != nil {
 			return
 		}
 		root.Touch()            // update timestamp and seq

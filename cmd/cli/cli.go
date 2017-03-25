@@ -13,6 +13,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/rpc/client"
+	"github.com/skycoin/cxo/rpc/comm"
 )
 
 var (
@@ -25,6 +26,7 @@ var (
 		"connect",
 		"subscribe",
 		"disconnect",
+		"inject",
 		"info",
 		"stat",
 		"terminate",
@@ -137,7 +139,6 @@ func args(ss []string) (string, error) {
 		return "", ErrMisisngArgument
 	case 2:
 		return ss[1], nil
-	default:
 	}
 	return "", ErrTooManyArguments
 }
@@ -158,6 +159,8 @@ func executeCommand(command string, rpc *client.Client,
 		err = subscribe(rpc, ss)
 	case "disconnect":
 		err = disconnect(rpc, ss)
+	case "inject":
+		err = inject(rpc, ss)
 	case "info":
 		err = info(rpc)
 	case "stat":
@@ -187,9 +190,11 @@ func showHelp() {
   connect <address>
     add connection to given address
   subscribe <public key>
-  	subscribe to feed
-  disconnect	<address>
+    subscribe to feed
+  disconnect  <address>
     disconnect from given address
+  inject <hash> <public key> <secret key>
+    inject given hash to references of the root, update and share the root
   info
     obtain information about the node
   stat
@@ -220,11 +225,12 @@ func list(rpc *client.Client) (err error) {
 }
 
 func info(rpc *client.Client) (err error) {
-	var address string
-	if address, err = rpc.Info(); err != nil {
+	var info comm.Info
+	if info, err = rpc.Info(); err != nil {
 		return
 	}
-	fmt.Println("  Listening address:", address)
+	fmt.Println("  Listening address:", info.Address)
+	// TODO:
 	return
 
 }
@@ -269,6 +275,42 @@ func disconnect(rpc *client.Client, ss []string) (err error) {
 	return
 }
 
+func inject(rpc *client.Client, ss []string) (err error) {
+	var hash, pub, sec string
+	switch len(ss) {
+	case 0, 1:
+		err = errors.New("missing arguments")
+		return
+	case 2:
+		err = errors.New("missing public key argument")
+		return
+	case 3:
+		err = errors.New("missing secret key argument")
+		return
+	case 4:
+		hash = ss[1]
+		pub = ss[2]
+		sec = ss[3]
+	default:
+		err = ErrTooManyArguments
+		return
+	}
+	var args comm.Inject
+	if args.Hash, err = cipher.SHA256FromHex(hash); err != nil {
+		return
+	}
+	if args.Pub, err = cipher.PubKeyFromHex(pub); err != nil {
+		return
+	}
+	if args.Sec, err = cipher.SecKeyFromHex(sec); err != nil {
+		return
+	}
+	if err = rpc.Inject(args); err == nil {
+		fmt.Println("  injected")
+	}
+	return
+}
+
 func stat(rpc *client.Client) (err error) {
 	var stat data.Stat
 	if stat, err = rpc.Stat(); err != nil {
@@ -280,9 +322,8 @@ func stat(rpc *client.Client) (err error) {
 }
 
 func term(rpc *client.Client) (err error) {
-	if err = rpc.Terminate(); err != nil {
-		return
+	if err = rpc.Terminate(); err == nil {
+		fmt.Println("  terminated")
 	}
-	fmt.Println("  terminated")
 	return
 }
