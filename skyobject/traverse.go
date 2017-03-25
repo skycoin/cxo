@@ -324,6 +324,37 @@ func (x *Value) FieldByName(name string) (v *Value, err error) {
 	return
 }
 
+func (x *Value) RangeFields(fn func(string, *Value)) (err error) {
+	if x.Kind() != reflect.Struct {
+		err = ErrInvalidType
+		return
+	}
+	var shift int
+	for _, sf := range x.s.Fields() {
+		var fs *Schema
+		if fs, err = sf.Schema(); err != nil {
+			return
+		}
+		if shift >= len(x.od) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		var n int
+		if n, err = fs.Size(x.od[shift:]); err != nil {
+			return
+		}
+		if shift+n > len(x.od) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		//
+		fn(sf.Name(), &Value{x.r, fs, x.od[shift : shift+n]})
+		//
+		shift += n
+	}
+	return
+}
+
 // ========================================================================== //
 //                            slices and arrays                               //
 // ========================================================================== //

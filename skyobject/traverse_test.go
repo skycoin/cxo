@@ -668,6 +668,114 @@ func TestValue_FieldByName(t *testing.T) {
 	})
 }
 
+func TestValue_RangeFields(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		root := getRoot()
+		name := "Alice"
+		age := Age(21)
+		root.Inject(User{name, age, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		// Name   string ``
+		// Age    Age    `json:"age"`
+		// Hidden int    `enc:"-"`
+		// 4 + 4
+		val := vs[0]
+		if val.Kind() != reflect.Struct {
+			t.Error("unexpected kind: ", val.Kind())
+		}
+		if ln := len(val.od); ln != len(name)+4+4 {
+			t.Error("wrong length of data: ", ln)
+		}
+		err = val.RangeFields(func(fname string, val *Value) {
+			switch fname {
+			case "Name":
+				if ln := len(val.od); ln != 4+len(name) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if s, err := val.String(); err != nil {
+					t.Error(err)
+				} else if s != name {
+					t.Error("wrong name: ", s)
+				}
+			case "Age":
+				if ln := len(val.od); ln != 4 {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if i, err := val.Uint(); err != nil {
+				} else if i != uint64(age) {
+					t.Error("wrong age: ", i)
+				}
+			}
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("references", func(t *testing.T) {
+		root := getRoot()
+		root.Register("User", User{})
+		root.Inject(Group{
+			Name:   "The Group",
+			Leader: root.Save(User{"Alice", 21, 0}),
+			Members: root.SaveArray(
+				User{"Bob", 32, 0},
+				User{"Eva", 33, 0},
+				User{"Tom", 34, 0},
+				User{"Amy", 35, 0},
+			),
+			Curator: root.Dynamic(Man{
+				Name: "Tony Hawk",
+			}),
+		})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		err = val.RangeFields(func(fname string, val *Value) {
+			switch fname {
+			case "Name":
+				if ln := len(val.od); ln != 4+len("The Group") {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if s, err := val.String(); err != nil {
+					t.Error(err)
+				} else if s != "The Group" {
+					t.Error("wrong name: ", s)
+				}
+			case "Leader":
+				if ln := len(val.od); ln != len(Reference{}) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if val.Kind() != reflect.Ptr {
+					t.Error("invalid kind of reference: ", val.Kind())
+				}
+			case "Members":
+				if ln := len(val.od); ln != 4+4*len(Reference{}) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if val.Kind() != reflect.Slice {
+					t.Error("invalid kind of references: ", val.Kind())
+				}
+			case "Curator":
+				if ln := len(val.od); ln != 2*len(Reference{}) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if val.Kind() != reflect.Ptr {
+					t.Error("invalid kind of reference: ", val.Kind())
+				}
+			}
+		})
+	})
+}
+
 func TestValue_Len(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
 		root := getRoot()
