@@ -9,6 +9,21 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// RegistryEntities is used for sorting
+type RegistryEntities []RegistryEntity
+
+func (r RegistryEntities) Len() int {
+	return len(r)
+}
+
+func (r RegistryEntities) Less(i, j int) bool {
+	return r[i].K < r[j].K
+}
+
+func (r RegistryEntities) Swap(i, j int) {
+	r[i], r[j] = r[j], r[i]
+}
+
 // an entity of map[string]cipher.SHA256
 type RegistryEntity struct {
 	K string
@@ -20,7 +35,7 @@ type rootEncoding struct {
 	Time int64
 	Seq  uint64
 	Refs []Reference
-	Reg  []RegistryEntity // registery
+	Reg  RegistryEntities // registery
 }
 
 // A Root represents wrapper around root object
@@ -76,14 +91,12 @@ func (r *Root) Encode() (p []byte) {
 	x.Seq = r.Seq
 	x.Refs = r.Refs
 	if len(r.reg.reg) > 0 {
-		x.Reg = make([]RegistryEntity, 0, len(r.reg.reg))
+		x.Reg = make(RegistryEntities, 0, len(r.reg.reg))
 	}
 	for k, v := range r.reg.reg {
 		x.Reg = append(x.Reg, RegistryEntity{k, v})
 	}
-	sort.Slice(x.Reg, func(i, j int) bool {
-		return x.Reg[i].K < x.Reg[j].K
-	})
+	sort.Sort(x.Reg)
 	p = encoder.Serialize(&x)
 	return
 }

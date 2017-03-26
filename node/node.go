@@ -179,13 +179,7 @@ func (n *Node) Start() {
 //
 func (n *Node) Share(pub cipher.PubKey) {
 	n.enqueueRpcEvent(func() {
-		if root := n.so.Root(pub); root != nil {
-			n.Debug("[DBG] announce root object: ", root.Pub.Hex())
-			n.pool.BroadcastMessage(&AnnounceRoot{
-				Pub:  pub,
-				Time: root.Time,
-			})
-		}
+		// TODO
 	})
 }
 
@@ -251,14 +245,7 @@ func (n *Node) handle(quit, done chan struct{},
 
 // new connection
 func (n *Node) handleConnectEvent(ce connectEvent, want skyobject.Set) {
-	// request roots
-	for pub := range n.subs {
-		n.pool.SendMessage(ce.Address, &RequestRoot{pub})
-	}
-	// request wants
-	for k := range want {
-		n.pool.SendMessage(ce.Address, &Request{cipher.SHA256(k)})
-	}
+	// TODO
 }
 
 func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
@@ -269,20 +256,7 @@ func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
 }
 
 func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
-	switch x := me.Msg.(type) {
-	case *Announce:
-		n.handleAnnounce(x, me.Address, want)
-	case *Request:
-		n.handleRequest(x, me.Address)
-	case *Data:
-		n.handleData(x, me.Address, want)
-	case *AnnounceRoot:
-		n.handleAnnounceRoot(x, me.Address)
-	case *RequestRoot:
-		n.handleRequestRoot(x, me.Address)
-	case *DataRoot:
-		n.handleDataRoot(x, me.Address, want)
-	}
+	// TODO
 }
 
 func (n *Node) close() {
