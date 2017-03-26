@@ -38,7 +38,13 @@ func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
 // Subscribe to a feed by public key
 func (n *Node) Subscribe(pub cipher.PubKey) {
 	n.enqueueRpcEvent(func() {
-		// TODO
+		n.subs[pub] = struct{}{}
+		for _, address := range n.conf.Known[pub] {
+			if !n.pool.IsConnExist(address) {
+				n.pool.Connect(address)
+			}
+		}
+		n.share <- pub // trigger update of wanted objects etc
 	})
 }
 

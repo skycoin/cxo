@@ -74,9 +74,10 @@ type Node struct {
 
 	pool *gnet.ConnectionPool
 
-	rpce     chan rpcEvent     // RPC events
-	connecte chan connectEvent // new connection
-	msge     chan msgEvent     // new message received
+	rpce     chan rpcEvent      // RPC events
+	connecte chan connectEvent  // new connection
+	msge     chan msgEvent      // new message received
+	share    chan cipher.PubKey // share updated root
 
 	subs map[cipher.PubKey]struct{} // subscriptions
 
@@ -98,7 +99,7 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 		conf.Name = "node"
 	}
 	// gnet debugging messages and debug messages of node
-	gnet.DebugPrint = false // conf.Debug
+	gnet.DebugPrint = conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
@@ -119,6 +120,7 @@ func (n *Node) Start() {
 	n.quit, n.done = make(chan struct{}), make(chan struct{})
 	n.connecte = make(chan connectEvent, n.conf.MaxConnections)
 	n.msge = make(chan msgEvent, n.conf.BroadcastResultSize)
+	n.share = make(chan cipher.PubKey, 10)
 	n.conf.ConnectCallback = n.onConnect
 	n.pool = gnet.NewConnectionPool(n.conf.Config, n)
 	n.pool.Run()
@@ -131,7 +133,7 @@ func (n *Node) Start() {
 		n.Print("[INF] listening on ", addr)
 	}
 	n.rpce = make(chan rpcEvent, n.conf.RPCEvents)
-	go n.handle(n.quit, n.done, n.connecte, n.msge, n.rpce)
+	go n.handle(n.quit, n.done, n.connecte, n.msge, n.rpce, n.share)
 	go n.subscribe() // subscribe to n.conf.Subscribe
 	return
 }
@@ -178,9 +180,10 @@ func (n *Node) Start() {
 //     return
 //
 func (n *Node) Share(pub cipher.PubKey) {
-	n.enqueueRpcEvent(func() {
-		// TODO
-	})
+	select {
+	case n.share <- pub:
+	case <-n.quit:
+	}
 }
 
 func (n *Node) subscribe() {
@@ -200,7 +203,9 @@ func (n *Node) onConnect(address string, outgoing bool) {
 
 // handling loop
 func (n *Node) handle(quit, done chan struct{},
-	connecte chan connectEvent, msge chan msgEvent, rpce chan rpcEvent) {
+	connecte chan connectEvent, msge chan msgEvent, rpce chan rpcEvent,
+	share chan cipher.PubKey) {
+
 	n.Debug("[DBG] start handling events")
 
 	var (
@@ -232,6 +237,8 @@ func (n *Node) handle(quit, done chan struct{},
 			n.handleConnectEvent(ce, want)
 		case me := <-msge:
 			n.handleMsgEvent(me, want)
+		case se := <-share:
+			n.handleShareEvent(se, want)
 		case rpce := <-rpce:
 			rpce()
 		case <-quit:
@@ -243,9 +250,36 @@ func (n *Node) handle(quit, done chan struct{},
 
 }
 
+func (n *Node) handleShareEvent(se cipher.PubKey, want skyobject.Set) {
+	if _, ok := n.subs[se]; !ok {
+		return // don't share
+	}
+	root := n.so.Root(se)
+	if root == nil {
+		return // haven't got
+	}
+	for k := range n.newWantedOfRoot(want, root) {
+		n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
+	}
+	n.pool.BroadcastMessage(&AnnounceRoot{
+		root.Pub,
+		root.Time,
+	})
+}
+
 // new connection
 func (n *Node) handleConnectEvent(ce connectEvent, want skyobject.Set) {
-	// TODO
+	for pub := range n.subs {
+		root := n.so.Root(pub)
+		if root == nil {
+			n.pool.SendMessage(ce.Address, &RequestRoot{Pub: pub}) // any
+		} else {
+			n.pool.SendMessage(ce.Address, &RequestRoot{
+				Pub:  pub,
+				Time: root.Time, // newer
+			})
+		}
+	}
 }
 
 func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
@@ -256,7 +290,113 @@ func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
 }
 
 func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
-	// TODO
+	switch x := me.Msg.(type) {
+	case *Announce:
+		if _, ok := want[skyobject.Reference(x.Hash)]; ok {
+			n.pool.SendMessage(me.Address, &Request{x.Hash})
+		}
+	case *Request:
+		if data, ok := n.db.Get(x.Hash); ok {
+			n.pool.SendMessage(me.Address, &Data{data})
+		}
+	case *Data:
+		hash := cipher.SumSHA256(x.Data)
+		if _, ok := want[skyobject.Reference(hash)]; ok {
+			n.db.Set(hash, x.Data)
+			delete(want, skyobject.Reference(hash))
+			for k := range n.newWanted(want) {
+				n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
+			}
+			n.pool.BroadcastMessage(&Announce{hash})
+		}
+	case *AnnounceRoot:
+		if _, ok := n.subs[x.Pub]; !ok {
+			return
+		}
+		root := n.so.Root(x.Pub)
+		if root != nil {
+			if root.Time >= x.Time {
+				return // already have
+			}
+		}
+		n.pool.SendMessage(me.Address, &RequestRoot{x.Pub, 0})
+	case *RequestRoot:
+		if _, ok := n.subs[x.Pub]; !ok {
+			return
+		}
+		root := n.so.Root(x.Pub)
+		if root != nil {
+			if root.Time > x.Time {
+				n.pool.SendMessage(me.Address, &DataRoot{
+					root.Pub,
+					root.Sig,
+					root.Encode(),
+				})
+			}
+		}
+	case *DataRoot:
+		if _, ok := n.subs[x.Pub]; !ok {
+			return
+		}
+		ok, err := n.so.AddEncodedRoot(x.Root, x.Pub, x.Sig)
+		if err != nil {
+			n.Print("[ERR] AddEncodedRoot: ", err)
+			return
+		}
+		if !ok {
+			n.Debug("[DBG] older root")
+			return
+		}
+		root := n.so.Root(x.Pub)
+		for k := range n.newWantedOfRoot(want, root) {
+			n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
+		}
+		n.pool.BroadcastMessage(&AnnounceRoot{
+			root.Pub,
+			root.Time,
+		})
+	}
+}
+
+func (n *Node) newWantedOfRoot(want skyobject.Set,
+	root *skyobject.Root) (nwr skyobject.Set) {
+
+	nwr = make(skyobject.Set)
+	set, _ := root.Want()
+	for k := range set {
+		if _, ok := want[k]; !ok {
+			want[k] = struct{}{}
+			nwr[k] = struct{}{}
+		}
+	}
+	return
+}
+
+// nww containe only new objects that doesn't requested yet
+// and want map updated
+func (n *Node) newWanted(want skyobject.Set) (nww skyobject.Set) {
+	nww = make(skyobject.Set)
+	for pub := range n.subs {
+		root := n.so.Root(pub)
+		if root == nil {
+			continue
+		}
+		set, _ := root.Want()
+		for k := range set {
+			if _, ok := want[k]; !ok {
+				want[k] = struct{}{}
+				nww[k] = struct{}{}
+			}
+		}
+	}
+	return
+}
+
+func mergeRootWanted(root *skyobject.Root, want skyobject.Set) {
+	rw, _ := root.Want()
+	for k := range rw {
+		want[k] = struct{}{}
+	}
 }
 
 func (n *Node) close() {
