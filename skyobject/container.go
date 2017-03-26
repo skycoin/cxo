@@ -1,3 +1,4 @@
+// Package skyobject represents skyobject
 package skyobject
 
 import (
@@ -104,10 +105,10 @@ func decodeRoot(p []byte) (re rootEncoding, err error) {
 	return
 }
 
-// SetEncodedRoot set given data as root object of the container.
+// AddEncodedRoot set given data as root object of the container.
 // It returns an error if the data can't be encoded. It returns
 // true if the root is set
-func (c *Container) SetEncodedRoot(p []byte, // root.Encode()
+func (c *Container) AddEncodedRoot(p []byte, // root.Encode()
 	pub cipher.PubKey, sig cipher.Sig) (ok bool, err error) {
 
 	err = cipher.VerifySignature(pub, sig, cipher.SumSHA256(p))
@@ -142,4 +143,54 @@ func (c *Container) SetEncodedRoot(p []byte, // root.Encode()
 func (c *Container) get(r Reference) (v []byte, ok bool) {
 	v, ok = c.db.Get(cipher.SHA256(r))
 	return
+}
+
+//
+// schemas and objects
+//
+
+// SchemaByReference returns *Schema by reference if the Container know
+// about the schema
+func (c *Container) SchemaByReference(sr Reference) (s *Schema, err error) {
+	if sr.IsBlank() {
+		err = ErrEmptySchemaKey
+		return
+	}
+	s, err = c.reg.SchemaByReference(sr)
+	return
+}
+
+// Save an object to db and get reference-key to it
+func (c *Container) Save(i interface{}) Reference {
+	return Reference(c.db.AddAutoKey(encoder.Serialize(i)))
+}
+
+// SaveArray of objects and get array of references-keys to them
+func (c *Container) SaveArray(ary ...interface{}) (rs References) {
+	if len(ary) == 0 {
+		return
+	}
+	rs = make(References, 0, len(ary))
+	for _, a := range ary {
+		rs = append(rs, c.Save(a))
+	}
+	return
+}
+
+// SaveSchema and get reference-key to it
+func (c *Container) SaveSchema(i interface{}) (ref Reference) {
+	return c.reg.SaveSchema(i)
+}
+
+// Dynamic saves object and its schema in db and returns dynamic reference,
+// that points to the object and the schema
+func (c *Container) Dynamic(i interface{}) (dn Dynamic) {
+	dn.Object = c.Save(i)
+	dn.Schema = c.SaveSchema(i)
+	return
+}
+
+// Register schema of given object with given name
+func (c *Container) Register(name string, i interface{}) {
+	c.reg.Register(name, i)
 }

@@ -84,18 +84,42 @@ func TestContainer_AddRoot(t *testing.T) {
 	})
 }
 
-func TestContainer_SetEncodedRoot(t *testing.T) {
+func TestContainer_AddEncodedRoot(t *testing.T) {
 	c := getCont()
 	pub, sec := cipher.GenerateKeyPair()
 	root := c.NewRoot(pub)
 	root.Touch()
 	root.Sign(sec)
 	p := root.Encode()
-	ok, err := c.SetEncodedRoot(p, root.Pub, root.Sig)
+	ok, err := c.AddEncodedRoot(p, root.Pub, root.Sig)
 	if err != nil {
 		t.Error(err)
 	}
 	if !ok {
 		t.Error("don't set")
 	}
+}
+
+func TestContainer_SchemaByReference(t *testing.T) {
+	//
+}
+
+func TestContainer_Save(t *testing.T) {
+	//
+}
+
+func TestContainer_SaveArray(t *testing.T) {
+	//
+}
+
+func TestContainer_SaveSchema(t *testing.T) {
+	//
+}
+
+func TestContainer_Dynamic(t *testing.T) {
+	//
+}
+
+func TestContainer_Register(t *testing.T) {
+	//
 }

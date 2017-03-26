@@ -7,6 +7,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/rpc/comm"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 // An rpcEvent represent RPC event
@@ -95,6 +96,34 @@ func (n *Node) Disconnect(address string) (err error) {
 	} else {
 		n.pool.Disconnect(address, ErrManualDisconnect)
 	}
+	return
+}
+
+func (n *Node) Inject(hash cipher.SHA256,
+	pub cipher.PubKey, sec cipher.SecKey) (err error) {
+
+	if sec == (cipher.SecKey{}) {
+		err = ErrEmptySecret
+		return
+	}
+	if pub == (cipher.PubKey{}) {
+		err = ErrNotFound
+		return
+	}
+	n.enqueueRpcEvent(func() {
+		root := n.so.Root(pub) // get root by public key
+		if root == nil {
+			err = ErrNotFound
+			return
+		}
+		// inject the hash
+		if err = root.InjectHash(skyobject.Reference(hash)); err != nil {
+			return
+		}
+		root.Touch()            // update timestamp and seq
+		n.so.AddRoot(root, sec) // replace with previous and sign
+		n.Share(pub)            // send the new root to subscribers
+	})
 	return
 }
 

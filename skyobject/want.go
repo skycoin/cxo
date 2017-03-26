@@ -8,13 +8,18 @@ import (
 // set of keys
 //
 
-// keys set
+// A Set represents set of Reference(s)
 type Set map[Reference]struct{}
 
+// Add appends given key to the Set
 func (s Set) Add(k Reference) {
 	s[k] = struct{}{}
 }
 
+// Err is works with MissingSchema and MissingObject errors.
+// If given error is Missing* error then the Err extract key from the error
+// and append the Key to the Set returning nil. If given error is not Missing*
+// error then it returns the error
 func (s *Set) Err(err error) error {
 	switch x := err.(type) {
 	case *MissingSchema:
@@ -87,16 +92,11 @@ func wantValue(val *Value, set Set) (err error) {
 			}
 		}
 	case reflect.Struct:
-		for _, name := range val.Fields() {
-			var d *Value
-			if d, err = val.FieldByName(name); err != nil {
-				return
-			}
-			if err = wantValue(d, set); err != nil {
-				if err = set.Err(err); err != nil {
-					return
-				} // else -> continue
-			}
+		err = val.RangeFields(func(fname string, d *Value) error {
+			return set.Err(wantValue(d, set))
+		})
+		if err != nil {
+			return
 		}
 	case reflect.Ptr:
 		var d *Value

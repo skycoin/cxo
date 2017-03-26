@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/rpc"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/rpc/comm"
 )
@@ -48,6 +50,18 @@ func (c *Client) Connect(address string) (err error) {
 // Disconnect is used to disconnect remote node from given address
 func (c *Client) Disconnect(address string) (err error) {
 	err = c.r.Call("rpc.Disconnect", address, nil)
+	return
+}
+
+// Subscribe subscribes node to given feed (by public key)
+func (c *Client) Subscribe(pub cipher.PubKey) (err error) {
+	err = c.r.Call("rpc.Subscribe", pub, nil)
+	return
+}
+
+// Inject injects hash to root object of the feed (by public key)
+func (c *Client) Inject(args comm.Inject) (err error) {
+	err = c.r.Call("rpc.Inject", args, nil)
 	return
 }
 

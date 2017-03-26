@@ -18,6 +18,8 @@ var (
 	ErrNotFound   = errors.New("not found")
 	ErrNotAllowed = errors.New("not allowed")
 
+	ErrEmptySecret = errors.New("empty secret key")
+
 	ErrManualDisconnect gnet.DisconnectReason = errors.New(
 		"manual disconnect")
 	ErrMalformedMessage gnet.DisconnectReason = errors.New(
@@ -156,7 +158,7 @@ func (n *Node) Start() {
 //     pub, sec := cipher.GenerateKeyPair()
 //
 //     root := so.NewRoot(pub)
-//     root.Set(Root{
+//     root.Inject(Root{
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })
@@ -319,7 +321,7 @@ func (n *Node) handleMsgEvent(me msgEvent,
 		if _, ok := subs[x.Pub]; !ok {
 			return // we don't subscribed to the feed
 		}
-		ok, terminate := n.so.SetEncodedRoot(x.Root, x.Pub, x.Sig)
+		ok, terminate := n.so.AddEncodedRoot(x.Root, x.Pub, x.Sig)
 		if terminate != nil {
 			n.Print("[ERR] decoding root: ", terminate)
 			// terminate connection that sends malformed messages

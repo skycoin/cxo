@@ -1,195 +1,216 @@
 CX Object System
-===
+================
+
 Specs: https://pad.riseup.net/p/cxo
 
-## SkyObjects Quickstart
+# SkyObject
 
-`import "github.com/skycoin/cxo/skyobject"`
-
-### Creating a SkyObjects Container
-
-To create a container, use the `SkyObjects` function. Only a database source needs to be specified. Here is an example:
+[![GoDoc](https://godoc.org/github.com/skycoin/cxo/skyobject?status.svg)](https://godoc.org/github.com/skycoin/cxo/skyobject)
 
 ```go
 import (
-    "github.com/skycoin/cxo/skyobject"
     "github.com/skycoin/cxo/data"
+    "github.com/skycoin/cxo/skyobject"
 )
-
-func main() {    
-    db := data.NewDB() // Create database.
-    container := skyobject.SkyObjects(db) // Create container with database.
-    container.Inspect() // Example container use.
-}
 ```
 
-### Registering Schemas
+Example `github.com/skycoin/cxo/skyobject/tests`
 
-Before storing objects into the SkyObjects container, we need to register the object's Schema. Schema tells the container what 'type' of object it is, and what fields the object will have.
+## Usage
 
-Schemas are registered into a SkyObjects container using the `RegisterSchema` member function:
+Create container to manage root objects
 
 ```go
-type Board struct {
-	Name string
-}
-
-container.RegisterSchema(Board{}) // Register Schema.
+db := data.NewDB()
+cnt := skyobject.NewContainer(db)
 ```
 
-We can list all Schema types from the container using the `GetSchemas` member function which returns `[]Schema`:
+Create root object using public key
 
 ```go
-schemas := container.GetSchemas() // Get array of all schemas from container.
-
-fmt.Println("Schemas:") // Print results.
-for _, schema := range schemas {
-    fmt.Println(" -", schema.Name)
-}
+root := cnt.NewRoot(publicKey)
 ```
 
-### Storing Objects
-
-Objects can be stored into the container using the `Save` member function. It returns a `Href` type of the object stored.
-
-Here is an example of storing an object into the container, and obtaining the object's key:
+Register a schema
 
 ```go
-board1 := Board{"board1"} // Create a new Board.
-boardRef := skyobject.NewObject(board1) // Make Board reference object.
-container.Save(&boardRef) // Store Board in container.
-
-board1Key := boardRef.Ref // Obtain the board's key.
+cnt.Register("User", User{})
 ```
 
-An array of objects can be stored in the container using the following method:
+References and tags
+
++ `skyobject.Reference` with schema tag - single reference
++ `skyobject.References` with schema tag - array of references
++ `skyobject.Dynamic` - dynamic reference (schema+object)
 
 ```go
-boards := []Board{{"board1"}, {"board1"}, {"board1"}} // Create a Board array.
-boardsRef := skyobject.NewArray(boards) // Make array reference object.
-container.Save(&boardRef) // Store boards in container.
+type User struct {
+    Name   string
+    Age    uint32
+    Secret []byte `enc:"-"` // skip the field
+}
+
+type Group struct {
+    Leader  skyobject.Reference  `skyobject:"schema=User"`
+    Members skyobjecr.References `skyobject:"schema=User"`
+    Curator skyobject.Dynamic
+}
 ```
 
-Note that the objects in the array are stored separately, and the array is infact an array of references.
-
-### Storing Objects That Reference Other Objects
-
-Objects can be stored to refer to one another.
-
-Here is an example where the Parent object references the Child object:
+Save an object.
 
 ```go
-type Parent struct {
-    Name  string
-    Child skyobject.HashObject // Reference to Child object.
-}
-
-type Child struct {
-    Name string
-}
-
-// Create and store a Child.
-child := Child{Name: "Ben"}
-childRef := skyobject.NewObject(child)
-container.Save(&childRef)
-
-// Create and store a Parent that references a Child.
-parent := Parent{Name: "Bob", Child: childRef}
-parentRef := skyobject.NewObject(parent)
-container.Save(&parentRef)
+cnt.Save(User{"Alice", 21, nil})
 ```
 
-Here is an example where the Parent object references multiple Child objects:
+Save an array of objects
 
 ```go
-type Parent struct {
-    Name     string
-    Children skyobject.HashArray // Reference to multiple children.
-}
-
-type Child struct {
-    Name string
-}
-
-// Create and store multiple children.
-children := []Child{{"Ben"}, {"James"}, {"Ryan"}}
-childrenRef := skyobject.NewArray(children)
-container.Save(&childrenRef)
-
-// Create and store a Parent that references multiple children.
-parent := Parent{Name: "Bob", Children: childrenRef}
-parentRef := skyobject.NewObject(parent)
-container.Save(&parentRef)
+cnt.SaveArray(
+    User{"Alice", 21, nil},
+    User{"Bob", 89, nil},
+    User{"Eva", 23, nil},
+)
 ```
 
-### Retrieving Objects
-
-The simplest way to retrieve sky objects from the container is by using the `GetObjRef` member function. There is only one input, which is the sky object's key (of type `cipher.SHA256` from `"github.com/skycoin/skycoin/src/cipher"`).
-
-The output will be of type `ObjRef`, which we can use to obtain useful data, and deserialize the skyObject into our original object type.
-
-Here is an example of retrieving an object with a given key:
+Create Dynamic object
 
 ```go
-// Get the parent's reference object with 'cipher.SHA256' key.
-parentRef := container.GetObjRef(parentKey) 
+type Man struct {
+    Name   string
+    Gender bool
+    Age    uint32
+}
 
-// Obtain original object from container.
-var parent Parent
-parentRef.Deserialize(&Parent)
+man := cnt.Dynamic(Man{"Tom Cobley", true, 98})
 
-fmt.Println("I've obtained a parent:", parent.Name)
-
+// and save the Dynamic object if need
+cnt.Save(man)
 ```
 
-We can also use `ObjRef` to obtain children objects:
+Add an object to a Root
 
 ```go
-// Retrieve the 'Children' field of the Parent object as an 'ObjRef'.
-childrenRef, e := parentRef.GetFieldAsObj("Children")
-if e != nil {
-    fmt.Println("Unable to retrieve field. Error:", e)
-}
-
-// We know that 'childrenRef' references a HashArray, not a HashObject.
-// We can retrieve all the array elements using the `GetValuesAsObjArray` member function of 'childrenRef'.
-childRefArray, e := childrenRef.GetValuesAsObjArray()
-if e != nil {
-    fmt.Println("Unable to retrieve elements. Error:", e)
-}
-
-// 'childRefArray' is of type '[]ObjRef'.
-// We can now deserialize all the child references into child objects.
-fmt.Println("Children:")
-
-for _, childRef := range childRefArray {
-    var child Child
-    childRef.Deserialize(&child)
-
-    fmt.Println(" -", child.Name)
-}
+root.Inject(User{"Alice", 21, nil})
 ```
 
-Here is an example of retrieving all objects of a specific Schema:
+Add a prepared, saved dynamic object to a Root by hash
 
 ```go
-// Get all keys of objects with Schema type 'Child'.
-schemaKey, ok := container.GetSchemaKey("Child")
-if ok == false {
-    fmt.Println("Woops! This Schema doesn't exist in the container.")
-    return
-}
-childrenKeys := container.GetAllBySchema(schemaKey)
+hash := cnt.Save(cnt.Dynamic(Man{
+    Name:   "Tom Cobley",
+    Gender: true,
+    Age:    98,
+}))
 
-// Get all children.
-fmt.Println("Children:")
-
-for _, childKey := range childrenKeys {
-    var child Child
-    childRef := container.GetObjRef(childKey)
-    childRef.Deserialize(&child)
-
-    fmt.Println(" -", child.Name)
-}
-
+root.InjectHash(hash)
 ```
+
+The `NewRoot` method creates detached root object. To attach the object to
+the Container use AddRoot method that requires secret key to sign the root
+
+```go
+root := cnt.NewRoot(publicKey)
+cnt.Register("User", User{})
+root.Inject(Group{
+    Leader: cnt.Save(User{"Alice", 21, nil}),
+    Members: cnt.SaveArray(
+        User{"Bob", 44, nil},
+        User{"Eva", 32, nil},
+    ),
+    Curator: cnt.Dynamic(Man{
+        "Tom Cobley",
+        true,
+        98,
+    }),
+})
+cnt.AddRoot(root, secretKey)
+```
+
+To modify existing root get it first
+
+```go
+root := cnt.Root(publicKey)
+if root == nil { // not found
+    root = cnt.NewRoot(publicKey) // create new
+}
+root.Inject(User{"Jack Simple", 34, nil})
+root.Touch() // update timestamp and increment seq number
+cnt.AddRoot(root, secretKey)
+```
+
+If AddRoot receive a root older than existing one (with same public key),
+then it reject the argument
+
+```go
+if !cnt.AddRoot(root, secretKey) {
+    // older or the same (was not replaced)
+}
+```
+
+## Travers
+
+Get values of direct references of a root
+
+```go
+vals, err := root.Values()
+if err != nil {
+    // handle error
+}
+```
+
+##### Kind of value
+
+To explore value use its `Kind` method
+
++ `reflect.Invalid` - an empty reference (a'la nil)
++ `reflect.Bool`,
+  `reflect.Int8`, `reflect.Uint8`,
+  `reflect.Int16`, `reflect.Uint16`,
+  `reflect.Int32`, `reflect.Uint32`,
+  `reflect.Float32`, `reflect.Int64`,
+  `reflect.Uint64`, `reflect.Float64`,
+  `reflect.String` - scalar values
++ `reflect.Slice` - a slice
++ `reflect.Array` - an array
++ `reflect.Struct` - a structure
++ `reflect.Ptr` - a reference
+
+Use following methods
+
+##### References
+
++ `Dereference` if value is reference to get value
+
+##### Scalar value
+
++ `Bool` to get boolean
++ `Int` to get an `int8`, `int16`, `int32` or `int64`
++ `Uint` to get an `uint8`, `uint16`, `uint32` or `uint64`
++ `String` to get `string`
++ `Bytes` to get `[]byte`
++ `Float` to get `float32` or `float64`
+
+##### Structures
+
++ `Fields` to get names of fields of a struct
++ `FieldByName` to get value of a field by field name
++ `RangeFields` to explore a struct using
+  `func(filedName string, val *Value) error`
+
+##### Arrays and slices
+
++ `Len` to get length of an array or a slice
++ `Index` to get element by index
+
+##### Schema of value
+
++ `Schema` returns schema of value. The schema can be nil schema
+
+```go
+s := val.Schema()
+if s.IsNil() {
+    // the schema is nil
+}
+```
+---

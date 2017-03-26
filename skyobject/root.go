@@ -51,8 +51,20 @@ func (r *Root) Touch() {
 
 // Add given object to root. The Inject creates Dynamic object from given one
 // and appends the Dynamic to the Root
-func (r *Root) Inject(i interface{}) {
-	r.Refs = append(r.Refs, r.Save(r.Dynamic(i)))
+func (r *Root) Inject(i interface{}) (inj Reference) {
+	inj = r.cnt.Save(r.cnt.Dynamic(i))
+	r.Refs = append(r.Refs, inj)
+	return
+}
+
+// InjectHash injects hash of Dynamic object
+func (r *Root) InjectHash(hash Reference) (err error) {
+	if hash == (Reference{}) {
+		err = ErrInvalidReference
+		return
+	}
+	r.Refs = append(r.Refs, hash)
+	return
 }
 
 // Encode convertes a root to []byte
@@ -73,50 +85,6 @@ func (r *Root) Encode() (p []byte) {
 	})
 	p = encoder.Serialize(&x)
 	return
-}
-
-func (r *Root) SchemaByReference(sr Reference) (s *Schema, err error) {
-	if sr.IsBlank() {
-		err = ErrEmptySchemaKey
-		return
-	}
-	s, err = r.reg.SchemaByReference(sr)
-	return
-}
-
-// Save an object to db and get reference-key to it
-func (r *Root) Save(i interface{}) Reference {
-	return Reference(r.cnt.db.AddAutoKey(encoder.Serialize(i)))
-}
-
-// SaveArray of objects and get array of references-keys to them
-func (r *Root) SaveArray(ary ...interface{}) (rs References) {
-	if len(ary) == 0 {
-		return
-	}
-	rs = make(References, 0, len(ary))
-	for _, a := range ary {
-		rs = append(rs, r.Save(a))
-	}
-	return
-}
-
-// SaveSchema and get reference-key to it
-func (r *Root) SaveSchema(i interface{}) (ref Reference) {
-	return r.reg.SaveSchema(i)
-}
-
-// Dynamic saves object and its schema in db and returns dynamic reference,
-// that points to the object and the schema
-func (r *Root) Dynamic(i interface{}) (dn Dynamic) {
-	dn.Object = r.Save(i)
-	dn.Schema = r.SaveSchema(i)
-	return
-}
-
-// Register schema of given object with given name
-func (r *Root) Register(name string, i interface{}) {
-	r.reg.Register(name, i)
 }
 
 //

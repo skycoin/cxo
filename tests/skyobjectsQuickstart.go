@@ -1,11 +1,10 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
 	"reflect"
-	"text/tabwriter"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -17,9 +16,9 @@ type Age uint32
 
 type Group struct {
 	Name    string
-	Leader  Reference  `skyobject:"schema=User"` // single User object
-	Members References `skyobject:"schema=User"` // slice of Users
-	Curator Dynamic    // a dynamic reference
+	Leader  skyobject.Reference  `skyobject:"schema=User"` // single User object
+	Members skyobject.References `skyobject:"schema=User"` // slice of Users
+	Curator skyobject.Dynamic    // a dynamic reference
 }
 
 type User struct {
@@ -30,7 +29,7 @@ type User struct {
 
 type List struct {
 	Name     string
-	Members  References `skyobject:"schema=User"` // alice of Users
+	Members  skyobject.References `skyobject:"schema=User"` // alice of Users
 	MemberOf []Group
 }
 
@@ -55,20 +54,20 @@ func main() {
 	// register schema of User{} with name "User",
 	// thus, tags like `skyobject:"schema=User"` will refer to
 	// schema of the User{}
-	root.RegisterSchema("User", User{})
+	c.Register("User", User{})
 
 	// Inject the Group to the root
 	root.Inject(Group{
 		Name: "a group",
-		Leader: root.Save(User{
+		Leader: c.Save(User{
 			"Billy Kid", 16, 90,
 		}),
-		Members: root.SaveArray(
+		Members: c.SaveArray(
 			User{"Bob Marley", 21, 0},
 			User{"Alice Cooper", 19, 0},
 			User{"Eva Brown", 30, 0},
 		),
-		Curator: root.Dynamic(Man{
+		Curator: c.Dynamic(Man{
 			Name:    "Ned Kelly",
 			Age:     28,
 			Seecret: []byte("secret key"),
@@ -77,11 +76,24 @@ func main() {
 		}),
 	})
 
-	// Note: feel free to use empty references they are treated as "nil"
+	// Inject another object using its hash
+	usrHash := c.Save( // save an object to get its hash
+		c.Dynamic(User{ // the object must be Dynamic
+			Name: "Old Uncle Tom Cobley and all",
+			Age:  89,
+		}),
+	)
+	root.InjectHash(usrHash) // inject
+
+	// Feel free to use empty references they are treated as "nil"
+	// But for InjectHash an empty reference is illegal
+	if err := root.InjectHash(skyobject.Reference{}); err != nil {
+		log.Print("InjectHash(Reference{}) error: ", err)
+	}
 
 	root.Touch() // update timestamp of the root and increment seq number
 
-	// attach the root to container
+	// attach the root to the container
 
 	// Add/replace with older. The AddRoot method also signs the root object
 	c.AddRoot(root, sec)
@@ -91,7 +103,7 @@ func main() {
 	//      root := c.NewRoot(pubKey)
 	//      root.Inject(Blah{})
 	//      c.AddRoot(root, secKey)
-	// 2) Replace existing root with new one (the same)
+	// 2) Replace existing root with new one (replacing references of the root)
 	//      root := c.NewRoot(pubKey)
 	//      root.Inject(Blah{})
 	//      c.AddRoot(root, secKey)
@@ -101,72 +113,112 @@ func main() {
 	//      root.Touch()
 	//      c.AddRoot(root, secKey) // replace
 
-	// prepare writer for inspect function
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 0, ' ', 0)
-
-	// TODO: |
-	//      \/
-
-	// prepare schema printer for inspect fucntion
-	printSchema := func(s *skyobject.Schema) {
-		fmt.Printf("schema %s {", s.Name)
-		if len(s.Fields) == 0 {
-			fmt.Println("}")
-			return
-		}
-		fmt.Println() // break line
-		for _, sf := range s.Fields {
-			fmt.Fprintln(tw, "   ",
-				sf.Name, "\t",
-				sf.Type, "\t",
-				"`"+sf.Tag+"`", "\t",
-				reflect.Kind(sf.Kind))
-		}
-		tw.Flush()
-		fmt.Println("}")
-	}
-
-	// prepare fields printer for inspect function
-	printFields := func(fields map[string]interface{}) {
-		for k, v := range fields {
-			fmt.Fprintln(tw, fmt.Sprintf("%s: \t%v", k, v))
-		}
-		tw.Flush()
-	}
-
-	// create function to inspecting
-	inspect := func(s *skyobject.Schema, fields map[string]interface{},
-		deep int, err error) error {
-
-		fmt.Println("---")
-
-		if err != nil {
-			fmt.Println("Err: ", err)
-		} else {
-			printSchema(s)
-			printFields(fields)
-		}
-
-		fmt.Println("---")
-		return nil
-	}
-
 	// print the tree
-	if err := c.Inspect(inspect); err != nil {
-		log.Fatal(err)
+	if vals, err := root.Values(); err != nil {
+		log.Print(err)
+	} else {
+		for _, val := range vals {
+			fmt.Println("---")
+			inspect(val, nil, "")
+			fmt.Println("---")
+		}
+	}
+
+	//
+	fmt.Println("===\n", db.Stat(), "\n===")
+}
+
+// create function to inspecting
+func inspect(val *skyobject.Value, err error, prefix string) {
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
-
-	// database statistic
-	// ------------------------
-	// members:               4
-	// leader:               +1
-	// small group:          +1
-	// man:                  +1
-	// schema of Man         +1
-	// schema of User:       +1
-	// schema of SmallGroup: +1
-	// ------------------------
-	//                       10
-	fmt.Println("===\n", db.Stat(), "\n===")
+	// const (
+	// 	cross  = "├── "
+	// 	road   = "│   "
+	// 	corner = "└── "
+	// 	blank  = "    "
+	// )
+	switch val.Kind() {
+	case reflect.Invalid: // nil
+		fmt.Println("nil")
+	case reflect.Ptr: // reference
+		fmt.Println("<reference>")
+		fmt.Print(prefix + "  ")
+		d, err := val.Dereference()
+		inspect(d, err, prefix+"  ")
+	case reflect.Bool:
+		if b, err := val.Bool(); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(b)
+		}
+	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if i, err := val.Int(); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(i)
+		}
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if u, err := val.Uint(); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(u)
+		}
+	case reflect.Float32, reflect.Float64:
+		if f, err := val.Float(); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(f)
+		}
+	case reflect.String:
+		if s, err := val.String(); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("%q\n", s)
+		}
+	case reflect.Array, reflect.Slice:
+		if val.Kind() == reflect.Array {
+			fmt.Printf("<array %s>\n", val.Schema().String())
+		} else {
+			fmt.Printf("<slice %s>\n", val.Schema().String())
+		}
+		el, err := val.Schema().Elem()
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		if el.Kind() == reflect.Uint8 {
+			fmt.Print(prefix)
+			b, err := val.Bytes()
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println(hex.EncodeToString(b))
+			}
+			break
+		}
+		ln, err := val.Len()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		for i := 0; i < ln; i++ {
+			iv, err := val.Index(i)
+			fmt.Print(prefix)
+			inspect(iv, err, prefix+"  ")
+		}
+	case reflect.Struct:
+		fmt.Printf("<struct %s>\n", val.Schema().String())
+		err = val.RangeFields(func(name string, val *skyobject.Value) error {
+			fmt.Print(prefix, name, ": ")
+			inspect(val, nil, prefix+"  ")
+			return nil
+		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
 }

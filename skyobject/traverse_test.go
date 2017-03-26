@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -9,9 +10,9 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-func getRoot() *Root {
+func getCntRoot() (*Container, *Root) {
 	c := NewContainer(data.NewDB())
-	return c.NewRoot(pubKey())
+	return c, c.NewRoot(pubKey())
 }
 
 func TestValue_Kind(t *testing.T) {
@@ -61,19 +62,19 @@ func TestValue_Kind(t *testing.T) {
 }
 
 func TestValue_Dereference(t *testing.T) {
-	root := getRoot()
-	root.Register("User", User{})
+	cnt, root := getCntRoot()
+	cnt.Register("User", User{})
 	root.Inject(Group{
 		Name: "a group",
-		Leader: root.Save(User{
+		Leader: cnt.Save(User{
 			"Billy Kid", 16, 90,
 		}),
-		Members: root.SaveArray(
+		Members: cnt.SaveArray(
 			User{"Bob Marley", 21, 0},
 			User{"Alice Cooper", 19, 0},
 			User{"Eva Brown", 30, 0},
 		),
-		Curator: root.Dynamic(Man{
+		Curator: cnt.Dynamic(Man{
 			Name:    "Ned Kelly",
 			Age:     28,
 			Seecret: []byte("secret key"),
@@ -171,7 +172,7 @@ func TestValue_Dereference(t *testing.T) {
 
 func TestValue_Bool(t *testing.T) {
 	type Bool bool
-	root := getRoot()
+	_, root := getCntRoot()
 	root.Inject(Bool(true))
 	root.Inject(Bool(false))
 	vs, err := root.Values()
@@ -202,7 +203,7 @@ func TestValue_Bool(t *testing.T) {
 
 func TestValue_Int(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(String("hello"))
 		vs, err := root.Values()
 		if err != nil {
@@ -218,7 +219,7 @@ func TestValue_Int(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Int8(0))
 		root.Inject(Int16(1))
 		root.Inject(Int32(2))
@@ -258,7 +259,7 @@ func TestValue_Int(t *testing.T) {
 
 func TestValue_Uint(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(String("hello"))
 		vs, err := root.Values()
 		if err != nil {
@@ -274,7 +275,7 @@ func TestValue_Uint(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Uint8(0))
 		root.Inject(Uint16(1))
 		root.Inject(Uint32(2))
@@ -314,7 +315,7 @@ func TestValue_Uint(t *testing.T) {
 
 func TestValue_String(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Int16(0))
 		vs, err := root.Values()
 		if err != nil {
@@ -330,7 +331,7 @@ func TestValue_String(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		hello := "hello"
 		root.Inject(String(hello))
 		vs, err := root.Values()
@@ -359,7 +360,7 @@ func TestValue_String(t *testing.T) {
 
 func TestValue_Bytes(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Int16(0))
 		vs, err := root.Values()
 		if err != nil {
@@ -375,7 +376,7 @@ func TestValue_Bytes(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		hello, cya := "hello", "cya"
 		root.Inject(String(hello))
 		root.Inject(Bytes(cya))
@@ -412,7 +413,7 @@ func TestValue_Bytes(t *testing.T) {
 
 func TestValue_Float(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Int16(0))
 		vs, err := root.Values()
 		if err != nil {
@@ -428,7 +429,7 @@ func TestValue_Float(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Float32(5.5))
 		root.Inject(Float64(7.7))
 		vs, err := root.Values()
@@ -464,7 +465,7 @@ func TestValue_Float(t *testing.T) {
 
 func TestValue_Fields(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		root.Inject(Int16(0))
 		vs, err := root.Values()
 		if err != nil {
@@ -480,8 +481,8 @@ func TestValue_Fields(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
-		root.Register("User", User{})
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
 		strucures := []interface{}{
 			Group{},
 			List{},
@@ -558,7 +559,7 @@ func TestValue_Fields(t *testing.T) {
 
 func TestValue_FieldByName(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		name := "Alice"
 		age := Age(21)
 		root.Inject(User{name, age, 0})
@@ -603,18 +604,18 @@ func TestValue_FieldByName(t *testing.T) {
 		}
 	})
 	t.Run("references", func(t *testing.T) {
-		root := getRoot()
-		root.Register("User", User{})
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
 		root.Inject(Group{
 			Name:   "The Group",
-			Leader: root.Save(User{"Alice", 21, 0}),
-			Members: root.SaveArray(
+			Leader: cnt.Save(User{"Alice", 21, 0}),
+			Members: cnt.SaveArray(
 				User{"Bob", 32, 0},
 				User{"Eva", 33, 0},
 				User{"Tom", 34, 0},
 				User{"Amy", 35, 0},
 			),
-			Curator: root.Dynamic(Man{
+			Curator: cnt.Dynamic(Man{
 				Name: "Tony Hawk",
 			}),
 		})
@@ -668,9 +669,160 @@ func TestValue_FieldByName(t *testing.T) {
 	})
 }
 
+func TestValue_RangeFields(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		_, root := getCntRoot()
+		name := "Alice"
+		age := Age(21)
+		root.Inject(User{name, age, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		// Name   string ``
+		// Age    Age    `json:"age"`
+		// Hidden int    `enc:"-"`
+		// 4 + 4
+		val := vs[0]
+		if val.Kind() != reflect.Struct {
+			t.Error("unexpected kind: ", val.Kind())
+		}
+		if ln := len(val.od); ln != len(name)+4+4 {
+			t.Error("wrong length of data: ", ln)
+		}
+		err = val.RangeFields(func(fname string, val *Value) error {
+			switch fname {
+			case "Name":
+				if ln := len(val.od); ln != 4+len(name) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if s, err := val.String(); err != nil {
+					t.Error(err)
+				} else if s != name {
+					t.Error("wrong name: ", s)
+				}
+			case "Age":
+				if ln := len(val.od); ln != 4 {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if i, err := val.Uint(); err != nil {
+				} else if i != uint64(age) {
+					t.Error("wrong age: ", i)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("references", func(t *testing.T) {
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
+		root.Inject(Group{
+			Name:   "The Group",
+			Leader: cnt.Save(User{"Alice", 21, 0}),
+			Members: cnt.SaveArray(
+				User{"Bob", 32, 0},
+				User{"Eva", 33, 0},
+				User{"Tom", 34, 0},
+				User{"Amy", 35, 0},
+			),
+			Curator: cnt.Dynamic(Man{
+				Name: "Tony Hawk",
+			}),
+		})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		err = val.RangeFields(func(fname string, val *Value) error {
+			switch fname {
+			case "Name":
+				if ln := len(val.od); ln != 4+len("The Group") {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if s, err := val.String(); err != nil {
+					t.Error(err)
+				} else if s != "The Group" {
+					t.Error("wrong name: ", s)
+				}
+			case "Leader":
+				if ln := len(val.od); ln != len(Reference{}) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if val.Kind() != reflect.Ptr {
+					t.Error("invalid kind of reference: ", val.Kind())
+				}
+			case "Members":
+				if ln := len(val.od); ln != 4+4*len(Reference{}) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if val.Kind() != reflect.Slice {
+					t.Error("invalid kind of references: ", val.Kind())
+				}
+			case "Curator":
+				if ln := len(val.od); ln != 2*len(Reference{}) {
+					t.Error("wrong length of encoded field: ", ln)
+				} else if val.Kind() != reflect.Ptr {
+					t.Error("invalid kind of reference: ", val.Kind())
+				}
+			}
+			return nil
+		})
+	})
+	t.Run("pass error", func(t *testing.T) {
+		_, root := getCntRoot()
+		root.Inject(User{"Alice", 21, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		var ErrExample = errors.New("an example error")
+		err = val.RangeFields(func(fname string, val *Value) error {
+			return ErrExample // for example
+		})
+		if err != ErrExample {
+			t.Error("error was replaced")
+		}
+	})
+	t.Run("stop", func(t *testing.T) {
+		_, root := getCntRoot()
+		root.Inject(User{"Alice", 21, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		err = val.RangeFields(func(fname string, val *Value) error {
+			return ErrStopRange
+		})
+		if err != nil {
+			t.Error("unexpected error: ", err)
+		}
+	})
+}
+
 func TestValue_Len(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		values := []interface{}{
 			User{},
 			Bool(false),
@@ -697,7 +849,7 @@ func TestValue_Len(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		root := getRoot()
+		_, root := getCntRoot()
 		type Users []User
 		type Bools []Bool
 		type Ary [10]User
@@ -733,7 +885,7 @@ func TestValue_Len(t *testing.T) {
 }
 
 func TestValue_Index(t *testing.T) {
-	root := getRoot()
+	_, root := getCntRoot()
 	type Users []User
 	type Bools []Bool
 	type Ary [10]uint32
