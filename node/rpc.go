@@ -39,28 +39,9 @@ func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
 func (n *Node) Subscribe(pub cipher.PubKey) {
 	n.enqueueRpcEvent(func() {
 		n.subs[pub] = struct{}{}
-		exc := []string{} // existing connections
 		for _, address := range n.conf.Known[pub] {
 			if !n.pool.IsConnExist(address) {
 				n.pool.Connect(address)
-			} else {
-				exc = append(exc, address)
-			}
-		}
-		if root := n.so.Root(pub); root != nil {
-			// Broadcast root of the feed (if we have it)
-			// to all existing connections. The root will be
-			// sent to new connections automatically
-			msg := &Root{
-				Pub:  root.Pub,
-				Sig:  root.Sig,
-				Root: root.Encode(),
-			}
-			for _, address := range exc {
-				n.Debugf("[DBG] send root of %s to: %s",
-					pub.Hex(),
-					address)
-				n.pool.SendMessage(address, msg)
 			}
 		}
 	})
@@ -95,6 +76,11 @@ func (n *Node) Inject(hash cipher.SHA256,
 		return
 	}
 	n.enqueueRpcEvent(func() {
+		// skip root if we don't share it
+		if _, ok := n.subs[pub]; !ok {
+			err = ErrNotFound
+			return
+		}
 		root := n.so.Root(pub) // get root by public key
 		if root == nil {
 			err = ErrNotFound
@@ -106,7 +92,7 @@ func (n *Node) Inject(hash cipher.SHA256,
 		}
 		root.Touch()            // update timestamp and seq
 		n.so.AddRoot(root, sec) // replace with previous and sign
-		n.Share(pub)            // send the new root to subscribers
+		go n.Share(pub)         // send the new root to subscribers
 	})
 	return
 }

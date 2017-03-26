@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"reflect"
 	"sort"
 	"time"
 
@@ -130,7 +131,7 @@ func (r *Root) Values() (vs []*Value, err error) {
 		}
 		// is it blank
 		if dr.IsBlank() {
-			vs = append(vs, nilValue(r, nil)) // no value, nor schema
+			vs = append(vs, nilValue(r.cnt, nil)) // no value, nor schema
 			continue
 		}
 		// obtain schema of the dynamic reference
@@ -149,7 +150,134 @@ func (r *Root) Values() (vs []*Value, err error) {
 			return
 		}
 		// create value
-		vs = append(vs, &Value{r, s, od})
+		vs = append(vs, &Value{r.cnt, s, od})
+	}
+	return
+}
+
+// Got is opposite to Want. It returns all objects the root object has got
+func (r *Root) Got() (set Set, err error) {
+	if len(r.Refs) == 0 {
+		return
+	}
+	set = make(Set)
+	for _, schk := range r.reg.reg {
+		set.AddMissing(Reference(schk), r.cnt)
+	}
+	var vs []*Value = make([]*Value, 0, len(r.Refs))
+	var (
+		s *Schema
+
+		dd     []byte
+		sd, od []byte
+		ok     bool
+	)
+	for _, rd := range r.Refs {
+		if rd.IsBlank() {
+			err = ErrInvalidReference
+			return
+		}
+		if dd, ok = r.cnt.get(rd); !ok {
+			err = &MissingObject{rd, ""}
+			return
+		}
+		set.Add(rd) // got
+		var dr Dynamic
+		if err = encoder.DeserializeRaw(dd, &dr); err != nil {
+			return
+		}
+		if !dr.IsValid() {
+			err = ErrInvalidReference
+			return
+		}
+		if dr.IsBlank() { // skip blank
+			continue
+		}
+		if sd, ok = r.cnt.get(dr.Schema); !ok {
+			err = &MissingSchema{dr.Schema}
+			return
+		}
+		set.Add(dr.Schema) // got
+		s = new(Schema)
+		if err = s.Decode(r.reg, sd); err != nil {
+			return
+		}
+		if od, ok = r.cnt.get(dr.Object); !ok {
+			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
+			return
+		}
+		set.Add(dr.Object) // got
+		vs = append(vs, &Value{r.cnt, s, od})
+	}
+	for _, val := range vs {
+		if err = gotValue(val, set); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func gotValue(val *Value, set Set) (err error) {
+	switch val.Kind() {
+	case reflect.Bool, reflect.Int8, reflect.Uint8,
+		reflect.Int16, reflect.Uint16,
+		reflect.Int32, reflect.Uint32, reflect.Float32,
+		reflect.Int64, reflect.Uint64, reflect.Float64,
+		reflect.String:
+	case reflect.Slice, reflect.Array:
+		var l int
+		if l, err = val.Len(); err != nil {
+			return
+		}
+		for i := 0; i < l; i++ {
+			var d *Value
+			if d, err = val.Index(i); err != nil {
+				return
+			}
+			gotValue(d, set)
+		}
+	case reflect.Struct:
+		err = val.RangeFields(func(fname string, d *Value) error {
+			gotValue(d, set)
+			return nil
+		})
+		if err != nil {
+			return
+		}
+	case reflect.Ptr:
+		var v *Value
+		switch val.s.Name() {
+		case dynamicRef:
+			var dr Dynamic
+			if dr, err = val.dynamic(); err != nil {
+				return
+			}
+			if _, ok := val.c.get(dr.Schema); ok {
+				set.Add(dr.Schema) // got
+			} else if _, ok := val.c.get(dr.Object); ok {
+				// if no schema then no need to dereference,
+				// but need to check does object exists
+				set.Add(dr.Object) // got
+				return
+			} // else (got scema, but don't know about object)
+			if v, err = val.dereferenceDynamic(dr); err != nil {
+				return
+			}
+			set.Add(dr.Object) // got
+			err = gotValue(v, set)
+		case singleRef:
+			var ref Reference
+			if ref, err = val.static(); err != nil {
+				return
+			}
+			if v, err = val.dereferenceStatic(ref); err != nil {
+				return
+			}
+			set.Add(ref) // got
+			err = gotValue(v, set)
+		default:
+			err = ErrInvalidType
+		}
 	}
 	return
 }
