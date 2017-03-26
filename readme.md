@@ -97,7 +97,7 @@ root.Inject(User{"Alice", 21, nil})
 Add a prepared, saved dynamic object to a Root by hash
 
 ```go
-hash := c.Save(c.Dynamic(Man{
+hash := cnt.Save(cnt.Dynamic(Man{
     Name:   "Tom Cobley",
     Gender: true,
     Age:    98,
