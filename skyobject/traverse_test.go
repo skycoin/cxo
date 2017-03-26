@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -694,7 +695,7 @@ func TestValue_RangeFields(t *testing.T) {
 		if ln := len(val.od); ln != len(name)+4+4 {
 			t.Error("wrong length of data: ", ln)
 		}
-		err = val.RangeFields(func(fname string, val *Value) {
+		err = val.RangeFields(func(fname string, val *Value) error {
 			switch fname {
 			case "Name":
 				if ln := len(val.od); ln != 4+len(name) {
@@ -712,6 +713,7 @@ func TestValue_RangeFields(t *testing.T) {
 					t.Error("wrong age: ", i)
 				}
 			}
+			return nil
 		})
 		if err != nil {
 			t.Error(err)
@@ -743,7 +745,7 @@ func TestValue_RangeFields(t *testing.T) {
 			return
 		}
 		val := vs[0]
-		err = val.RangeFields(func(fname string, val *Value) {
+		err = val.RangeFields(func(fname string, val *Value) error {
 			switch fname {
 			case "Name":
 				if ln := len(val.od); ln != 4+len("The Group") {
@@ -772,7 +774,49 @@ func TestValue_RangeFields(t *testing.T) {
 					t.Error("invalid kind of reference: ", val.Kind())
 				}
 			}
+			return nil
 		})
+	})
+	t.Run("pass error", func(t *testing.T) {
+		root := getRoot()
+		root.Inject(User{"Alice", 21, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		var ErrExample = errors.New("an example error")
+		err = val.RangeFields(func(fname string, val *Value) error {
+			return ErrExample // for example
+		})
+		if err != ErrExample {
+			t.Error("error was replaced")
+		}
+	})
+	t.Run("stop", func(t *testing.T) {
+		root := getRoot()
+		root.Inject(User{"Alice", 21, 0})
+		vs, err := root.Values()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(vs) != 1 {
+			t.Error("unexpected values length: ", len(vs))
+			return
+		}
+		val := vs[0]
+		err = val.RangeFields(func(fname string, val *Value) error {
+			return ErrStopRange
+		})
+		if err != nil {
+			t.Error("unexpected error: ", err)
+		}
 	})
 }
 

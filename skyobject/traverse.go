@@ -22,6 +22,9 @@ var (
 	ErrInvalidSchemaOrData = errors.New("invalid schema or data")
 	// ErrIndexOutOfRange relates to (*Value).Index()
 	ErrIndexOutOfRange = errors.New("index out of range")
+
+	// ErrStopRange is used to stop range function
+	ErrStopRange = errors.New("stop range")
 )
 
 // MissingObject occurs when a schema is not in db
@@ -324,7 +327,8 @@ func (x *Value) FieldByName(name string) (v *Value, err error) {
 	return
 }
 
-func (x *Value) RangeFields(fn func(string, *Value)) (err error) {
+// RangeFields ...
+func (x *Value) RangeFields(fn func(string, *Value) error) (err error) {
 	if x.Kind() != reflect.Struct {
 		err = ErrInvalidType
 		return
@@ -348,7 +352,13 @@ func (x *Value) RangeFields(fn func(string, *Value)) (err error) {
 			return
 		}
 		//
-		fn(sf.Name(), &Value{x.r, fs, x.od[shift : shift+n]})
+		err = fn(sf.Name(), &Value{x.r, fs, x.od[shift : shift+n]})
+		if err != nil {
+			if err == ErrStopRange { // special error
+				err = nil
+			}
+			return
+		}
 		//
 		shift += n
 	}

@@ -87,16 +87,11 @@ func wantValue(val *Value, set Set) (err error) {
 			}
 		}
 	case reflect.Struct:
-		for _, name := range val.Fields() {
-			var d *Value
-			if d, err = val.FieldByName(name); err != nil {
-				return
-			}
-			if err = wantValue(d, set); err != nil {
-				if err = set.Err(err); err != nil {
-					return
-				} // else -> continue
-			}
+		err = val.RangeFields(func(fname string, d *Value) error {
+			return set.Err(wantValue(d, set))
+		})
+		if err != nil {
+			return
 		}
 	case reflect.Ptr:
 		var d *Value
