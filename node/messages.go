@@ -158,6 +158,10 @@ func (n *Node) handleRequestRoot(rr *RequestRoot, address string) {
 		Sig:  root.Sig,
 		Root: root.Encode(),
 	})
+	got, _ := root.Got()
+	for k := range got {
+		n.pool.SendMessage(address, &Announce{cipher.SHA256(k)})
+	}
 }
 
 // DataRoot objects
