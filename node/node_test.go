@@ -191,7 +191,7 @@ func TestNode_sourcePipeDrain(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(1500 * time.Millisecond) // 1.5s!!! too slow
+	time.Sleep(500 * time.Millisecond) // 1.5s!!! too slow
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
@@ -322,7 +322,7 @@ func TestNode_replication(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(55000 * time.Millisecond) // 55s!!!
+	time.Sleep(1500 * time.Millisecond) // 55s!!!
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)

@@ -76,13 +76,20 @@ func main() {
 		}),
 	})
 
-	// Inject another object
-	root.Inject(User{
-		Name: "Old Uncle Tom Cobley and all",
-		Age:  89,
-	})
+	// Inject another object using its hash
+	usrHash := root.Save( // save an object to get its hash
+		root.Dynamic(User{ // the object must be Dynamic
+			Name: "Old Uncle Tom Cobley and all",
+			Age:  89,
+		}),
+	)
+	root.InjectHash(usrHash) // inject
 
 	// Note: feel free to use empty references they are treated as "nil"
+	// But for InjectHash an empty reference is illegal
+	if err := root.InjectHash(skyobject.Reference{}); err != nil {
+		log.Print("InjectHash(Reference{}) error: ", err)
+	}
 
 	root.Touch() // update timestamp of the root and increment seq number
 
@@ -117,6 +124,7 @@ func main() {
 		}
 	}
 
+	//
 	fmt.Println("===\n", db.Stat(), "\n===")
 }
 
@@ -126,20 +134,20 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 		fmt.Println(err)
 		return
 	}
-	const (
-		cross  = "├── "
-		road   = "│   "
-		corner = "└── "
-		blank  = "    "
-	)
+	// const (
+	// 	cross  = "├── "
+	// 	road   = "│   "
+	// 	corner = "└── "
+	// 	blank  = "    "
+	// )
 	switch val.Kind() {
 	case reflect.Invalid: // nil
 		fmt.Println("nil")
 	case reflect.Ptr: // reference
 		fmt.Println("<reference>")
-		fmt.Print(prefix+blank, corner, " ")
+		fmt.Print(prefix + "  ")
 		d, err := val.Dereference()
-		inspect(d, err, prefix+blank)
+		inspect(d, err, prefix+"  ")
 	case reflect.Bool:
 		if b, err := val.Bool(); err != nil {
 			fmt.Println(err)
@@ -171,12 +179,18 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 			fmt.Printf("%q\n", s)
 		}
 	case reflect.Array, reflect.Slice:
+		if val.Kind() == reflect.Array {
+			fmt.Printf("<array %s>\n", val.Schema().String())
+		} else {
+			fmt.Printf("<slice %s>\n", val.Schema().String())
+		}
 		el, err := val.Schema().Elem()
 		if err != nil {
 			fmt.Println(err)
 			break
 		}
 		if el.Kind() == reflect.Uint8 {
+			fmt.Print(prefix)
 			b, err := val.Bytes()
 			if err != nil {
 				fmt.Println(err)
@@ -192,32 +206,19 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 		}
 		for i := 0; i < ln; i++ {
 			iv, err := val.Index(i)
-			if i < ln-1 {
-				inspect(iv, err, prefix+blank)
-			} else {
-				inspect(iv, err, prefix+road)
-			}
+			fmt.Print(prefix)
+			inspect(iv, err, prefix+"  ")
 		}
 	case reflect.Struct:
-		fmt.Println("struct", val.Schema().String())
-		names := val.Fields()
-		for i, name := range names {
-			f, err := val.FieldByName(name)
-			if i < len(names)-1 {
-				fmt.Print(prefix, cross, name, ": ")
-				inspect(f, err, prefix+lenSpace(len(name)))
-			} else {
-				fmt.Print(prefix, corner, name, ": ")
-				inspect(f, err, prefix+lenSpace(len(name)))
-			}
+		fmt.Printf("<struct %s>\n", val.Schema().String())
+		err = val.RangeFields(func(name string, val *skyobject.Value) error {
+			fmt.Print(prefix, name, ": ")
+			inspect(val, nil, prefix+"  ")
+			return nil
+		})
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
 	}
-}
-
-func lenSpace(ln int) string {
-	b := make([]byte, ln)
-	for i := range b {
-		b[i] = ' '
-	}
-	return string(b)
 }
