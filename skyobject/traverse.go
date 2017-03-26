@@ -8,10 +8,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-//
-// TODO: DRY
-//
-
 var (
 	// ErrInvalidType occurs when you call some mehtod like (*Value).Int()
 	// when the value is not integer, etc
@@ -66,7 +62,7 @@ func (m *MissingObject) Error() string {
 
 // A Value represent any value from tree of objects
 type Value struct {
-	r  *Root // back reference
+	c  *Container // back reference
 	s  *Schema
 	od []byte
 }
@@ -94,6 +90,72 @@ func (x *Value) Kind() reflect.Kind {
 //                                references                                  //
 // ========================================================================== //
 
+// service method
+func (x *Value) static() (ref Reference, err error) {
+	err = encoder.DeserializeRaw(x.od, &ref)
+	return
+}
+
+// service method
+func (x *Value) dynamic() (dr Dynamic, err error) {
+	if err = encoder.DeserializeRaw(x.od, &dr); err != nil {
+		return
+	}
+	if !dr.IsValid() {
+		err = ErrInvalidReference
+	}
+	return
+}
+
+// service method
+func (x *Value) dereferenceDynamic(dr Dynamic) (v *Value, err error) {
+	if dr.IsBlank() {
+		v = nilValue(x.c, nil) // no value nor schema
+		return
+	}
+	var (
+		s Schema
+
+		sd, od []byte
+		ok     bool
+	)
+	if sd, ok = x.c.get(dr.Schema); !ok {
+		err = &MissingSchema{dr.Schema}
+		return
+	}
+	if err = s.Decode(x.c.reg, sd); err != nil {
+		return
+	}
+	if od, ok = x.c.get(dr.Object); !ok {
+		err = &MissingObject{key: dr.Object, schemaName: s.Name()}
+		return
+	}
+	v = &Value{x.c, &s, od}
+	return
+}
+
+// service method
+func (x *Value) dereferenceStatic(ref Reference) (v *Value, err error) {
+	var el *Schema
+	if el, err = x.s.Elem(); err != nil {
+		return
+	}
+	if ref.IsBlank() {
+		v = nilValue(x.c, el) // with appropriate schema
+		return
+	}
+	var (
+		od []byte
+		ok bool
+	)
+	if od, ok = x.c.get(ref); !ok {
+		err = &MissingObject{key: ref, schemaName: x.s.Name()}
+		return
+	}
+	v = &Value{x.c, el, od}
+	return
+}
+
 // Dereference returns value by reference. A value is reference if
 // its kind is reflect.Ptr
 func (x *Value) Dereference() (v *Value, err error) {
@@ -104,57 +166,18 @@ func (x *Value) Dereference() (v *Value, err error) {
 	switch x.s.Name() {
 	case dynamicRef:
 		var dr Dynamic
-		if err = encoder.DeserializeRaw(x.od, &dr); err != nil {
+		if dr, err = x.dynamic(); err != nil {
 			return
 		}
-		if !dr.IsValid() {
-			err = ErrInvalidReference
-			return
-		}
-		if dr.IsBlank() {
-			v = nilValue(x.r, nil) // no value nor schema
-			return
-		}
-		var (
-			s Schema
-
-			sd, od []byte
-			ok     bool
-		)
-		if sd, ok = x.r.cnt.get(dr.Schema); !ok {
-			err = &MissingSchema{dr.Schema}
-			return
-		}
-		if err = s.Decode(x.r.reg, sd); err != nil {
-			return
-		}
-		if od, ok = x.r.cnt.get(dr.Object); !ok {
-			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
-			return
-		}
-		v = &Value{x.r, &s, od}
+		v, err = x.dereferenceDynamic(dr)
+		return
 	case singleRef:
-		var el *Schema
-		if el, err = x.s.Elem(); err != nil {
-			return
-		}
 		var ref Reference
-		if err = encoder.DeserializeRaw(x.od, &ref); err != nil {
+		if ref, err = x.static(); err != nil {
 			return
 		}
-		if ref.IsBlank() {
-			v = nilValue(x.r, el) // with appropriate schema
-			return
-		}
-		var (
-			od []byte
-			ok bool
-		)
-		if od, ok = x.r.cnt.get(ref); !ok {
-			err = &MissingObject{key: ref, schemaName: x.s.Name()}
-			return
-		}
-		v = &Value{x.r, el, od}
+		v, err = x.dereferenceStatic(ref)
+		return
 	default:
 		err = ErrInvalidType
 	}
@@ -320,7 +343,7 @@ func (x *Value) FieldByName(name string) (v *Value, err error) {
 			err = ErrInvalidSchemaOrData
 			return
 		}
-		v = &Value{x.r, fs, x.od[shift : shift+n]}
+		v = &Value{x.c, fs, x.od[shift : shift+n]}
 		return
 	}
 	err = ErrNoSuchField
@@ -351,15 +374,13 @@ func (x *Value) RangeFields(fn func(string, *Value) error) (err error) {
 			err = ErrInvalidSchemaOrData
 			return
 		}
-		//
-		err = fn(sf.Name(), &Value{x.r, fs, x.od[shift : shift+n]})
+		err = fn(sf.Name(), &Value{x.c, fs, x.od[shift : shift+n]})
 		if err != nil {
 			if err == ErrStopRange { // special error
 				err = nil
 			}
 			return
 		}
-		//
 		shift += n
 	}
 	return
@@ -413,7 +434,7 @@ func (x *Value) Index(idx int) (v *Value, err error) {
 				err = ErrInvalidSchemaOrData
 				return
 			}
-			v = &Value{x.r, el, x.od[shift : shift+s]}
+			v = &Value{x.c, el, x.od[shift : shift+s]}
 		} else {
 			var m int
 			for ; idx >= 0; idx-- {
@@ -429,7 +450,7 @@ func (x *Value) Index(idx int) (v *Value, err error) {
 						err = ErrInvalidSchemaOrData
 						return
 					}
-					v = &Value{x.r, el, x.od[shift : shift+m]}
+					v = &Value{x.c, el, x.od[shift : shift+m]}
 					break
 				}
 				shift += m
@@ -460,7 +481,7 @@ func (x *Value) Index(idx int) (v *Value, err error) {
 				err = ErrInvalidSchemaOrData
 				return
 			}
-			v = &Value{x.r, el, x.od[shift : shift+s]}
+			v = &Value{x.c, el, x.od[shift : shift+s]}
 		} else {
 			var m int
 			for ; idx >= 0; idx-- {
@@ -489,7 +510,7 @@ func (x *Value) Index(idx int) (v *Value, err error) {
 							elem: []Schema{*el},
 						}
 					}
-					v = &Value{x.r, el, x.od[shift : shift+m]}
+					v = &Value{x.c, el, x.od[shift : shift+m]}
 					break
 				}
 				shift += m
@@ -617,11 +638,11 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 // helpers
 //
 
-func nilValue(r *Root, s *Schema) *Value {
+func nilValue(c *Container, s *Schema) *Value {
 	if s == nil {
 		s = &Schema{}
 	}
-	return &Value{r, s, nil}
+	return &Value{c, s, nil}
 }
 
 func getLength(p []byte) (l int, err error) {

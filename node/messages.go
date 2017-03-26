@@ -2,17 +2,15 @@ package node
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
-
 	"github.com/skycoin/skycoin/src/daemon/gnet"
+
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func init() {
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("PING"), Ping{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("PONG"), Pong{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("REQT"), Request{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("ROOT"), Root{})
+	//
 	gnet.VerifyMessages()
 }
 
@@ -30,55 +28,5 @@ func (p *Ping) Handle(ctx *gnet.MessageContext, node interface{}) (_ error) {
 type Pong struct{}
 
 func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
-	return
-}
-
-// An Announce message is used to notify other nodes about new data we have got
-type Announce struct {
-	Hash cipher.SHA256
-}
-
-func (a *Announce) Handle(ctx *gnet.MessageContext,
-	node interface{}) (_ error) {
-
-	node.(*Node).enqueueMsgEvent(a, ctx.Addr)
-	return
-}
-
-// A Request is used to request data we want
-type Request struct {
-	Hash cipher.SHA256
-}
-
-func (r *Request) Handle(ctx *gnet.MessageContext,
-	node interface{}) (_ error) {
-
-	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
-	return
-}
-
-// A Data is an encoded ([]byte) object we send
-type Data struct {
-	Data []byte
-}
-
-func (d *Data) Handle(ctx *gnet.MessageContext,
-	node interface{}) (_ error) {
-
-	node.(*Node).enqueueMsgEvent(d, ctx.Addr)
-	return
-}
-
-// A Root contains encoded ([]byte) root object
-type Root struct {
-	Sig  cipher.Sig
-	Pub  cipher.PubKey
-	Root []byte
-}
-
-func (r *Root) Handle(ctx *gnet.MessageContext,
-	node interface{}) (_ error) {
-
-	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
 	return
 }

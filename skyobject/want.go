@@ -16,6 +16,12 @@ func (s Set) Add(k Reference) {
 	s[k] = struct{}{}
 }
 
+func (s *Set) AddMissing(k Reference, c *Container) {
+	if _, ok := c.get(k); !ok {
+		s.Add(k)
+	}
+}
+
 // Err is works with MissingSchema and MissingObject errors.
 // If given error is Missing* error then the Err extract key from the error
 // and append the Key to the Set returning nil. If given error is not Missing*
@@ -59,23 +65,7 @@ func wantValue(val *Value, set Set) (err error) {
 		reflect.Int32, reflect.Uint32, reflect.Float32,
 		reflect.Int64, reflect.Uint64, reflect.Float64,
 		reflect.String:
-	case reflect.Slice:
-		var l int
-		if l, err = val.Len(); err != nil {
-			return
-		}
-		for i := 0; i < l; i++ {
-			var d *Value
-			if d, err = val.Index(i); err != nil {
-				return
-			}
-			if err = wantValue(d, set); err != nil {
-				if err = set.Err(err); err != nil {
-					return
-				} // else -> continue
-			}
-		}
-	case reflect.Array:
+	case reflect.Slice, reflect.Array:
 		var l int
 		if l, err = val.Len(); err != nil {
 			return
