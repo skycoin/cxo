@@ -30,12 +30,13 @@ var (
 type Config struct {
 	gnet.Config
 
-	// Known is a list of known addresses (public key -> list of nodes)
+	// Known is a list of known addresses (public key -> addresses)
 	Known     map[cipher.PubKey][]string
-	Debug     bool          //show debug logs
-	Name      string        // name of the node, that used as log prefix
-	Ping      time.Duration // ping interval
-	RPCEvents int           // rpc events chan
+	Debug     bool            //show debug logs
+	Name      string          // name of the node, that used as log prefix
+	Ping      time.Duration   // ping interval
+	RPCEvents int             // rpc events chan
+	Subscribe []cipher.PubKey // subscribe to on launch
 
 	// RemoteClose is used to deny or allow close the Node using RPC
 	RemoteClose bool
@@ -77,6 +78,8 @@ type Node struct {
 	connecte chan connectEvent // new connection
 	msge     chan msgEvent     // new message received
 
+	subs map[cipher.PubKey]struct{} // subscriptions
+
 	once sync.Once
 	quit chan struct{}
 	done chan struct{}
@@ -95,12 +98,13 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 		conf.Name = "node"
 	}
 	// gnet debugging messages and debug messages of node
-	gnet.DebugPrint = conf.Debug
+	gnet.DebugPrint = false // conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
 		db:     db,
 		so:     so,
+		subs:   make(map[cipher.PubKey]struct{}),
 	}
 }
 
@@ -128,6 +132,7 @@ func (n *Node) Start() {
 	}
 	n.rpce = make(chan rpcEvent, n.conf.RPCEvents)
 	go n.handle(n.quit, n.done, n.connecte, n.msge, n.rpce)
+	go n.subscribe() // subscribe to n.conf.Subscribe
 	return
 }
 
@@ -186,6 +191,12 @@ func (n *Node) Share(pub cipher.PubKey) {
 	})
 }
 
+func (n *Node) subscribe() {
+	for _, pub := range n.conf.Subscribe {
+		n.Subscribe(pub)
+	}
+}
+
 // gnet callback
 func (n *Node) onConnect(address string, outgoing bool) {
 	n.Debug("[DBG] got new connection ", address)
@@ -214,11 +225,8 @@ func (n *Node) handle(quit, done chan struct{},
 	defer close(done)
 	defer n.pool.Shutdown()
 
-	// subscriptions and objects we want from them
-	var subs map[cipher.PubKey]struct{} = make(map[cipher.PubKey]struct{})
+	// objects we want from subscriptions
 	var want skyobject.Set = make(skyobject.Set)
-
-	//
 
 	for {
 		select {
@@ -230,46 +238,39 @@ func (n *Node) handle(quit, done chan struct{},
 					sr.Error)
 			}
 		case ce := <-connecte:
-			n.handleConnectEvent(ce, subs, want)
+			n.handleConnectEvent(ce, want)
 		case me := <-msge:
-			n.handleMsgEvent(me, subs, &want)
+			n.handleMsgEvent(me, &want)
 		case rpce := <-rpce:
-			n.handleRpcEvt(rpce, subs)
+			rpce()
 		case <-quit:
 			return
 		case <-pings:
 			n.pool.SendPings(n.conf.Ping/2, &Ping{})
 		}
 	}
+
 }
 
-func (n *Node) handleRpcEvt(evt rpcEvent, subs map[cipher.PubKey]struct{}) {
-	switch x := evt.(type) {
-	case func():
-		x()
-	case func(map[cipher.PubKey]struct{}):
-		x(subs)
-	default:
-		n.Panicf("[CRITICAL] Invalid type of rpc event %T", evt)
-	}
-}
-
-func (n *Node) handleConnectEvent(ce connectEvent,
-	subs map[cipher.PubKey]struct{},
-	want skyobject.Set) {
-	// send all root objects we have and request all we want
-	for pub := range subs {
+// new connection
+func (n *Node) handleConnectEvent(ce connectEvent, want skyobject.Set) {
+	for pub := range n.subs {
 		if root := n.so.Root(pub); root != nil {
+			// send all roots we have
 			n.Debugf("[DBG] send root %s object to %s",
 				pub.Hex(), ce.Address)
-			n.pool.SendMessage(ce.Address, &Root{
+			n.pool.SendMessage(ce.Address, &RequestRoot{
 				Sig:  root.Sig,
 				Pub:  root.Pub,
 				Root: root.Encode(),
 			})
+		} else {
+			// request all roots we don't have
+			n.pool.SendMessage(ce.Address, &RequestRoot{pub, 0})
 		}
 	}
-	// request wanted objects of the root
+
+	// request all wanted objects
 	for k := range want {
 		n.pool.SendMessage(ce.Address, &Request{cipher.SHA256(k)})
 	}
@@ -282,9 +283,7 @@ func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
 	}
 }
 
-func (n *Node) handleMsgEvent(me msgEvent,
-	subs map[cipher.PubKey]struct{},
-	want *skyobject.Set) {
+func (n *Node) handleMsgEvent(me msgEvent, want *skyobject.Set) {
 	switch x := me.Msg.(type) {
 	case *Announce:
 		if len(*want) == 0 {
@@ -309,16 +308,18 @@ func (n *Node) handleMsgEvent(me msgEvent,
 		// send announce
 		n.pool.BroadcastMessage(&Announce{hash})
 		// refresh list of wanted objects and request them
-		nw := n.wanted(subs)
+		nw := n.wanted(n.subs)
 		for k := range addRemove(*want, nw) {
 			n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
 		}
+	case *RequestRoot:
+		//
 	case *Root:
 		n.Debug("[DBG] got Root meesage from: ", me.Address)
 		// add address of the subscription to known
 		n.addToKnown(x.Pub, me.Address)
 		// do we subscribed to the feed?
-		if _, ok := subs[x.Pub]; !ok {
+		if _, ok := n.subs[x.Pub]; !ok {
 			return // we don't subscribed to the feed
 		}
 		ok, terminate := n.so.AddEncodedRoot(x.Root, x.Pub, x.Sig)
@@ -335,7 +336,7 @@ func (n *Node) handleMsgEvent(me msgEvent,
 		n.pool.BroadcastMessage(x)
 		// refresh and request list of wanted objects
 		ow := *want                                   // keep old wanted objects
-		*want = n.wanted(subs)                        // refresh list of wanted
+		*want = n.wanted(n.subs)                      // refresh list of wanted
 		for k := range wantButNotRequest(*want, ow) { // request new objs. only
 			// broadcast request to connections of the feed
 			n.broadcast(x.Pub, &Request{cipher.SHA256(k)})

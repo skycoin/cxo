@@ -12,6 +12,7 @@ func init() {
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("REQT"), Request{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
+	gnet.RegisterMessage(gnet.MessagePrefixFromString("RQRT"), RequestRoot{})
 	gnet.RegisterMessage(gnet.MessagePrefixFromString("ROOT"), Root{})
 	gnet.VerifyMessages()
 }
@@ -66,6 +67,19 @@ func (d *Data) Handle(ctx *gnet.MessageContext,
 	node interface{}) (_ error) {
 
 	node.(*Node).enqueueMsgEvent(d, ctx.Addr)
+	return
+}
+
+// RequestRoot used to request root object on subscribe
+type RequestRoot struct {
+	Pub  cipher.PubKey
+	Time int64
+}
+
+func (r *RequestRoot) Handle(ctx *gnet.MessageContext,
+	node interface{}) (_ error) {
+
+	node.(*Node).enqueueMsgEvent(r, ctx.Addr)
 	return
 }
 

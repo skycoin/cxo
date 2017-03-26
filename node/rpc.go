@@ -11,35 +11,20 @@ import (
 )
 
 // An rpcEvent represent RPC event
-type rpcEvent interface{}
+type rpcEvent func()
 
 // enqueue rpc event
 func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
 	var done = make(chan struct{})
 	// enquue
-	switch e := evt.(type) {
-	case func(): //
-		select {
-		case n.rpce <- func() {
-			defer close(done)
-			e()
-		}:
-		case <-n.quit:
-			err = ErrClosed
-			return
-		}
-	case func(map[cipher.PubKey]struct{}): //
-		select {
-		case n.rpce <- func(subs map[cipher.PubKey]struct{}) {
-			defer close(done)
-			e(subs)
-		}:
-		case <-n.quit:
-			err = ErrClosed
-			return
-		}
-	default: //
-		n.Panicf("[CRITICAL] invalid type of rpc event %T", evt)
+	select {
+	case n.rpce <- func() {
+		defer close(done)
+		evt()
+	}:
+	case <-n.quit:
+		err = ErrClosed
+		return
 	}
 	// wait
 	select {
@@ -52,12 +37,11 @@ func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
 
 // Subscribe to a feed by public key
 func (n *Node) Subscribe(pub cipher.PubKey) {
-	n.enqueueRpcEvent(func(subs map[cipher.PubKey]struct{}) {
-		subs[pub] = struct{}{}
+	n.enqueueRpcEvent(func() {
+		n.subs[pub] = struct{}{}
 		exc := []string{} // existing connections
 		for _, address := range n.conf.Known[pub] {
 			if !n.pool.IsConnExist(address) {
-				n.Debug("[DBG] connecting to ", address)
 				n.pool.Connect(address)
 			} else {
 				exc = append(exc, address)
@@ -66,7 +50,7 @@ func (n *Node) Subscribe(pub cipher.PubKey) {
 		if root := n.so.Root(pub); root != nil {
 			// Broadcast root of the feed (if we have it)
 			// to all existing connections. The root will be
-			// send to new connections automatically
+			// sent to new connections automatically
 			msg := &Root{
 				Pub:  root.Pub,
 				Sig:  root.Sig,
@@ -141,14 +125,14 @@ func (n *Node) List() (list []string, err error) {
 // Info is for RPC. It returns all useful inforamtions about the node
 // except statistic. I.e. it returns listening address
 func (n *Node) Info() (info comm.Info, err error) {
-	err = n.enqueueRpcEvent(func(subs map[cipher.PubKey]struct{}) {
+	err = n.enqueueRpcEvent(func() {
 		var a net.Addr
 		if a, err = n.pool.ListeningAddress(); err != nil {
 			return
 		}
 		info.Address = a.String()
 		info.Feeds = make(map[cipher.PubKey][]string)
-		for pk := range subs {
+		for pk := range n.subs {
 			list := make([]string, 0, 5)
 			for _, address := range n.conf.Known[pk] {
 				if n.pool.IsConnExist(address) {
