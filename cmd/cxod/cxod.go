@@ -3,14 +3,26 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
+
+	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/rpc/server"
 	"github.com/skycoin/cxo/skyobject"
 )
+
+const (
+	// default listening address
+	ADDRESS = "127.0.0.1"
+	PORT    = 9987
+)
+
+// Fill down known hosts
+var knownHosts = map[cipher.SHA256][]string{}
 
 func getConfigs() (nc node.Config, rc server.Config) {
 	// get defaults
@@ -19,12 +31,12 @@ func getConfigs() (nc node.Config, rc server.Config) {
 	//
 	flag.StringVar(&nc.Address,
 		"address",
-		nc.Address,
-		"Address to listen on. Leave empty for arbitrary assignment")
+		ADDRESS,
+		"Address to listen on. Set to empty string for arbitrary assignment")
 	var port int
 	flag.IntVar(&port,
 		"port",
-		int(nc.Port),
+		PORT,
 		"Port to listen on. Set to 0 for arbitrary assignment")
 	flag.IntVar(&nc.MaxConnections,
 		"max-conn",
@@ -105,12 +117,20 @@ func getConfigs() (nc node.Config, rc server.Config) {
 	flag.Parse()
 
 	if help {
-		fmt.Printf("Usage: %s <flags> [known hosts]\n", os.Args[0])
+		fmt.Printf("Usage: %s <flags> [subscribe to]\n", os.Args[0])
 		flag.PrintDefaults()
 		os.Exit(0)
 	}
 
-	nc.Known = flag.Args()
+	for _, sb := range flag.Args() { // subscribe
+		pk, err := cipher.PubKeyFromHex(sb)
+		if err != nil {
+			log.Fatalf("malformed public key to subscribe to:\n"+
+				"  %q\n"+
+				"  %v\n", sb, err)
+		}
+		nc.Subscribe = append(nc.Subscribe, pk)
+	}
 
 	nc.Port = uint16(port)
 

@@ -230,9 +230,17 @@ func info(rpc *client.Client) (err error) {
 		return
 	}
 	fmt.Println("  Listening address:", info.Address)
-	// TODO:
+	if len(info.Feeds) == 0 {
+		fmt.Println("  There aren't subscriptions")
+		return
+	}
+	for pk, addreses := range info.Feeds {
+		fmt.Println("  + ", pk.Hex())
+		for _, a := range addreses {
+			fmt.Println("    - ", a)
+		}
+	}
 	return
-
 }
 
 func connect(rpc *client.Client, ss []string) (err error) {
