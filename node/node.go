@@ -321,7 +321,7 @@ func (n *Node) handleMsgEvent(me msgEvent,
 		if _, ok := subs[x.Pub]; !ok {
 			return // we don't subscribed to the feed
 		}
-		ok, terminate := n.so.SetEncodedRoot(x.Root, x.Pub, x.Sig)
+		ok, terminate := n.so.AddEncodedRoot(x.Root, x.Pub, x.Sig)
 		if terminate != nil {
 			n.Print("[ERR] decoding root: ", terminate)
 			// terminate connection that sends malformed messages

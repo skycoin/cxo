@@ -54,20 +54,20 @@ func main() {
 	// register schema of User{} with name "User",
 	// thus, tags like `skyobject:"schema=User"` will refer to
 	// schema of the User{}
-	root.Register("User", User{})
+	c.Register("User", User{})
 
 	// Inject the Group to the root
 	root.Inject(Group{
 		Name: "a group",
-		Leader: root.Save(User{
+		Leader: c.Save(User{
 			"Billy Kid", 16, 90,
 		}),
-		Members: root.SaveArray(
+		Members: c.SaveArray(
 			User{"Bob Marley", 21, 0},
 			User{"Alice Cooper", 19, 0},
 			User{"Eva Brown", 30, 0},
 		),
-		Curator: root.Dynamic(Man{
+		Curator: c.Dynamic(Man{
 			Name:    "Ned Kelly",
 			Age:     28,
 			Seecret: []byte("secret key"),
@@ -77,15 +77,15 @@ func main() {
 	})
 
 	// Inject another object using its hash
-	usrHash := root.Save( // save an object to get its hash
-		root.Dynamic(User{ // the object must be Dynamic
+	usrHash := c.Save( // save an object to get its hash
+		c.Dynamic(User{ // the object must be Dynamic
 			Name: "Old Uncle Tom Cobley and all",
 			Age:  89,
 		}),
 	)
 	root.InjectHash(usrHash) // inject
 
-	// Note: feel free to use empty references they are treated as "nil"
+	// Feel free to use empty references they are treated as "nil"
 	// But for InjectHash an empty reference is illegal
 	if err := root.InjectHash(skyobject.Reference{}); err != nil {
 		log.Print("InjectHash(Reference{}) error: ", err)

@@ -77,7 +77,7 @@ type Value struct {
 //  ...and appropriate kinds for other values
 // Use (*Value).Schema().Kind() to get appropriate schema of value if the
 // value is nil. The schema can be nil-schema for nil-dynamic-references.
-// But, be careful, the (*Value).Schema().Kind() returns relfect.Ptr for
+// But, be careful, the (*Value).Schema().Kind() returns relfect.Ptr
 // instead of reflect.Slice for array of references
 func (x *Value) Kind() reflect.Kind {
 	var kind reflect.Kind = x.s.Kind()

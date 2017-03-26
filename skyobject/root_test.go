@@ -32,22 +32,22 @@ func Test_encodeEqual(t *testing.T) {
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	r.Register("User", User{})
+	c.Register("User", User{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	r.SaveSchema(Group{})
+	c.SaveSchema(Group{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	r.SaveSchema(List{})
+	c.SaveSchema(List{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	r.SaveSchema(Man{})
+	c.SaveSchema(Man{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
@@ -57,7 +57,7 @@ func Test_encodeEqual(t *testing.T) {
 func Test_encodeDecode(t *testing.T) {
 	c := getCont()
 	r := c.NewRoot(pubKey())
-	r.Register("User", User{})
+	c.Register("User", User{})
 	p := r.Encode()
 	re, err := decodeRoot(p)
 	if err != nil {
@@ -93,8 +93,8 @@ func TestRoot_Encode(t *testing.T) {
 	// encode
 	c1 := getCont()
 	r1 := c1.NewRoot(pub)
-	r1.Register("User", User{})
-	r1.SaveSchema(Group{})
+	c1.Register("User", User{})
+	c1.SaveSchema(Group{})
 	r1.Sign(sec)
 	sig := r1.Sig
 	p := r1.Encode()
@@ -106,37 +106,13 @@ func TestRoot_Encode(t *testing.T) {
 	}
 	// decode
 	c2 := getCont()
-	if ok, err := c2.SetEncodedRoot(p, r1.Pub, r1.Sig); err != nil {
+	if ok, err := c2.AddEncodedRoot(p, r1.Pub, r1.Sig); err != nil {
 		t.Error(err)
 	} else if !ok {
 		t.Error("can't set encoded root")
 	} else if len(c2.reg.reg) != len(c1.reg.reg) {
 		t.Error("wrong registry")
 	}
-}
-
-func TestRoot_SchemaByReference(t *testing.T) {
-	//
-}
-
-func TestRoot_Save(t *testing.T) {
-	//
-}
-
-func TestRoot_SaveArray(t *testing.T) {
-	//
-}
-
-func TestRoot_SaveSchema(t *testing.T) {
-	//
-}
-
-func TestRoot_Dynamic(t *testing.T) {
-	//
-}
-
-func TestRoot_Register(t *testing.T) {
-	//
 }
 
 func TestRoot_Values(t *testing.T) {

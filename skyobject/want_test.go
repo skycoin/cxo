@@ -49,18 +49,18 @@ func TestRoot_Want(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		root.Register("User", User{})
+		c.Register("User", User{})
 		root.Inject(Group{
 			Name: "a group",
-			Leader: root.Save(User{
+			Leader: c.Save(User{
 				"Billy Kid", 16, 90,
 			}),
-			Members: root.SaveArray(
+			Members: c.SaveArray(
 				User{"Bob Marley", 21, 0},
 				User{"Alice Cooper", 19, 0},
 				User{"Eva Brown", 30, 0},
 			),
-			Curator: root.Dynamic(Man{
+			Curator: c.Dynamic(Man{
 				Name:    "Ned Kelly",
 				Age:     28,
 				Seecret: []byte("secret key"),
@@ -85,7 +85,7 @@ func TestRoot_Want(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		root.Register("User", User{})
+		c.Register("User", User{})
 		leader := User{
 			"Billy Kid", 16, 90,
 		}
@@ -98,7 +98,7 @@ func TestRoot_Want(t *testing.T) {
 			Name:    "a group",
 			Leader:  getHash(leader),
 			Members: getHashes(members...),
-			Curator: root.Dynamic(Man{
+			Curator: c.Dynamic(Man{
 				Name:    "Ned Kelly",
 				Age:     28,
 				Seecret: []byte("secret key"),
@@ -115,7 +115,7 @@ func TestRoot_Want(t *testing.T) {
 		if l := len(set); l != 4 {
 			t.Error("unexpects count of wanted objects: ", l)
 		}
-		root.Save(leader)
+		c.Save(leader)
 		set, err = root.Want()
 		if err != nil {
 			t.Error("unexpected error:", err)
@@ -124,7 +124,7 @@ func TestRoot_Want(t *testing.T) {
 		if l := len(set); l != 3 {
 			t.Error("unexpects count of wanted objects: ", l)
 		}
-		root.SaveArray(members...)
+		c.SaveArray(members...)
 		set, err = root.Want()
 		if err != nil {
 			t.Error("unexpected error:", err)

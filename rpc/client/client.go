@@ -53,11 +53,13 @@ func (c *Client) Disconnect(address string) (err error) {
 	return
 }
 
+// Subscribe subscribes node to given feed (by public key)
 func (c *Client) Subscribe(pub cipher.PubKey) (err error) {
 	err = c.r.Call("rpc.Subscribe", pub, nil)
 	return
 }
 
+// Inject injects hash to root object of the feed (by public key)
 func (c *Client) Inject(args comm.Inject) (err error) {
 	err = c.r.Call("rpc.Inject", args, nil)
 	return

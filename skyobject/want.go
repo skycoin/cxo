@@ -8,13 +8,18 @@ import (
 // set of keys
 //
 
-// keys set
+// A Set represents set of Reference(s)
 type Set map[Reference]struct{}
 
+// Add appends given key to the Set
 func (s Set) Add(k Reference) {
 	s[k] = struct{}{}
 }
 
+// Err is works with MissingSchema and MissingObject errors.
+// If given error is Missing* error then the Err extract key from the error
+// and append the Key to the Set returning nil. If given error is not Missing*
+// error then it returns the error
 func (s *Set) Err(err error) error {
 	switch x := err.(type) {
 	case *MissingSchema:

@@ -65,11 +65,11 @@ func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 	conf.Name = "source"
 	n := NewNode(conf, db, so)
 	root := so.NewRoot(pub)
-	root.Register("User", User{})
+	so.Register("User", User{})
 	root.Inject(SmallGroup{
 		Header: "Widdecombe Fair",
-		Leader: root.Save(User{"Old Uncle Tom Cobley", 75}),
-		Members: root.SaveArray(
+		Leader: so.Save(User{"Old Uncle Tom Cobley", 75}),
+		Members: so.SaveArray(
 			User{"Bill Brewer", 50},
 			User{"Jan Stewer", 51},
 			User{"Peter Gurney", 52},
@@ -77,7 +77,7 @@ func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 			User{"Dan'l Whiddon", 54},
 			User{"Harry Hawke", 55},
 		),
-		FallGuy: root.Dynamic(Man{
+		FallGuy: so.Dynamic(Man{
 			Name:   "Bob",
 			Soname: "Cobley",
 		}),

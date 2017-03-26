@@ -13,7 +13,7 @@ type Info struct {
 
 // Arguments for Inject method of node
 type Inject struct {
-	Hash cipher.SHA256
-	Pub  cipher.PubKey
-	Sec  cipher.SecKey
+	Hash cipher.SHA256 // hash of object to inject
+	Pub  cipher.PubKey // public key of feed
+	Sec  cipher.SecKey // secret key of owner
 }
