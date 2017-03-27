@@ -167,6 +167,9 @@ func (n *Node) Start() {
 //     	Value uint32
 //     }
 //
+//     so.Register("FirstObject", FirstObject{})
+//     so.Register("SecondObject", SecondObject{})
+//
 //     pub, sec := cipher.GenerateKeyPair()
 //
 //     // create root object using public key
