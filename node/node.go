@@ -157,7 +157,7 @@ func (n *Node) Start() {
 //
 //     // example root object
 //
-//     type Root struct {
+//     type Any struct {
 //     	Name  string
 //     	Value int64
 //     }
@@ -165,7 +165,7 @@ func (n *Node) Start() {
 //     pub, sec := cipher.GenerateKeyPair()
 //
 //     root := so.NewRoot(pub)
-//     root.Inject(Root{
+//     root.Inject(Any{
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })
