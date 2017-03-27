@@ -162,7 +162,7 @@ func (n *Node) Start() {
 //     	Value int64
 //     }
 //
-//     type SecontObject struct {
+//     type SecondObject struct {
 //     	Name string
 //     	Value uint32
 //     }
