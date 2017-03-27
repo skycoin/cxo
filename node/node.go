@@ -157,25 +157,42 @@ func (n *Node) Start() {
 //
 //     // example root object
 //
-//     type Any struct {
+//     type FirstObject struct {
 //     	Name  string
 //     	Value int64
 //     }
 //
+//     type SecontObject struct {
+//     	Name string
+//     	Value uint32
+//     }
+//
 //     pub, sec := cipher.GenerateKeyPair()
 //
+//     // create root object using public key
 //     root := so.NewRoot(pub)
-//     root.Inject(Any{
+//     root.Inject(FirstObject{
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })
 //     root.Touch()
 //     so.AddRoot(root, sec)
+//
+//     // share the root
 //     n.Share(pub)
 //
 //     //
 //     // stuff
 //     //
+//
+//     // get the root from container by public key
+//     root := so.Root(pub)
+//     root.Inject(SecondObject{
+//     	Name: "Billy Kid",
+//     	Value: 16,
+//     })
+//     root.Touch()
+//     so.AddRoot(root, sec)
 //
 //     return
 //
