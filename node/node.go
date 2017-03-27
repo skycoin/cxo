@@ -194,6 +194,9 @@ func (n *Node) Start() {
 //     root.Touch()
 //     so.AddRoot(root, sec)
 //
+//     // share the root again
+//     n.Share(pub)
+//
 //     return
 //
 func (n *Node) Share(pub cipher.PubKey) {
