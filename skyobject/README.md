@@ -10,8 +10,6 @@ import (
 )
 ```
 
-Example `github.com/skycoin/cxo/quickStart/skyobject`
-
 ## Usage
 
 Create container to manage root objects

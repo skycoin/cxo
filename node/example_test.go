@@ -1,4 +1,4 @@
-package main
+package node_test
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
@@ -8,7 +8,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-func main() {
+func Example() {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 

@@ -133,18 +133,12 @@ func Example() {
 	fmt.Println("===\n", db.Stat(), "\n===")
 }
 
-// create function to inspecting
+// create function for inspecting
 func inspect(val *skyobject.Value, err error, prefix string) {
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	// const (
-	// 	cross  = "├── "
-	// 	road   = "│   "
-	// 	corner = "└── "
-	// 	blank  = "    "
-	// )
 	switch val.Kind() {
 	case reflect.Invalid: // nil
 		fmt.Println("nil")
