@@ -32,7 +32,7 @@ gui/static/dev/
 cmd/cli/cli
 cmd/cxod/cxod
 cmd/*.out
-tests/tests
+skyobjectQuickStart/skyobjectQuickStart
 
 skyobject/cover.out
 skyobject/cover.html
