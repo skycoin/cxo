@@ -3,18 +3,20 @@ CX Object System
 
 Specs: https://pad.riseup.net/p/cxo
 
-# Skyobject
+## Skyobject
 
 See skyobject/README.md
 
-# Node
+## Node
 
 See node/README.md
 
-# CLI
+## CLI
 
 See cmd/cli/README.md
 
-# Daemon
+## Daemon
 
 See cmd/cxod/README.md
+
+---
