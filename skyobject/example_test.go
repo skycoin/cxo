@@ -41,7 +41,7 @@ type Man struct {
 	Friends List  // not a reference
 }
 
-func main() {
+func Example() {
 	// create database and container instance
 	db := data.NewDB()
 	c := skyobject.NewContainer(db)
@@ -226,8 +226,4 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 			return
 		}
 	}
-}
-
-func Example() {
-	// the function required for godoc example
 }
