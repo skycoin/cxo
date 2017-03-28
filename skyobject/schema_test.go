@@ -15,6 +15,12 @@ func shouldPanic(t *testing.T) {
 	}
 }
 
+func shouldNotPanic(t *testing.T) {
+	if recover() != nil {
+		t.Error("unexpected panicing")
+	}
+}
+
 func cmpSchemes(a, b *Schema, t *testing.T) (equal bool) {
 	equal = true
 	if a.Kind() != b.Kind() {
@@ -64,18 +70,18 @@ func cmpSchemes(a, b *Schema, t *testing.T) (equal bool) {
 	return
 }
 
-func TestNewRegistery(t *testing.T) {
+func Test_newRegistery(t *testing.T) {
 	t.Run("nil db", func(t *testing.T) {
 		defer shouldPanic(t)
-		NewRegistery(nil)
+		newRegistery(nil)
 	})
 	t.Run("norm", func(t *testing.T) {
 		db := data.NewDB()
-		r := NewRegistery(db)
+		r := newRegistery(db)
 		if r.db != db {
 			t.Error("wrong db in registery")
 		}
-		if r.nmr == nil {
+		if r.nnm == nil {
 			t.Error("nil-map for registered types")
 		}
 		if r.reg == nil {
@@ -86,44 +92,70 @@ func TestNewRegistery(t *testing.T) {
 
 func TestRegistry_Register(t *testing.T) {
 	t.Run("unnamed", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		defer shouldPanic(t)
 		r.Register("Unnamed", []User{})
 	})
 	t.Run("named", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		r.Register("User", User{})
-		tn := typeName(reflect.TypeOf(User{}))
-		if x, ok := r.nmr["User"]; !ok {
+		if sck, ok := r.reg["User"]; !ok {
 			t.Error("missing registered type")
-		} else if x != tn {
-			t.Error("registered with wrong type name")
-		} else if ch, ok := r.reg[x]; !ok {
-			t.Error("name registered, but type is not registered")
-		} else if s, err := r.SchemaByReference(Reference(ch)); err != nil {
-			t.Error("unexpected error: ", err)
-		} else if s.Name() != tn {
-			// TODO
-			t.Error("registered type has wrong name: ", s.Name())
+		} else if sck == (Reference{}) {
+			t.Error("empty reference")
+		}
+		typ := reflect.TypeOf(User{})
+		if r.nnm[typ] != "User" {
+			t.Error("something went wrong")
 		}
 	})
-}
-
-func TestRegistry_SaveSchema(t *testing.T) {
 	t.Run("invalid type", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		var x interface{}
 		defer shouldPanic(t)
-		r.SaveSchema(x)
+		r.Register("User", x)
+	})
+	t.Run("empty name", func(t *testing.T) {
+		r := newRegistery(data.NewDB())
+		defer shouldPanic(t)
+		r.Register("", User{})
+	})
+	t.Run("special name prefix", func(t *testing.T) {
+		r := newRegistery(data.NewDB())
+		defer shouldPanic(t)
+		r.Register("-User", User{})
+	})
+	t.Run("unregistered nested", func(t *testing.T) {
+		r := newRegistery(data.NewDB())
+		defer shouldPanic(t)
+		type Y struct{}
+		type X struct {
+			Y Y
+		}
+		r.Register("X", X{})
+	})
+	t.Run("twice the same", func(t *testing.T) {
+		r := newRegistery(data.NewDB())
+		defer shouldNotPanic(t)
+		r.Register("X", User{})
+		r.Register("X", User{})
+	})
+	t.Run("twice different", func(t *testing.T) {
+		r := newRegistery(data.NewDB())
+		defer shouldPanic(t)
+		type X struct{}
+		r.Register("X", User{})
+		r.Register("X", X{})
 	})
 	t.Run("unnamed type", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		defer shouldPanic(t)
-		r.SaveSchema(int(0))
+		r.Register("User", int(0))
 	})
 	t.Run("valid", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
-		ur := r.SaveSchema(User{})
+		r := newRegistery(data.NewDB())
+		r.Register("User", User{})
+		ur := r.SchemaReference(User{})
 		if ur == (Reference{}) {
 			t.Error("empty reference to saved type")
 		}
@@ -131,10 +163,10 @@ func TestRegistry_SaveSchema(t *testing.T) {
 			t.Error("saved schema missing in db")
 		}
 		typ := reflect.TypeOf(User{})
-		if ch, ok := r.reg[typeName(typ)]; !ok {
+		if _, ok := r.reg["User"]; !ok {
 			t.Error("saved schema missing in registery")
-		} else if Reference(ch) != ur {
-			t.Error("wrong reference for saved schema")
+		} else if r.nnm[typ] != "User" {
+			t.Error("wrong")
 		}
 	})
 	t.Run("recursive", func(t *testing.T) {
@@ -143,8 +175,9 @@ func TestRegistry_SaveSchema(t *testing.T) {
 			Len    uint32
 			Nested []Recur
 		}
-		r := NewRegistery(data.NewDB())
-		ur := r.SaveSchema(Recur{})
+		r := newRegistery(data.NewDB())
+		r.Register("Recur", Recur{})
+		ur := r.SchemaReference(Recur{})
 		if ur == (Reference{}) {
 			t.Error("empty reference to saved type")
 		}
@@ -152,47 +185,71 @@ func TestRegistry_SaveSchema(t *testing.T) {
 			t.Error("saved schema missing in db")
 		}
 		typ := reflect.TypeOf(Recur{})
-		if ch, ok := r.reg[typeName(typ)]; !ok {
+		if name, ok := r.nnm[typ]; !ok {
 			t.Error("saved schema missing in registery")
-		} else if Reference(ch) != ur {
+		} else if r.reg[name] != ur {
+			t.Error("wrong reference for saved schema")
+		}
+	})
+	t.Run("self reference", func(t *testing.T) {
+		type Recur struct {
+			Name   string
+			Len    uint32
+			Nested Reference `skyobject:"schema=Recur"`
+		}
+		r := newRegistery(data.NewDB())
+		r.Register("Recur", Recur{})
+		ur := r.SchemaReference(Recur{})
+		if ur == (Reference{}) {
+			t.Error("empty reference to saved type")
+		}
+		if _, ok := r.db.Get(cipher.SHA256(ur)); !ok {
+			t.Error("saved schema missing in db")
+		}
+		typ := reflect.TypeOf(Recur{})
+		if name, ok := r.nnm[typ]; !ok {
+			t.Error("saved schema missing in registery")
+		} else if r.reg[name] != ur {
 			t.Error("wrong reference for saved schema")
 		}
 	})
 }
 
-func TestRegistry_SchemaByTypeName(t *testing.T) {
+func TestRegistry_SchemaByName(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
-		_, err := r.SchemaByTypeName("missing")
+		r := newRegistery(data.NewDB())
+		_, err := r.SchemaByName("missing")
 		if err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("saved", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
-		r.SaveSchema(User{})
-		tn := typeName(reflect.TypeOf(User{}))
-		s, err := r.SchemaByTypeName(tn)
+		r := newRegistery(data.NewDB())
+		r.Register("User", User{})
+		s, err := r.SchemaByName("User")
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		// TODO
+		if s.Name() != "User" {
+			t.Error("something wrong")
+		}
 		t.Log("Schema: ", s)
 	})
 }
 
 func TestRegistry_SchemaByReference(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		_, err := r.SchemaByReference(Reference{1, 2, 3})
 		if err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("saved", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
-		ur := r.SaveSchema(User{})
+		r := newRegistery(data.NewDB())
+		r.Register("User", User{})
+		ur := r.SchemaReference(User{})
 		s, err := r.SchemaByReference(ur)
 		if err != nil {
 			t.Error(err)
@@ -201,7 +258,7 @@ func TestRegistry_SchemaByReference(t *testing.T) {
 		if s.Kind() != reflect.Struct {
 			t.Error("wrong kind")
 		}
-		if s.Name() != typeName(reflect.TypeOf(User{})) {
+		if s.Name() != "User" {
 			t.Error("wrong type name")
 		}
 		if len(s.fields) != 2 {
@@ -227,21 +284,23 @@ func TestRegistry_SchemaByReference(t *testing.T) {
 		if age.Name() != "Age" {
 			t.Error("#1 wrong name")
 		}
-		if age.TypeName() != typeName(reflect.TypeOf(Age(0))) {
+		if age.TypeName() != "Age" {
 			t.Error("#2 wrong type name")
 		}
 	})
 	t.Run("complex", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		r.Register("User", User{})
-		gr := r.SaveSchema(Group{})
+		// totododododododo
+		r.Register("Group", Group{})
+		gr := r.SchemaReference(Group{})
 		s, err := r.SchemaByReference(gr)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 		cmpSchemes(s, &Schema{
-			name: []byte(typeName(reflect.TypeOf(Group{}))),
+			name: []byte("Group"),
 			kind: uint32(reflect.Struct),
 			fields: []Field{
 				Field{
@@ -250,12 +309,12 @@ func TestRegistry_SchemaByReference(t *testing.T) {
 				Field{
 					name: []byte("Leader"),
 					tag:  []byte(`skyobject:"schema=User"`),
-					ref:  []byte("github.com/logrusorgru/cxo/skyobject.User"),
+					ref:  []byte("User"),
 				},
 				Field{
 					name: []byte("Members"),
 					tag:  []byte(`skyobject:"schema=User"`),
-					ref:  []byte("github.com/logrusorgru/cxo/skyobject.User"),
+					ref:  []byte("User"),
 				},
 				Field{
 					name: []byte("Curator"),
@@ -296,7 +355,7 @@ func TestRegistry_SchemaByReference(t *testing.T) {
 
 func TestRegistry_getSchema(t *testing.T) {
 	t.Run("flat", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		for _, i := range []interface{}{
 			false,
 			int8(0), int16(0), int32(0), int64(0),
@@ -321,7 +380,7 @@ func TestRegistry_getSchema(t *testing.T) {
 		}
 	})
 	t.Run("invalid", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		for _, i := range []interface{}{
 			nil,
 			make(chan struct{}),
@@ -337,7 +396,7 @@ func TestRegistry_getSchema(t *testing.T) {
 		}
 	})
 	t.Run("flat named", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		for _, i := range []interface{}{
 			Bool(false),
 			Int8(0), Int16(0), Int32(0), Int64(0),
@@ -356,13 +415,13 @@ func TestRegistry_getSchema(t *testing.T) {
 					typ.Kind().String(),
 					sch.Kind().String())
 			}
-			if sch.Name() != typeName(typ) {
-				t.Error("non-empty name for unnamed type: ", sch.Name())
+			if sch.Name() != typ.Name() {
+				t.Error("wrong type name: ", sch.Name())
 			}
 		}
 	})
 	t.Run("complex unnamed", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		for _, i := range []interface{}{
 			[]bool{},
 			[1]int8{}, [2]int16{}, [3]int32{}, [4]int64{},
@@ -381,7 +440,7 @@ func TestRegistry_getSchema(t *testing.T) {
 					typ.Kind().String(),
 					sch.Kind().String())
 			}
-			if sch.Name() != typeName(typ) {
+			if sch.Name() != "" {
 				t.Error("non-empty name for unnamed type: ", sch.Name())
 			}
 			switch typ.Kind() {
@@ -425,7 +484,7 @@ func TestRegistry_getSchema(t *testing.T) {
 		}
 	})
 	t.Run("references", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
+		r := newRegistery(data.NewDB())
 		for _, i := range []interface{}{
 			Reference{},
 			References{},
@@ -439,33 +498,20 @@ func TestRegistry_getSchema(t *testing.T) {
 			}
 		}
 	})
-	t.Run("complex named", func(t *testing.T) {
-		r := NewRegistery(data.NewDB())
-		r.Register("User", User{})
-		for _, i := range []interface{}{
-			Group{},
-			User{},
-			List{},
-			Man{},
-		} {
-			typ := reflect.TypeOf(i)
-			sch := r.getSchema(typ)
-			// must be saved
-			if _, ok := r.reg[sch.Name()]; !ok {
-				t.Error("schema of named type was not saved: ", sch.Name())
-			}
-		}
-	})
 	// TODO: complex named recursive
 	// TODO: skip fields
 	// TODO: elem of references
 }
 
 func TestRegistry_getField(t *testing.T) {
-	r := NewRegistery(data.NewDB())
+	r := newRegistery(data.NewDB())
 	r.Register("User", User{})
+	r.Register("Group", Group{})
 	typ := reflect.TypeOf(Group{})
 	s := r.getSchema(typ)
+	if err := s.load(); err != nil {
+		t.Error(err)
+	}
 	if len(s.Fields()) != 4 {
 		t.Error("wrong fields count: want 4, got: ", len(s.Fields()))
 		return
@@ -488,7 +534,7 @@ func TestRegistry_getField(t *testing.T) {
 			}
 			switch i {
 			case 1:
-				if sf.TypeName() != singleRef {
+				if sf.TypeName() != SINGLE {
 					t.Error("wrong field type: ", sf.TypeName())
 				}
 				if fs, err := sf.Schema(); err != nil {
@@ -496,12 +542,12 @@ func TestRegistry_getField(t *testing.T) {
 				} else {
 					if el, err := fs.Elem(); err != nil {
 						t.Error(err)
-					} else if el.Name() != typeName(reflect.TypeOf(User{})) {
+					} else if el.Name() != "User" {
 						t.Error("wrong schema of element of reference")
 					}
 				}
 			case 2:
-				if sf.TypeName() != arrayRef {
+				if sf.TypeName() != ARRAY {
 					t.Error("wrong field type: ", sf.TypeName())
 				}
 				if fs, err := sf.Schema(); err != nil {
@@ -509,12 +555,12 @@ func TestRegistry_getField(t *testing.T) {
 				} else {
 					if el, err := fs.Elem(); err != nil {
 						t.Error(err)
-					} else if el.Name() != typeName(reflect.TypeOf(User{})) {
+					} else if el.Name() != "User" {
 						t.Error("wrong schema of element of reference")
 					}
 				}
 			case 3:
-				if sf.TypeName() != dynamicRef {
+				if sf.TypeName() != DYNAMIC {
 					t.Error("wrong field type: ", sf.TypeName())
 				}
 				if fs, err := sf.Schema(); err != nil {
@@ -567,7 +613,7 @@ func TestSchema_isSaved(t *testing.T) {
 }
 
 func TestSchema_load(t *testing.T) {
-	r := NewRegistery(data.NewDB())
+	r := newRegistery(data.NewDB())
 	r.Register("User", User{})
 	s := r.getSchema(reflect.TypeOf(User{}))
 	// s already registered
@@ -633,9 +679,13 @@ func Test_encodingField_Field(t *testing.T) {
 }
 
 func TestSchema_Encode(t *testing.T) {
-	r := NewRegistery(data.NewDB())
-	typ := reflect.TypeOf(User{})
-	s := r.getSchema(typ)
+	r := newRegistery(data.NewDB())
+	r.Register("User", User{})
+	s, err := r.SchemaByName("User")
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	sd := s.Encode()
 	t.Log("(*Schema).Encode() length: ", len(sd))
 	if len(sd) == 0 {
@@ -645,59 +695,25 @@ func TestSchema_Encode(t *testing.T) {
 
 func TestSchema_Decode(t *testing.T) {
 	// encode
-	r := NewRegistery(data.NewDB())
-	typ := reflect.TypeOf(User{})
-	s := r.getSchema(typ)
+	r := newRegistery(data.NewDB())
+	r.Register("User", User{})
+	s, err := r.SchemaByName("User")
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	sd := s.Encode()
 	if len(sd) == 0 {
 		t.Error("encode to zero length value")
 	}
 	// decode
-	var ns Schema
-	if err := ns.Decode(r, sd); err != nil {
+	var ns *Schema = r.newSchema()
+	if err := ns.Decode(sd); err != nil {
 		t.Error("decoding error: ", err)
 	}
-	if !cmpSchemes(s, &ns, t) {
+	if !cmpSchemes(s, ns, t) {
 		//
 	}
-}
-
-func Test_typeName(t *testing.T) {
-	typ := reflect.Indirect(reflect.ValueOf(User{})).Type()
-	got := typeName(typ)
-	t.Log("typeName: ", got)
-	if want := typ.PkgPath() + "." + typ.Name(); want != got {
-		t.Errorf("wrong type name: want %q, got %q", want, got)
-	}
-}
-
-func Test_isFlat(t *testing.T) {
-	t.Run("flat", func(t *testing.T) {
-		for _, k := range []reflect.Kind{
-			reflect.Bool,
-			reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-			reflect.Float32, reflect.Float64,
-			reflect.String,
-		} {
-			if !isFlat(k) {
-				t.Error("flat type treated as not flat: ", k)
-			}
-		}
-	})
-	t.Run("complex", func(t *testing.T) {
-		for _, k := range []reflect.Kind{
-			reflect.Slice,
-			reflect.Array,
-			reflect.Struct,
-			reflect.Ptr,
-		} {
-			if isFlat(k) {
-				t.Error("complex type treated as flat: ", k)
-			}
-		}
-	})
-
 }
 
 func Test_mustGetSchemaOfTag(t *testing.T) {

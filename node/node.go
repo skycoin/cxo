@@ -178,7 +178,6 @@ func (n *Node) Start() {
 //     	Name:  "Old Uncle Tom Cobley",
 //     	Value: 411,
 //     })
-//     root.Touch()
 //     so.AddRoot(root, sec)
 //
 //     // share the root
@@ -194,7 +193,6 @@ func (n *Node) Start() {
 //     	Name: "Billy Kid",
 //     	Value: 16,
 //     })
-//     root.Touch()
 //     so.AddRoot(root, sec)
 //
 //     // share the root again

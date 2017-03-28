@@ -121,5 +121,22 @@ func TestContainer_Dynamic(t *testing.T) {
 }
 
 func TestContainer_Register(t *testing.T) {
-	//
+	t.Run("complex recursive", func(t *testing.T) {
+		type W struct {
+			Z Reference `skyobject:"schema=X"`
+		}
+		type G struct {
+			W W
+		}
+		type X struct {
+			G G
+		}
+		cnt := getCont()
+		defer shouldNotPanic(t)
+		cnt.Register(
+			"W", W{},
+			"G", G{},
+			"X", X{},
+		)
+	})
 }

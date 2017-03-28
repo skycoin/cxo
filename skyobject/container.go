@@ -3,6 +3,7 @@ package skyobject
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -40,7 +41,7 @@ func NewContainer(db *data.DB) (c *Container) {
 	c = new(Container)
 	c.db = db
 	c.roots = make(map[cipher.PubKey]*Root)
-	c.reg = NewRegistery(db)
+	c.reg = newRegistery(db)
 	return
 }
 
@@ -130,7 +131,14 @@ func (c *Container) AddEncodedRoot(p []byte, // root.Encode()
 	root.cnt = c
 	root.reg = c.reg
 	for _, v := range re.Reg {
-		root.reg.reg[v.K] = v.V
+		if sck, ae := c.reg.reg[v.K]; ae {
+			if sck != v.V {
+				err = fmt.Errorf("conflict between registered types %q", v.K)
+				return
+			}
+		} else {
+			c.reg.reg[v.K] = v.V
+		}
 	}
 	ok = c.addRoot(root)
 	return
@@ -177,20 +185,21 @@ func (c *Container) SaveArray(ary ...interface{}) (rs References) {
 	return
 }
 
-// SaveSchema and get reference-key to it
-func (c *Container) SaveSchema(i interface{}) (ref Reference) {
-	return c.reg.SaveSchema(i)
+// SchemaReference returns reference-key to schema of given vlaue. It panics
+// if the schema is not registered
+func (c *Container) SchemaReference(i interface{}) (ref Reference) {
+	return c.reg.SchemaReference(i)
 }
 
 // Dynamic saves object and its schema in db and returns dynamic reference,
 // that points to the object and the schema
 func (c *Container) Dynamic(i interface{}) (dn Dynamic) {
 	dn.Object = c.Save(i)
-	dn.Schema = c.SaveSchema(i)
+	dn.Schema = c.SchemaReference(i)
 	return
 }
 
 // Register schema of given object with given name
-func (c *Container) Register(name string, i interface{}) {
-	c.reg.Register(name, i)
+func (c *Container) Register(ni ...interface{}) {
+	c.reg.Register(ni...)
 }

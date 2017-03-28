@@ -54,7 +54,12 @@ func main() {
 	// register schema of User{} with name "User",
 	// thus, tags like `skyobject:"schema=User"` will refer to
 	// schema of the User{}
-	c.Register("User", User{})
+	c.Register(
+		"User", User{},
+		"Group", Group{},
+		"List", List{},
+		"Man", Man{},
+	)
 
 	// Inject the Group to the root
 	root.Inject(Group{

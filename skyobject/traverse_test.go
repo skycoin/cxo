@@ -42,7 +42,7 @@ func TestValue_Kind(t *testing.T) {
 	t.Run("references", func(t *testing.T) {
 		s := &Schema{
 			kind: uint32(reflect.Ptr), // <- pointer
-			name: []byte(arrayRef),    // <- reference
+			name: []byte(ARRAY),       // <- reference
 		}
 		kind := (&Value{nil, s, nil}).Kind()
 		if kind != reflect.Slice { // <- slice
@@ -63,7 +63,10 @@ func TestValue_Kind(t *testing.T) {
 
 func TestValue_Dereference(t *testing.T) {
 	cnt, root := getCntRoot()
-	cnt.Register("User", User{})
+	cnt.Register("User", User{})   // 1
+	cnt.Register("Group", Group{}) // +1 -> 2
+	cnt.Register("List", List{})   // +1 -> 3
+	cnt.Register("Man", Man{})     // +1 -> 4
 	root.Inject(Group{
 		Name: "a group",
 		Leader: cnt.Save(User{
@@ -172,26 +175,47 @@ func TestValue_Dereference(t *testing.T) {
 
 func TestValue_Bool(t *testing.T) {
 	type Bool bool
-	_, root := getCntRoot()
-	root.Inject(Bool(true))
-	root.Inject(Bool(false))
+	cnt, root := getCntRoot()
+	type X struct {
+		Bools [2]Bool
+	}
+	cnt.Register("X", X{})
+	root.Inject(X{Bools: [2]Bool{true, false}})
 	vs, err := root.Values()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if len(vs) != 2 {
+	if len(vs) != 1 {
+		t.Error("unexpected values length: ", len(vs))
+		return
+	}
+	bools, err := vs[0].FieldByName("Bools")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	ln, err := bools.Len()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if ln != 2 {
 		t.Error("unexpected values length: ", len(vs))
 		return
 	}
 	for i, want := range []bool{true, false} {
-		val := vs[i]
+		val, err := bools.Index(i)
+		if err != nil {
+			t.Error(err)
+			return
+		}
 		if val.Kind() != reflect.Bool {
 			t.Error("unexpected kind of bool: ", val.Kind())
 			return
 		}
 		if ln := len(val.od); ln != 1 {
-			t.Error("wrong length of boolend data: ", ln)
+			t.Error("wrong length of boolean data: ", ln)
 		}
 		if b, err := val.Bool(); err != nil {
 			t.Error(err)
@@ -203,8 +227,12 @@ func TestValue_Bool(t *testing.T) {
 
 func TestValue_Int(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(String("hello"))
+		cnt, root := getCntRoot()
+		type X struct {
+			String String
+		}
+		cnt.Register("X", X{})
+		root.Inject(X{String("hello")})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -214,25 +242,35 @@ func TestValue_Int(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		if _, err := vs[0].Int(); err == nil {
+		fl, err := vs[0].FieldByName("String")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if _, err = fl.Int(); err == nil { // Int instead of String
 			t.Error("missing error")
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Int8(0))
-		root.Inject(Int16(1))
-		root.Inject(Int32(2))
-		root.Inject(Int64(3))
+		cnt, root := getCntRoot()
+		type X struct {
+			Int8  Int8
+			Int16 Int16
+			Int32 Int32
+			Int64 Int64
+		}
+		cnt.Register("X", X{})
+		root.Inject(X{0, 1, 2, 3})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if len(vs) != 4 {
+		if len(vs) != 1 {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
+		x := vs[0]
 		kinds := []reflect.Kind{
 			reflect.Int8,
 			reflect.Int16,
@@ -240,8 +278,10 @@ func TestValue_Int(t *testing.T) {
 			reflect.Int64,
 		}
 		sizes := []int{1, 2, 4, 8}
-		for i, want := range []int64{0, 1, 2, 3} {
-			val := vs[i]
+		wants := []int64{0, 1, 2, 3}
+		var i int // index
+		err = x.RangeFields(func(_ string, val *Value) error {
+			want := wants[i]
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind of int: ", val.Kind())
 			}
@@ -253,14 +293,23 @@ func TestValue_Int(t *testing.T) {
 			} else if x != want {
 				t.Errorf("wrong value: want %t, got %t", want, x)
 			}
+			i++
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
 		}
 	})
 }
 
 func TestValue_Uint(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(String("hello"))
+		type X struct {
+			String String
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{String("hello")})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -270,22 +319,31 @@ func TestValue_Uint(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		if _, err := vs[0].Uint(); err == nil {
+		fld, err := vs[0].FieldByName("String")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if _, err := fld.Uint(); err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Uint8(0))
-		root.Inject(Uint16(1))
-		root.Inject(Uint32(2))
-		root.Inject(Uint64(3))
+		type X struct {
+			Uint8  Uint8
+			Uint16 Uint16
+			Uint32 Uint32
+			Uint64 Uint64
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{0, 1, 2, 3})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if len(vs) != 4 {
+		if len(vs) != 1 {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
@@ -296,8 +354,10 @@ func TestValue_Uint(t *testing.T) {
 			reflect.Uint64,
 		}
 		sizes := []int{1, 2, 4, 8}
-		for i, want := range []uint64{0, 1, 2, 3} {
-			val := vs[i]
+		wants := []uint64{0, 1, 2, 3}
+		var i int // index
+		err = vs[0].RangeFields(func(_ string, val *Value) error {
+			want := wants[i]
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind of int: ", val.Kind())
 			}
@@ -309,14 +369,23 @@ func TestValue_Uint(t *testing.T) {
 			} else if x != want {
 				t.Errorf("wrong value: want %t, got %t", want, x)
 			}
+			i++
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
 		}
 	})
 }
 
 func TestValue_String(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Int16(0))
+		type X struct {
+			Int16 Int16
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{0})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -326,14 +395,23 @@ func TestValue_String(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		if _, err := vs[0].String(); err == nil {
+		fld, err := vs[0].FieldByName("Int16")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if _, err := fld.String(); err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		_, root := getCntRoot()
+		type X struct {
+			String String
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
 		hello := "hello"
-		root.Inject(String(hello))
+		root.Inject(X{String(hello)})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -343,7 +421,11 @@ func TestValue_String(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		val := vs[0]
+		val, err := vs[0].FieldByName("String")
+		if err != nil {
+			t.Error(err)
+			return
+		}
 		if val.Kind() != reflect.String {
 			t.Error("unexpected kind of int: ", val.Kind())
 		}
@@ -360,8 +442,12 @@ func TestValue_String(t *testing.T) {
 
 func TestValue_Bytes(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Int16(0))
+		type X struct {
+			Int16 Int16
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{0})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -371,21 +457,30 @@ func TestValue_Bytes(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		if _, err := vs[0].Bytes(); err == nil {
+		fld, err := vs[0].FieldByName("Int16")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if _, err := fld.Bytes(); err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		_, root := getCntRoot()
+		type X struct {
+			String string
+			Bytes  []byte
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
 		hello, cya := "hello", "cya"
-		root.Inject(String(hello))
-		root.Inject(Bytes(cya))
+		root.Inject(X{hello, []byte(cya)})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if len(vs) != 2 {
+		if len(vs) != 1 {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
@@ -394,8 +489,10 @@ func TestValue_Bytes(t *testing.T) {
 			reflect.Slice,
 		}
 		sizes := []int{len(hello) + 4, len(cya) + 4}
-		for i, want := range []string{hello, cya} {
-			val := vs[i]
+		wants := []string{hello, cya}
+		var i int
+		err = vs[0].RangeFields(func(_ string, val *Value) error {
+			want := wants[i]
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind: ", val.Kind())
 			}
@@ -407,14 +504,23 @@ func TestValue_Bytes(t *testing.T) {
 			} else if string(x) != want {
 				t.Errorf("wrong value: want %t, got %t", want, string(x))
 			}
+			i++
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
 		}
 	})
 }
 
 func TestValue_Float(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Int16(0))
+		type X struct {
+			Int16 Int16
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{0})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -424,20 +530,29 @@ func TestValue_Float(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		if _, err := vs[0].Bytes(); err == nil {
+		fld, err := vs[0].FieldByName("Int16")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if _, err := fld.Bytes(); err == nil {
 			t.Error("missing error")
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Float32(5.5))
-		root.Inject(Float64(7.7))
+		type X struct {
+			Float32 float32
+			Float64 float64
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{5.5, 7.7})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if len(vs) != 2 {
+		if len(vs) != 1 {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
@@ -446,8 +561,10 @@ func TestValue_Float(t *testing.T) {
 			reflect.Float64,
 		}
 		sizes := []int{4, 8}
-		for i, want := range []float64{5.5, 7.7} {
-			val := vs[i]
+		wants := []float64{5.5, 7.7}
+		var i int
+		err = vs[0].RangeFields(func(_ string, val *Value) error {
+			want := wants[i]
 			if val.Kind() != kinds[i] {
 				t.Error("unexpected kind: ", val.Kind())
 			}
@@ -459,14 +576,23 @@ func TestValue_Float(t *testing.T) {
 			} else if x != want {
 				t.Errorf("wrong value: want %t, got %t", want, x)
 			}
+			i++
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
 		}
 	})
 }
 
 func TestValue_Fields(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		root.Inject(Int16(0))
+		type X struct {
+			Int16 int16
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("X", X{})
+		root.Inject(X{0})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -476,13 +602,18 @@ func TestValue_Fields(t *testing.T) {
 			t.Error("unexpected values length: ", len(vs))
 			return
 		}
-		if len(vs[0].Fields()) != 0 {
+		if fld, err := vs[0].FieldByName("Int16"); err != nil {
+			t.Error(err)
+		} else if len(fld.Fields()) != 0 {
 			t.Error("got fields on non-struct type")
 		}
 	})
 	t.Run("all", func(t *testing.T) {
 		cnt, root := getCntRoot()
 		cnt.Register("User", User{})
+		cnt.Register("Group", Group{})
+		cnt.Register("List", List{})
+		cnt.Register("Man", Man{})
 		strucures := []interface{}{
 			Group{},
 			List{},
@@ -543,9 +674,12 @@ func TestValue_Fields(t *testing.T) {
 			fields := val.Fields()
 			typ := reflect.TypeOf(want)
 			if g, w := len(fields), typ.NumField(); g != w {
-				if typ.Name() == "User" && g != 2 {
+				if typ.Name() == "User" { // Hidden
+					if g != 2 {
+						t.Errorf("wrong number of fields: %d - %d", w, g)
+					}
+				} else {
 					t.Errorf("wrong number of fields: %d - %d", w, g)
-					continue
 				}
 			}
 			for i, n := range fields {
@@ -559,7 +693,8 @@ func TestValue_Fields(t *testing.T) {
 
 func TestValue_FieldByName(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
-		_, root := getCntRoot()
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
 		name := "Alice"
 		age := Age(21)
 		root.Inject(User{name, age, 0})
@@ -606,6 +741,9 @@ func TestValue_FieldByName(t *testing.T) {
 	t.Run("references", func(t *testing.T) {
 		cnt, root := getCntRoot()
 		cnt.Register("User", User{})
+		cnt.Register("Group", Group{})
+		cnt.Register("List", List{})
+		cnt.Register("Man", Man{})
 		root.Inject(Group{
 			Name:   "The Group",
 			Leader: cnt.Save(User{"Alice", 21, 0}),
@@ -671,9 +809,10 @@ func TestValue_FieldByName(t *testing.T) {
 
 func TestValue_RangeFields(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
-		_, root := getCntRoot()
+		cnt, root := getCntRoot()
 		name := "Alice"
 		age := Age(21)
+		cnt.Register("User", User{})
 		root.Inject(User{name, age, 0})
 		vs, err := root.Values()
 		if err != nil {
@@ -722,6 +861,9 @@ func TestValue_RangeFields(t *testing.T) {
 	t.Run("references", func(t *testing.T) {
 		cnt, root := getCntRoot()
 		cnt.Register("User", User{})
+		cnt.Register("Group", Group{})
+		cnt.Register("List", List{})
+		cnt.Register("Man", Man{})
 		root.Inject(Group{
 			Name:   "The Group",
 			Leader: cnt.Save(User{"Alice", 21, 0}),
@@ -778,7 +920,8 @@ func TestValue_RangeFields(t *testing.T) {
 		})
 	})
 	t.Run("pass error", func(t *testing.T) {
-		_, root := getCntRoot()
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
 		root.Inject(User{"Alice", 21, 0})
 		vs, err := root.Values()
 		if err != nil {
@@ -799,7 +942,8 @@ func TestValue_RangeFields(t *testing.T) {
 		}
 	})
 	t.Run("stop", func(t *testing.T) {
-		_, root := getCntRoot()
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
 		root.Inject(User{"Alice", 21, 0})
 		vs, err := root.Values()
 		if err != nil {
@@ -822,74 +966,121 @@ func TestValue_RangeFields(t *testing.T) {
 
 func TestValue_Len(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		_, root := getCntRoot()
-		values := []interface{}{
-			User{},
-			Bool(false),
-			Int8(0), Int16(1), Int32(2), Int64(3),
-			Uint8(4), Uint16(5), Uint32(6), Uint64(7),
-			Float32(8), Float64(9),
+		type X struct {
+			User    User
+			Bool    bool
+			Int8    int8
+			Int16   int16
+			Int32   int32
+			Int64   int64
+			Uint8   int8
+			Uint16  int16
+			Uint32  int32
+			Uint64  int64
+			Float32 bool
+			Float64 bool
 		}
-		for _, i := range values {
-			root.Inject(i)
-		}
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
+		cnt.Register("X", X{})
+		root.Inject(X{})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if len(vs) != len(values) {
-			t.Error("unexpected values length: ", len(vs))
+		if ln := len(vs); ln != 1 {
+			t.Error("wrong values length: ", ln)
 			return
 		}
-		for i := range values {
-			if _, err := vs[i].Len(); err == nil {
+		var i int
+		err = vs[0].RangeFields(func(_ string, val *Value) error {
+			if _, err := val.Len(); err == nil {
 				t.Error("missing error")
 			}
+			i++
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
+		}
+		if i != reflect.TypeOf(X{}).NumField() {
+			t.Error("unexpected fields length: ", i)
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		_, root := getCntRoot()
 		type Users []User
 		type Bools []Bool
 		type Ary [10]User
-		type X [3]int32
-		values := []interface{}{
+		type Y [3]int32
+		type X struct {
+			Users  Users
+			Bools  Bools
+			Ary    Ary
+			Y      Y
+			String String
+		}
+		cnt, root := getCntRoot()
+		cnt.Register("User", User{})
+		cnt.Register("X", X{})
+		root.Inject(X{
 			Users{User{}, User{}, User{}, User{}},
 			Bools{Bool(false), Bool(true)},
 			Ary{},
-			X{},
+			Y{},
 			String("hi"),
-		}
-		for _, i := range values {
-			root.Inject(i)
-		}
+		})
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if len(vs) != len(values) {
-			t.Error("unexpected values length: ", len(vs))
+		if ln := len(vs); ln != 1 {
+			t.Error("unexpected values length: ", ln)
 			return
 		}
 		lengths := []int{4, 2, 10, 3, 2}
-		for i := range values {
-			if l, err := vs[i].Len(); err != nil {
+		var i int
+		err = vs[0].RangeFields(func(_ string, val *Value) error {
+			if l, err := val.Len(); err != nil {
 				t.Error(err)
 			} else if l != lengths[i] {
 				t.Errorf("unexpected length: want %d, got %d", lengths[i], l)
 			}
+			i++
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
 		}
 	})
 }
 
 func TestValue_Index(t *testing.T) {
-	_, root := getCntRoot()
 	type Users []User
 	type Bools []Bool
 	type Ary [10]uint32
-	type X [3]int32
+	type Y [3]int32
+	type X struct {
+		Users Users
+		Bools Bools
+		Ary   Ary
+		Y     Y
+	}
+	cnt, root := getCntRoot()
+	cnt.Register("User", User{})
+	cnt.Register("X", X{})
+	root.Inject(X{
+		Users{
+			User{"Bob", 32, 0},
+			User{"Eva", 33, 0},
+			User{"Tom", 34, 0},
+			User{"Amy", 35, 0},
+		},
+		Bools{Bool(false), Bool(true)},
+		Ary{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+		Y{3, 2, 1},
+	})
 	values := []interface{}{
 		Users{
 			User{"Bob", 32, 0},
@@ -899,23 +1090,20 @@ func TestValue_Index(t *testing.T) {
 		},
 		Bools{Bool(false), Bool(true)},
 		Ary{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
-		X{3, 2, 1},
-	}
-	for _, i := range values {
-		root.Inject(i)
+		Y{3, 2, 1},
 	}
 	vs, err := root.Values()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if len(vs) != len(values) {
+	if len(vs) != 1 {
 		t.Error("unexpected values length: ", len(vs))
 		return
 	}
 	lengths := []int{4, 2, 10, 3}
-	for i := range values {
-		val := vs[i]
+	var i int
+	err = vs[0].RangeFields(func(_ string, val *Value) error {
 		if l, err := val.Len(); err != nil {
 			t.Error(err)
 		} else if l != lengths[i] {
@@ -938,7 +1126,9 @@ func TestValue_Index(t *testing.T) {
 				t.Error("missing error")
 			}
 		}
-	}
+		i++
+		return nil
+	})
 }
 
 func TestValue_Schema(t *testing.T) {
@@ -965,9 +1155,11 @@ func cmpValue(val *Value, i interface{}, t *testing.T) bool {
 		t.Errorf("wrong kind: expected %s, got %s", val.Kind(), typ.Kind())
 		return false
 	}
-	if sn, tn := val.Schema().Name(), typeName(typ); sn != tn {
-		t.Errorf("wrong type name: expected %q, got %q", tn, sn)
-		return false
+	if val.Schema().Name() != "" {
+		if sn, tn := val.Schema().Name(), typ.Name(); sn != tn {
+			t.Errorf("wrong type name: expected %q, got %q", tn, sn)
+			return false
+		}
 	}
 	return true
 }
