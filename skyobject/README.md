@@ -1,9 +1,5 @@
-CX Object System
-================
-
-Specs: https://pad.riseup.net/p/cxo
-
-# SkyObject
+skyobject
+=========
 
 [![GoDoc](https://godoc.org/github.com/skycoin/cxo/skyobject?status.svg)](https://godoc.org/github.com/skycoin/cxo/skyobject)
 
@@ -14,7 +10,7 @@ import (
 )
 ```
 
-Example `github.com/skycoin/cxo/skyobject/tests`
+Example `github.com/skycoin/cxo/quickStart/skyobject`
 
 ## Usage
 
@@ -31,10 +27,32 @@ Create root object using public key
 root := cnt.NewRoot(publicKey)
 ```
 
-Register a schema
+Register all schemas to use them
 
 ```go
 cnt.Register("User", User{})
+```
+
+Register set of objects with recursive dependencise
+
+```go
+
+type Group struct {
+	Name  string
+	Owner skyobject.Reference  `skyobject:"schema=User"` // a'la *User
+	Users skyobject.References `skyobject:"schema=User"` // a'la []*User
+}
+
+type User struct {
+	Name string
+	MemberOf skyobject.Reference `skyobject:"schema=Group"` // a'la *Group
+}
+
+// order doesn't matter
+cnt.Register(
+	"User", User{},
+	"Group", Group{},
+)
 ```
 
 References and tags
@@ -60,13 +78,13 @@ type Group struct {
 Save an object.
 
 ```go
-cnt.Save(User{"Alice", 21, nil})
+ref := cnt.Save(User{"Alice", 21, nil})
 ```
 
 Save an array of objects
 
 ```go
-cnt.SaveArray(
+refs := cnt.SaveArray(
     User{"Alice", 21, nil},
     User{"Bob", 89, nil},
     User{"Eva", 23, nil},
@@ -85,7 +103,7 @@ type Man struct {
 man := cnt.Dynamic(Man{"Tom Cobley", true, 98})
 
 // and save the Dynamic object if need
-cnt.Save(man)
+ref := cnt.Save(man)
 ```
 
 Add an object to a Root
@@ -93,6 +111,12 @@ Add an object to a Root
 ```go
 root.Inject(User{"Alice", 21, nil})
 ```
+
+The `Inject` is short hand for
+
++ create Dynamic by an object (saving the object)
++ save the Dynamic
++ add reference of the saved Dynamic to the set of references of the root
 
 Add a prepared, saved dynamic object to a Root by hash
 
@@ -214,3 +238,4 @@ if s.IsNil() {
 }
 ```
 ---
+
