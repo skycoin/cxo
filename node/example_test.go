@@ -8,6 +8,25 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+//
+// example objects
+//
+
+type Board struct {
+	Name    string
+	Threads skyobject.References `skyobject:"schema=Thread"`
+}
+
+type Thread struct {
+	Name  string
+	Posts skyobject.References `skyobject:"schema=Post"`
+}
+
+type Post struct {
+	Header string
+	Body   string
+}
+
 func Example() {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
@@ -29,25 +48,6 @@ func Example() {
 
 	// we need to subscribe to the feed to share it
 	n.Subscribe(pub)
-
-	//
-	// example objects
-	//
-
-	type Board struct {
-		Name    string
-		Threads skyobject.References `skyobject:"schema=Thread"`
-	}
-
-	type Thread struct {
-		Name  string
-		Posts skyobject.References `skyobject:"schema=Post"`
-	}
-
-	type Post struct {
-		Header string
-		Body   string
-	}
 
 	//
 	// register objects
