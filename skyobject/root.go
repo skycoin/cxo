@@ -24,10 +24,10 @@ func (r RegistryEntities) Swap(i, j int) {
 	r[i], r[j] = r[j], r[i]
 }
 
-// an entity of map[string]cipher.SHA256
+// an entity of map[string]Reference
 type RegistryEntity struct {
 	K string
-	V cipher.SHA256
+	V Reference
 }
 
 // rootEncoding is used to encode and decode the Root
@@ -59,7 +59,8 @@ func (r *Root) Sign(sec cipher.SecKey) {
 	r.Sig = cipher.SignHash(cipher.SumSHA256(r.Encode()), sec)
 }
 
-// Touch set timestamp to now and increment seq
+// Touch set timestamp to now and increment seq. The Inject and InjectHash
+// methods call Touch implicit
 func (r *Root) Touch() {
 	r.Time = time.Now().UnixNano()
 	r.Seq++
@@ -70,6 +71,7 @@ func (r *Root) Touch() {
 func (r *Root) Inject(i interface{}) (inj Reference) {
 	inj = r.cnt.Save(r.cnt.Dynamic(i))
 	r.Refs = append(r.Refs, inj)
+	r.Touch()
 	return
 }
 
@@ -80,6 +82,7 @@ func (r *Root) InjectHash(hash Reference) (err error) {
 		return
 	}
 	r.Refs = append(r.Refs, hash)
+	r.Touch()
 	return
 }
 
@@ -153,8 +156,8 @@ func (r *Root) Values() (vs []*Value, err error) {
 			return
 		}
 		// decode the schema
-		s = new(Schema)
-		if err = s.Decode(r.reg, sd); err != nil {
+		s = r.reg.newSchema()
+		if err = s.Decode(sd); err != nil {
 			return
 		}
 		// obtain object of the dynamic reference
@@ -211,8 +214,8 @@ func (r *Root) Got() (set Set, err error) {
 			return
 		}
 		set.Add(dr.Schema) // got
-		s = new(Schema)
-		if err = s.Decode(r.reg, sd); err != nil {
+		s = r.reg.newSchema()
+		if err = s.Decode(sd); err != nil {
 			return
 		}
 		if od, ok = r.cnt.get(dr.Object); !ok {
@@ -260,7 +263,7 @@ func gotValue(val *Value, set Set) (err error) {
 	case reflect.Ptr:
 		var v *Value
 		switch val.s.Name() {
-		case dynamicRef:
+		case DYNAMIC:
 			var dr Dynamic
 			if dr, err = val.dynamic(); err != nil {
 				return
@@ -278,7 +281,7 @@ func gotValue(val *Value, set Set) (err error) {
 			}
 			set.Add(dr.Object) // got
 			err = gotValue(v, set)
-		case singleRef:
+		case SINGLE:
 			var ref Reference
 			if ref, err = val.static(); err != nil {
 				return

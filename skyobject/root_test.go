@@ -39,17 +39,17 @@ func Test_encodeEqual(t *testing.T) {
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	c.SaveSchema(Group{})
+	c.Register("Group", Group{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	c.SaveSchema(List{})
+	c.Register("List", List{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
 	}
-	c.SaveSchema(Man{})
+	c.Register("Man", Man{})
 	p = r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
@@ -96,7 +96,7 @@ func TestRoot_Encode(t *testing.T) {
 	c1 := getCont()
 	r1 := c1.NewRoot(pub)
 	c1.Register("User", User{})
-	c1.SaveSchema(Group{})
+	c1.Register("Group", Group{})
 	r1.Sign(sec)
 	sig := r1.Sig
 	p := r1.Encode()
@@ -126,23 +126,26 @@ func TestRoot_Got(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		c.Register("User", User{}) // schema of user = 1
-		root.Inject(Group{         // schema + obj = 2 -> 3
+		c.Register("User", User{})   // 1
+		c.Register("Group", Group{}) // +1 -> 2
+		c.Register("List", List{})   // +1 -> 3
+		c.Register("Man", Man{})     // +1 -> 4
+		root.Inject(Group{           // +1 -> 5
 			Name: "a group",
-			Leader: c.Save(User{ // obj = 1 -> 4
+			Leader: c.Save(User{ // obj = 1 -> 6
 				"Billy Kid", 16, 90,
 			}),
 			Members: c.SaveArray(
-				User{"Bob Marley", 21, 0},   // 1 -> 5
-				User{"Alice Cooper", 19, 0}, // 1 -> 6
-				User{"Eva Brown", 30, 0},    // 1 -> 7
+				User{"Bob Marley", 21, 0},   // 1 -> 7
+				User{"Alice Cooper", 19, 0}, // 1 -> 8
+				User{"Eva Brown", 30, 0},    // 1 -> 9
 			),
-			Curator: c.Dynamic(Man{ // 2 -> 9
+			Curator: c.Dynamic(Man{ // 2 -> 10
 				Name:    "Ned Kelly",
 				Age:     28,
 				Seecret: []byte("secret key"),
 				Owner:   Group{},
-				Friends: List{}, // schema of list -> 10
+				Friends: List{},
 			}),
 		})
 		c.AddRoot(root, sk)
@@ -159,7 +162,10 @@ func TestRoot_Got(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		c.Register("User", User{}) // 1
+		c.Register("User", User{})   // 1
+		c.Register("Group", Group{}) // +1 -> 2
+		c.Register("List", List{})   // +1 -> 3
+		c.Register("Man", Man{})     // +1 -> 4
 		leader := User{
 			"Billy Kid", 16, 90,
 		}

@@ -77,7 +77,7 @@ type Value struct {
 // instead of reflect.Slice for array of references
 func (x *Value) Kind() reflect.Kind {
 	var kind reflect.Kind = x.s.Kind()
-	if kind == reflect.Ptr && x.s.Name() == arrayRef {
+	if kind == reflect.Ptr && x.s.Name() == ARRAY {
 		return reflect.Slice // treat a slice of references as slice
 	}
 	if x.od == nil { // nil
@@ -114,7 +114,7 @@ func (x *Value) dereferenceDynamic(dr Dynamic) (v *Value, err error) {
 		return
 	}
 	var (
-		s Schema
+		s *Schema = x.c.reg.newSchema()
 
 		sd, od []byte
 		ok     bool
@@ -123,14 +123,14 @@ func (x *Value) dereferenceDynamic(dr Dynamic) (v *Value, err error) {
 		err = &MissingSchema{dr.Schema}
 		return
 	}
-	if err = s.Decode(x.c.reg, sd); err != nil {
+	if err = s.Decode(sd); err != nil {
 		return
 	}
 	if od, ok = x.c.get(dr.Object); !ok {
 		err = &MissingObject{key: dr.Object, schemaName: s.Name()}
 		return
 	}
-	v = &Value{x.c, &s, od}
+	v = &Value{x.c, s, od}
 	return
 }
 
@@ -164,14 +164,14 @@ func (x *Value) Dereference() (v *Value, err error) {
 		return
 	}
 	switch x.s.Name() {
-	case dynamicRef:
+	case DYNAMIC:
 		var dr Dynamic
 		if dr, err = x.dynamic(); err != nil {
 			return
 		}
 		v, err = x.dereferenceDynamic(dr)
 		return
-	case singleRef:
+	case SINGLE:
 		var ref Reference
 		if ref, err = x.static(); err != nil {
 			return
@@ -505,8 +505,9 @@ func (x *Value) Index(idx int) (v *Value, err error) {
 					// real kind
 					if x.s.Kind() == reflect.Ptr {
 						el = &Schema{
+							sr:   x.c.reg,
 							kind: uint32(reflect.Ptr),
-							name: []byte(singleRef),
+							name: []byte(SINGLE),
 							elem: []Schema{*el},
 						}
 					}
@@ -611,14 +612,14 @@ func (s *Schema) Size(p []byte) (n int, err error) {
 		}
 	case reflect.Ptr:
 		switch s.Name() {
-		case singleRef:
+		case SINGLE:
 			n = len(Reference{})
-		case arrayRef:
+		case ARRAY:
 			if n, err = getLength(p); err == nil {
 				n *= len(Reference{})
 				n += 4 // length prefix
 			}
-		case dynamicRef:
+		case DYNAMIC:
 			n = 2 * len(Reference{})
 		default:
 			err = ErrInvalidSchema

@@ -28,7 +28,7 @@ func pubKey() (pk cipher.PubKey) {
 
 func findSchemaName(sr *Registry, ref Reference) (name string, ok bool) {
 	for n, sk := range sr.reg {
-		if cipher.SHA256(ref) == sk {
+		if ref == sk {
 			name, ok = n, true
 			break
 		}
@@ -50,6 +50,9 @@ func TestRoot_Want(t *testing.T) {
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
 		c.Register("User", User{})
+		c.Register("Group", Group{})
+		c.Register("List", List{})
+		c.Register("Man", Man{})
 		root.Inject(Group{
 			Name: "a group",
 			Leader: c.Save(User{
@@ -85,7 +88,10 @@ func TestRoot_Want(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		c.Register("User", User{})
+		c.Register("User", User{})   // 1
+		c.Register("Group", Group{}) // +1 -> 2
+		c.Register("List", List{})   // +1 -> 3
+		c.Register("Man", Man{})     // +1 -> 4
 		leader := User{
 			"Billy Kid", 16, 90,
 		}
