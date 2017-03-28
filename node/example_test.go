@@ -1,4 +1,4 @@
-package main
+package node_test
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
@@ -8,7 +8,26 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-func main() {
+//
+// example objects
+//
+
+type Board struct {
+	Name    string
+	Threads skyobject.References `skyobject:"schema=Thread"`
+}
+
+type Thread struct {
+	Name  string
+	Posts skyobject.References `skyobject:"schema=Post"`
+}
+
+type Post struct {
+	Header string
+	Body   string
+}
+
+func Example() {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 
@@ -29,25 +48,6 @@ func main() {
 
 	// we need to subscribe to the feed to share it
 	n.Subscribe(pub)
-
-	//
-	// example objects
-	//
-
-	type Board struct {
-		Name    string
-		Threads skyobject.References `skyobject:"schema=Thread"`
-	}
-
-	type Thread struct {
-		Name  string
-		Posts skyobject.References `skyobject:"schema=Post"`
-	}
-
-	type Post struct {
-		Header string
-		Body   string
-	}
 
 	//
 	// register objects
