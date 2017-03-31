@@ -106,7 +106,6 @@ func main() {
 	nc.Name = "SOURCE"
 	nc.Address = addr
 	nc.Port = uint16(port)
-	nc.RemoteClose = true
 	rc.Address = rpcAddress
 	n = node.NewNode(nc, db, so)
 	n.Start()

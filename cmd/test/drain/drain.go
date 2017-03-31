@@ -10,14 +10,12 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"strconv"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/rpc/server"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -25,23 +23,18 @@ func main() {
 	var (
 		err error
 
-		db  *data.DB
-		so  *skyobject.Container
-		n   *node.Node
-		rpc *server.Server
+		db *data.DB
+		so *skyobject.Container
+		n  *node.Node
 
 		nc node.Config
-		rc server.Config
 
 		pub cipher.PubKey
 
 		// flags
-		pubf    string
-		addr    string
-		port    int
-		rpcPort int
-
-		rpcAddress string
+		pubf string
+		addr string
+		port int
 
 		sig chan os.Signal
 		buf *bytes.Buffer
@@ -54,7 +47,6 @@ func main() {
 	flag.StringVar(&pubf, "pub", "", "public key (feed)")
 	flag.StringVar(&addr, "a", "[::]", "address")
 	flag.IntVar(&port, "p", 44006, "port")
-	flag.IntVar(&rpcPort, "r", 55006, "rpc port")
 
 	flag.Parse()
 
@@ -63,29 +55,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	rpcAddress = addr + ":" + strconv.Itoa(rpcPort)
-
 	db = data.NewDB()
 	so = skyobject.NewContainer(db)
 
-	nc, rc = node.NewConfig(), server.NewConfig()
+	nc = node.NewConfig()
 	nc.Name = "DRAIN"
 	nc.Address = addr
 	nc.Port = uint16(port)
-	nc.RemoteClose = true
-	rc.Address = rpcAddress
 
 	n = node.NewNode(nc, db, so)
 	n.Start()
 	defer n.Close()
 
 	n.Subscribe(pub) // subscribe to the feed
-
-	rpc = server.NewServer(rc, n) // , so)
-	if err = rpc.Start(); err != nil {
-		log.Fatal("error starting RPC:", err)
-	}
-	defer rpc.Close()
 
 	sig = make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)

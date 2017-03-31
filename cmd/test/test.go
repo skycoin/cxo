@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 
 	"github.com/skycoin/skycoin/src/cipher"
 )
@@ -20,6 +20,7 @@ func main() {
 	source := exec.Command("./source/source",
 		"-a", "[::]",
 		"-p", "44000",
+		"-r", "55000", // rpc address
 		"-pub", pub.Hex(),
 		"-sec", sec.Hex())
 	if err := source.Start(); err != nil {
@@ -42,5 +43,13 @@ func main() {
 		"-name", "NODE",
 		pub.Hex(), // subscribe to the feed on start
 	)
+	if err := node.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	log.Printf("got signal %q, exiting...", <-sig)
 
 }
