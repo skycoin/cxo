@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	CLI = "../../cli/cli"
+	CLI = "../cli/cli" // for launching from test folder
 )
 
 // types to share

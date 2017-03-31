@@ -23,6 +23,7 @@ func main() {
 		"-r", "55000", // rpc address
 		"-pub", pub.Hex(),
 		"-sec", sec.Hex())
+	source.Stderr, source.Stdout = os.Stderr, os.Stdout
 	if err := source.Start(); err != nil {
 		log.Fatal(err)
 	}
@@ -32,6 +33,7 @@ func main() {
 		"-a", "[::]",
 		"-p", "44006",
 		"-pub", pub.Hex())
+	drain.Stderr, drain.Stdout = os.Stderr, os.Stdout
 	if err := drain.Start(); err != nil {
 		log.Fatal(err)
 	}
@@ -43,6 +45,7 @@ func main() {
 		"-name", "NODE",
 		pub.Hex(), // subscribe to the feed on start
 	)
+	node.Stderr, node.Stdout = os.Stderr, os.Stdout
 	if err := node.Start(); err != nil {
 		log.Fatal(err)
 	}
