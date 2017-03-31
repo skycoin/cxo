@@ -63,6 +63,8 @@ func main() {
 	nc.Address = addr
 	nc.Port = uint16(port)
 
+	nc.Debug = true
+
 	n = node.NewNode(nc, db, so)
 	n.Start()
 	defer n.Close()

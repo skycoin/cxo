@@ -106,6 +106,9 @@ func main() {
 	nc.Name = "SOURCE"
 	nc.Address = addr
 	nc.Port = uint16(port)
+
+	nc.Debug = true
+
 	rc.Address = rpcAddress
 	n = node.NewNode(nc, db, so)
 	n.Start()
