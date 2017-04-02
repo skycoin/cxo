@@ -99,7 +99,7 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 		conf.Name = "node"
 	}
 	// gnet debugging messages and debug messages of node
-	gnet.DebugPrint = false //  conf.Debug
+	gnet.DebugPrint = conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,

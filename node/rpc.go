@@ -44,7 +44,7 @@ func (n *Node) Subscribe(pub cipher.PubKey) {
 				n.pool.Connect(address)
 			}
 		}
-		n.share <- pub // trigger update of wanted objects etc
+		go n.Share(pub) // trigger update of wanted objects etc
 	})
 }
 

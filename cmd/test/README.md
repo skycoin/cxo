@@ -52,7 +52,7 @@ cd ..
 
 ### Result
 
-The drain ccheck its tree every 5 seconds. If the tree updated, then the drain
+The drain checks its tree every 5 seconds. If the tree updated, then the drain
 print somthing like following text
 
 ```
