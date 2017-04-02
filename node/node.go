@@ -99,7 +99,7 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 		conf.Name = "node"
 	}
 	// gnet debugging messages and debug messages of node
-	gnet.DebugPrint = conf.Debug
+	gnet.DebugPrint = false //  conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
@@ -272,35 +272,49 @@ func (n *Node) handle(quit, done chan struct{},
 }
 
 func (n *Node) handleShareEvent(se cipher.PubKey, want skyobject.Set) {
+	n.Debugf("[DBG] handleShareEvent(): share %s", se.Hex())
 	if _, ok := n.subs[se]; !ok {
+		n.Print("[ERR] handleShareEvent(): " +
+			"share root the node doesn't subscribed to")
 		return // don't share
 	}
 	root := n.so.Root(se)
 	if root == nil {
-		return // haven't got
+		n.Debug("[DBG] handleShareEvent(): share root the node hasn't got")
+		return // hasn't got
 	}
-	for k := range n.newWantedOfRoot(want, root) {
-		n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
+	if nw := n.newWantedOfRoot(want, root); len(nw) > 0 {
+		n.Debugf("[DBG] handleShareEvent(): %d new wanted objects", len(nw))
+		n.pool.BroadcastMessage(&Request{setToSlice(nw)})
 	}
+	n.Debug("[DBG] handleShareEvent(): " +
+		"send announce about the Root the node share")
 	n.pool.BroadcastMessage(&AnnounceRoot{
-		root.Pub,
-		root.Time,
+		[]RootHead{
+			{root.Pub, root.Time},
+		},
 	})
 }
 
 // new connection
+// 1) request roots the node subscribed to but hasn't got
+// 2) request newer roots the node subscribed to and already has
 func (n *Node) handleConnectEvent(ce connectEvent, want skyobject.Set) {
-	for pub := range n.subs {
-		root := n.so.Root(pub)
-		if root == nil {
-			n.pool.SendMessage(ce.Address, &RequestRoot{Pub: pub}) // any
-		} else {
-			n.pool.SendMessage(ce.Address, &RequestRoot{
-				Pub:  pub,
-				Time: root.Time, // newer
-			})
-		}
+	n.Debug("[DBG] handleConnectEvent(): got new connection: ", ce.Address)
+	if len(n.subs) == 0 {
+		n.Debug("[DBG] handleConnectEvent(): no subscriptions")
+		return
 	}
+	requests := make([]RootHead, 0, len(n.subs))
+	for pub := range n.subs {
+		if root := n.so.Root(pub); root != nil {
+			requests = append(requests, RootHead{pub, root.Time}) // newer
+			continue
+		}
+		requests = append(requests, RootHead{pub, 0}) // any
+	}
+	n.Debugf("[DBG] handleConnectEvent(): request %d root objects", len(n.subs))
+	n.pool.SendMessage(ce.Address, &RequestRoot{requests})
 }
 
 func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
@@ -311,71 +325,156 @@ func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
 }
 
 func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
+	n.Debug("[DBG] handleMsgEvent()")
 	switch x := me.Msg.(type) {
 	case *Announce:
-		if _, ok := want[skyobject.Reference(x.Hash)]; ok {
-			n.pool.SendMessage(me.Address, &Request{x.Hash})
+		n.Debug("[DBG] handleMsgEvent() Announce ", len(x.Hashes))
+		if len(x.Hashes) == 0 {
+			return // avoid make
 		}
+		// request messages if the node want it
+		requests := make([]cipher.SHA256, 0, len(x.Hashes)) // avoid relocation
+		for _, hash := range x.Hashes {
+			if _, ok := want[skyobject.Reference(hash)]; ok {
+				requests = append(requests, hash) // want it
+			}
+		}
+		if len(requests) == 0 {
+			return
+		}
+		n.pool.SendMessage(me.Address, &Request{requests})
 	case *Request:
-		if data, ok := n.db.Get(x.Hash); ok {
-			n.pool.SendMessage(me.Address, &Data{data})
+		n.Debug("[DBG] handleMsgEvent() Request ", len(x.Hashes))
+		if len(x.Hashes) == 0 {
+			return // avoid make
 		}
+		// send data if the node has got it
+		data := make([][]byte, 0, len(x.Hashes)) // avoid relocations
+		for _, hash := range x.Hashes {
+			if d, ok := n.db.Get(hash); ok {
+				data = append(data, d) // got it
+			}
+		}
+		if len(data) == 0 {
+			return
+		}
+		n.pool.SendMessage(me.Address, &Data{data})
 	case *Data:
-		hash := cipher.SumSHA256(x.Data)
-		if _, ok := want[skyobject.Reference(hash)]; ok {
-			n.db.Set(hash, x.Data)
+		n.Debug("[DBG] handleMsgEvent() Data ", len(x.Data))
+		if len(x.Data) == 0 {
+			return // avoid make
+		}
+		// add the data to db if the node want it
+		announces := make([]cipher.SHA256, 0, len(x.Data)) // avoid relocations
+		for _, data := range x.Data {
+			hash := cipher.SumSHA256(data)
+			if _, ok := want[skyobject.Reference(hash)]; !ok {
+				continue
+			}
+			n.db.Set(hash, data)
 			delete(want, skyobject.Reference(hash))
-			for k := range n.newWanted(want) {
-				n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
-			}
-			n.pool.BroadcastMessage(&Announce{hash})
+			announces = append(announces, hash)
 		}
+		if len(announces) == 0 { // no new data given
+			return
+		}
+		nw := n.newWanted(want)
+		if len(nw) > 0 { // new wanted objects
+			n.pool.BroadcastMessage(&Request{setToSlice(nw)})
+		}
+		n.pool.BroadcastMessage(&Announce{announces})
 	case *AnnounceRoot:
-		if _, ok := n.subs[x.Pub]; !ok {
+		n.Debug("[DBG] handleMsgEvent() AnnounceRoot ", len(x.Roots))
+		if len(x.Roots) == 0 {
+			return // avoid make
+		}
+		// request root if the root is newer
+		requests := make([]RootHead, 0, len(x.Roots))
+		for _, head := range x.Roots {
+			if _, ok := n.subs[head.Pub]; !ok {
+				continue // don't subscribed to the feed
+			}
+			root := n.so.Root(head.Pub)
+			if root == nil {
+				continue
+			}
+			if root.Time >= head.Time {
+				continue // already have (the same or newer)
+			}
+			requests = append(requests, RootHead{head.Pub, 0})
+		}
+		if len(requests) == 0 {
 			return
 		}
-		root := n.so.Root(x.Pub)
-		if root != nil {
-			if root.Time >= x.Time {
-				return // already have
-			}
-		}
-		n.pool.SendMessage(me.Address, &RequestRoot{x.Pub, 0})
+		n.pool.SendMessage(me.Address, &RequestRoot{requests})
 	case *RequestRoot:
-		if _, ok := n.subs[x.Pub]; !ok {
+		n.Debug("[DBG] handleMsgEvent() RequestRoots ", len(x.Roots))
+		// send roots if the node has them got
+		if len(x.Roots) == 0 {
+			return // avoid make
+		}
+		data := make([]RootBody, 0, len(x.Roots)) // avoid relocations
+		for _, head := range x.Roots {
+			if _, ok := n.subs[head.Pub]; !ok {
+				continue
+			}
+			root := n.so.Root(head.Pub)
+			if root == nil {
+				continue
+			}
+			if root.Time <= head.Time {
+				continue
+			}
+			data = append(data, RootBody{
+				root.Pub,
+				root.Sig,
+				root.Encode(),
+			})
+		}
+		if len(data) == 0 {
 			return
 		}
-		root := n.so.Root(x.Pub)
-		if root != nil {
-			if root.Time > x.Time {
-				n.pool.SendMessage(me.Address, &DataRoot{
-					root.Pub,
-					root.Sig,
-					root.Encode(),
-				})
+		n.pool.SendMessage(me.Address, &DataRoot{data})
+	case *DataRoot:
+		n.Debug("[DBG] handleMsgEvent() DataRoot ", len(x.Roots))
+		// replace existing root with received one
+		// if its possible if:
+		// 1) the node subbscibed to the root
+		// 2) the node can decode given root
+		// 3) the given root is newer
+		if len(x.Roots) == 0 {
+			return // avoid make
+		}
+		var (
+			announces = make([]RootHead, 0, len(x.Roots))
+			set       = make(skyobject.Set) // new wanted
+		)
+		for _, dr := range x.Roots { // range over []DataRoot
+			if _, ok := n.subs[dr.Pub]; !ok {
+				continue
+			}
+			ok, err := n.so.AddEncodedRoot(dr.Root, dr.Pub, dr.Sig)
+			if err != nil {
+				n.Printf("[ERR] AddEncodedRoot (%s): %v", dr.Pub.Hex(), err)
+				continue
+			}
+			if !ok {
+				n.Debug("[DBG] older root")
+				continue
+			}
+			root := n.so.Root(dr.Pub)
+			announces = append(announces, RootHead{root.Pub, root.Time})
+			for k := range n.newWantedOfRoot(want, root) {
+				set[k] = struct{}{} // merge
 			}
 		}
-	case *DataRoot:
-		if _, ok := n.subs[x.Pub]; !ok {
+		if len(set) > 0 {
+			n.pool.BroadcastMessage(&Request{setToSlice(set)})
+		}
+		if len(announces) == 0 {
 			return
 		}
-		ok, err := n.so.AddEncodedRoot(x.Root, x.Pub, x.Sig)
-		if err != nil {
-			n.Print("[ERR] AddEncodedRoot: ", err)
-			return
-		}
-		if !ok {
-			n.Debug("[DBG] older root")
-			return
-		}
-		root := n.so.Root(x.Pub)
-		for k := range n.newWantedOfRoot(want, root) {
-			n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
-		}
-		n.pool.BroadcastMessage(&AnnounceRoot{
-			root.Pub,
-			root.Time,
-		})
+		n.pool.BroadcastMessage(&AnnounceRoot{announces})
 	}
 }
 
@@ -413,11 +512,15 @@ func (n *Node) newWanted(want skyobject.Set) (nww skyobject.Set) {
 	return
 }
 
-func mergeRootWanted(root *skyobject.Root, want skyobject.Set) {
-	rw, _ := root.Want()
-	for k := range rw {
-		want[k] = struct{}{}
+func setToSlice(set skyobject.Set) (ary []cipher.SHA256) {
+	if len(set) == 0 {
+		return // avoid make
 	}
+	ary = make([]cipher.SHA256, 0, len(set))
+	for k := range set {
+		ary = append(ary, cipher.SHA256(k))
+	}
+	return
 }
 
 func (n *Node) close() {

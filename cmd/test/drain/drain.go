@@ -75,20 +75,32 @@ func main() {
 	signal.Notify(sig, os.Interrupt)
 
 	buf = new(bytes.Buffer)
+	lastStat := db.Stat()
 	for {
 		buf.Reset()
 
 		// SIGINT, remote close, or print the tree every 5 seconds
+		// if the tree was updated
 		select {
 		case <-sig:
 			return
 		case <-n.Quiting():
 			return
 		case <-time.After(5 * time.Second):
+			if stat := db.Stat(); lastStat.Total != stat.Total {
+				lastStat = stat
+			} else {
+				continue
+			}
 		}
 
 		fmt.Fprintln(buf, "Inspect")
 		fmt.Fprintln(buf, "=======")
+
+		fmt.Fprintln(buf, "Database")
+		fmt.Fprintln(buf, lastStat.String())
+
+		fmt.Fprintln(buf, "Objects tree")
 
 		root := so.Root(pub)
 		if root == nil {

@@ -10,8 +10,30 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+const (
+	CYAN    = "\033[36m"
+	GREEN   = "\033[32m"
+	MAGENTA = "\033[35m"
+)
+
+// copy stdout and stderr of a process to stdout colorizing strings
+type ColoredPipe struct {
+	color string
+}
+
+func (c *ColoredPipe) Write(p []byte) (n int, err error) {
+	if _, err = os.Stdout.WriteString(c.color); err != nil {
+		return
+	}
+	if n, err = os.Stdout.Write(p); err != nil {
+		return
+	}
+	_, err = os.Stdout.WriteString("\033[0m") // clear
+	return
+}
+
 func main() {
-	log.SetPrefix("[TEST] [ERROR] ")
+	log.SetPrefix("[TEST] ")
 	log.SetFlags(log.Lshortfile | log.Ltime)
 
 	// generate key pairs
@@ -24,7 +46,8 @@ func main() {
 		"-r", "55000", // rpc address
 		"-pub", pub.Hex(),
 		"-sec", sec.Hex())
-	source.Stderr, source.Stdout = os.Stderr, os.Stdout
+	sourcePipe := &ColoredPipe{CYAN}
+	source.Stderr, source.Stdout = sourcePipe, sourcePipe
 	if err := source.Start(); err != nil {
 		log.Print(err)
 		return
@@ -36,7 +59,8 @@ func main() {
 		"-a", "[::]",
 		"-p", "44006",
 		"-pub", pub.Hex())
-	drain.Stderr, drain.Stdout = os.Stderr, os.Stdout
+	drainPipe := &ColoredPipe{MAGENTA}
+	drain.Stderr, drain.Stdout = drainPipe, drainPipe
 	if err := drain.Start(); err != nil {
 		log.Print(err)
 		return
@@ -52,7 +76,8 @@ func main() {
 		"-debug",
 		pub.Hex(), // subscribe to the feed on start
 	)
-	node.Stderr, node.Stdout = os.Stderr, os.Stdout
+	nodePipe := &ColoredPipe{GREEN}
+	node.Stderr, node.Stdout = nodePipe, nodePipe
 	if err := node.Start(); err != nil {
 		log.Print(err)
 		return

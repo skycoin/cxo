@@ -18,16 +18,16 @@ keep the data and pass the data to the drain.
 ### Run
 
 ```
-# build conductor
+# build conductor (conductor is WHITE, node is GREEN)
 cd cmd/test
 go build
 
-# build the source
+# build the source (CYAN)
 cd source
 go build
 cd ..
 
-# build the drain
+# build the drain (MAGENTA)
 cd drain
 go build
 cd ..
@@ -69,7 +69,7 @@ Owner: <reference>
 ---
 ```
 
-The result is wrong. Because it replicate root objects but don't replicate
+The result is wrong. Because it replicates root objects but don't replicate
 the data the root objects refer to.
 
 I think that public API of the skyobject, of the node, of the data,
