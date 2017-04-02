@@ -33,8 +33,10 @@ cmd/cli/cli
 cmd/cxod/cxod
 cmd/*.out
 
-quickStart/skyobject/skyobject
-quickStart/node/node
+cmd/test/test
+cmd/test/source/source
+cmd/test/drain/drain
+
 
 skyobject/cover.out
 skyobject/cover.html
