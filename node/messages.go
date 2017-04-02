@@ -45,7 +45,7 @@ func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
 //
 
 type Announce struct {
-	Hashes []cipher.SHA256
+	Hash cipher.SHA256
 }
 
 func (a *Announce) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
@@ -54,7 +54,7 @@ func (a *Announce) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
 }
 
 type Request struct {
-	Hashes []cipher.SHA256
+	Hash cipher.SHA256
 }
 
 func (r *Request) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
@@ -63,7 +63,7 @@ func (r *Request) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
 }
 
 type Data struct {
-	Data [][]byte
+	Data []byte
 }
 
 func (d *Data) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
@@ -75,13 +75,9 @@ func (d *Data) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
 // Root
 //
 
-type RootHead struct {
+type AnnounceRoot struct {
 	Pub  cipher.PubKey
 	Time int64
-}
-
-type AnnounceRoot struct {
-	Roots []RootHead
 }
 
 func (a *AnnounceRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
@@ -90,7 +86,8 @@ func (a *AnnounceRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
 }
 
 type RequestRoot struct {
-	Roots []RootHead
+	Pub  cipher.PubKey
+	Time int64
 }
 
 func (r *RequestRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
@@ -98,14 +95,10 @@ func (r *RequestRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
 	return
 }
 
-type RootBody struct {
+type DataRoot struct {
 	Pub  cipher.PubKey
 	Sig  cipher.Sig
 	Root []byte
-}
-
-type DataRoot struct {
-	Roots []RootBody
 }
 
 func (d *DataRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {

@@ -58,7 +58,7 @@ type SmallGroup struct {
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
+func filledNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 	conf := newConfig()
@@ -103,7 +103,7 @@ func TestNode_sourceDrain(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -152,7 +152,7 @@ func TestNode_sourcePipeDrain(t *testing.T) {
 	// source
 	//
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -224,7 +224,7 @@ func TestNode_sourcePipeDrain2(t *testing.T) {
 	// source
 	//
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -296,7 +296,7 @@ func TestNode_sourcePipeDrain3(t *testing.T) {
 	// source
 	//
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -368,7 +368,7 @@ func TestNode_sourcePipeDrain4(t *testing.T) {
 	// source
 	//
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -435,7 +435,7 @@ func TestNode_replication(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	source.Subscribe(pub) // subscribe to and share the feed
