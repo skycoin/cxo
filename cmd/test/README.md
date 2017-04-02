@@ -44,7 +44,7 @@ cd drain
 go build
 cd ..
 
-# run everything
+# run everything (including GREEN cxod)
 ./test
 
 # hit Ctrl+C to terminate
@@ -52,7 +52,8 @@ cd ..
 
 ### Result
 
-Every 5 seconds the drain print something like that
+The drain ccheck its tree every 5 seconds. If the tree updated, then the drain
+print somthing like following text
 
 ```
 Inspect

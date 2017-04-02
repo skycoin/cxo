@@ -97,8 +97,7 @@ func main() {
 		fmt.Fprintln(buf, "Inspect")
 		fmt.Fprintln(buf, "=======")
 
-		fmt.Fprintln(buf, "Database")
-		fmt.Fprintln(buf, lastStat.String())
+		fmt.Fprintln(buf, "Database:", lastStat.String())
 
 		fmt.Fprintln(buf, "Objects tree")
 
