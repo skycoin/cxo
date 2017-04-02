@@ -80,12 +80,4 @@ Owner: <reference>
 
 ### Bash script
 
-```sh
-cd $GOPATH/src/github.com/skycoin/cxo/cmd/test
-cd ../cli && go build
-cd ../cxod && go build
-cd ../test && go build
-cd source && go build && cd ..
-cd drain && go build && cd ..
-./test
-```
+There is `run.sh` file
