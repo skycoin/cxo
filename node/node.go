@@ -99,7 +99,7 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 		conf.Name = "node"
 	}
 	// gnet debugging messages and debug messages of node
-	gnet.DebugPrint = conf.Debug
+	gnet.DebugPrint = false //  conf.Debug
 	return &Node{
 		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
@@ -273,33 +273,32 @@ func (n *Node) handle(quit, done chan struct{},
 
 func (n *Node) handleShareEvent(se cipher.PubKey, want skyobject.Set) {
 	if _, ok := n.subs[se]; !ok {
+		n.Print("[ERR] share root the node doesn't subscribed to")
 		return // don't share
 	}
 	root := n.so.Root(se)
 	if root == nil {
-		return // haven't got
+		return // hasn't got
 	}
 	for k := range n.newWantedOfRoot(want, root) {
 		n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
 	}
-	n.pool.BroadcastMessage(&AnnounceRoot{
-		root.Pub,
-		root.Time,
-	})
+	n.pool.BroadcastMessage(&AnnounceRoot{root.Pub, root.Time})
 }
 
 // new connection
+// 1) request roots the node subscribed to but hasn't got
+// 2) request newer roots the node subscribed to and already has
 func (n *Node) handleConnectEvent(ce connectEvent, want skyobject.Set) {
+	if len(n.subs) == 0 {
+		return
+	}
 	for pub := range n.subs {
-		root := n.so.Root(pub)
-		if root == nil {
-			n.pool.SendMessage(ce.Address, &RequestRoot{Pub: pub}) // any
-		} else {
-			n.pool.SendMessage(ce.Address, &RequestRoot{
-				Pub:  pub,
-				Time: root.Time, // newer
-			})
+		if root := n.so.Root(pub); root != nil {
+			n.pool.SendMessage(ce.Address, &RequestRoot{pub, root.Time})
+			continue // request newer
 		}
+		n.pool.SendMessage(ce.Address, &RequestRoot{pub, 0}) // request any
 	}
 }
 
@@ -322,23 +321,25 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 		}
 	case *Data:
 		hash := cipher.SumSHA256(x.Data)
-		if _, ok := want[skyobject.Reference(hash)]; ok {
-			n.db.Set(hash, x.Data)
-			delete(want, skyobject.Reference(hash))
-			for k := range n.newWanted(want) {
-				n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
-			}
-			n.pool.BroadcastMessage(&Announce{hash})
-		}
-	case *AnnounceRoot:
-		if _, ok := n.subs[x.Pub]; !ok {
+		if _, ok := want[skyobject.Reference(hash)]; !ok {
 			return
 		}
+		n.db.Set(hash, x.Data)
+		delete(want, skyobject.Reference(hash))
+		for k := range n.newWanted(want) {
+			n.pool.SendMessage(me.Address, &Request{cipher.SHA256(k)})
+		}
+		n.pool.BroadcastMessage(&Announce{hash})
+	case *AnnounceRoot:
+		if _, ok := n.subs[x.Pub]; !ok {
+			return // don't subscribed to the feed
+		}
 		root := n.so.Root(x.Pub)
-		if root != nil {
-			if root.Time >= x.Time {
-				return // already have
-			}
+		if root == nil {
+			return
+		}
+		if root.Time >= x.Time {
+			return // already have (the same or newer)
 		}
 		n.pool.SendMessage(me.Address, &RequestRoot{x.Pub, 0})
 	case *RequestRoot:
@@ -346,22 +347,24 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 			return
 		}
 		root := n.so.Root(x.Pub)
-		if root != nil {
-			if root.Time > x.Time {
-				n.pool.SendMessage(me.Address, &DataRoot{
-					root.Pub,
-					root.Sig,
-					root.Encode(),
-				})
-			}
+		if root == nil {
+			return
 		}
+		if root.Time <= x.Time {
+			return
+		}
+		n.pool.SendMessage(me.Address, &DataRoot{
+			root.Pub,
+			root.Sig,
+			root.Encode(),
+		})
 	case *DataRoot:
 		if _, ok := n.subs[x.Pub]; !ok {
 			return
 		}
 		ok, err := n.so.AddEncodedRoot(x.Root, x.Pub, x.Sig)
 		if err != nil {
-			n.Print("[ERR] AddEncodedRoot: ", err)
+			n.Printf("[ERR] AddEncodedRoot (%s): %v", x.Pub.Hex(), err)
 			return
 		}
 		if !ok {
@@ -370,12 +373,9 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 		}
 		root := n.so.Root(x.Pub)
 		for k := range n.newWantedOfRoot(want, root) {
-			n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
+			n.pool.SendMessage(me.Address, &Request{cipher.SHA256(k)})
 		}
-		n.pool.BroadcastMessage(&AnnounceRoot{
-			root.Pub,
-			root.Time,
-		})
+		n.pool.BroadcastMessage(&AnnounceRoot{root.Pub, root.Time})
 	}
 }
 
@@ -411,13 +411,6 @@ func (n *Node) newWanted(want skyobject.Set) (nww skyobject.Set) {
 		}
 	}
 	return
-}
-
-func mergeRootWanted(root *skyobject.Root, want skyobject.Set) {
-	rw, _ := root.Want()
-	for k := range rw {
-		want[k] = struct{}{}
-	}
 }
 
 func (n *Node) close() {

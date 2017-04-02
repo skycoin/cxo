@@ -58,7 +58,7 @@ type SmallGroup struct {
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
+func filledNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 	conf := newConfig()
@@ -86,7 +86,6 @@ func filledDownNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 			Soname: "Cobley",
 		}),
 	})
-	root.Touch() // update timestamp
 	so.AddRoot(root, sec)
 	return n
 }
@@ -104,7 +103,7 @@ func TestNode_sourceDrain(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -144,6 +143,8 @@ func TestNode_sourceDrain(t *testing.T) {
 }
 
 // source -> pipe -> drain
+// 1) connect pipe to source
+// 2) connect drain to pipe
 func TestNode_sourcePipeDrain(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
@@ -151,7 +152,7 @@ func TestNode_sourcePipeDrain(t *testing.T) {
 	// source
 	//
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -195,24 +196,27 @@ func TestNode_sourcePipeDrain(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(500 * time.Millisecond) // 1.5s!!! too slow
+	time.Sleep(1500 * time.Millisecond) // 1.5s!!! too slow
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	xs := drain.db.Stat()
-	t.Logf("drain: %v", xs)
-	if xs.Total != ss.Total {
-		t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
-	}
-	if xs.Memory != ss.Memory {
-		t.Errorf("wrong amount of memory: want %s, got %s",
-			data.HumanMemory(ss.Memory),
-			data.HumanMemory(xs.Total))
+	for _, x := range []*Node{pipe, drain} {
+		xs := drain.db.Stat()
+		t.Logf("%s: %v", x.conf.Name, xs)
+		if xs.Total != ss.Total {
+			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+		}
+		if xs.Memory != ss.Memory {
+			t.Errorf("wrong amount of memory: want %s, got %s",
+				data.HumanMemory(ss.Memory),
+				data.HumanMemory(xs.Total))
+		}
 	}
 }
 
 // source -> pipe -> drain
-// connect drain to pipe first
+// 1) connect drain to pipe
+// 2) connect pipe to source
 func TestNode_sourcePipeDrain2(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
@@ -220,7 +224,7 @@ func TestNode_sourcePipeDrain2(t *testing.T) {
 	// source
 	//
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
@@ -268,15 +272,161 @@ func TestNode_sourcePipeDrain2(t *testing.T) {
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	xs := drain.db.Stat()
-	t.Logf("drain: %v", xs)
-	if xs.Total != ss.Total {
-		t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+	for _, x := range []*Node{pipe, drain} {
+		xs := drain.db.Stat()
+		t.Logf("%s: %v", x.conf.Name, xs)
+		if xs.Total != ss.Total {
+			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+		}
+		if xs.Memory != ss.Memory {
+			t.Errorf("wrong amount of memory: want %s, got %s",
+				data.HumanMemory(ss.Memory),
+				data.HumanMemory(xs.Total))
+		}
 	}
-	if xs.Memory != ss.Memory {
-		t.Errorf("wrong amount of memory: want %s, got %s",
-			data.HumanMemory(ss.Memory),
-			data.HumanMemory(xs.Total))
+}
+
+// source -> pipe -> drain
+// 1) connect pipe to source
+// 2) connect pipe to drain
+func TestNode_sourcePipeDrain3(t *testing.T) {
+	// the feed an downer
+	pub, sec := cipher.GenerateKeyPair()
+	//
+	// source
+	//
+	// create filled down node
+	source := filledNode(pub, sec)
+	source.Start()
+	defer source.Close()
+	// we need to subscribe to the node to make it share the feed
+	source.Subscribe(pub) // subscribe to and share the feed
+	//
+	// pipe
+	//
+	pipe := newNode("pipe")
+	pipe.Start()
+	defer pipe.Close()
+	pipe.Subscribe(pub)
+	//
+	// drain
+	//
+	drain := newNode("drain")
+	drain.Start()
+	defer drain.Close()
+	drain.Subscribe(pub)
+	//
+	// connect pipe to source
+	//
+	info, err := source.Info()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if err = pipe.Connect(info.Address); err != nil {
+		t.Error(err)
+		return
+	}
+	//
+	// connect pipe to drain
+	//
+	info, err = drain.Info()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if err = pipe.Connect(info.Address); err != nil {
+		t.Error(err)
+		return
+	}
+	// wait
+	time.Sleep(500 * time.Millisecond)
+	// inspect
+	ss := source.db.Stat()
+	t.Log("source: ", ss)
+	for _, x := range []*Node{pipe, drain} {
+		xs := drain.db.Stat()
+		t.Logf("%s: %v", x.conf.Name, xs)
+		if xs.Total != ss.Total {
+			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+		}
+		if xs.Memory != ss.Memory {
+			t.Errorf("wrong amount of memory: want %s, got %s",
+				data.HumanMemory(ss.Memory),
+				data.HumanMemory(xs.Total))
+		}
+	}
+}
+
+// source -> pipe -> drain
+// 1) connect pipe to drain
+// 2) connect pipe to source
+func TestNode_sourcePipeDrain4(t *testing.T) {
+	// the feed an downer
+	pub, sec := cipher.GenerateKeyPair()
+	//
+	// source
+	//
+	// create filled down node
+	source := filledNode(pub, sec)
+	source.Start()
+	defer source.Close()
+	// we need to subscribe to the node to make it share the feed
+	source.Subscribe(pub) // subscribe to and share the feed
+	//
+	// pipe
+	//
+	pipe := newNode("pipe")
+	pipe.Start()
+	defer pipe.Close()
+	pipe.Subscribe(pub)
+	//
+	// drain
+	//
+	drain := newNode("drain")
+	drain.Start()
+	defer drain.Close()
+	drain.Subscribe(pub)
+	//
+	// connect pipe to drain
+	//
+	info, err := drain.Info()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if err = pipe.Connect(info.Address); err != nil {
+		t.Error(err)
+		return
+	}
+	//
+	// connect pipe to source
+	//
+	info, err = source.Info()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if err = pipe.Connect(info.Address); err != nil {
+		t.Error(err)
+		return
+	}
+	// wait
+	time.Sleep(500 * time.Millisecond)
+	// inspect
+	ss := source.db.Stat()
+	t.Log("source: ", ss)
+	for _, x := range []*Node{pipe, drain} {
+		xs := drain.db.Stat()
+		t.Logf("%s: %v", x.conf.Name, xs)
+		if xs.Total != ss.Total {
+			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+		}
+		if xs.Memory != ss.Memory {
+			t.Errorf("wrong amount of memory: want %s, got %s",
+				data.HumanMemory(ss.Memory),
+				data.HumanMemory(xs.Total))
+		}
 	}
 }
 
@@ -285,10 +435,9 @@ func TestNode_replication(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
 	// create filled down node
-	source := filledDownNode(pub, sec)
+	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
-	//
 	source.Subscribe(pub) // subscribe to and share the feed
 	// other nodes
 	n1, n2, n3, n4 := newNode("n1"), newNode("n2"), newNode("n3"), newNode("n4")
@@ -326,7 +475,7 @@ func TestNode_replication(t *testing.T) {
 		return
 	}
 	// wait
-	time.Sleep(1500 * time.Millisecond) // 55s!!!
+	time.Sleep(500 * time.Millisecond)
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
@@ -342,5 +491,130 @@ func TestNode_replication(t *testing.T) {
 				data.HumanMemory(xs.Total))
 		}
 	}
+}
 
+//
+// closer to cmd/test
+//
+
+func TestNode_sourcePipeDrainTest(t *testing.T) {
+	// required types
+	type Board struct {
+		Head    string
+		Threads skyobject.References `skyobject:"schema=Thread"`
+		Owner   skyobject.Dynamic
+	}
+	type Thread struct {
+		Head  string
+		Posts skyobject.References `skyobject:"schema=Post"`
+	}
+	type Post struct {
+		Head string
+		Body string
+	}
+	type User struct {
+		Name   string
+		Age    int32
+		Hidden string `enc:"-"`
+	}
+	type Man struct {
+		Name string
+		Age  int32
+	}
+	// nodes
+	var source, pipe, drain *Node
+	// required keys
+	pub, sec := cipher.GenerateKeyPair()
+	// create source
+	{
+		db := data.NewDB()
+		so := skyobject.NewContainer(db)
+		conf := newConfig()
+		conf.Name = "source"
+		source = NewNode(conf, db, so)
+		source.Start()
+		defer source.Close()
+		source.Subscribe(pub)
+		so.Register(
+			"Board", Board{},
+			"Thread", Thread{},
+			"Post", Post{},
+			"User", User{},
+		)
+		root := so.NewRoot(pub)
+		root.Inject(Board{
+			"Board #1",
+			so.SaveArray(
+				Thread{"Thread #1.1", so.SaveArray(
+					Post{"Post #1.1.1", "Body #1.1.1"},
+					Post{"Post #1.1.2", "Body #1.1.2"})},
+				Thread{"Thread #1.2", so.SaveArray(
+					Post{"Post #1.2.1", "Body #1.2.1"},
+					Post{"Post #1.2.2", "Body #1.2.2"})},
+				Thread{"Thread #1.3", so.SaveArray(
+					Post{"Post #1.3.1", "Body #1.3.1"},
+					Post{"Post #1.3.2", "Body #1.3.2"})},
+				Thread{"Thread #1.4", so.SaveArray(
+					Post{"Post #1.4.1", "Body #1.4.1"},
+					Post{"Post #1.4.2", "Body #1.4.2"})}),
+			so.Dynamic(User{"Billy Kid", 16, "secret"}),
+		})
+		so.AddRoot(root, sec)
+		source.Share(pub)
+	}
+	// create drain
+	{
+		drain = newNode("drain")
+		drain.Start()
+		defer drain.Close()
+		drain.Subscribe(pub)
+	}
+	// create pipe
+	{
+		pipe = newNode("pipe")
+		pipe.Start()
+		defer pipe.Close()
+		pipe.Subscribe(pub)
+	}
+	// connect pipe to drain
+	{
+		info, err := drain.Info()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err = pipe.Connect(info.Address); err != nil {
+			t.Error(err)
+			return
+		}
+	}
+	// connect pipe to source
+	{
+		info, err := source.Info()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err = pipe.Connect(info.Address); err != nil {
+			t.Error(err)
+			return
+		}
+	}
+	// wait
+	time.Sleep(500 * time.Millisecond)
+	// inspect
+	ss := source.db.Stat()
+	t.Log("source: ", ss)
+	for _, x := range []*Node{pipe, drain} {
+		xs := x.db.Stat()
+		t.Logf("%s: %v", x.conf.Name, xs)
+		if xs.Total != ss.Total {
+			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
+		}
+		if xs.Memory != ss.Memory {
+			t.Errorf("wrong amount of memory: want %s, got %s",
+				data.HumanMemory(ss.Memory),
+				data.HumanMemory(xs.Total))
+		}
+	}
 }
