@@ -5,6 +5,7 @@ import (
 	"net"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
@@ -342,5 +343,29 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 	}
 	p.user = user
 	p.quit = make(chan struct{})
+	if c.PingInterval > 0 {
+		go p.sendPings()
+	}
 	return
+}
+
+func (p *Pool) sendPings() {
+	var pingt *time.Ticker = time.NewTicker(p.conf.PingInterval)
+	defer pingt.Stop()
+	for {
+		select {
+		case <-pingt.C:
+			// broadcast PING
+			p.RLock() // map lock
+			defer p.RUnlock()
+			for _, c := range p.conns {
+				if err := c.sendEncodedMessage(ping); err != nil {
+					p.Printf("[ERR] %s error sending PING: %v",
+						c.Addr(), err)
+				}
+			}
+		case <-p.quit:
+			return
+		}
+	}
 }

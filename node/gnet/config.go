@@ -34,9 +34,7 @@ type Config struct {
 	// DialTimeout, ReadTimeout and WriteTimeout are
 	// used to read, write and dial with provided
 	// timeout. If timeout is zero then no timeout
-	// used (no time limit). The ReadTimeout is hard
-	// but the WriteTimeout can be x2 greater then
-	// provided
+	// used (no time limit)
 	DialTimeout  time.Duration // dial timeout
 	ReadTimeout  time.Duration // read timeout
 	WriteTimeout time.Duration // write timeout

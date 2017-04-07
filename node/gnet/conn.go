@@ -44,14 +44,6 @@ type Conn struct {
 	wq     chan []byte   // write queue
 	closed chan struct{} // connection was closed
 
-	// the dead is used to close terminate write loop
-	// if some error occus and connection was closed;
-	// the dead is not requierd for read loop because
-	// the read loop performs Read every time, but if
-	// buffered reading used then the read loop can
-	// reaa many messages before it encodunted
-	// reading error
-
 	pool        *Pool // back read only reference
 	releaseOnce sync.Once
 }
@@ -105,28 +97,10 @@ func (c *Conn) handle() {
 }
 
 func (c *Conn) sendEncodedMessage(m []byte) (err error) {
-	// firs, try to send the message without timeout etc
-	select {
-	case c.wq <- m:
-		return
-	default:
-	}
-	// second, send the message using timeout (if configured)
-	// and chek quit and dead channels
-	var tm *time.Timer
-	var tc <-chan time.Time
-	if c.pool.conf.WriteTimeout > 0 {
-		tm = time.NewTimer(c.pool.conf.WriteTimeout)
-		tc = tm.C
-		defer tm.Stop()
-	}
 	select {
 	case c.wq <- m:
 	case <-c.closed:
 		err = ErrClosedConn
-	case <-tc: // write timeout
-		c.Close() // terminate connection
-		err = ErrWriteQueueFull
 	}
 	return
 }
@@ -176,6 +150,9 @@ func (c *Conn) handleRead() {
 				c.pool.Printf("[ERR] %s error sending PONG: %v", c.Addr(), err)
 				return
 			}
+			continue // and continue
+		}
+		if bytes.Compare(head, pong) == 0 { // handle pongs automatically
 			continue // and continue
 		}
 		copy(p[:], head) // create prefix from head[:PrefixLength]
@@ -231,9 +208,6 @@ func (c *Conn) handleRead() {
 func (c *Conn) handleWrite() {
 	c.pool.Debugf("%s start write loop", c.Addr())
 	var (
-		pingt *time.Ticker
-		pingc <-chan time.Time
-
 		data []byte
 
 		bw *bufio.Writer
@@ -241,11 +215,6 @@ func (c *Conn) handleWrite() {
 
 		err error
 	)
-	if c.pool.conf.PingInterval > 0 {
-		pingt = time.NewTicker(c.pool.conf.PingInterval)
-		pingc = pingt.C
-		defer pingt.Stop()
-	}
 	if c.pool.conf.WriteBufferSize > 0 {
 		if bw, ok = c.w.(*bufio.Writer); !ok {
 			c.pool.Panicf("buffered writer is not *bufio.Writer: %T", c.w)
@@ -268,23 +237,6 @@ func (c *Conn) handleWrite() {
 			// may be there are more then one message to
 			// use full perfomance of buffered writing
 			continue
-		case <-pingc:
-			if _, err = c.w.Write(ping); err != nil {
-				if c.isClosed() {
-					return // don't log about the error
-				}
-				c.pool.Printf("[ERR] %s error writing ping: %v", c.Addr(), err)
-				return
-			}
-			if bw != nil && bw.Buffered() > 0 { // force the ping to be sent
-				if err = bw.Flush(); err != nil {
-					if c.isClosed() {
-						return // don't log about the error
-					}
-					c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
-					return
-				}
-			}
 		case <-c.closed:
 			return
 		default:
