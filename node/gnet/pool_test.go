@@ -75,13 +75,13 @@ func TestPool_encodeMessage(t *testing.T) {
 	})
 	t.Run("registered", func(t *testing.T) {
 		p := testPool()
-		p.Register(NewPrefix("ANY "), &Empty{})
+		p.Register(NewPrefix("EMPT"), &Empty{})
 		data := p.encodeMessage(&Empty{})
 		if len(data) != PrefixLength+4 {
 			t.Error("malformed encoded message")
 			return
 		}
-		if string(data[:PrefixLength]) != "ANY " {
+		if string(data[:PrefixLength]) != "EMPT" {
 			t.Error("wrong prefix")
 		}
 		if bytes.Compare(data[PrefixLength:], []byte{0, 0, 0, 0}) != 0 {
@@ -89,7 +89,12 @@ func TestPool_encodeMessage(t *testing.T) {
 		}
 	})
 	t.Run("size limit", func(t *testing.T) {
-		//
+		c := testConfig()
+		c.MaxMessageSize = 4
+		p := NewPool(c, nil)
+		p.Register(NewPrefix("BIGM"), &Big{})
+		defer shouldPanic(t)
+		p.encodeMessage(&Big{"FOUR+"})
 	})
 }
 
