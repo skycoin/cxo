@@ -1,8 +1,6 @@
 package node
 
 import (
-	"net"
-
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
@@ -40,9 +38,7 @@ func (n *Node) Subscribe(pub cipher.PubKey) {
 	n.enqueueRpcEvent(func() {
 		n.subs[pub] = struct{}{}
 		for _, address := range n.conf.Known[pub] {
-			if !n.pool.IsConnExist(address) {
-				n.pool.Connect(address)
-			}
+			n.pool.Connect(address)
 		}
 		go n.Share(pub) // trigger update of wanted objects etc
 	})
@@ -60,7 +56,7 @@ func (n *Node) Disconnect(address string) (err error) {
 	if !n.pool.IsConnExist(address) {
 		err = ErrNotFound
 	} else {
-		n.pool.Disconnect(address, ErrManualDisconnect)
+		n.pool.Disconnect(address)
 	}
 	return
 }
@@ -100,24 +96,19 @@ func (n *Node) Inject(hash cipher.SHA256,
 
 // List should be called from RPC server. The List returns all
 // connections
-func (n *Node) List() (list []string, err error) {
-	cc := n.pool.GetConnections()
-	list = make([]string, 0, len(cc))
-	for _, c := range cc {
-		list = append(list, c.Addr())
-	}
-	return
+func (n *Node) List() []string {
+	return n.pool.Connections()
 }
+
+//
+// TODO: Info
+//
 
 // Info is for RPC. It returns all useful inforamtions about the node
 // except statistic. I.e. it returns listening address
 func (n *Node) Info() (info comm.Info, err error) {
 	err = n.enqueueRpcEvent(func() {
-		var a net.Addr
-		if a, err = n.pool.ListeningAddress(); err != nil {
-			return
-		}
-		info.Address = a.String()
+		info.Address = n.pool.Address()
 		info.Feeds = make(map[cipher.PubKey][]string)
 		for pk := range n.subs {
 			list := make([]string, 0, 5)

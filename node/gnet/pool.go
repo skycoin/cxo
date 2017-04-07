@@ -373,3 +373,10 @@ func (p *Pool) sendPings() {
 		}
 	}
 }
+
+func (p *Pool) IsConnExist(address string) (yep bool) {
+	p.RLock()
+	defer p.RUnlock()
+	_, yep = p.conns[address]
+	return
+}

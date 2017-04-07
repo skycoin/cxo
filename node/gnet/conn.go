@@ -286,7 +286,7 @@ func (c *Conn) Send(m interface{}) {
 }
 
 // Broadcast the message to all other connections except this one
-func (c *Conn) Broadcast(m Message) {
+func (c *Conn) Broadcast(m interface{}) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 

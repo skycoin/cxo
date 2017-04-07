@@ -2,9 +2,7 @@ package node
 
 import (
 	"errors"
-	"net"
 	"sync"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -21,10 +19,8 @@ var (
 
 	ErrEmptySecret = errors.New("empty secret key")
 
-	ErrManualDisconnect gnet.DisconnectReason = errors.New(
-		"manual disconnect")
-	ErrMalformedMessage gnet.DisconnectReason = errors.New(
-		"malformed message")
+	ErrManualDisconnect = errors.New("manual disconnect")
+	ErrMalformedMessage = errors.New("malformed message")
 )
 
 // A Config represents configurations of Node
@@ -49,20 +45,9 @@ type Config struct {
 // NewConfig creates Config filled down with default values
 func NewConfig() Config {
 	return Config{
-		Config:    gnet.NewConfig(),
+		Config:    gnet.NewConfig("", nil),
 		RPCEvents: 10,
 	}
-}
-
-// new connection
-type connectEvent struct {
-	Address string
-}
-
-// new message received
-type msgEvent struct {
-	Address string
-	Msg     gnet.Message
 }
 
 // A Node represents P2P connections pool with RPC and list of known
@@ -78,8 +63,7 @@ type Node struct {
 	pool *gnet.Pool
 
 	rpce     chan rpcEvent      // RPC events
-	connecte chan connectEvent  // new connection
-	msge     chan msgEvent      // new message received
+	connecte chan *gnet.Conn    // new connection
 	share    chan cipher.PubKey // share updated root
 
 	subs map[cipher.PubKey]struct{} // subscriptions
@@ -101,8 +85,8 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 	if conf.Name == "" {
 		conf.Name = "node"
 	}
-	// gnet debugging messages and debug messages of node
-	gnet.DebugPrint = conf.Debug
+	conf.Config.Debug = conf.Debug
+	conf.Config.Name = "p:" + conf.Name
 	return &Node{
 		Logger: log.NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
@@ -121,13 +105,12 @@ func (n *Node) Start() {
 	}
 	n.once = sync.Once{} // refresh once
 	n.quit, n.done = make(chan struct{}), make(chan struct{})
-	n.connecte = make(chan connectEvent, n.conf.MaxConnections)
-	n.msge = make(chan msgEvent, n.conf.BroadcastResultSize)
+	n.connecte = make(chan *gnet.Conn, n.conf.MaxConnections)
 	n.share = make(chan cipher.PubKey, 10)
-	n.conf.ConnectCallback = n.onConnect
+	n.conf.ConnectionHandler = n.onConnect
 	n.pool = gnet.NewPool(n.conf.Config)
 	registerMessages(n.pool)
-	if err = n.pool.Listen(n.conf.Listen); err != nil {
+	if err := n.pool.Listen(n.conf.Listen); err != nil {
 		n.Panic(err)
 	}
 	var address string
@@ -137,7 +120,7 @@ func (n *Node) Start() {
 		n.Print("[INF] listening on ", address)
 	}
 	n.rpce = make(chan rpcEvent, n.conf.RPCEvents)
-	go n.handle(n.quit, n.done, n.connecte, n.msge, n.rpce, n.share)
+	go n.handle(n.quit, n.done, n.connecte, n.pool.Receive(), n.rpce, n.share)
 	go n.subscribe() // subscribe to n.conf.Subscribe
 	return
 }
@@ -218,46 +201,28 @@ func (n *Node) subscribe() {
 }
 
 // gnet callback
-func (n *Node) onConnect(address string, outgoing bool) {
-	n.Debug("[DBG] got new connection ", address)
+func (n *Node) onConnect(c *gnet.Conn) {
+	n.Debug("[DBG] got new connection ", c.Addr())
 	select {
-	case n.connecte <- connectEvent{address}:
+	case n.connecte <- c:
 	case <-n.quit:
 	}
 }
 
 // handling loop
 func (n *Node) handle(quit, done chan struct{},
-	connecte chan connectEvent, msge chan msgEvent, rpce chan rpcEvent,
+	connecte chan *gnet.Conn, msge <-chan gnet.Message, rpce chan rpcEvent,
 	share chan cipher.PubKey) {
 
 	n.Debug("[DBG] start handling events")
 
-	var (
-		pingsTicker *time.Ticker
-		pings       <-chan time.Time
-	)
-
-	if n.conf.Ping > 0 {
-		pingsTicker = time.NewTicker(n.conf.Ping / 2)
-		defer pingsTicker.Stop()
-		pings = pingsTicker.C
-	}
-
 	defer close(done)
-	defer n.pool.Shutdown()
+	defer n.pool.Close()
 
 	var want skyobject.Set = make(skyobject.Set)
 
 	for {
 		select {
-		case sr := <-n.pool.SendResults:
-			if sr.Error != nil {
-				n.Printf("[ERR] error sending %T to %s: %v",
-					sr.Message,
-					sr.Addr,
-					sr.Error)
-			}
 		case ce := <-connecte:
 			n.handleConnectEvent(ce, want)
 		case me := <-msge:
@@ -268,8 +233,6 @@ func (n *Node) handle(quit, done chan struct{},
 			rpce()
 		case <-quit:
 			return
-		case <-pings:
-			n.pool.SendPings(n.conf.Ping/2, &Ping{})
 		}
 	}
 
@@ -285,43 +248,36 @@ func (n *Node) handleShareEvent(se cipher.PubKey, want skyobject.Set) {
 		return // hasn't got
 	}
 	for k := range n.newWantedOfRoot(want, root) {
-		n.pool.BroadcastMessage(&Request{cipher.SHA256(k)})
+		n.pool.Broadcast(&Request{cipher.SHA256(k)})
 	}
-	n.pool.BroadcastMessage(&AnnounceRoot{root.Pub, root.Time})
+	n.pool.Broadcast(&AnnounceRoot{root.Pub, root.Time})
 }
 
 // new connection
 // 1) request roots the node subscribed to but hasn't got
 // 2) request newer roots the node subscribed to and already has
-func (n *Node) handleConnectEvent(ce connectEvent, want skyobject.Set) {
+func (n *Node) handleConnectEvent(ce *gnet.Conn, want skyobject.Set) {
 	if len(n.subs) == 0 {
 		return
 	}
 	for pub := range n.subs {
 		if root := n.so.Root(pub); root != nil {
-			n.pool.SendMessage(ce.Address, &RequestRoot{pub, root.Time})
+			ce.Send(&RequestRoot{pub, root.Time})
 			continue // request newer
 		}
-		n.pool.SendMessage(ce.Address, &RequestRoot{pub, 0}) // request any
+		ce.Send(&RequestRoot{pub, 0}) // request any
 	}
 }
 
-func (n *Node) enqueueMsgEvent(msg gnet.Message, address string) {
-	select {
-	case n.msge <- msgEvent{Address: address, Msg: msg}:
-	case <-n.quit:
-	}
-}
-
-func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
-	switch x := me.Msg.(type) {
+func (n *Node) handleMsgEvent(me gnet.Message, want skyobject.Set) {
+	switch x := me.Value.(type) {
 	case *Announce:
 		if _, ok := want[skyobject.Reference(x.Hash)]; ok {
-			n.pool.SendMessage(me.Address, &Request{x.Hash})
+			me.Conn.Send(&Request{x.Hash})
 		}
 	case *Request:
 		if data, ok := n.db.Get(x.Hash); ok {
-			n.pool.SendMessage(me.Address, &Data{data})
+			me.Conn.Send(&Data{data})
 		}
 	case *Data:
 		hash := cipher.SumSHA256(x.Data)
@@ -331,9 +287,9 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 		n.db.Set(hash, x.Data)
 		delete(want, skyobject.Reference(hash))
 		for k := range n.newWanted(want) {
-			n.pool.SendMessage(me.Address, &Request{cipher.SHA256(k)})
+			me.Conn.Send(&Request{cipher.SHA256(k)})
 		}
-		n.pool.BroadcastMessage(&Announce{hash})
+		me.Conn.Broadcast(&Announce{hash}) // broadcast except
 	case *AnnounceRoot:
 		if _, ok := n.subs[x.Pub]; !ok {
 			return // don't subscribed to the feed
@@ -345,7 +301,7 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 		if root.Time >= x.Time {
 			return // already have (the same or newer)
 		}
-		n.pool.SendMessage(me.Address, &RequestRoot{x.Pub, 0})
+		me.Conn.Send(&RequestRoot{x.Pub, 0})
 	case *RequestRoot:
 		if _, ok := n.subs[x.Pub]; !ok {
 			return
@@ -357,7 +313,7 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 		if root.Time <= x.Time {
 			return
 		}
-		n.pool.SendMessage(me.Address, &DataRoot{
+		me.Conn.Send(&DataRoot{
 			root.Pub,
 			root.Sig,
 			root.Encode(),
@@ -377,9 +333,10 @@ func (n *Node) handleMsgEvent(me msgEvent, want skyobject.Set) {
 		}
 		root := n.so.Root(x.Pub)
 		for k := range n.newWantedOfRoot(want, root) {
-			n.pool.SendMessage(me.Address, &Request{cipher.SHA256(k)})
+			me.Conn.Send(&Request{cipher.SHA256(k)})
 		}
-		n.pool.BroadcastMessage(&AnnounceRoot{root.Pub, root.Time})
+		// broadcast except
+		me.Conn.Broadcast(&AnnounceRoot{root.Pub, root.Time})
 	}
 }
 
