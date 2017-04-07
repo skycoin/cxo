@@ -156,7 +156,7 @@ func (c *Conn) handleRead() {
 		typ reflect.Type
 		val reflect.Value
 	)
-	defer c.Close()
+	defer c.close(true, true) // remove, sync
 	if c.pool.conf.Debug {
 		defer c.pool.Debugf("%s end read loop", c.Addr())
 	}
@@ -251,7 +251,7 @@ func (c *Conn) handleWrite() {
 			c.pool.Panicf("buffered writer is not *bufio.Writer: %T", c.w)
 		}
 	}
-	defer c.Close()
+	defer c.close(true, true) // remove, sync
 	if c.pool.conf.Debug {
 		defer c.pool.Debugf("%s end write loop", c.Addr())
 	}
@@ -323,13 +323,17 @@ func (c *Conn) Broadcast(m Message) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
-func (c *Conn) close(remove bool) (err error) {
+func (c *Conn) close(remove, async bool) (err error) {
 	c.releaseOnce.Do(func() {
 		close(c.closed)
-		if remove {
-			go c.pool.removeConnection(c.Addr()) // async
-		}
 		c.pool.release()
+		if remove {
+			if async {
+				go c.pool.removeConnection(c.Addr()) // async
+			} else {
+				c.pool.removeConnection(c.Addr()) // same goroutine
+			}
+		}
 	})
 	err = c.conn.Close()
 	return
@@ -337,7 +341,7 @@ func (c *Conn) close(remove bool) (err error) {
 
 // Close connection
 func (c *Conn) Close() (err error) {
-	err = c.close(true)
+	err = c.close(true, true) // remove async
 	return
 }
 
