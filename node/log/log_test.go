@@ -1,4 +1,4 @@
-package node
+package log
 
 import (
 	"bytes"
@@ -41,7 +41,7 @@ func TestLogger_Debug(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		l, out := cleanLoggerOut("", true)
 		l.Debug("some")
-		if some := fmt.Sprintln("some"); some != out.String() {
+		if some := "[DBG] " + fmt.Sprintln("some"); some != out.String() {
 			t.Errorf("want %q, got %q", some, out.String())
 		}
 	})
@@ -58,7 +58,7 @@ func TestLogger_Debugln(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		l, out := cleanLoggerOut("", true)
 		l.Debugln("some")
-		if some := fmt.Sprintln("some"); some != out.String() {
+		if some := "[DBG] " + fmt.Sprintln("some"); some != out.String() {
 			t.Errorf("want %q, got %q", some, out.String())
 		}
 	})
@@ -75,7 +75,7 @@ func TestLogger_Debugf(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		l, out := cleanLoggerOut("", true)
 		l.Debugf("some")
-		if some := fmt.Sprintln("some"); some != out.String() {
+		if some := "[DBG] " + fmt.Sprintln("some"); some != out.String() {
 			t.Errorf("want %q, got %q", some, out.String())
 		}
 	})

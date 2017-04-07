@@ -10,6 +10,7 @@ import (
 	"github.com/skycoin/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -66,7 +67,7 @@ type msgEvent struct {
 // hosts to connect to. It automatically fetch latest root object,
 // accept connections and send/receive objects
 type Node struct {
-	Logger
+	log.Logger
 	conf Config
 
 	db *data.DB
@@ -101,7 +102,7 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 	// gnet debugging messages and debug messages of node
 	gnet.DebugPrint = conf.Debug
 	return &Node{
-		Logger: NewLogger("["+conf.Name+"] ", conf.Debug),
+		Logger: log.NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
 		db:     db,
 		so:     so,
