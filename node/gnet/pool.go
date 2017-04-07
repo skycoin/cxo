@@ -57,6 +57,12 @@ func (p *Pool) encodeMessage(m Message) (data []byte) {
 		p.Panicf("send unregistered message: %T", m)
 	}
 	em = encoder.Serialize(m)
+	if p.conf.MaxMessageSize > 0 && len(em) > p.conf.MaxMessageSize {
+		p.Panicf(
+			"try to send message greater than size limit %T, %d (%d)",
+			m, len(em), p.conf.MaxMessageSize,
+		)
+	}
 	data = make([]byte, 0, 4+PrefixLength+len(em))
 	data = append(data, prefix[:]...)
 	data = append(data, encoder.SerializeAtomic(uint32(len(em)))...)
@@ -347,6 +353,7 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 	c.applyDefaults()
 	p = new(Pool)
 	p.Logger = log.NewLogger("["+c.Name+"] ", c.Debug)
+	p.SetOutput(c.Out)
 	p.conf = c
 	p.reg = make(map[reflect.Type]Prefix)
 	p.rev = make(map[Prefix]reflect.Type)

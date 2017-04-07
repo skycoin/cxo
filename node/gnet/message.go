@@ -26,6 +26,7 @@ type MessageContext interface {
 
 // receivedMessage represents received and
 // decoded message that ready to be handled
+// the receivedMessage implements MessageContext
 type receivedMessage struct {
 	*Conn
 	msg Message

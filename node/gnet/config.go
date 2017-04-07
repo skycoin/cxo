@@ -1,6 +1,8 @@
 package gnet
 
 import (
+	"io"
+	"os"
 	"time"
 )
 
@@ -28,7 +30,11 @@ type Config struct {
 	// together
 	MaxConnections int
 	// MaxMessageSize is limit of message size to
-	// prevent reading any malformed big message
+	// prevent reading any malformed big message.
+	// A Pool will panic if you try to send message
+	// exceeds the limit. If a Pool receive a message
+	// that exceeds the limit then the Pool closes
+	// connection from which the message coming from
 	MaxMessageSize int
 
 	// DialTimeout, ReadTimeout and WriteTimeout are
@@ -69,6 +75,10 @@ type Config struct {
 	// ConnectionHandler is a handler that called whe
 	// a new connections was created
 	ConnectionHandler ConnectionHandler
+
+	// Out is used for logging. If the out is nil, then
+	// default output is used (os.Stderr)
+	Out io.Writer
 }
 
 // NewConfig returns Config filled with defaults valus
@@ -132,6 +142,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.PingInterval < mt {
 		c.PingInterval = mt
+	}
+	if c.Out == nil {
+		c.Out = os.Stderr
 	}
 	return
 }
