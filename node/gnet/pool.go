@@ -36,8 +36,6 @@ type Pool struct {
 	receive chan receivedMessage // receive messages
 	sem     chan struct{}        // max connections
 
-	newc chan *Conn // new connections
-
 	// any interface{} provided to be used
 	// in Handle method of Message
 	user interface{}
@@ -183,9 +181,8 @@ func (p *Pool) handleConnection(c net.Conn) (err error) {
 	x = newConn(c, p)
 	p.conns[address] = x // add the connection to the pool
 	x.handle()           // async non-blocking method
-	select {
-	case p.newc <- x:
-	case <-p.quit:
+	if p.conf.ConnectionHandler != nil {
+		p.conf.ConnectionHandler(x) // invoke the callback
 	}
 	return
 }
@@ -204,6 +201,14 @@ func (p *Pool) Connect(address string) (err error) {
 		ok bool
 		c  net.Conn
 	)
+	// don't connect if the pool was closed
+	select {
+	case <-p.quit:
+		err = ErrClosed
+		return
+	default:
+	}
+	// check out limit of connections
 	if ok = p.acquire(); !ok {
 		err = ErrConnectionsLimit
 		return
@@ -227,6 +232,7 @@ func (p *Pool) Connect(address string) (err error) {
 			return
 		}
 	}
+	// with check of p.conns
 	err = p.handleConnection(c)
 	return
 }
@@ -254,14 +260,10 @@ func (p *Pool) Register(prefix Prefix, msg Message) {
 }
 
 func (p *Pool) Disconnect(address string) {
-	var (
-		c  *Conn
-		ok bool
-	)
 	p.RLock()
 	defer p.RUnlock()
-	if c, ok = p.conns[address]; ok {
-		c.Close()
+	if c, ok := p.conns[address]; ok {
+		p.closeConnections(c) // async
 	}
 }
 
@@ -297,12 +299,8 @@ func (p *Pool) Close() {
 	for _, c = range p.conns {
 		cs = append(cs, c)
 	}
-	go func(cs []*Conn) { // close aychrounsly because of mutex
-		var x *Conn
-		for _, x = range cs {
-			x.Close()
-		}
-	}(cs)
+	// close aychrounsly because of mutex
+	p.closeConnections(cs...)
 	return
 }
 
@@ -319,10 +317,6 @@ func (p *Pool) Connections() (cs []string) {
 		cs = append(cs, a)
 	}
 	return
-}
-
-func (p *Pool) NewConnections() <-chan *Conn {
-	return p.newc
 }
 
 func (p *Pool) HandleMessages() {
@@ -356,14 +350,15 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 	if c.MaxConnections != 0 {
 		p.sem = make(chan struct{}, c.MaxConnections)
 	}
-	if c.MaxConnections != 0 {
-		p.newc = make(chan *Conn, c.MaxConnections)
-	} else {
-		p.newc = make(chan *Conn, 16)
-	}
-
 	p.user = user
 	p.quit = make(chan struct{})
-
 	return
+}
+
+func (p *Pool) closeConnections(cs ...*Conn) {
+	go func() {
+		for _, c := range cs {
+			c.Close()
+		}
+	}()
 }

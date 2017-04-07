@@ -24,9 +24,8 @@ var (
 	// have connection to the address, but new connection to
 	// the address created anyway
 	ErrConnAlreadyExists = errors.New("connection alredy exists")
-	// ErrDeadConn occurs when Pool is not closed but
-	// connections is closed for any reason
-	ErrDeadConn = errors.New("dead connection")
+	// ErrClosedConn occurs when connection is closed
+	ErrClosedConn = errors.New("dead connection")
 )
 
 // connection related service variables
@@ -42,8 +41,8 @@ type Conn struct {
 	r io.Reader // buffered or unbuffered reading
 	w io.Writer // buffered or unbuffered writing
 
-	wq   chan []byte   // write queue
-	dead chan struct{} // connection is dead
+	wq     chan []byte   // write queue
+	closed chan struct{} // connection was closed
 
 	// the dead is used to close terminate write loop
 	// if some error occus and connection was closed;
@@ -96,7 +95,7 @@ func newConn(c net.Conn, p *Pool) (x *Conn) {
 	}
 	x.wq = make(chan []byte, p.conf.WriteQueueSize)
 	x.pool = p
-	x.dead = make(chan struct{})
+	x.closed = make(chan struct{})
 	return
 }
 
@@ -123,10 +122,8 @@ func (c *Conn) sendEncodedMessage(m []byte) (err error) {
 	}
 	select {
 	case c.wq <- m:
-	case <-c.pool.quit:
-		err = ErrClosed
-	case <-c.dead:
-		err = ErrDeadConn
+	case <-c.closed:
+		err = ErrClosedConn
 	case <-tc: // write timeout
 		c.Close() // terminate connection
 		err = ErrWriteQueueFull
@@ -134,9 +131,9 @@ func (c *Conn) sendEncodedMessage(m []byte) (err error) {
 	return
 }
 
-func (c *Conn) isDead() (yep bool) {
+func (c *Conn) isClosed() (yep bool) {
 	select {
-	case <-c.dead:
+	case <-c.closed:
 		yep = true
 	default:
 	}
@@ -164,15 +161,11 @@ func (c *Conn) handleRead() {
 		defer c.pool.Debugf("%s end read loop", c.Addr())
 	}
 	for {
-		select {
-		case <-c.pool.quit:
+		if c.isClosed() {
 			return
-		case <-c.dead:
-			return
-		default:
 		}
 		if _, err = c.r.Read(head); err != nil {
-			if c.isDead() {
+			if c.isClosed() {
 				return // don't log about the error
 			}
 			c.pool.Printf("[ERR] %s reading error: %v", c.Addr(), err)
@@ -213,7 +206,7 @@ func (c *Conn) handleRead() {
 			body = body[:l] // but never drop it
 		}
 		if _, err = c.r.Read(body); err != nil {
-			if c.isDead() {
+			if c.isClosed() {
 				return // don't log about the error
 			}
 			c.pool.Printf("[ERR] %s reading error: %v", c.Addr(), err)
@@ -226,7 +219,7 @@ func (c *Conn) handleRead() {
 		}
 		select {
 		case c.pool.receive <- receivedMessage{c, val.Interface().(Message)}:
-		case <-c.pool.quit:
+		case <-c.closed:
 			return
 		}
 	}
@@ -266,7 +259,7 @@ func (c *Conn) handleWrite() {
 		select {
 		case data = <-c.wq:
 			if _, err = c.w.Write(data); err != nil {
-				if c.isDead() {
+				if c.isClosed() {
 					return // don't log about the error
 				}
 				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
@@ -277,7 +270,7 @@ func (c *Conn) handleWrite() {
 			continue
 		case <-pingc:
 			if _, err = c.w.Write(ping); err != nil {
-				if c.isDead() {
+				if c.isClosed() {
 					return // don't log about the error
 				}
 				c.pool.Printf("[ERR] %s error writing ping: %v", c.Addr(), err)
@@ -285,7 +278,7 @@ func (c *Conn) handleWrite() {
 			}
 			if bw != nil && bw.Buffered() > 0 { // force the ping to be sent
 				if err = bw.Flush(); err != nil {
-					if c.isDead() {
+					if c.isClosed() {
 						return // don't log about the error
 					}
 					c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
@@ -294,7 +287,7 @@ func (c *Conn) handleWrite() {
 			}
 		case <-c.pool.quit:
 			return
-		case <-c.dead:
+		case <-c.closed:
 			return
 		default:
 		}
@@ -302,7 +295,7 @@ func (c *Conn) handleWrite() {
 		// and the buffer is not empty
 		if bw != nil && bw.Buffered() > 0 {
 			if err = bw.Flush(); err != nil {
-				if c.isDead() {
+				if c.isClosed() {
 					return // don't log about the error
 				}
 				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
@@ -335,7 +328,7 @@ func (c *Conn) Broadcast(m Message) {
 // Close connection
 func (c *Conn) Close() (err error) {
 	c.releaseOnce.Do(func() {
-		close(c.dead)
+		close(c.closed)
 		c.pool.removeConnection(c.Addr())
 		c.pool.release()
 	})

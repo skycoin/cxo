@@ -19,6 +19,10 @@ const (
 	Debug           bool          = false
 )
 
+// ConnectionHandler represents function that used
+// to do some work on new connections
+type ConnectionHandler func(c *Conn)
+
 type Config struct {
 	// MaxConnections - incoming and outgoing
 	// together
@@ -63,11 +67,15 @@ type Config struct {
 
 	Debug bool   // print debug logs
 	Name  string // name for logs (used as prefix)
+
+	// ConnectionHandler is a handler that called whe
+	// a new connections was created
+	ConnectionHandler ConnectionHandler
 }
 
 // NewConfig returns Config filled with defaults valus
 // and given name
-func NewConfig(name string) (c Config) {
+func NewConfig(name string, handler ConnectionHandler) (c Config) {
 	c.MaxConnections = MaxConnections
 	c.MaxMessageSize = MaxMessageSize
 	c.DialTimeout = DialTimeout
@@ -80,6 +88,7 @@ func NewConfig(name string) (c Config) {
 	c.PingInterval = PingInterval
 	c.Debug = Debug
 	c.Name = name
+	c.ConnectionHandler = handler
 	return
 }
 
