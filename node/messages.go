@@ -1,43 +1,20 @@
 package node
 
 import (
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/daemon/gnet"
 )
 
-func init() {
-	// service
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("PING"), Ping{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("PONG"), Pong{})
-
+func registerMessages(p *gnet.Pool) {
 	// data
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("RQST"), Request{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
+	p.Register(gnet.NewPrefix("ANNC"), &Announce{})
+	p.Register(gnet.NewPrefix("RQST"), &Request{})
+	p.Register(gnet.NewPrefix("DATA"), &Data{})
 
 	// root
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANRT"), AnnounceRoot{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("RQRT"), RequestRoot{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("DTRT"), DataRoot{})
-
-	gnet.VerifyMessages()
-}
-
-// A Ping is used to keep conections alive
-type Ping struct{}
-
-// Handle implements *gnet.Message interface and sends Pong back
-func (p *Ping) Handle(ctx *gnet.MessageContext, node interface{}) (_ error) {
-	var n *Node = node.(*Node)
-	n.pool.SendMessage(ctx.Addr, &Pong{})
-	return
-}
-
-// A Pong is just reply for Ping
-type Pong struct{}
-
-func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
-	return
+	p.Register(gnet.NewPrefix("ANRT"), &AnnounceRoot{})
+	p.Register(gnet.NewPrefix("RQRT"), &RequestRoot{})
+	p.Register(gnet.NewPrefix("DTRT"), &DataRoot{})
 }
 
 //
@@ -48,27 +25,12 @@ type Announce struct {
 	Hash cipher.SHA256
 }
 
-func (a *Announce) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
-	n.(*Node).enqueueMsgEvent(a, c.Addr)
-	return
-}
-
 type Request struct {
 	Hash cipher.SHA256
 }
 
-func (r *Request) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
-	n.(*Node).enqueueMsgEvent(r, c.Addr)
-	return
-}
-
 type Data struct {
 	Data []byte
-}
-
-func (d *Data) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
-	n.(*Node).enqueueMsgEvent(d, c.Addr)
-	return
 }
 
 //
@@ -80,28 +42,13 @@ type AnnounceRoot struct {
 	Time int64
 }
 
-func (a *AnnounceRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
-	n.(*Node).enqueueMsgEvent(a, c.Addr)
-	return
-}
-
 type RequestRoot struct {
 	Pub  cipher.PubKey
 	Time int64
-}
-
-func (r *RequestRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
-	n.(*Node).enqueueMsgEvent(r, c.Addr)
-	return
 }
 
 type DataRoot struct {
 	Pub  cipher.PubKey
 	Sig  cipher.Sig
 	Root []byte
-}
-
-func (d *DataRoot) Handle(c *gnet.MessageContext, n interface{}) (_ error) {
-	n.(*Node).enqueueMsgEvent(d, c.Addr)
-	return
 }

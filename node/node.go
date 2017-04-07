@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/daemon/gnet"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
 )
@@ -32,11 +32,14 @@ type Config struct {
 	gnet.Config
 
 	// Known is a list of known addresses (public key -> addresses)
-	Known     map[cipher.PubKey][]string
-	Debug     bool            //show debug logs
-	Name      string          // name of the node, that used as log prefix
-	Ping      time.Duration   // ping interval
-	RPCEvents int             // rpc events chan
+	Known map[cipher.PubKey][]string
+	Debug bool   //show debug logs
+	Name  string // name of the node, that used as log prefix
+
+	Listen string // listening address
+
+	RPCEvents int // rpc events chan
+
 	Subscribe []cipher.PubKey // subscribe to on launch
 
 	// RemoteClose is used to deny or allow close the Node using RPC
@@ -47,7 +50,6 @@ type Config struct {
 func NewConfig() Config {
 	return Config{
 		Config:    gnet.NewConfig(),
-		Ping:      25 * time.Second,
 		RPCEvents: 10,
 	}
 }
@@ -73,7 +75,7 @@ type Node struct {
 	db *data.DB
 	so *skyobject.Container
 
-	pool *gnet.ConnectionPool
+	pool *gnet.Pool
 
 	rpce     chan rpcEvent      // RPC events
 	connecte chan connectEvent  // new connection
@@ -123,15 +125,16 @@ func (n *Node) Start() {
 	n.msge = make(chan msgEvent, n.conf.BroadcastResultSize)
 	n.share = make(chan cipher.PubKey, 10)
 	n.conf.ConnectCallback = n.onConnect
-	n.pool = gnet.NewConnectionPool(n.conf.Config, n)
-	n.pool.Run()
-	var addr net.Addr
-	var err error
-	if addr, err = n.pool.ListeningAddress(); err != nil {
-		n.Panic("[CRITICAL] can't obtain lisening address: ", err)
-		return // never happens
+	n.pool = gnet.NewPool(n.conf.Config)
+	registerMessages(n.pool)
+	if err = n.pool.Listen(n.conf.Listen); err != nil {
+		n.Panic(err)
+	}
+	var address string
+	if address = n.pool.Address(); address == "" {
+		n.Panic("[CRITICAL] can't obtain lisening address")
 	} else {
-		n.Print("[INF] listening on ", addr)
+		n.Print("[INF] listening on ", address)
 	}
 	n.rpce = make(chan rpcEvent, n.conf.RPCEvents)
 	go n.handle(n.quit, n.done, n.connecte, n.msge, n.rpce, n.share)

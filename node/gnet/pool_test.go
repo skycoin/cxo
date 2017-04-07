@@ -33,12 +33,12 @@ func testConfigName(name string) (c Config) {
 }
 
 func testPool() (p *Pool) {
-	p = NewPool(testConfig(), nil)
+	p = NewPool(testConfig())
 	return
 }
 
 func testPoolName(name string) (p *Pool) {
-	p = NewPool(testConfigName(name), nil)
+	p = NewPool(testConfigName(name))
 	return
 }
 
@@ -96,7 +96,7 @@ func TestPool_encodeMessage(t *testing.T) {
 	t.Run("size limit", func(t *testing.T) {
 		c := testConfig()
 		c.MaxMessageSize = 4
-		p := NewPool(c, nil)
+		p := NewPool(c)
 		p.Register(NewPrefix("ANYM"), &Any{})
 		defer shouldPanic(t)
 		p.encodeMessage(&Any{"FOUR+"})
@@ -107,7 +107,7 @@ func TestPool_acquire(t *testing.T) {
 	t.Run("no limit", func(t *testing.T) {
 		c := testConfig()
 		c.MaxConnections = 0
-		p := NewPool(c, nil)
+		p := NewPool(c)
 		if !p.acquire() {
 			t.Error("can't acquire without limit")
 		}
@@ -118,7 +118,7 @@ func TestPool_acquire(t *testing.T) {
 	t.Run("limited", func(t *testing.T) {
 		c := testConfig()
 		c.MaxConnections = 1
-		p := NewPool(c, nil)
+		p := NewPool(c)
 		if !p.acquire() {
 			t.Error("can't acquire without limit")
 		}
@@ -139,13 +139,13 @@ func TestPool_release(t *testing.T) {
 	t.Run("no limit", func(t *testing.T) {
 		c := testConfig()
 		c.MaxConnections = 0
-		p := NewPool(c, nil)
+		p := NewPool(c)
 		p.release()
 	})
 	t.Run("limited", func(t *testing.T) {
 		c := testConfig()
 		c.MaxConnections = 1
-		p := NewPool(c, nil)
+		p := NewPool(c)
 		if !p.acquire() {
 			t.Error("can't acquire without limit")
 		}

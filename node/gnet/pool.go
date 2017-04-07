@@ -37,10 +37,6 @@ type Pool struct {
 	receive chan Message     // receive messages
 	sem     chan struct{}    // max connections
 
-	// any interface{} provided to be used
-	// in Handle method of Message
-	user interface{}
-
 	closeOnce sync.Once
 	quit      chan struct{} // quit
 }
@@ -331,10 +327,9 @@ func (p *Pool) Receive() <-chan Message {
 	return p.receive
 }
 
-// NewPool creates new Pool instance with given
-// config and user data that can be used from
-// inside Handle method of messages
-func NewPool(c Config, user interface{}) (p *Pool) {
+// NewPool creates new Pool instance
+// with given config
+func NewPool(c Config) (p *Pool) {
 	c.applyDefaults()
 	p = new(Pool)
 	p.Logger = log.NewLogger("["+c.Name+"] ", c.Debug)
@@ -347,7 +342,6 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 	if c.MaxConnections != 0 {
 		p.sem = make(chan struct{}, c.MaxConnections)
 	}
-	p.user = user
 	p.quit = make(chan struct{})
 	if c.PingInterval > 0 {
 		go p.sendPings()
