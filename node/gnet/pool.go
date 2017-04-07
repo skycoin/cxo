@@ -24,7 +24,7 @@ var (
 )
 
 type Pool struct {
-	sync.RWMutex
+	sync.RWMutex // conns and listener mutex
 
 	log.Logger
 
@@ -36,23 +36,24 @@ type Pool struct {
 
 	// pool
 	l       net.Listener         // listener
-	conns   map[string]*conn     // remote address -> connection
+	conns   map[string]*Conn     // remote address -> connection
 	receive chan receivedMessage // receive messages
 	sem     chan struct{}        // max connections
 
-	newc chan *conn // new connections
+	newc chan *Conn // new connections
 
 	// any interface{} provided to be used
 	// in Handle method of Message
 	user interface{}
 
-	quit chan struct{} // quit
+	closeOnce sync.Once
+	quit      chan struct{} // quit
 }
 
 func (p *Pool) encodeMessage(m Message) (data []byte) {
 	var (
 		val    reflect.Value = reflect.Indirect(reflect.ValueOf(m))
-		prefix string
+		prefix Prefix
 		ok     bool
 
 		em []byte
@@ -111,7 +112,7 @@ func (p *Pool) BroadcastExcept(m Message, except ...string) {
 		em []byte = p.encodeMessage(m)
 
 		address, e string
-		c          *conn
+		c          *Conn
 
 		err error
 	)
@@ -124,7 +125,7 @@ func (p *Pool) BroadcastExcept(m Message, except ...string) {
 			}
 		}
 		if err = conn.sendEncodedMessage(em); err != nil {
-			// TODO: handle error
+			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
 		}
 	}
 }
@@ -136,10 +137,13 @@ func (p *Pool) Broadcast(m Message) {
 
 // Listen start listening on given address
 func (p *Pool) Listen(address string) (err error) {
+	p.Lock()
+	defer p.Unlock()
 	if p.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
 	go p.listen(p.l)
+	return
 }
 
 func (p *Pool) listen(l net.Listener) {
@@ -173,7 +177,7 @@ func (p *Pool) handleConnection(c net.Conn) (err error) {
 		address = c.RemoteAddr().String()
 		ok      bool
 
-		x *conn
+		x *Conn
 	)
 	if _, ok = p.conns[address]; ok {
 		err = ErrConnAlreadyExists
@@ -182,7 +186,7 @@ func (p *Pool) handleConnection(c net.Conn) (err error) {
 	}
 	x = newConn(c, p)
 	p.conns[address] = x // add the connection to the pool
-	x.handle()           // asyn non-blocking method
+	x.handle()           // async non-blocking method
 	select {
 	case p.newc <- x:
 	case <-p.quit:
@@ -231,8 +235,112 @@ func (p *Pool) Connect(address string) (err error) {
 	return
 }
 
-func (p *Pool) Register(prefix string, i interface{}) {
-	if len(prefix) != PrefixLength {
-		p.Panicf("wrong prefix length: ", len(prefix))
+// Register given message with given prefix. The method panics
+// if given prefix invalid or already registered. It also panics
+// if given type alredy registered
+func (p *Pool) Register(prefix Prefix, msg Message) {
+	var (
+		ok  bool
+		typ reflect.Type = reflect.Indirect(reflect.ValueOf(i)).Type()
+		err error
+	)
+	if err = prefix.Validate(); err != nil {
+		p.Panicf("%s: %v", prefix.String(), err)
+	}
+	if _, ok = p.reg[typ]; ok {
+		p.Panicf("attemt to register type twice: %s", typ.String())
+	}
+	if _, ok = p.rev[prefix]; ok {
+		p.Panicf("attempt to register prefix twice: %s", prefix.String())
+	}
+	p.reg[typ] = prefix
+	p.rev[prefix] = typ
+}
+
+func (p *Pool) Disconnect(address string) {
+	var (
+		c  *Conn
+		ok bool
+	)
+	p.RLock()
+	defer p.RUnlock()
+	if c, ok = p.conns[address]; ok {
+		c.Close()
+	}
+}
+
+// Address returns listening address or empty string
+func (p *Pool) Address() (address string) {
+	p.RLock()
+	defer p.RUnlock()
+	if p.l != nil {
+		address = p.l.Addr().String()
+	}
+	return
+}
+
+func (p *Pool) closeListener() {
+	p.Lock()
+	defer p.Unlock()
+	if p.l != nil {
+		p.l.Close()
+	}
+}
+
+func (p *Pool) Close() {
+	p.closeOnce.Do(func() {
+		close(p.quit)
+	})
+	p.closeListener()
+	p.Lock()
+	defer p.Unlock()
+	var cs []*Conn = make([]*Conn, 0, len(p.conns))
+	for _, c = range p.conns {
+		cs = append(cs, c)
+	}
+	go func(cs *Conn) { // close aychrounsly because of mutex
+		var x *Conn
+		for _, x = range cs {
+			x.Close()
+		}
+	}(cs)
+	return
+}
+
+// Connections returns list of all connections
+func (p *Pool) Connections() (cs []string) {
+	p.RLock()
+	defer p.RUnlock()
+	if len(p.conns) == 0 {
+		return
+	}
+	var a string
+	cs = make([]string, 0, len(cs))
+	for a = range p.conns {
+		cs = append(cs, a)
+	}
+	return
+}
+
+func (p *Pool) NewConnections() <-chan *Conn {
+	return p.newc
+}
+
+func (p *Pool) HandleMessages() {
+	var (
+		rc   receivedMessage
+		term error
+	)
+	for len(p.receive) > 0 {
+		select {
+		case rc = <-p.receive:
+		case <-p.quit:
+			return
+		}
+		if term = rc.msg.Handle(rc, p.user); term != nil {
+			p.Printf("closing connection %s by Handle error: %v",
+				rc.conn.Addr(), term)
+			rc.Close()
+		}
 	}
 }

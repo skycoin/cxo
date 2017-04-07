@@ -44,13 +44,6 @@ var (
 	pong = []byte{'<', '-', '-', '-', 0, 0, 0, 0} // pong message
 )
 
-// receivedMessage represents received and
-// decoded message that ready to be handled
-type receivedMessage struct {
-	msg  Message
-	conn *Conn
-}
-
 type Conn struct {
 	conn net.Conn // connection
 
@@ -240,7 +233,7 @@ func (c *Conn) handleRead() {
 			return
 		}
 		select {
-		case c.pool.receive <- receivedMessage{val.Interface().(Message), c}:
+		case c.pool.receive <- receivedMessage{c, val.Interface().(Message)}:
 		case <-c.pool.quit:
 			return
 		}

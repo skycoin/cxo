@@ -6,6 +6,7 @@ import (
 
 type Config struct {
 	// MaxConnections - incoming and outgoing
+	// together
 	MaxConnections int
 	// MaxMessageSize is limit of message size to
 	// prevent reading any malformed big message

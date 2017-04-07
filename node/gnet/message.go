@@ -23,3 +23,10 @@ type MessageContext interface {
 	// received
 	Broadcast(m Message)
 }
+
+// receivedMessage represents received and
+// decoded message that ready to be handled
+type receivedMessage struct {
+	*Conn
+	msg Message
+}
