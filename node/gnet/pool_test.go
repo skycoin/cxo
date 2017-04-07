@@ -211,20 +211,38 @@ func TestPool_BroadcastExcept(t *testing.T) {
 	s.BroadcastExcept(&Any{"data"}, except)
 	select {
 	case <-h.Receive():
+		select {
+		case <-e.Receive():
+			t.Error("received by excepted connection")
+		case <-time.After(100 * time.Millisecond): // to be sure
+		}
 	case <-e.Receive():
 		t.Error("received by excepted connection")
 	case <-time.After(100 * time.Millisecond):
 		t.Error("slow")
 	}
-	select {
-	case <-e.Receive():
-		t.Error("received by excepted connection")
-	case <-time.After(100 * time.Millisecond):
-	}
 }
 
 func TestPool_Broadcast(t *testing.T) {
-	//
+	s, c1, c2, err := testS2C("send", "recv1", "recv2")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer s.Close()  // broadcast
+	defer c1.Close() // receive
+	defer c2.Close() // receive
+	s.Broadcast(&Any{"data"})
+	select {
+	case <-c1.Receive():
+		select {
+		case <-c2.Receive():
+		case <-time.After(100 * time.Millisecond):
+			t.Error("slow")
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Error("slow")
+	}
 }
 
 func TestPool_Listen(t *testing.T) {
@@ -267,7 +285,7 @@ func TestPool_Connections(t *testing.T) {
 	//
 }
 
-func TestPool_HandleMessages(t *testing.T) {
+func TestPool_Receive(t *testing.T) {
 	//
 }
 
