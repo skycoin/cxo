@@ -32,10 +32,10 @@ type Pool struct {
 	rev map[Prefix]reflect.Type // inverse registery
 
 	// pool
-	l       net.Listener         // listener
-	conns   map[string]*Conn     // remote address -> connection
-	receive chan receivedMessage // receive messages
-	sem     chan struct{}        // max connections
+	l       net.Listener     // listener
+	conns   map[string]*Conn // remote address -> connection
+	receive chan Message     // receive messages
+	sem     chan struct{}    // max connections
 
 	// any interface{} provided to be used
 	// in Handle method of Message
@@ -45,7 +45,7 @@ type Pool struct {
 	quit      chan struct{} // quit
 }
 
-func (p *Pool) encodeMessage(m Message) (data []byte) {
+func (p *Pool) encodeMessage(m interface{}) (data []byte) {
 	var (
 		val    reflect.Value = reflect.Indirect(reflect.ValueOf(m))
 		prefix Prefix
@@ -108,7 +108,7 @@ func (p *Pool) release() {
 
 // BroadcastExcept given message to all connections of the Pool
 // except enumerated by 'except' argument
-func (p *Pool) BroadcastExcept(m Message, except ...string) {
+func (p *Pool) BroadcastExcept(m interface{}, except ...string) {
 	var (
 		em []byte = p.encodeMessage(m)
 
@@ -119,10 +119,11 @@ func (p *Pool) BroadcastExcept(m Message, except ...string) {
 	)
 	p.RLock() // map lock
 	defer p.RUnlock()
+Loop:
 	for address, c = range p.conns {
 		for _, e = range except {
 			if address == e {
-				continue // except
+				continue Loop // except
 			}
 		}
 		if err = c.sendEncodedMessage(em); err != nil {
@@ -132,7 +133,7 @@ func (p *Pool) BroadcastExcept(m Message, except ...string) {
 }
 
 // Broadcast given message to all connections of the Pool
-func (p *Pool) Broadcast(m Message) {
+func (p *Pool) Broadcast(m interface{}) {
 	p.BroadcastExcept(m)
 }
 
@@ -252,7 +253,7 @@ func (p *Pool) Connect(address string) (err error) {
 // Register given message with given prefix. The method panics
 // if given prefix invalid or already registered. It also panics
 // if given type alredy registered
-func (p *Pool) Register(prefix Prefix, msg Message) {
+func (p *Pool) Register(prefix Prefix, msg interface{}) {
 	var (
 		ok  bool
 		typ reflect.Type = reflect.Indirect(reflect.ValueOf(msg)).Type()
@@ -261,6 +262,7 @@ func (p *Pool) Register(prefix Prefix, msg Message) {
 	if err = prefix.Validate(); err != nil {
 		p.Panicf("%s: %v", prefix.String(), err)
 	}
+	encoder.Serialize(msg) // panic if the msg can't be serialized
 	if _, ok = p.reg[typ]; ok {
 		p.Panicf("attemt to register type twice: %s", typ.String())
 	}
@@ -323,27 +325,10 @@ func (p *Pool) Connections() (cs []string) {
 	return
 }
 
-// HandleMessages process incoming messages calling
-// Handle method. It's safe to call the method from
-// any thread
-func (p *Pool) HandleMessages() {
-	var (
-		rc   receivedMessage
-		term error
-	)
-	for len(p.receive) > 0 {
-		select {
-		case rc = <-p.receive:
-		case <-p.quit:
-			return
-		}
-		p.Debugf("handle %T", rc.msg)
-		if term = rc.msg.Handle(rc, p.user); term != nil {
-			p.Printf("closing connection %s by Handle error: %v",
-				rc.Addr(), term)
-			rc.Close()
-		}
-	}
+// Receive returns channel of recieved data with
+// connections from which the dat come from
+func (p *Pool) Receive() <-chan Message {
+	return p.receive
 }
 
 // NewPool creates new Pool instance with given
@@ -358,7 +343,7 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 	p.reg = make(map[reflect.Type]Prefix)
 	p.rev = make(map[Prefix]reflect.Type)
 	p.conns = make(map[string]*Conn, c.MaxConnections)
-	p.receive = make(chan receivedMessage, c.ReadQueueSize)
+	p.receive = make(chan Message, c.ReadQueueSize)
 	if c.MaxConnections != 0 {
 		p.sem = make(chan struct{}, c.MaxConnections)
 	}

@@ -64,25 +64,8 @@ func shouldNotPanic(t *testing.T) {
 
 type Empty struct{}
 
-func (*Empty) Handle(MessageContext, interface{}) (_ error) {
-	return
-}
-
-type Big struct {
+type Any struct {
 	Value string
-}
-
-func (*Big) Handle(MessageContext, interface{}) (_ error) {
-	return
-}
-
-var receivedBy chan string
-
-type ReceivedBy struct{}
-
-func (*ReceivedBy) Handle(ctx MessageContext, _ interface{}) (_ error) {
-	receivedBy <- ctx.Addr()
-	return
 }
 
 //
@@ -114,9 +97,9 @@ func TestPool_encodeMessage(t *testing.T) {
 		c := testConfig()
 		c.MaxMessageSize = 4
 		p := NewPool(c, nil)
-		p.Register(NewPrefix("BIGM"), &Big{})
+		p.Register(NewPrefix("ANYM"), &Any{})
 		defer shouldPanic(t)
-		p.encodeMessage(&Big{"FOUR+"})
+		p.encodeMessage(&Any{"FOUR+"})
 	})
 }
 
@@ -177,7 +160,7 @@ func TestPool_release(t *testing.T) {
 }
 
 // listening server and two clients connected to the server
-// all has ReceivedBy registered
+// all has Any registered
 func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
 	s = testPoolName(sn)
 	c1 = testPoolName(c1n)
@@ -185,10 +168,9 @@ func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
 	if err = s.Listen(""); err != nil { // any address
 		return
 	}
-	receivedBy = make(chan string, 10)
-	s.Register(NewPrefix("RCVD"), &ReceivedBy{})
-	c1.Register(NewPrefix("RCVD"), &ReceivedBy{})
-	c2.Register(NewPrefix("RCVD"), &ReceivedBy{})
+	s.Register(NewPrefix("ANYM"), &Any{})
+	c1.Register(NewPrefix("ANYM"), &Any{})
+	c2.Register(NewPrefix("ANYM"), &Any{})
 	address := s.Address()
 	if err = c1.Connect(address); err != nil {
 		s.Close()
@@ -210,36 +192,34 @@ func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
 }
 
 func TestPool_BroadcastExcept(t *testing.T) {
-	s, c1, c2, err := testS2C("send", "recv1", "recv2")
+	s, h, e, err := testS2C("send", "recv1", "recv2")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	defer s.Close()
-	defer c1.Close()
-	defer c2.Close()
-	var (
-		except string
-		handle string
-	)
-	for a := range s.conns {
-		if except == "" {
-			except = a
-		} else {
-			handle = a
-		}
-		break
+	defer s.Close() // broadcast
+	defer h.Close() // handle
+	defer e.Close() // except
+	var except string
+	if len(e.conns) != 1 {
+		t.Error("wrong connections size:", len(except))
+		return
 	}
-	s.BroadcastExcept(&ReceivedBy{}, except)
-	time.Sleep(100 * time.Microsecond)
-	if len(receivedBy) != 1 {
-		t.Error("received wrong times")
+	for _, c := range e.conns {
+		except = c.conn.LocalAddr().String()
 	}
-	ra := <-receivedBy
-	if ra == except {
-		t.Error("handled by wrong side")
-	} else if ra != handle {
-		t.Error("handled by unknown side")
+	s.BroadcastExcept(&Any{"data"}, except)
+	select {
+	case <-h.Receive():
+	case <-e.Receive():
+		t.Error("received by excepted connection")
+	case <-time.After(100 * time.Millisecond):
+		t.Error("slow")
+	}
+	select {
+	case <-e.Receive():
+		t.Error("received by excepted connection")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 

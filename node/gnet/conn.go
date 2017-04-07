@@ -195,7 +195,7 @@ func (c *Conn) handleRead() {
 			return
 		}
 		select {
-		case c.pool.receive <- receivedMessage{c, val.Interface().(Message)}:
+		case c.pool.receive <- Message{val.Interface(), c}:
 		case <-c.closed:
 			return
 		}
@@ -276,7 +276,7 @@ func (c *Conn) Addr() string {
 }
 
 // Send given message to the connection
-func (c *Conn) Send(m Message) {
+func (c *Conn) Send(m interface{}) {
 	var err error
 	if err = c.sendEncodedMessage(c.pool.encodeMessage(m)); err != nil {
 		c.pool.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
