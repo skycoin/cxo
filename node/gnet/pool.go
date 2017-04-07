@@ -64,7 +64,7 @@ func (p *Pool) encodeMessage(m Message) (data []byte) {
 }
 
 // acquire returns true if number of connections
-// later then p.conf.MaxConnections
+// less then p.conf.MaxConnections
 func (p *Pool) acquire() (ok bool) {
 	if p.conf.MaxConnections == 0 {
 		return true // no limit for connections
@@ -260,10 +260,11 @@ func (p *Pool) Register(prefix Prefix, msg Message) {
 }
 
 func (p *Pool) Disconnect(address string) {
-	p.RLock()
-	defer p.RUnlock()
+	p.Lock()
+	defer p.Unlock()
 	if c, ok := p.conns[address]; ok {
-		p.closeConnections(c) // async
+		c.close(false)
+		delete(p.conns, address)
 	}
 }
 
@@ -277,30 +278,19 @@ func (p *Pool) Address() (address string) {
 	return
 }
 
-func (p *Pool) closeListener() {
+func (p *Pool) Close() {
+	p.closeOnce.Do(func() {
+		close(p.quit)
+	})
 	p.Lock()
 	defer p.Unlock()
 	if p.l != nil {
 		p.l.Close()
 	}
-}
-
-func (p *Pool) Close() {
-	p.closeOnce.Do(func() {
-		close(p.quit)
-	})
-	p.closeListener()
-	p.Lock()
-	defer p.Unlock()
-	var (
-		cs []*Conn = make([]*Conn, 0, len(p.conns))
-		c  *Conn
-	)
-	for _, c = range p.conns {
-		cs = append(cs, c)
+	for a, c := range p.conns {
+		c.close(false)
+		delete(p.conns, a)
 	}
-	// close aychrounsly because of mutex
-	p.closeConnections(cs...)
 	return
 }
 
@@ -353,12 +343,4 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 	p.user = user
 	p.quit = make(chan struct{})
 	return
-}
-
-func (p *Pool) closeConnections(cs ...*Conn) {
-	go func() {
-		for _, c := range cs {
-			c.Close()
-		}
-	}()
 }

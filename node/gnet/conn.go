@@ -285,8 +285,6 @@ func (c *Conn) handleWrite() {
 					return
 				}
 			}
-		case <-c.pool.quit:
-			return
 		case <-c.closed:
 			return
 		default:
@@ -325,14 +323,21 @@ func (c *Conn) Broadcast(m Message) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
-// Close connection
-func (c *Conn) Close() (err error) {
+func (c *Conn) close(remove bool) (err error) {
 	c.releaseOnce.Do(func() {
 		close(c.closed)
-		c.pool.removeConnection(c.Addr())
+		if remove {
+			go c.pool.removeConnection(c.Addr()) // async
+		}
 		c.pool.release()
 	})
 	err = c.conn.Close()
+	return
+}
+
+// Close connection
+func (c *Conn) Close() (err error) {
+	err = c.close(true)
 	return
 }
 
