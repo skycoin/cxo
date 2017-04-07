@@ -146,7 +146,11 @@ func (p *Pool) listen(l net.Listener) {
 		c   net.Conn
 		err error
 	)
+	p.Debug("start accept loop")
 	defer l.Close()
+	if p.conf.Debug {
+		defer p.Debug("stop accept loop")
+	}
 	for {
 		p.acquireBlock()
 		if c, err = l.Accept(); err != nil {
@@ -166,6 +170,7 @@ func (p *Pool) listen(l net.Listener) {
 }
 
 func (p *Pool) handleConnection(c net.Conn) (err error) {
+	p.Debug("got new connection: ", c.RemoteAddr().String())
 	p.Lock()
 	defer p.Unlock()
 	var (
@@ -188,7 +193,7 @@ func (p *Pool) handleConnection(c net.Conn) (err error) {
 	return
 }
 
-// remove closed connection form the pool
+// remove closed connection form the Pool
 func (p *Pool) removeConnection(address string) {
 	p.Lock()
 	defer p.Unlock()
@@ -260,6 +265,7 @@ func (p *Pool) Register(prefix Prefix, msg Message) {
 	p.rev[prefix] = typ
 }
 
+// Disconnect connection with given address
 func (p *Pool) Disconnect(address string) {
 	p.Lock()
 	defer p.Unlock()
@@ -279,6 +285,7 @@ func (p *Pool) Address() (address string) {
 	return
 }
 
+// The Close close listener and all connections related to the Pool
 func (p *Pool) Close() {
 	p.closeOnce.Do(func() {
 		close(p.quit)
@@ -310,6 +317,9 @@ func (p *Pool) Connections() (cs []string) {
 	return
 }
 
+// HandleMessages process incoming messages calling
+// Handle method. It's safe to call the method from
+// any thread
 func (p *Pool) HandleMessages() {
 	var (
 		rc   receivedMessage
@@ -321,6 +331,7 @@ func (p *Pool) HandleMessages() {
 		case <-p.quit:
 			return
 		}
+		p.Debugf("handle %T", rc.msg)
 		if term = rc.msg.Handle(rc, p.user); term != nil {
 			p.Printf("closing connection %s by Handle error: %v",
 				rc.Addr(), term)
@@ -329,6 +340,9 @@ func (p *Pool) HandleMessages() {
 	}
 }
 
+// NewPool creates new Pool instance with given
+// config and user data that can be used from
+// inside Handle method of messages
 func NewPool(c Config, user interface{}) (p *Pool) {
 	c.applyDefaults()
 	p = new(Pool)
@@ -350,8 +364,12 @@ func NewPool(c Config, user interface{}) (p *Pool) {
 }
 
 func (p *Pool) sendPings() {
+	p.Debug("broadcast PING every", p.conf.PingInterval)
 	var pingt *time.Ticker = time.NewTicker(p.conf.PingInterval)
 	defer pingt.Stop()
+	if p.conf.Debug {
+		defer p.Debug("stop broadcasting PING")
+	}
 	for {
 		select {
 		case <-pingt.C:
