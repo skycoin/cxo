@@ -4,6 +4,21 @@ import (
 	"time"
 )
 
+// config defaults
+const (
+	MaxConnections  int           = 1024
+	MaxMessageSize  int           = 8192
+	DialTimeout     time.Duration = 5 * time.Second
+	ReadTimeout     time.Duration = 5 * time.Second
+	WriteTimeout    time.Duration = 5 * time.Second
+	ReadBufferSize  int           = 4096
+	WriteBufferSize int           = 4096
+	ReadQueueSize   int           = 64 * 256 // 1/4
+	WriteQueueSize  int           = 64
+	PingInterval    time.Duration = 5 * time.Second
+	Debug           bool          = false
+)
+
 type Config struct {
 	// MaxConnections - incoming and outgoing
 	// together
@@ -48,4 +63,68 @@ type Config struct {
 
 	Debug bool   // print debug logs
 	Name  string // name for logs (used as prefix)
+}
+
+// NewConfig returns Config filled with defaults valus
+// and given name
+func NewConfig(name string) (c Config) {
+	c.MaxConnections = MaxConnections
+	c.MaxMessageSize = MaxMessageSize
+	c.DialTimeout = DialTimeout
+	c.ReadTimeout = ReadTimeout
+	c.WriteTimeout = WriteTimeout
+	c.ReadBufferSize = ReadBufferSize
+	c.WriteBufferSize = WriteBufferSize
+	c.ReadQueueSize = ReadQueueSize
+	c.WriteQueueSize = WriteQueueSize
+	c.PingInterval = PingInterval
+	c.Debug = Debug
+	c.Name = name
+	return
+}
+
+// replace negative values wiht defaults;
+// set PingInterval to min(ReadTimeout, WriteTimeout)
+// if the interval is less then the minimum
+func (c *Config) applyDefaults() {
+	if c.MaxConnections < 0 {
+		c.MaxConnections = MaxConnections
+	}
+	if c.MaxMessageSize < 0 {
+		c.MaxMessageSize = MaxMessageSize
+	}
+	if c.DialTimeout < 0 {
+		c.DialTimeout = DialTimeout
+	}
+	if c.ReadTimeout < 0 {
+		c.ReadTimeout = ReadTimeout
+	}
+	if c.WriteTimeout < 0 {
+		c.WriteTimeout = WriteTimeout
+	}
+	if c.ReadBufferSize < 0 {
+		c.ReadBufferSize = ReadBufferSize
+	}
+	if c.WriteBufferSize < 0 {
+		c.WriteBufferSize = WriteBufferSize
+	}
+	if c.ReadQueueSize < 0 {
+		c.ReadQueueSize = ReadQueueSize
+	}
+	if c.WriteQueueSize < 0 {
+		c.WriteQueueSize = WriteQueueSize
+	}
+	if c.PingInterval < 0 {
+		c.PingInterval = PingInterval
+	}
+	var mt time.Duration
+	if c.ReadTimeout < c.WriteTimeout {
+		mt = c.WriteTimeout
+	} else {
+		mt = c.ReadTimeout
+	}
+	if c.PingInterval < mt {
+		c.PingInterval = mt
+	}
+	return
 }

@@ -1,14 +1,10 @@
 package gnet
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
-	"io"
 	"net"
 	"reflect"
 	"sync"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
@@ -63,7 +59,7 @@ func (p *Pool) encodeMessage(m Message) (data []byte) {
 	}
 	em = encoder.Serialize(m)
 	data = make([]byte, 0, 4+PrefixLength+len(em))
-	data = append(data, prefix...)
+	data = append(data, prefix[:]...)
 	data = append(data, encoder.SerializeAtomic(uint32(len(em)))...)
 	data = append(data, em...)
 	return
@@ -124,7 +120,7 @@ func (p *Pool) BroadcastExcept(m Message, except ...string) {
 				continue // except
 			}
 		}
-		if err = conn.sendEncodedMessage(em); err != nil {
+		if err = c.sendEncodedMessage(em); err != nil {
 			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
 		}
 	}
@@ -241,7 +237,7 @@ func (p *Pool) Connect(address string) (err error) {
 func (p *Pool) Register(prefix Prefix, msg Message) {
 	var (
 		ok  bool
-		typ reflect.Type = reflect.Indirect(reflect.ValueOf(i)).Type()
+		typ reflect.Type = reflect.Indirect(reflect.ValueOf(msg)).Type()
 		err error
 	)
 	if err = prefix.Validate(); err != nil {
@@ -294,11 +290,14 @@ func (p *Pool) Close() {
 	p.closeListener()
 	p.Lock()
 	defer p.Unlock()
-	var cs []*Conn = make([]*Conn, 0, len(p.conns))
+	var (
+		cs []*Conn = make([]*Conn, 0, len(p.conns))
+		c  *Conn
+	)
 	for _, c = range p.conns {
 		cs = append(cs, c)
 	}
-	go func(cs *Conn) { // close aychrounsly because of mutex
+	go func(cs []*Conn) { // close aychrounsly because of mutex
 		var x *Conn
 		for _, x = range cs {
 			x.Close()
@@ -339,8 +338,32 @@ func (p *Pool) HandleMessages() {
 		}
 		if term = rc.msg.Handle(rc, p.user); term != nil {
 			p.Printf("closing connection %s by Handle error: %v",
-				rc.conn.Addr(), term)
+				rc.Addr(), term)
 			rc.Close()
 		}
 	}
+}
+
+func NewPool(c Config, user interface{}) (p *Pool) {
+	c.applyDefaults()
+	p = new(Pool)
+	p.Logger = log.NewLogger("["+c.Name+"] ", c.Debug)
+	p.conf = c
+	p.reg = make(map[reflect.Type]Prefix)
+	p.rev = make(map[Prefix]reflect.Type)
+	p.conns = make(map[string]*Conn, c.MaxConnections)
+	p.receive = make(chan receivedMessage, c.ReadQueueSize)
+	if c.MaxConnections != 0 {
+		p.sem = make(chan struct{}, c.MaxConnections)
+	}
+	if c.MaxConnections != 0 {
+		p.newc = make(chan *Conn, c.MaxConnections)
+	} else {
+		p.newc = make(chan *Conn, 16)
+	}
+
+	p.user = user
+	p.quit = make(chan struct{})
+
+	return
 }

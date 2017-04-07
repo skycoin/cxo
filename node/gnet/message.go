@@ -17,7 +17,7 @@ type Message interface {
 type MessageContext interface {
 	// Send reply back to connection
 	// from which the message received
-	Send(m Message) (err error)
+	Send(m Message)
 	// Broadcast to all connections except
 	// connection from which the message
 	// received

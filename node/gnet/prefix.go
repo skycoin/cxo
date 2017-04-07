@@ -3,7 +3,6 @@ package gnet
 import (
 	"errors"
 	"unicode"
-	"unicode/utf8"
 )
 
 // prefix related contants

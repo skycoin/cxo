@@ -11,14 +11,6 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/node/log"
-)
-
-// connection related constants
-const (
-	ReadBufferSize  int = 4096 // default redading buffer
-	WriteBufferSize int = 4096 // default writing buffer
 )
 
 // connection related errors
@@ -67,7 +59,7 @@ type Conn struct {
 
 func newConn(c net.Conn, p *Pool) (x *Conn) {
 	x = new(Conn)
-	x.c = c
+	x.conn = c
 	// set up reader
 	if p.conf.ReadBufferSize > 0 { // buffered reading
 		if p.conf.ReadTimeout > 0 { // with timeout
@@ -79,8 +71,8 @@ func newConn(c net.Conn, p *Pool) (x *Conn) {
 			x.r = bufio.NewReaderSize(c, p.conf.ReadBufferSize)
 		}
 	} else { // unbuffered
-		if p.conf.ReadTimeout { // with timeout
-			x.r = &deadReader{c, p.conf.ReadTimeout}
+		if p.conf.ReadTimeout > 0 { // with timeout
+			x.r = &deadReader{p.conf.ReadTimeout, c}
 		} else { // no timeout
 			x.r = c
 		}
@@ -96,14 +88,14 @@ func newConn(c net.Conn, p *Pool) (x *Conn) {
 			x.w = bufio.NewWriterSize(c, p.conf.WriteBufferSize)
 		}
 	} else { // unbuffered
-		if p.conf.WriteTimeout { // with timeout
-			x.w = &deadWriter{c, p.conf.WriteTimeout}
+		if p.conf.WriteTimeout > 0 { // with timeout
+			x.w = &deadWriter{p.conf.WriteTimeout, c}
 		} else { // no timeout
 			x.w = c
 		}
 	}
-	x.wr = make(chan []byte, p.conf.WriteQueueSize)
-	x.p = p
+	x.wq = make(chan []byte, p.conf.WriteQueueSize)
+	x.pool = p
 	x.dead = make(chan struct{})
 	return
 }
@@ -123,7 +115,7 @@ func (c *Conn) sendEncodedMessage(m []byte) (err error) {
 	// second, send the message using timeout (if configured)
 	// and chek quit and dead channels
 	var tm *time.Timer
-	var tc <-chan Time
+	var tc <-chan time.Time
 	if c.pool.conf.WriteTimeout > 0 {
 		tm = time.NewTimer(c.pool.conf.WriteTimeout)
 		tc = tm.C
@@ -228,7 +220,7 @@ func (c *Conn) handleRead() {
 			return
 		}
 		val = reflect.New(typ)
-		if err = encoder.DeserializeRawToValue(body, val); err != nil {
+		if _, err = encoder.DeserializeRawToValue(body, val); err != nil {
 			c.pool.Printf("[ERR] %s decoding message error: %v", c.Addr(), err)
 			return
 		}
@@ -247,7 +239,7 @@ func (c *Conn) handleWrite() {
 	c.pool.Debugf("%s start write loop", c.Addr())
 	var (
 		pingt *time.Ticker
-		pincc <-chan time.Time
+		pingc <-chan time.Time
 
 		data []byte
 
@@ -359,7 +351,7 @@ type deadReader struct {
 
 // Read implements io.Reader interface
 func (d *deadReader) Read(p []byte) (n int, err error) {
-	if err = d.c.SetReadDeadline(time.Now().Add(time.Duration)); err != nil {
+	if err = d.c.SetReadDeadline(time.Now().Add(d.t)); err != nil {
 		return
 	}
 	n, err = d.c.Read(p)
