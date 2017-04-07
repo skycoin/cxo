@@ -2,6 +2,7 @@ package gnet
 
 import (
 	"bytes"
+	"io/ioutil"
 	"testing"
 )
 
@@ -14,7 +15,12 @@ func testConfig() (c Config) {
 	c.PingInterval = 0 // prevent
 	c.WriteTimeout = 0 // start
 	c.ReadTimeout = 0  // sending pings
-	c.Debug = testing.Verbose()
+	if testing.Verbose() {
+		c.Debug = true
+	} else {
+		c.Debug = false
+		c.Out = ioutil.Discard
+	}
 	return
 }
 
