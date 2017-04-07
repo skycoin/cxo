@@ -224,6 +224,7 @@ func (c *Conn) handleWrite() {
 	if c.pool.conf.Debug {
 		defer c.pool.Debugf("%s end write loop", c.Addr())
 	}
+WriteLoop:
 	for {
 		select {
 		case data = <-c.wq:
@@ -236,21 +237,35 @@ func (c *Conn) handleWrite() {
 			}
 			// may be there are more then one message to
 			// use full perfomance of buffered writing
-			continue
+			for {
+				select {
+				case data = <-c.wq:
+					if _, err = c.w.Write(data); err != nil {
+						if c.isClosed() {
+							return // don't log about the error
+						}
+						c.pool.Printf("[ERR] %s writing error: %v",
+							c.Addr(), err)
+						return
+					}
+				default:
+					// flush the buffer if nothing to write anymore
+					// and the buffer is not empty
+					if bw != nil && bw.Buffered() > 0 {
+						if err = bw.Flush(); err != nil {
+							if c.isClosed() {
+								return // don't log about the error
+							}
+							c.pool.Printf("[ERR] %s writing error: %v",
+								c.Addr(), err)
+							return
+						}
+					}
+					continue WriteLoop // wait for new data
+				}
+			}
 		case <-c.closed:
 			return
-		default:
-		}
-		// flush the buffer if nothing to write anymore
-		// and the buffer is not empty
-		if bw != nil && bw.Buffered() > 0 {
-			if err = bw.Flush(); err != nil {
-				if c.isClosed() {
-					return // don't log about the error
-				}
-				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
-				return
-			}
 		}
 	}
 }

@@ -22,6 +22,8 @@ type MessageContext interface {
 	// connection from which the message
 	// received
 	Broadcast(m Message)
+	// Addr returns remote address
+	Addr() string
 }
 
 // receivedMessage represents received and
