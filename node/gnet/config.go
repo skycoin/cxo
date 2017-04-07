@@ -28,6 +28,14 @@ type Config struct {
 	ReadBufferSize  int
 	WriteBufferSize int
 
+	// ReadQueueSize is size of reading queue. The queue
+	// is shared for all connections. All connections
+	// read messages and put them to the queue
+	ReadQueueSize int
+	// WriteQueueSize is size of connection related queue.
+	// Every connection has its own write queue
+	WriteQueueSize int
+
 	// PingInterval used to send pings every
 	// PingInterval time. If the interval is zero
 	// then sending of pings is not used. But the

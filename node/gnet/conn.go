@@ -28,6 +28,13 @@ var (
 	// appears. A message can block sending up to
 	// WriteTimeout x 2
 	ErrWriteQueueFull = errors.New("write queue full")
+	// ErrConnAlreadyExists occurs when some the Pool already
+	// have connection to the address, but new connection to
+	// the address created anyway
+	ErrConnAlreadyExists = errors.New("connection alredy exists")
+	// ErrDeadConn occurs when Pool is not closed but
+	// connections is closed for any reason
+	ErrDeadConn = errors.New("dead connection")
 )
 
 // connection related service variables
@@ -41,24 +48,32 @@ var (
 // decoded message that ready to be handled
 type receivedMessage struct {
 	msg  Message
-	conn *conn
+	conn *Conn
 }
 
-type conn struct {
+type Conn struct {
 	conn net.Conn // connection
 
 	r io.Reader // buffered or unbuffered reading
 	w io.Writer // buffered or unbuffered writing
 
-	rq chan receivedMessage // read queue
-	wr chan []byte          // write queue
+	wq   chan []byte   // write queue
+	dead chan struct{} // connection is dead
+
+	// the dead is used to close terminate write loop
+	// if some error occus and connection was closed;
+	// the dead is not requierd for read loop because
+	// the read loop performs Read every time, but if
+	// buffered reading used then the read loop can
+	// reaa many messages before it encodunted
+	// reading error
 
 	pool        *Pool // back read only reference
 	releaseOnce sync.Once
 }
 
-func newConn(c net.Conn, p *Pool) (x *conn) {
-	x = new(conn)
+func newConn(c net.Conn, p *Pool) (x *Conn) {
+	x = new(Conn)
 	x.c = c
 	// set up reader
 	if p.conf.ReadBufferSize > 0 { // buffered reading
@@ -94,9 +109,26 @@ func newConn(c net.Conn, p *Pool) (x *conn) {
 			x.w = c
 		}
 	}
+	x.wr = make(chan []byte, p.conf.WriteQueueSize)
+	x.p = p
+	x.dead = make(chan struct{})
+	return
 }
 
-func (c *conn) sendEncodedMessage(m []byte) (err error) {
+func (c *Conn) handle() {
+	go c.handleRead()
+	go c.handleWrite()
+}
+
+func (c *Conn) sendEncodedMessage(m []byte) (err error) {
+	// firs, try to send the message without timeout etc
+	select {
+	case c.wq <- m:
+		return
+	default:
+	}
+	// second, send the message using timeout (if configured)
+	// and chek quit and dead channels
 	var tm *time.Timer
 	var tc <-chan Time
 	if c.pool.conf.WriteTimeout > 0 {
@@ -108,6 +140,8 @@ func (c *conn) sendEncodedMessage(m []byte) (err error) {
 	case c.wq <- m:
 	case <-c.pool.quit:
 		err = ErrClosed
+	case <-c.dead:
+		err = ErrDeadConn
 	case <-tc: // write timeout
 		c.Close() // terminate connection
 		err = ErrWriteQueueFull
@@ -115,50 +149,77 @@ func (c *conn) sendEncodedMessage(m []byte) (err error) {
 	return
 }
 
-func (c *conn) handleRead() {
+func (c *Conn) isDead() (yep bool) {
+	select {
+	case <-c.dead:
+		yep = true
+	default:
+	}
+	return
+}
+
+func (c *Conn) handleRead() {
+	c.pool.Debugf("%s start read loop", c.Addr())
 	var (
-		err  error
-		head []byte = make([]byte, 4+PrefixLength)
-		typ  reflect.Type
-		ok   bool
+		err error
+
+		head []byte = make([]byte, PrefixLength+4)
+		p    Prefix
 		ln   uint32
 		l    int
+
 		body []byte
-		val  reflect.Value
+
+		ok  bool
+		typ reflect.Type
+		val reflect.Value
 	)
 	defer c.Close()
+	if c.pool.conf.Debug {
+		defer c.pool.Debugf("%s end read loop", c.Addr())
+	}
 	for {
 		select {
 		case <-c.pool.quit:
 			return
+		case <-c.dead:
+			return
 		default:
 		}
 		if _, err = c.r.Read(head); err != nil {
-			// TODO: handle error
+			if c.isDead() {
+				return // don't log about the error
+			}
+			c.pool.Printf("[ERR] %s reading error: %v", c.Addr(), err)
 			return
 		}
 		if bytes.Compare(head, ping) == 0 { // handle pings automatically
 			if err = c.sendEncodedMessage(pong); err != nil { // send pong back
-				// TODO: handle error
+				c.pool.Printf("[ERR] %s error sending PONG: %v", c.Addr(), err)
 				return
 			}
 			continue // and continue
 		}
-		if typ, ok = c.pool.rev[string(head[:4])]; !ok {
-			// TODO: handle error
+		copy(p[:], head) // create prefix from head[:PrefixLength]
+		if typ, ok = c.pool.rev[p]; !ok {
+			c.pool.Printf("[ERR] %s unregistered message received: %s",
+				c.Addr(), string(p[:]))
 			return
 		}
-		if err = encoder.DeserializeRaw(head[4:], &ln); err != nil {
-			// TODO: handle error
+		if err = encoder.DeserializeRaw(head[PrefixLength:], &ln); err != nil {
+			c.pool.Printf("[ERR] %s error decoding message length: %v",
+				c.Addr(), err)
 			return
 		}
 		l = int(ln)
 		if l < 0 {
-			// TODO: handle error
+			c.pool.Printf("[ERR] %s got message with negative length error: %d",
+				c.Addr(), l)
 			return
 		}
-		if l > c.pool.conf.MaxMessageSize {
-			// TODO: handle error
+		if c.pool.conf.MaxMessageSize > 0 && l > c.pool.conf.MaxMessageSize {
+			c.pool.Printf("[ERR] %s received message exceeds max size: %d",
+				c.Addr(), l)
 			return
 		}
 		if cap(body) < l {
@@ -167,11 +228,15 @@ func (c *conn) handleRead() {
 			body = body[:l] // but never drop it
 		}
 		if _, err = c.r.Read(body); err != nil {
+			if c.isDead() {
+				return // don't log about the error
+			}
+			c.pool.Printf("[ERR] %s reading error: %v", c.Addr(), err)
 			return
 		}
 		val = reflect.New(typ)
 		if err = encoder.DeserializeRawToValue(body, val); err != nil {
-			// TODO: handle error
+			c.pool.Printf("[ERR] %s decoding message error: %v", c.Addr(), err)
 			return
 		}
 		select {
@@ -185,7 +250,8 @@ func (c *conn) handleRead() {
 // handleWrite writes encoded messages to remote connection
 // using write-buffer (if configured) and sending pings
 // (if configured)
-func (c *conn) handleWrite() {
+func (c *Conn) handleWrite() {
+	c.pool.Debugf("%s start write loop", c.Addr())
 	var (
 		pingt *time.Ticker
 		pincc <-chan time.Time
@@ -208,11 +274,17 @@ func (c *conn) handleWrite() {
 		}
 	}
 	defer c.Close()
+	if c.pool.conf.Debug {
+		defer c.pool.Debugf("%s end write loop", c.Addr())
+	}
 	for {
 		select {
-		case data = <-c.wr:
+		case data = <-c.wq:
 			if _, err = c.w.Write(data); err != nil {
-				// TODO: handle error
+				if c.isDead() {
+					return // don't log about the error
+				}
+				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
 				return
 			}
 			// may be there are more then one message to
@@ -220,16 +292,24 @@ func (c *conn) handleWrite() {
 			continue
 		case <-pingc:
 			if _, err = c.w.Write(ping); err != nil {
-				// TODO: handle error
+				if c.isDead() {
+					return // don't log about the error
+				}
+				c.pool.Printf("[ERR] %s error writing ping: %v", c.Addr(), err)
 				return
 			}
 			if bw != nil && bw.Buffered() > 0 { // force the ping to be sent
 				if err = bw.Flush(); err != nil {
-					// TODO: handle error
+					if c.isDead() {
+						return // don't log about the error
+					}
+					c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
 					return
 				}
 			}
 		case <-c.pool.quit:
+			return
+		case <-c.dead:
 			return
 		default:
 		}
@@ -237,7 +317,10 @@ func (c *conn) handleWrite() {
 		// and the buffer is not empty
 		if bw != nil && bw.Buffered() > 0 {
 			if err = bw.Flush(); err != nil {
-				// TODO: handle error
+				if c.isDead() {
+					return // don't log about the error
+				}
+				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
 				return
 			}
 		}
@@ -245,24 +328,30 @@ func (c *conn) handleWrite() {
 }
 
 // Addr returns remote address
-func (c *conn) Addr() string {
+func (c *Conn) Addr() string {
 	return c.conn.RemoteAddr().String()
 }
 
 // Send given message to the connection
-func (c *conn) Send(m Message) (err error) {
-	err = c.sendEncodedMessage(c.pool.encodeMessage(m))
+func (c *Conn) Send(m Message) {
+	var err error
+	if err = c.sendEncodedMessage(c.pool.encodeMessage(m)); err != nil {
+		c.pool.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+		c.Close() // terminate the connection
+	}
 	return
 }
 
 // Broadcast the message to all other connections except this one
-func (c *conn) Broadcast(m Message) {
+func (c *Conn) Broadcast(m Message) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
 // Close connection
-func (c *conn) Close() (err error) {
+func (c *Conn) Close() (err error) {
 	c.releaseOnce.Do(func() {
+		close(c.dead)
+		c.pool.removeConnection(c.Addr())
 		c.pool.release()
 	})
 	err = c.conn.Close()
