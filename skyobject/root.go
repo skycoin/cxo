@@ -177,9 +177,6 @@ func (r *Root) Got() (set Set, err error) {
 		return
 	}
 	set = make(Set)
-	for _, schk := range r.reg.reg {
-		set.AddMissing(Reference(schk), r.cnt)
-	}
 	var vs []*Value = make([]*Value, 0, len(r.Refs))
 	var (
 		s *Schema

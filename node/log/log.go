@@ -1,4 +1,4 @@
-package node
+package log
 
 import (
 	"fmt"
@@ -50,18 +50,21 @@ func NewLogger(prefix string, debug bool) Logger {
 
 func (l *logger) Debug(args ...interface{}) {
 	if l.debug {
+		args = append([]interface{}{"[DBG] "}, args...)
 		l.Output(2, fmt.Sprint(args...))
 	}
 }
 
 func (l *logger) Debugln(args ...interface{}) {
 	if l.debug {
+		args = append([]interface{}{"[DBG]"}, args...)
 		l.Output(2, fmt.Sprintln(args...))
 	}
 }
 
 func (l *logger) Debugf(format string, args ...interface{}) {
 	if l.debug {
+		format = "[DBG] " + format
 		l.Output(2, fmt.Sprintf(format, args...))
 	}
 }

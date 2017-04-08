@@ -10,12 +10,12 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
+	"github.com/skycoin/cxo/rpc/server"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -23,18 +23,20 @@ func main() {
 	var (
 		err error
 
-		db *data.DB
-		so *skyobject.Container
-		n  *node.Node
+		db  *data.DB
+		so  *skyobject.Container
+		n   *node.Node
+		rpc *server.Server
 
 		nc node.Config
+		rc server.Config
 
 		pub cipher.PubKey
 
 		// flags
 		pubf string
 		addr string
-		port int
+		rpca string
 
 		sig chan os.Signal
 		buf *bytes.Buffer
@@ -45,8 +47,8 @@ func main() {
 
 	// parse flags
 	flag.StringVar(&pubf, "pub", "", "public key (feed)")
-	flag.StringVar(&addr, "a", "[::]", "address")
-	flag.IntVar(&port, "p", 44006, "port")
+	flag.StringVar(&addr, "a", "[::]44006", "address")
+	flag.StringVar(&rpca, "r", "[::]55006", "rpc address")
 
 	flag.Parse()
 
@@ -58,10 +60,11 @@ func main() {
 	db = data.NewDB()
 	so = skyobject.NewContainer(db)
 
-	nc = node.NewConfig()
+	nc, rc = node.NewConfig(), server.NewConfig()
 	nc.Name = "DRAIN"
-	nc.Address = addr
-	nc.Port = uint16(port)
+	nc.Listen = addr
+
+	rc.Address = rpca
 
 	nc.Debug = true
 
@@ -70,6 +73,13 @@ func main() {
 	defer n.Close()
 
 	n.Subscribe(pub) // subscribe to the feed
+
+	// rpc
+	rpc = server.NewServer(rc, n) // , so)
+	if err = rpc.Start(); err != nil {
+		log.Fatal("error starting RPC:", err)
+	}
+	defer rpc.Close()
 
 	sig = make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
@@ -86,40 +96,44 @@ func main() {
 			return
 		case <-n.Quiting():
 			return
-		case <-time.After(5 * time.Second):
+		default:
 			if stat := db.Stat(); lastStat.Total != stat.Total {
 				lastStat = stat
+				// print updated tree
 			} else {
 				continue
 			}
 		}
 
-		fmt.Fprintln(buf, "Inspect")
-		fmt.Fprintln(buf, "=======")
+		n.Execute(func() {
+			fmt.Fprintln(buf, "Inspect")
+			fmt.Fprintln(buf, "=======")
 
-		fmt.Fprintln(buf, "Database:", lastStat.String())
+			fmt.Fprintln(buf, "Database:", lastStat.String())
 
-		fmt.Fprintln(buf, "Objects tree")
+			fmt.Fprintln(buf, "Objects tree")
 
-		root := so.Root(pub)
-		if root == nil {
-			fmt.Fprintln(buf, "  no root object")
+			root := so.Root(pub)
+			if root == nil {
+				fmt.Fprintln(buf, "  no root object")
+				fmt.Println(buf.String())
+				return
+			}
+
+			vals, err := root.Values()
+			if err != nil {
+				fmt.Fprintln(buf, "ERROR: ", err)
+				fmt.Println(buf.String())
+				return
+			}
+			for _, val := range vals {
+				fmt.Fprintln(buf, "---")
+				inspect(buf, val, nil, "")
+				fmt.Fprintln(buf, "---")
+			}
 			fmt.Println(buf.String())
-			continue
-		}
+		})
 
-		vals, err := root.Values()
-		if err != nil {
-			fmt.Fprintln(buf, "ERROR: ", err)
-			fmt.Println(buf.String())
-			continue
-		}
-		for _, val := range vals {
-			fmt.Fprintln(buf, "---")
-			inspect(buf, val, nil, "")
-			fmt.Fprintln(buf, "---")
-		}
-		fmt.Println(buf.String())
 	}
 }
 

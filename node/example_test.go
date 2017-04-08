@@ -31,6 +31,20 @@ func Example() {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
 
+	//
+	// register objects
+	//
+
+	so.Register(
+		"Board", Board{},
+		"Thread", Thread{},
+		"Post", Post{},
+	)
+
+	//
+	// create node instance
+	//
+
 	conf := node.NewConfig()
 	conf.Name = "example node"
 	conf.Debug = true
@@ -49,16 +63,6 @@ func Example() {
 	// we need to subscribe to the feed to share it
 	n.Subscribe(pub)
 
-	//
-	// register objects
-	//
-
-	so.Register(
-		"Board", Board{},
-		"Thread", Thread{},
-		"Post", Post{},
-	)
-
 	// =========================================================================
 
 	//
@@ -67,35 +71,39 @@ func Example() {
 
 	// =========================================================================
 
-	// create root object using public key of the owner
-	root := so.NewRoot(pub)
+	// execute in main proccessing thread to be
+	// sure that accessing skyobject is thread safe
+	n.Execute(func() {
+		// create root object using public key of the owner
+		root := so.NewRoot(pub)
 
-	// inject first board (implicit touch)
-	root.Inject(Board{
-		Name: "The Board #1",
-		Threads: so.SaveArray(
-			Thread{
-				Name: "The Thread #1.1",
-				Posts: so.SaveArray(
-					Post{"The Post #1.1.1", "blah"},
-					Post{"The Post #1.1.2", "blah"},
-					Post{"The Post #1.1.3", "blah"},
-				),
-			},
-			Thread{
-				Name: "The Thread #1.2",
-				Posts: so.SaveArray(
-					Post{"The Post #1.2.1", "blah"},
-					Post{"The Post #1.2.2", "blah"},
-					Post{"The Post #1.2.3", "blah"},
-				),
-			},
-		),
+		// inject first board (implicit touch)
+		root.Inject(Board{
+			Name: "The Board #1",
+			Threads: so.SaveArray(
+				Thread{
+					Name: "The Thread #1.1",
+					Posts: so.SaveArray(
+						Post{"The Post #1.1.1", "blah"},
+						Post{"The Post #1.1.2", "blah"},
+						Post{"The Post #1.1.3", "blah"},
+					),
+				},
+				Thread{
+					Name: "The Thread #1.2",
+					Posts: so.SaveArray(
+						Post{"The Post #1.2.1", "blah"},
+						Post{"The Post #1.2.2", "blah"},
+						Post{"The Post #1.2.3", "blah"},
+					),
+				},
+			),
+		})
+		so.AddRoot(root, sec) // and sign
+
+		// share the root
+		n.Share(pub)
 	})
-	so.AddRoot(root, sec) // and sign
-
-	// share the root
-	n.Share(pub)
 
 	//
 	// some time required for replication
@@ -109,24 +117,27 @@ func Example() {
 
 	// =========================================================================
 
-	root = so.Root(pub)
-	if root == nil { // not found
-		// never happens for the example, because the Root exists
-		root = so.NewRoot(pub)
-	}
-	root.Inject(Board{ // implicit touch
-		Name: "The Board #2",
-		Threads: so.SaveArray(
-			Thread{
-				Name: "The Thread #2.1",
-				Posts: so.SaveArray(
-					Post{"The Post #2.1.1", "blah"},
-				),
-			},
-		),
+	n.Execute(func() {
+		root = so.Root(pub)
+		if root == nil { // not found
+			// never happens for the example, because the Root exists
+			root = so.NewRoot(pub)
+		}
+		root.Inject(Board{ // implicit touch
+			Name: "The Board #2",
+			Threads: so.SaveArray(
+				Thread{
+					Name: "The Thread #2.1",
+					Posts: so.SaveArray(
+						Post{"The Post #2.1.1", "blah"},
+					),
+				},
+			),
+		})
+		so.AddRoot(root, sec) // and sign
+		n.Share(pub)
+
 	})
-	so.AddRoot(root, sec) // and sign
-	n.Share(pub)
 
 	//
 	// some time required for replication
@@ -140,28 +151,30 @@ func Example() {
 
 	// =========================================================================
 
-	root = so.Root(pub)
-	if root == nil { // not found
-		// never happens for the example, because the Root exists
-		root = so.NewRoot(pub)
-	}
-	// root object works only with Dynamic objects
-	board := so.Save(
-		so.Dynamic(Board{ // implicit touch
-			Name: "The Board #3",
-			Threads: so.SaveArray(
-				Thread{
-					Name: "The Thread #3.1",
-					Posts: so.SaveArray(
-						Post{"The Post #3.1.1", "blah"},
-					),
-				},
-			),
-		}),
-	)
-	root.InjectHash(board) // inject an object using its hash
-	so.AddRoot(root, sec)  // and sign
-	n.Share(pub)
+	n.Execute(func() {
+		root = so.Root(pub)
+		if root == nil { // not found
+			// never happens for the example, because the Root exists
+			root = so.NewRoot(pub)
+		}
+		// root object works only with Dynamic objects
+		board := so.Save(
+			so.Dynamic(Board{ // implicit touch
+				Name: "The Board #3",
+				Threads: so.SaveArray(
+					Thread{
+						Name: "The Thread #3.1",
+						Posts: so.SaveArray(
+							Post{"The Post #3.1.1", "blah"},
+						),
+					},
+				),
+			}),
+		)
+		root.InjectHash(board) // inject an object using its hash
+		so.AddRoot(root, sec)  // and sign
+		n.Share(pub)
+	})
 
 	//
 	// some time required for replication
@@ -175,26 +188,28 @@ func Example() {
 
 	// =========================================================================
 
-	// create root object using public key of the owner
-	root = so.NewRoot(pub)
+	n.Execute(func() {
+		// create root object using public key of the owner
+		root = so.NewRoot(pub)
 
-	// inject first board (implicit touch)
-	root.Inject(Board{
-		Name: "The Board #4",
-		Threads: so.SaveArray(
-			Thread{
-				Name: "The Thread #4.1",
-				Posts: so.SaveArray(
-					Post{"The Post #4.1.1", "blah"},
-				),
-			},
-		),
+		// inject first board (implicit touch)
+		root.Inject(Board{
+			Name: "The Board #4",
+			Threads: so.SaveArray(
+				Thread{
+					Name: "The Thread #4.1",
+					Posts: so.SaveArray(
+						Post{"The Post #4.1.1", "blah"},
+					),
+				},
+			),
+		})
+		// replace previous root object with new one
+		so.AddRoot(root, sec) // and sign
+
+		// share the root
+		n.Share(pub)
 	})
-	// replace previous root object with new one
-	so.AddRoot(root, sec) // and sign
-
-	// share the root
-	n.Share(pub)
 
 	//
 	// some time required for replication

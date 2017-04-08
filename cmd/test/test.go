@@ -41,9 +41,8 @@ func main() {
 
 	// start source
 	source := exec.Command("./source/source",
-		"-a", "[::]",
-		"-p", "44000",
-		"-r", "55000", // rpc address
+		"-a", "[::]:44000",
+		"-r", "[::]:55000", // rpc address
 		"-pub", pub.Hex(),
 		"-sec", sec.Hex())
 	sourcePipe := &ColoredPipe{CYAN}
@@ -56,8 +55,8 @@ func main() {
 
 	// start drain
 	drain := exec.Command("./drain/drain",
-		"-a", "[::]",
-		"-p", "44006",
+		"-a", "[::]:44006",
+		"-r", "[::]:55006",
 		"-pub", pub.Hex())
 	drainPipe := &ColoredPipe{MAGENTA}
 	drain.Stderr, drain.Stdout = drainPipe, drainPipe
@@ -69,8 +68,7 @@ func main() {
 
 	// start node
 	node := exec.Command("../cxod/cxod",
-		"-address", "[::]",
-		"-port", "44001",
+		"-address", "[::]:44001",
 		"-name", "NODE",
 		"-rpc-address", "[::]:55001",
 		"-debug",

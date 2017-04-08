@@ -126,21 +126,21 @@ func TestRoot_Got(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		c.Register("User", User{})   // 1
-		c.Register("Group", Group{}) // +1 -> 2
-		c.Register("List", List{})   // +1 -> 3
-		c.Register("Man", Man{})     // +1 -> 4
-		root.Inject(Group{           // +1 -> 5
+		c.Register("User", User{})   // s: 1
+		c.Register("Group", Group{}) // s: +1 -> 2
+		c.Register("List", List{})   // s: +1 -> 3
+		c.Register("Man", Man{})     // s: +1 -> 4
+		root.Inject(Group{           // o: +1 -> 5
 			Name: "a group",
-			Leader: c.Save(User{ // obj = 1 -> 6
+			Leader: c.Save(User{ // o: +1 -> 6
 				"Billy Kid", 16, 90,
 			}),
 			Members: c.SaveArray(
-				User{"Bob Marley", 21, 0},   // 1 -> 7
-				User{"Alice Cooper", 19, 0}, // 1 -> 8
-				User{"Eva Brown", 30, 0},    // 1 -> 9
+				User{"Bob Marley", 21, 0},   // o: +1 -> 7
+				User{"Alice Cooper", 19, 0}, // o: +1 -> 8
+				User{"Eva Brown", 30, 0},    // o: +1 -> 9
 			),
-			Curator: c.Dynamic(Man{ // 2 -> 10
+			Curator: c.Dynamic(Man{ // o: +2 -> 10
 				Name:    "Ned Kelly",
 				Age:     28,
 				Seecret: []byte("secret key"),
@@ -162,10 +162,10 @@ func TestRoot_Got(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
 		root := c.NewRoot(pk)
-		c.Register("User", User{})   // 1
-		c.Register("Group", Group{}) // +1 -> 2
-		c.Register("List", List{})   // +1 -> 3
-		c.Register("Man", Man{})     // +1 -> 4
+		c.Register("User", User{})   // s: +1
+		c.Register("Group", Group{}) // s: +1 -> 2
+		c.Register("List", List{})   // s: +1 -> 3
+		c.Register("Man", Man{})     // s: +1 -> 4
 		leader := User{
 			"Billy Kid", 16, 90,
 		}
@@ -174,16 +174,16 @@ func TestRoot_Got(t *testing.T) {
 			User{"Alice Cooper", 19, 0},
 			User{"Eva Brown", 30, 0},
 		}
-		root.Inject(Group{ //  s  + o = 2 -> 3
+		root.Inject(Group{ // o: +1 -> 5
 			Name:    "a group",
 			Leader:  getHash(leader),
 			Members: getHashes(members...),
-			Curator: c.Dynamic(Man{ // s + o -> 5
+			Curator: c.Dynamic(Man{ // o: +1 -> 6
 				Name:    "Ned Kelly",
 				Age:     28,
 				Seecret: []byte("secret key"),
 				Owner:   Group{},
-				Friends: List{}, // s -> 6
+				Friends: List{},
 			}),
 		})
 		c.AddRoot(root, sk)

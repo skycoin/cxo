@@ -27,6 +27,8 @@ var (
 		"subscribe",
 		"disconnect",
 		"inject",
+		"want",
+		"got",
 		"info",
 		"stat",
 		"terminate",
@@ -161,6 +163,10 @@ func executeCommand(command string, rpc *client.Client,
 		err = disconnect(rpc, ss)
 	case "inject":
 		err = inject(rpc, ss)
+	case "want":
+		err = want(rpc, ss)
+	case "got":
+		err = got(rpc, ss)
 	case "info":
 		err = info(rpc)
 	case "stat":
@@ -195,6 +201,10 @@ func showHelp() {
     disconnect from given address
   inject <hash> <public key> <secret key>
     inject given hash to references of the root, update and share the root
+  want <public key>
+  	want returns list of hashes of missing object of given root object
+  got <public key>
+  	got returns list of objects given root object already has with size
   info
     obtain information about the node
   stat
@@ -315,6 +325,55 @@ func inject(rpc *client.Client, ss []string) (err error) {
 	}
 	if err = rpc.Inject(args); err == nil {
 		fmt.Println("  injected")
+	}
+	return
+}
+
+func want(rpc *client.Client, ss []string) (err error) {
+	var pub string
+	if pub, err = args(ss); err != nil {
+		return
+	}
+	var public cipher.PubKey
+	if public, err = cipher.PubKeyFromHex(pub); err != nil {
+		return
+	}
+	var list []cipher.SHA256
+	if list, err = rpc.Want(public); err == nil {
+		if len(list) == 0 {
+			fmt.Println("  no objects wanted")
+			return
+		}
+		for _, k := range list {
+			fmt.Println("  +", k.Hex())
+		}
+	}
+	return
+}
+
+func got(rpc *client.Client, ss []string) (err error) {
+	var pub string
+	if pub, err = args(ss); err != nil {
+		return
+	}
+	var public cipher.PubKey
+	if public, err = cipher.PubKeyFromHex(pub); err != nil {
+		return
+	}
+	var list map[cipher.SHA256]int
+	if list, err = rpc.Got(public); err == nil {
+		if len(list) == 0 {
+			fmt.Println("  no objects has got")
+			return
+		}
+		var total int
+		for k, l := range list {
+			total += l
+			fmt.Println("  +", k.Hex(), l)
+		}
+		fmt.Println("  -------------------------------")
+		fmt.Printf("  total objects: %d, total size %s\n",
+			len(list), data.HumanMemory(total))
 	}
 	return
 }

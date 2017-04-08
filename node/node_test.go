@@ -1,6 +1,7 @@
 package node
 
 import (
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -12,7 +13,13 @@ import (
 
 func newConfig() Config {
 	c := NewConfig()
-	c.Debug = testing.Verbose()
+	if testing.Verbose() {
+		c.Debug = true
+		c.Config.Debug = true
+	} else {
+		c.Out = ioutil.Discard
+		c.Config.Out = ioutil.Discard
+	}
 	return c
 }
 
@@ -114,14 +121,9 @@ func TestNode_sourceDrain(t *testing.T) {
 	defer drain.Close()
 	// subscribe to the feed
 	drain.Subscribe(pub)
-	// connect to source
-	info, err := source.Info()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	// # connect to source
 	// we don't have known hosts: use Connect method
-	if err = drain.Connect(info.Address); err != nil {
+	if err := drain.Connect(source.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
@@ -148,50 +150,32 @@ func TestNode_sourceDrain(t *testing.T) {
 func TestNode_sourcePipeDrain(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
-	//
-	// source
-	//
+	// # source
 	// create filled down node
 	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
 	source.Subscribe(pub) // subscribe to and share the feed
-	//
-	// pipe
-	//
+	// # pipe
 	pipe := newNode("pipe")
 	pipe.Start()
 	defer pipe.Close()
 	pipe.Subscribe(pub)
-	//
-	// drain
-	//
+	// # drain
 	drain := newNode("drain")
 	drain.Start()
 	defer drain.Close()
 	drain.Subscribe(pub)
-	//
-	// connect pipe to source
-	//
-	info, err := source.Info()
-	if err != nil {
+	// # connect pipe to source
+	t.Log("source address: ", source.pool.Address())
+	if err := pipe.Connect(source.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
-	if err = pipe.Connect(info.Address); err != nil {
-		t.Error(err)
-		return
-	}
-	//
-	// connect drain to pipe
-	//
-	info, err = pipe.Info()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if err = drain.Connect(info.Address); err != nil {
+	// # connect drain to pipe
+	t.Log("pipe address: ", pipe.pool.Address())
+	if err := drain.Connect(pipe.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
@@ -220,50 +204,30 @@ func TestNode_sourcePipeDrain(t *testing.T) {
 func TestNode_sourcePipeDrain2(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
-	//
-	// source
-	//
+	// # source
 	// create filled down node
 	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
 	source.Subscribe(pub) // subscribe to and share the feed
-	//
-	// pipe
-	//
+	// # pipe
 	pipe := newNode("pipe")
 	pipe.Start()
 	defer pipe.Close()
 	pipe.Subscribe(pub)
-	//
-	// drain
-	//
+	// # drain
 	drain := newNode("drain")
 	drain.Start()
 	defer drain.Close()
 	drain.Subscribe(pub)
-	//
-	// connect drain to pipe
-	//
-	info, err := pipe.Info()
-	if err != nil {
+	// # connect drain to pipe
+	if err := drain.Connect(pipe.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
-	if err = drain.Connect(info.Address); err != nil {
-		t.Error(err)
-		return
-	}
-	//
-	// connect pipe to source
-	//
-	info, err = source.Info()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if err = pipe.Connect(info.Address); err != nil {
+	// # connect pipe to source
+	if err := pipe.Connect(source.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
@@ -292,50 +256,30 @@ func TestNode_sourcePipeDrain2(t *testing.T) {
 func TestNode_sourcePipeDrain3(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
-	//
-	// source
-	//
+	// # source
 	// create filled down node
 	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
 	source.Subscribe(pub) // subscribe to and share the feed
-	//
-	// pipe
-	//
+	// # pipe
 	pipe := newNode("pipe")
 	pipe.Start()
 	defer pipe.Close()
 	pipe.Subscribe(pub)
-	//
-	// drain
-	//
+	// # drain
 	drain := newNode("drain")
 	drain.Start()
 	defer drain.Close()
 	drain.Subscribe(pub)
-	//
-	// connect pipe to source
-	//
-	info, err := source.Info()
-	if err != nil {
+	// # connect pipe to source
+	if err := pipe.Connect(source.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
-	if err = pipe.Connect(info.Address); err != nil {
-		t.Error(err)
-		return
-	}
-	//
-	// connect pipe to drain
-	//
-	info, err = drain.Info()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if err = pipe.Connect(info.Address); err != nil {
+	// # connect pipe to drain
+	if err := pipe.Connect(drain.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
@@ -364,50 +308,30 @@ func TestNode_sourcePipeDrain3(t *testing.T) {
 func TestNode_sourcePipeDrain4(t *testing.T) {
 	// the feed an downer
 	pub, sec := cipher.GenerateKeyPair()
-	//
-	// source
-	//
+	// # source
 	// create filled down node
 	source := filledNode(pub, sec)
 	source.Start()
 	defer source.Close()
 	// we need to subscribe to the node to make it share the feed
 	source.Subscribe(pub) // subscribe to and share the feed
-	//
-	// pipe
-	//
+	// # pipe
 	pipe := newNode("pipe")
 	pipe.Start()
 	defer pipe.Close()
 	pipe.Subscribe(pub)
-	//
-	// drain
-	//
+	// # drain
 	drain := newNode("drain")
 	drain.Start()
 	defer drain.Close()
 	drain.Subscribe(pub)
-	//
-	// connect pipe to drain
-	//
-	info, err := drain.Info()
-	if err != nil {
+	// # connect pipe to drain
+	if err := pipe.Connect(drain.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
-	if err = pipe.Connect(info.Address); err != nil {
-		t.Error(err)
-		return
-	}
-	//
-	// connect pipe to source
-	//
-	info, err = source.Info()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if err = pipe.Connect(info.Address); err != nil {
+	// # connect pipe to source
+	if err := pipe.Connect(source.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}

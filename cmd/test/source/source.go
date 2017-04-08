@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -66,13 +65,10 @@ func main() {
 		sec cipher.SecKey
 
 		// flags
-		pubf    string
-		secf    string
-		addr    string
-		port    int
-		rpcPort int
-
-		rpcAddress string
+		pubf string
+		secf string
+		addr string
+		rpca string
 	)
 
 	log.SetFlags(log.Lshortfile | log.Ltime)
@@ -81,9 +77,8 @@ func main() {
 	// parse flags
 	flag.StringVar(&pubf, "pub", "", "public key (feed)")
 	flag.StringVar(&secf, "sec", "", "secret key (owner)")
-	flag.StringVar(&addr, "a", "[::]", "address")
-	flag.IntVar(&port, "p", 44000, "port")
-	flag.IntVar(&rpcPort, "r", 55000, "rpc port")
+	flag.StringVar(&addr, "a", "[::]44000", "address")
+	flag.StringVar(&rpca, "r", "[::]:55000", "rpc address")
 
 	flag.Parse()
 
@@ -95,21 +90,27 @@ func main() {
 		log.Fatal(err)
 	}
 
-	rpcAddress = addr + ":" + strconv.Itoa(rpcPort)
-
 	// container
 	db = data.NewDB()
 	so = skyobject.NewContainer(db)
 
+	// register used schemas
+	so.Register(
+		"Board", Board{},
+		"Thread", Thread{},
+		"Post", Post{},
+		"User", User{},
+		"Man", Man{},
+	)
+
 	// node
 	nc, rc = node.NewConfig(), server.NewConfig()
 	nc.Name = "SOURCE"
-	nc.Address = addr
-	nc.Port = uint16(port)
+	nc.Listen = addr
 
 	nc.Debug = true
 
-	rc.Address = rpcAddress
+	rc.Address = rpca
 	n = node.NewNode(nc, db, so)
 	n.Start()
 	defer n.Close()
@@ -124,104 +125,102 @@ func main() {
 	}
 	defer rpc.Close()
 
-	// register used schemas
-	so.Register(
-		"Board", Board{},
-		"Thread", Thread{},
-		"Post", Post{},
-		"User", User{},
-		"Man", Man{},
-	)
-
-	// create and fill down the feed
-	root := so.NewRoot(pub)
-	root.Inject(Board{
-		Head: "Board #1",
-		Threads: so.SaveArray(
-			Thread{
-				Head: "Thread #1.1",
-				Posts: so.SaveArray(
-					Post{
-						Head: "Post #1.1.1",
-						Body: "Body #1.1.1",
-					},
-					Post{
-						Head: "Post #1.1.2",
-						Body: "Body #1.1.2",
-					},
-				),
-			},
-			Thread{
-				Head: "Thread #1.2",
-				Posts: so.SaveArray(
-					Post{
-						Head: "Post #1.2.1",
-						Body: "Body #1.2.1",
-					},
-					Post{
-						Head: "Post #1.2.2",
-						Body: "Body #1.2.2",
-					},
-				),
-			},
-			Thread{
-				Head: "Thread #1.3",
-				Posts: so.SaveArray(
-					Post{
-						Head: "Post #1.3.1",
-						Body: "Body #1.3.1",
-					},
-					Post{
-						Head: "Post #1.3.2",
-						Body: "Body #1.3.2",
-					},
-				),
-			},
-			Thread{
-				Head: "Thread #1.4",
-				Posts: so.SaveArray(
-					Post{
-						Head: "Post #1.4.1",
-						Body: "Body #1.4.1",
-					},
-					Post{
-						Head: "Post #1.4.2",
-						Body: "Body #1.4.2",
-					},
-				),
-			},
-		),
-		Owner: so.Dynamic(User{
-			Name:   "Billy Kid",
-			Age:    16,
-			Hidden: "secret",
-		}),
+	// thread safe
+	n.Execute(func() {
+		// create and fill down the feed
+		root := so.NewRoot(pub)
+		root.Inject(Board{
+			Head: "Board #1",
+			Threads: so.SaveArray(
+				Thread{
+					Head: "Thread #1.1",
+					Posts: so.SaveArray(
+						Post{
+							Head: "Post #1.1.1",
+							Body: "Body #1.1.1",
+						},
+						Post{
+							Head: "Post #1.1.2",
+							Body: "Body #1.1.2",
+						},
+					),
+				},
+				Thread{
+					Head: "Thread #1.2",
+					Posts: so.SaveArray(
+						Post{
+							Head: "Post #1.2.1",
+							Body: "Body #1.2.1",
+						},
+						Post{
+							Head: "Post #1.2.2",
+							Body: "Body #1.2.2",
+						},
+					),
+				},
+				Thread{
+					Head: "Thread #1.3",
+					Posts: so.SaveArray(
+						Post{
+							Head: "Post #1.3.1",
+							Body: "Body #1.3.1",
+						},
+						Post{
+							Head: "Post #1.3.2",
+							Body: "Body #1.3.2",
+						},
+					),
+				},
+				Thread{
+					Head: "Thread #1.4",
+					Posts: so.SaveArray(
+						Post{
+							Head: "Post #1.4.1",
+							Body: "Body #1.4.1",
+						},
+						Post{
+							Head: "Post #1.4.2",
+							Body: "Body #1.4.2",
+						},
+					),
+				},
+			),
+			Owner: so.Dynamic(User{
+				Name:   "Billy Kid",
+				Age:    16,
+				Hidden: "secret",
+			}),
+		})
+		so.AddRoot(root, sec)
+		n.Share(pub)
 	})
-	so.AddRoot(root, sec)
-	n.Share(pub)
 
 	// wait some time to be sure that the rpc was started
 	time.Sleep(1 * time.Second)
+
 	// and inject another one using CLI
-	hash := so.Save(so.Dynamic(
-		Board{
-			"Board #2",
-			so.SaveArray(
-				Thread{
-					"Thread #2.1",
-					so.SaveArray(Post{"Post #2.1.1", "Body #2.1.1"}),
-				},
-			),
-			so.Dynamic(Man{
-				Name: "Tom Cobley",
-				Age:  89,
-			}),
-		},
-	))
+	var hash skyobject.Reference
+	n.Execute(func() {
+		hash = so.Save(so.Dynamic(
+			Board{
+				"Board #2",
+				so.SaveArray(
+					Thread{
+						"Thread #2.1",
+						so.SaveArray(Post{"Post #2.1.1", "Body #2.1.1"}),
+					},
+				),
+				so.Dynamic(Man{
+					Name: "Tom Cobley",
+					Age:  89,
+				}),
+			},
+		))
+	})
 
 	// ../cli/cli -a "[::]:4000" -e "inject HASH PUB SEC"
 	inject := exec.Command(CLI,
-		"-a", rpcAddress,
+		"-a", rpca,
 		"-e", "inject "+hash.String()+" "+pub.Hex()+" "+sec.Hex())
 	if err = inject.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
