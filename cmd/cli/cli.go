@@ -206,7 +206,7 @@ func showHelp() {
   got <public key>
   	got returns list of objects given root object already has with size
   info
-    obtain information about the node
+    obtain information about the node (listening address and list of feeds)
   stat
     obtain database statistic
   terminate
@@ -244,11 +244,8 @@ func info(rpc *client.Client) (err error) {
 		fmt.Println("  There aren't subscriptions")
 		return
 	}
-	for pk, addreses := range info.Feeds {
+	for _, pk := range info.Feeds {
 		fmt.Println("  + ", pk.Hex())
-		for _, a := range addreses {
-			fmt.Println("    - ", a)
-		}
 	}
 	return
 }

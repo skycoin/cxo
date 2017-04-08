@@ -98,7 +98,7 @@ func (d *DB) AddAutoKey(data []byte) (key cipher.SHA256) {
 // Stat return statistic of the DB
 func (d *DB) Stat() (s Stat) {
 	d.RLock()
-	d.RUnlock()
+	defer d.RUnlock()
 	s.Total = len(d.data)
 	for _, v := range d.data {
 		s.Memory += len(v)
