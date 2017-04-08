@@ -4,19 +4,19 @@ set -e
 
 echo "build cxod"
 cd ../cxod
-go build
+go build -race
 echo "build cli"
 cd ../cli
-go build
+go build -race
 echo "build test"
 cd ../test
-go build
+go build -race
 echo "build source"
 cd source
-go build
+go build -race
 echo "build drain"
 cd ../drain
-go build
+go build -race
 echo "start tests"
 cd ..
 ./test

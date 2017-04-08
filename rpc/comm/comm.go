@@ -7,8 +7,8 @@ import (
 
 // Reply of Info mehthod of node
 type Info struct {
-	Address string                     // listening address
-	Feeds   map[cipher.PubKey][]string // feed -> connections
+	Address string          // listening address
+	Feeds   []cipher.PubKey // feed
 }
 
 // Arguments for Inject method of node

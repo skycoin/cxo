@@ -107,19 +107,17 @@ func (n *Node) List() []string {
 //
 
 // Info is for RPC. It returns all useful inforamtions about the node
-// except statistic. I.e. it returns listening address
+// except statistic. I.e. it returns listening address and feed the node
+// subscribed to
 func (n *Node) Info() (info comm.Info, err error) {
 	err = n.enqueueRpcEvent(func() {
 		info.Address = n.pool.Address()
-		info.Feeds = make(map[cipher.PubKey][]string)
+		if len(n.subs) == 0 {
+			return
+		}
+		info.Feeds = make([]cipher.PubKey, 0, len(n.subs))
 		for pk := range n.subs {
-			list := make([]string, 0, 5)
-			for _, address := range n.conf.Known[pk] {
-				if n.pool.IsConnExist(address) {
-					list = append(list, address)
-				}
-			}
-			info.Feeds[pk] = list
+			info.Feeds = append(info.Feeds, pk)
 		}
 	})
 	return
@@ -133,7 +131,10 @@ func (n *Node) Stat() (stat data.Stat, err error) {
 	return
 }
 
-// Terminate is the same as Close but designed for RPC
+// Terminate is the same as Close but designed for RPC.
+// If a node created with Config, RemoteClose field of which
+// set to true then it's possible to terminate the node
+// using RPC. Otherwise, the method returns ErrNotAllowed
 func (n *Node) Terminate() (err error) {
 	if !n.conf.RemoteClose {
 		err = ErrNotAllowed
@@ -180,7 +181,6 @@ func (n *Node) Want(pub cipher.PubKey) (w []cipher.SHA256, err error) {
 		for k := range set {
 			w = append(w, cipher.SHA256(k))
 		}
-		return
 	})
 	return
 }
@@ -209,7 +209,6 @@ func (n *Node) Got(pub cipher.PubKey) (g map[cipher.SHA256]int, err error) {
 			data, _ := n.db.Get(cipher.SHA256(k))
 			g[cipher.SHA256(k)] = len(data)
 		}
-		return
 	})
 	return
 }
