@@ -11,9 +11,9 @@ import (
 const (
 	MaxConnections  int           = 1024
 	MaxMessageSize  int           = 8192
-	DialTimeout     time.Duration = 5 * time.Second
-	ReadTimeout     time.Duration = 5 * time.Second
-	WriteTimeout    time.Duration = 5 * time.Second
+	DialTimeout     time.Duration = 28 * time.Second
+	ReadTimeout     time.Duration = 28 * time.Second
+	WriteTimeout    time.Duration = 28 * time.Second
 	ReadBufferSize  int           = 4096
 	WriteBufferSize int           = 4096
 	ReadQueueSize   int           = 64 * 256 // 1/4
