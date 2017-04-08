@@ -19,7 +19,7 @@ keep the data and pass the data to the drain.
 
 + source "[::]:55000"
 + drain "[::]:55006"
-+ cxod (pipe) "[::]:55001"
++ cxod (pipes) "[::]:55001-5"
 
 ##### Explore running instances
 
