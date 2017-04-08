@@ -338,6 +338,6 @@ func (d *deadWriter) Write(p []byte) (n int, err error) {
 	if err = d.c.SetWriteDeadline(time.Now().Add(d.t)); err != nil {
 		return
 	}
-	n, err = d.Write(p)
+	n, err = d.c.Write(p)
 	return
 }

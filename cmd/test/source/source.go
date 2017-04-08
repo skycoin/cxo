@@ -104,8 +104,7 @@ func main() {
 	// node
 	nc, rc = node.NewConfig(), server.NewConfig()
 	nc.Name = "SOURCE"
-	nc.Address = addr
-	nc.Port = uint16(port)
+	nc.Listen = addr + ":" + strconv.Itoa(port)
 
 	nc.Debug = true
 

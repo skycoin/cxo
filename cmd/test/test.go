@@ -56,8 +56,7 @@ func main() {
 
 	// start drain
 	drain := exec.Command("./drain/drain",
-		"-a", "[::]",
-		"-p", "44006",
+		"-a", "[::]:44006",
 		"-pub", pub.Hex())
 	drainPipe := &ColoredPipe{MAGENTA}
 	drain.Stderr, drain.Stdout = drainPipe, drainPipe
@@ -69,8 +68,7 @@ func main() {
 
 	// start node
 	node := exec.Command("../cxod/cxod",
-		"-address", "[::]",
-		"-port", "44001",
+		"-address", "[::]:44001",
 		"-name", "NODE",
 		"-rpc-address", "[::]:55001",
 		"-debug",

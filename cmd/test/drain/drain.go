@@ -34,7 +34,6 @@ func main() {
 		// flags
 		pubf string
 		addr string
-		port int
 
 		sig chan os.Signal
 		buf *bytes.Buffer
@@ -45,8 +44,7 @@ func main() {
 
 	// parse flags
 	flag.StringVar(&pubf, "pub", "", "public key (feed)")
-	flag.StringVar(&addr, "a", "[::]", "address")
-	flag.IntVar(&port, "p", 44006, "port")
+	flag.StringVar(&addr, "a", "[::]44006", "address")
 
 	flag.Parse()
 
@@ -60,8 +58,7 @@ func main() {
 
 	nc = node.NewConfig()
 	nc.Name = "DRAIN"
-	nc.Address = addr
-	nc.Port = uint16(port)
+	nc.Listen = addr
 
 	nc.Debug = true
 

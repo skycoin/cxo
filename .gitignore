@@ -41,4 +41,8 @@ cmd/test/drain/drain
 skyobject/cover.out
 skyobject/cover.html
 
-node/pool
+node/cover.out
+node/cover.html
+
+node/gnet/cover.out
+node/gnet/cover.html

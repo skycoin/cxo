@@ -98,7 +98,7 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 
 // Start is used to launch the Node. The Start is non-blocking
 func (n *Node) Start() {
-	n.Debug("[DBG] starting node")
+	n.Debug("starting node")
 	// be sure that the map is not nil
 	if n.conf.Known == nil {
 		n.conf.Known = make(map[cipher.PubKey][]string)
@@ -202,7 +202,7 @@ func (n *Node) subscribe() {
 
 // gnet callback
 func (n *Node) onConnect(c *gnet.Conn) {
-	n.Debug("[DBG] got new connection ", c.Addr())
+	n.Debug("got new connection ", c.Addr())
 	select {
 	case n.connecte <- c:
 	case <-n.quit:
@@ -214,7 +214,7 @@ func (n *Node) handle(quit, done chan struct{},
 	connecte chan *gnet.Conn, msge <-chan gnet.Message, rpce chan rpcEvent,
 	share chan cipher.PubKey) {
 
-	n.Debug("[DBG] start handling events")
+	n.Debug("start handling events")
 
 	defer close(done)
 	defer n.pool.Close()
@@ -257,6 +257,7 @@ func (n *Node) handleShareEvent(se cipher.PubKey, want skyobject.Set) {
 // 1) request roots the node subscribed to but hasn't got
 // 2) request newer roots the node subscribed to and already has
 func (n *Node) handleConnectEvent(ce *gnet.Conn, want skyobject.Set) {
+	n.Debug("handle new connection: ", ce.Addr())
 	if len(n.subs) == 0 {
 		return
 	}
@@ -270,6 +271,7 @@ func (n *Node) handleConnectEvent(ce *gnet.Conn, want skyobject.Set) {
 }
 
 func (n *Node) handleMsgEvent(me gnet.Message, want skyobject.Set) {
+	n.Debugf("handle message: %T", me.Value)
 	switch x := me.Value.(type) {
 	case *Announce:
 		if _, ok := want[skyobject.Reference(x.Hash)]; ok {
@@ -328,7 +330,7 @@ func (n *Node) handleMsgEvent(me gnet.Message, want skyobject.Set) {
 			return
 		}
 		if !ok {
-			n.Debug("[DBG] older root")
+			n.Debug("older root")
 			return
 		}
 		root := n.so.Root(x.Pub)
@@ -376,7 +378,7 @@ func (n *Node) newWanted(want skyobject.Set) (nww skyobject.Set) {
 
 func (n *Node) close() {
 	n.once.Do(func() {
-		n.Debug("[DBG] closing node...")
+		n.Debug("closing node...")
 		close(n.quit)
 	})
 }
@@ -386,7 +388,7 @@ func (n *Node) close() {
 func (n *Node) Close() {
 	n.close()
 	<-n.done
-	n.Debug("[DBG] node was closed")
+	n.Debug("node was closed")
 }
 
 // Quiting is used to detect when the node going down.

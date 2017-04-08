@@ -29,22 +29,17 @@ func getConfigs() (nc node.Config, rc server.Config) {
 	nc = node.NewConfig()
 	rc = server.NewConfig()
 	//
-	flag.StringVar(&nc.Address,
+	flag.StringVar(&nc.Listen,
 		"address",
 		ADDRESS,
 		"Address to listen on. Set to empty string for arbitrary assignment")
-	var port int
-	flag.IntVar(&port,
-		"port",
-		PORT,
-		"Port to listen on. Set to 0 for arbitrary assignment")
 	flag.IntVar(&nc.MaxConnections,
 		"max-conn",
 		nc.MaxConnections,
 		"Connection limits")
-	flag.IntVar(&nc.MaxMessageLength,
+	flag.IntVar(&nc.MaxMessageSize,
 		"max-msg",
-		nc.MaxMessageLength,
+		nc.MaxMessageSize,
 		"Messages greater than length are rejected and the sender disconnected")
 	flag.DurationVar(&nc.DialTimeout,
 		"dial-tm",
@@ -61,13 +56,14 @@ func getConfigs() (nc node.Config, rc server.Config) {
 		nc.WriteTimeout,
 		"Timeout for writing to a connection. Set to 0 to default to the"+
 			" system's timeout")
-	flag.IntVar(&nc.BroadcastResultSize,
-		"broadcast-result",
-		nc.BroadcastResultSize,
-		"Broadcast result buffers")
-	flag.IntVar(&nc.ConnectionWriteQueueSize,
+	flag.IntVar(&nc.WriteQueueSize,
 		"write-queue",
-		nc.ConnectionWriteQueueSize,
+		nc.WriteQueueSize,
+		"Individual connections' send queue size. This should be increased"+
+			" if send volume per connection is high, so as not to block")
+	flag.IntVar(&nc.ReadQueueSize,
+		"read-queue",
+		nc.ReadQueueSize,
 		"Individual connections' send queue size. This should be increased"+
 			" if send volume per connection is high, so as not to block")
 
@@ -79,9 +75,9 @@ func getConfigs() (nc node.Config, rc server.Config) {
 		"name",
 		nc.Name,
 		"name of the node")
-	flag.DurationVar(&nc.Ping,
+	flag.DurationVar(&nc.PingInterval,
 		"ping",
-		nc.Ping,
+		nc.PingInterval,
 		"ping interval (0 = disabled)")
 
 	flag.BoolVar(&nc.RemoteClose,
@@ -131,8 +127,6 @@ func getConfigs() (nc node.Config, rc server.Config) {
 		}
 		nc.Subscribe = append(nc.Subscribe, pk)
 	}
-
-	nc.Port = uint16(port)
 
 	return
 }

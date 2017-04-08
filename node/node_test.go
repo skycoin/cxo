@@ -1,6 +1,7 @@
 package node
 
 import (
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -12,7 +13,12 @@ import (
 
 func newConfig() Config {
 	c := NewConfig()
-	c.Debug = testing.Verbose()
+	if testing.Verbose() {
+		c.Debug = true
+		c.Config.Debug = true
+	} else {
+		c.Config.Out = ioutil.Discard
+	}
 	return c
 }
 

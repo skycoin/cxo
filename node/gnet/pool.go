@@ -350,7 +350,7 @@ func NewPool(c Config) (p *Pool) {
 }
 
 func (p *Pool) sendPings() {
-	p.Debug("broadcast PING every", p.conf.PingInterval)
+	p.Debug("broadcast PING every ", p.conf.PingInterval)
 	var pingt *time.Ticker = time.NewTicker(p.conf.PingInterval)
 	defer pingt.Stop()
 	if p.conf.Debug {

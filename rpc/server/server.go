@@ -117,11 +117,8 @@ func (s *Server) Inject(args comm.Inject, _ *struct{}) (err error) {
 	return
 }
 
-func (s *Server) List(_ struct{}, list *[]string) (err error) {
-	var l []string
-	if l, err = s.n.List(); err != nil {
-		return
-	}
+func (s *Server) List(_ struct{}, list *[]string) (_ error) {
+	var l []string = s.n.List()
 	*list = l
 	return
 }
