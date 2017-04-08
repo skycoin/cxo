@@ -12,6 +12,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
+	nlog "github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/rpc/server"
 	"github.com/skycoin/cxo/skyobject"
 )
@@ -105,10 +106,9 @@ func main() {
 
 	// node
 	nc, rc = node.NewConfig(), server.NewConfig()
-	nc.Name = "SOURCE"
+	nc.Logger = nlog.NewLogger("[SOURCE]", true)
+	nc.Config.Logger = nlog.NewLogger("[P:SOURCE]", true) // pool
 	nc.Listen = addr
-
-	nc.Debug = true
 
 	rc.Address = rpca
 	n = node.NewNode(nc, db, so)

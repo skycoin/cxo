@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"testing"
 	"time"
+
+	"github.com/skycoin/cxo/node/log"
 )
 
 //
@@ -13,22 +15,30 @@ import (
 //
 
 func testConfig() (c Config) {
-	c = NewConfig("test", nil)
+	c = NewConfig()
 	c.PingInterval = 0 // prevent
 	c.WriteTimeout = 0 // start
 	c.ReadTimeout = 0  // sending pings
 	if testing.Verbose() {
-		c.Debug = true
+		c.Logger = log.NewLogger("[test] ", true)
 	} else {
-		c.Debug = false
-		c.Out = ioutil.Discard
+		c.Logger = log.NewLogger("", false)
+		c.Logger.SetOutput(ioutil.Discard)
 	}
 	return
 }
 
 func testConfigName(name string) (c Config) {
-	c = testConfig()
-	c.Name = name
+	c = NewConfig()
+	c.PingInterval = 0 // prevent
+	c.WriteTimeout = 0 // start
+	c.ReadTimeout = 0  // sending pings
+	if testing.Verbose() {
+		c.Logger = log.NewLogger("["+name+"] ", true)
+	} else {
+		c.Logger = log.NewLogger("", false)
+		c.Logger.SetOutput(ioutil.Discard)
+	}
 	return
 }
 

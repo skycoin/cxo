@@ -130,10 +130,10 @@ func (c *Conn) handleRead() {
 		typ reflect.Type
 		val reflect.Value
 	)
-	defer c.close(true, true) // remove, sync
-	if c.pool.conf.Debug {
-		defer c.pool.Debugf("%s end read loop", c.Addr())
-	}
+	defer func() {
+		c.close(true, true) // remove, sync
+		c.pool.Debugf("%s end read loop", c.Addr())
+	}()
 	for {
 		if c.isClosed() {
 			return
@@ -220,10 +220,10 @@ func (c *Conn) handleWrite() {
 			c.pool.Panicf("buffered writer is not *bufio.Writer: %T", c.w)
 		}
 	}
-	defer c.close(true, true) // remove, sync
-	if c.pool.conf.Debug {
-		defer c.pool.Debugf("%s end write loop", c.Addr())
-	}
+	defer func() {
+		c.close(true, true) // remove, sync
+		c.pool.Debugf("%s end write loop", c.Addr())
+	}()
 WriteLoop:
 	for {
 		select {

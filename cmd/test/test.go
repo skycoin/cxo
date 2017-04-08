@@ -69,7 +69,8 @@ func main() {
 	// start node
 	node := exec.Command("../cxod/cxod",
 		"-address", "[::]:44001",
-		"-name", "NODE",
+		"-log-prefix", "NODE",
+		"-debug",
 		"-rpc-address", "[::]:55001",
 		"-debug",
 		pub.Hex(), // subscribe to the feed on start
