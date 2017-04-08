@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 
@@ -11,6 +10,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
+	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/rpc/server"
 	"github.com/skycoin/cxo/skyobject"
 )
@@ -25,6 +25,7 @@ const (
 var knownHosts = map[cipher.SHA256][]string{}
 
 func getConfigs() (nc node.Config, rc server.Config) {
+	var lc log.Config
 	// get defaults
 	nc = node.NewConfig()
 	rc = server.NewConfig()
@@ -33,52 +34,10 @@ func getConfigs() (nc node.Config, rc server.Config) {
 		"address",
 		ADDRESS,
 		"Address to listen on. Set to empty string for arbitrary assignment")
-	flag.IntVar(&nc.MaxConnections,
-		"max-conn",
-		nc.MaxConnections,
-		"Connection limits")
-	flag.IntVar(&nc.MaxMessageSize,
-		"max-msg",
-		nc.MaxMessageSize,
-		"Messages greater than length are rejected and the sender disconnected")
-	flag.DurationVar(&nc.DialTimeout,
-		"dial-tm",
-		nc.DialTimeout,
-		"Timeout is the timeout for dialing new connections. Use a timeout"+
-			" of 0 to ignore timeout")
-	flag.DurationVar(&nc.ReadTimeout,
-		"read-tm",
-		nc.ReadTimeout,
-		"Timeout for reading from a connection. Set to 0 to default to the"+
-			" system's timeout")
-	flag.DurationVar(&nc.WriteTimeout,
-		"write-tm",
-		nc.WriteTimeout,
-		"Timeout for writing to a connection. Set to 0 to default to the"+
-			" system's timeout")
-	flag.IntVar(&nc.WriteQueueSize,
-		"write-queue",
-		nc.WriteQueueSize,
-		"Individual connections' send queue size. This should be increased"+
-			" if send volume per connection is high, so as not to block")
-	flag.IntVar(&nc.ReadQueueSize,
-		"read-queue",
-		nc.ReadQueueSize,
-		"Individual connections' send queue size. This should be increased"+
-			" if send volume per connection is high, so as not to block")
 
-	flag.BoolVar(&nc.Debug,
-		"debug",
-		nc.Debug,
-		"show debug logs")
-	flag.StringVar(&nc.Name,
-		"name",
-		nc.Name,
-		"name of the node")
-	flag.DurationVar(&nc.PingInterval,
-		"ping",
-		nc.PingInterval,
-		"ping interval (0 = disabled)")
+	nc.Config.FromFlags() // gnet.Config
+
+	lc.FromFlags() // logger configs
 
 	flag.BoolVar(&nc.RemoteClose,
 		"remote-close",
@@ -121,12 +80,16 @@ func getConfigs() (nc node.Config, rc server.Config) {
 	for _, sb := range flag.Args() { // subscribe
 		pk, err := cipher.PubKeyFromHex(sb)
 		if err != nil {
-			log.Fatalf("malformed public key to subscribe to:\n"+
+			fmt.Fprintf(os.Stderr, "malformed public key to subscribe to:\n"+
 				"  %q\n"+
 				"  %v\n", sb, err)
+			os.Exit(1)
 		}
 		nc.Subscribe = append(nc.Subscribe, pk)
 	}
+
+	nc.Logger = log.NewLogger("["+lc.Prefix+"] ", lc.Debug)
+	nc.Config.Logger = log.NewLogger("[p:"+lc.Prefix+"] ", lc.Debug)
 
 	return
 }
@@ -183,7 +146,6 @@ func main() {
 	//
 
 	if rc.Enable {
-		// TODO: add RPC control to skyobject
 		rpc = server.NewServer(rc, n) // , so)
 		if err = rpc.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, "error starting RPC:", err)

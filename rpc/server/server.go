@@ -62,7 +62,7 @@ func NewServer(conf Config, n *node.Node) *Server {
 
 // Start is used to launch RPC server
 func (s *Server) Start() (err error) {
-	s.n.Debug("[DBG] [RPC] staring RPC server")
+	s.n.Debug("[RPC] staring RPC server")
 	var l net.Listener
 	if l, err = net.Listen("tcp", s.c.Address); err != nil {
 		return
@@ -89,10 +89,10 @@ func (s *Server) handleQuit(quit chan struct{}, l net.Listener) {
 
 // Close is used to shutdown the Server
 func (s *Server) Close() {
-	s.n.Debug("[DBG] [RPC] closing RPC...")
+	s.n.Debug("[RPC] closing RPC...")
 	close(s.quit)
 	<-s.done
-	s.n.Debug("[DBG] [RPC] RPC was closed")
+	s.n.Debug("[RPC] RPC was closed")
 }
 
 //

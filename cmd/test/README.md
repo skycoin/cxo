@@ -19,7 +19,7 @@ keep the data and pass the data to the drain.
 
 + source "[::]:55000"
 + drain "[::]:55006"
-+ cxod (pipe) "[::]:55001"
++ cxod (pipes) "[::]:55001-5"
 
 ##### Explore running instances
 
@@ -97,3 +97,5 @@ Owner: <reference>
 ### Bash script
 
 There is `run.sh` file
+
+Use `./run.sh 2>&1 | tee output.out` to keep output in file to explore it later

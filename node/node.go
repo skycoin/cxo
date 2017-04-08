@@ -2,7 +2,6 @@ package node
 
 import (
 	"errors"
-	"io"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -24,36 +23,28 @@ var (
 	ErrMalformedMessage = errors.New("malformed message")
 )
 
-//
-// TODO: use logger instad of configs for node and node/gnet
-//
-
 // A Config represents configurations of Node
 type Config struct {
-	gnet.Config
+	gnet.Config // pool configurations
 
 	// Known is a list of known addresses (public key -> addresses)
-	Known map[cipher.PubKey][]string
-	Debug bool   //show debug logs
-	Name  string // name of the node, that used as log prefix
-
-	Listen string // listening address
-
-	RPCEvents int // rpc events chan
-
+	Known     map[cipher.PubKey][]string
 	Subscribe []cipher.PubKey // subscribe to on launch
+	Listen    string          // listening address
 
 	// RemoteClose is used to deny or allow close the Node using RPC
 	RemoteClose bool
+	RPCEvents   int // rpc events chan
 
-	// Out for ligs. If the Out is nil then default (os.Stderr) used
-	Out io.Writer
+	// Logger for logs. If the Logger is nil
+	// then default is used
+	Logger log.Logger
 }
 
 // NewConfig creates Config filled down with default values
 func NewConfig() Config {
 	return Config{
-		Config:    gnet.NewConfig("", nil),
+		Config:    gnet.NewConfig(),
 		RPCEvents: 10,
 	}
 }
@@ -90,20 +81,18 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) (n *Node) {
 	if so == nil {
 		panic("NewNode: given container is nil")
 	}
-	if conf.Name == "" {
-		conf.Name = "node"
+	if conf.Logger == nil {
+		conf.Logger = log.NewLogger("", false)
 	}
-	conf.Config.Debug = conf.Debug
-	conf.Config.Name = "p:" + conf.Name
+	if conf.Config.Logger == nil {
+		conf.Config.Logger = conf.Logger // same logger for pool
+	}
 	n = &Node{
-		Logger: log.NewLogger("["+conf.Name+"] ", conf.Debug),
+		Logger: conf.Logger,
 		conf:   conf,
 		db:     db,
 		so:     so,
 		subs:   make(map[cipher.PubKey]struct{}),
-	}
-	if conf.Out != nil {
-		n.SetOutput(conf.Out)
 	}
 	return
 }

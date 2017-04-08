@@ -1,24 +1,24 @@
 package gnet
 
 import (
-	"io"
-	"os"
+	"flag"
 	"time"
+
+	"github.com/skycoin/cxo/node/log"
 )
 
 // config defaults
 const (
 	MaxConnections  int           = 1024
 	MaxMessageSize  int           = 8192
-	DialTimeout     time.Duration = 5 * time.Second
-	ReadTimeout     time.Duration = 5 * time.Second
-	WriteTimeout    time.Duration = 5 * time.Second
+	DialTimeout     time.Duration = 28 * time.Second
+	ReadTimeout     time.Duration = 28 * time.Second
+	WriteTimeout    time.Duration = 28 * time.Second
 	ReadBufferSize  int           = 4096
 	WriteBufferSize int           = 4096
 	ReadQueueSize   int           = 64 * 256 // 1/4
 	WriteQueueSize  int           = 64
 	PingInterval    time.Duration = 5 * time.Second
-	Debug           bool          = false
 )
 
 // ConnectionHandler represents function that used
@@ -69,21 +69,17 @@ type Config struct {
 	// interval is greater too
 	PingInterval time.Duration // ping interval
 
-	Debug bool   // print debug logs
-	Name  string // name for logs (used as prefix)
-
 	// ConnectionHandler is a handler that called whe
 	// a new connections was created
 	ConnectionHandler ConnectionHandler
 
-	// Out is used for logging. If the out is nil, then
-	// default output is used (os.Stderr)
-	Out io.Writer
+	// Logger to use. If it's nil then default logger used
+	Logger log.Logger
 }
 
 // NewConfig returns Config filled with defaults valus
 // and given name
-func NewConfig(name string, handler ConnectionHandler) (c Config) {
+func NewConfig() (c Config) {
 	c.MaxConnections = MaxConnections
 	c.MaxMessageSize = MaxMessageSize
 	c.DialTimeout = DialTimeout
@@ -94,9 +90,6 @@ func NewConfig(name string, handler ConnectionHandler) (c Config) {
 	c.ReadQueueSize = ReadQueueSize
 	c.WriteQueueSize = WriteQueueSize
 	c.PingInterval = PingInterval
-	c.Debug = Debug
-	c.Name = name
-	c.ConnectionHandler = handler
 	return
 }
 
@@ -143,8 +136,57 @@ func (c *Config) applyDefaults() {
 	if c.PingInterval < mt {
 		c.PingInterval = mt
 	}
-	if c.Out == nil {
-		c.Out = os.Stderr
-	}
 	return
+}
+
+// FromFlags is helper to obtain value s from
+// commandline flags. Values of the struct will
+// be set after flag.Parse() call. I.e. call the
+// method before flag.Parse(), use the Config after
+// flag.Parse()
+func (c *Config) FromFlags() {
+	flag.IntVar(&c.MaxConnections,
+		"max-conn",
+		MaxConnections,
+		"max connections")
+	flag.IntVar(&c.MaxMessageSize,
+		"max-msg-size",
+		MaxMessageSize,
+		"max message size")
+
+	flag.DurationVar(&c.DialTimeout,
+		"dial-timeout",
+		DialTimeout,
+		"dial timeout")
+	flag.DurationVar(&c.ReadTimeout,
+		"read-timeout",
+		ReadTimeout,
+		"read timeout")
+	flag.DurationVar(&c.WriteTimeout,
+		"write-timeout",
+		WriteTimeout,
+		"write timeout")
+
+	flag.IntVar(&c.ReadBufferSize,
+		"read-buf",
+		ReadBufferSize,
+		"reading buffer size")
+	flag.IntVar(&c.WriteBufferSize,
+		"write-buf",
+		WriteBufferSize,
+		"writing buffer size")
+
+	flag.IntVar(&c.ReadQueueSize,
+		"readq",
+		ReadQueueSize,
+		"shared reading queue size")
+	flag.IntVar(&c.WriteQueueSize,
+		"writeq",
+		WriteQueueSize,
+		"write queue size")
+
+	flag.DurationVar(&c.PingInterval,
+		"ping",
+		PingInterval,
+		"interval to send pings")
 }

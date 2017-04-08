@@ -5,6 +5,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
+	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -46,8 +47,7 @@ func Example() {
 	//
 
 	conf := node.NewConfig()
-	conf.Name = "example node"
-	conf.Debug = true
+	conf.Logger = log.NewLogger("[example node]", true)
 
 	n := node.NewNode(conf, db, so)
 
@@ -118,7 +118,7 @@ func Example() {
 	// =========================================================================
 
 	n.Execute(func() {
-		root = so.Root(pub)
+		root := so.Root(pub)
 		if root == nil { // not found
 			// never happens for the example, because the Root exists
 			root = so.NewRoot(pub)
@@ -152,7 +152,7 @@ func Example() {
 	// =========================================================================
 
 	n.Execute(func() {
-		root = so.Root(pub)
+		root := so.Root(pub)
 		if root == nil { // not found
 			// never happens for the example, because the Root exists
 			root = so.NewRoot(pub)
@@ -190,7 +190,7 @@ func Example() {
 
 	n.Execute(func() {
 		// create root object using public key of the owner
-		root = so.NewRoot(pub)
+		root := so.NewRoot(pub)
 
 		// inject first board (implicit touch)
 		root.Inject(Board{

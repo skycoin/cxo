@@ -150,10 +150,10 @@ func (p *Pool) listen(l net.Listener) {
 		err error
 	)
 	p.Debug("start accept loop")
-	defer l.Close()
-	if p.conf.Debug {
-		defer p.Debug("stop accept loop")
-	}
+	defer func() {
+		l.Close()
+		p.Debug("stop accept loop")
+	}()
 	for {
 		p.acquireBlock()
 		if c, err = l.Accept(); err != nil {
@@ -332,8 +332,11 @@ func (p *Pool) Receive() <-chan Message {
 func NewPool(c Config) (p *Pool) {
 	c.applyDefaults()
 	p = new(Pool)
-	p.Logger = log.NewLogger("["+c.Name+"] ", c.Debug)
-	p.SetOutput(c.Out)
+	if c.Logger == nil {
+		p.Logger = log.NewLogger("", false)
+	} else {
+		p.Logger = c.Logger
+	}
 	p.conf = c
 	p.reg = make(map[reflect.Type]Prefix)
 	p.rev = make(map[Prefix]reflect.Type)
@@ -352,10 +355,10 @@ func NewPool(c Config) (p *Pool) {
 func (p *Pool) sendPings() {
 	p.Debug("broadcast PING every ", p.conf.PingInterval)
 	var pingt *time.Ticker = time.NewTicker(p.conf.PingInterval)
-	defer pingt.Stop()
-	if p.conf.Debug {
-		defer p.Debug("stop broadcasting PING")
-	}
+	defer func() {
+		pingt.Stop()
+		p.Debug("stop broadcasting PING")
+	}()
 	for {
 		select {
 		case <-pingt.C:

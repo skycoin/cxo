@@ -1,11 +1,39 @@
 package log
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 )
+
+const (
+	Prefix string = ""
+	Debug  bool   = false
+)
+
+type Config struct {
+	Prefix string
+	Debug  bool
+}
+
+func NewConfig() (c Config) {
+	c.Prefix = Prefix
+	c.Debug = Debug
+	return
+}
+
+func (c *Config) FromFlags() {
+	flag.StringVar(&c.Prefix,
+		"log-prefix",
+		Prefix,
+		"provide log-prefix")
+	flag.BoolVar(&c.Debug,
+		"debug",
+		Debug,
+		"print debug logs")
+}
 
 // A Logger is similar to log.Logger with Debug(ln|f)? methods
 type Logger interface {

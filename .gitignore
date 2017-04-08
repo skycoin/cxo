@@ -37,6 +37,8 @@ cmd/test/test
 cmd/test/source/source
 cmd/test/drain/drain
 
+cmd/test/output.out
+
 
 skyobject/cover.out
 skyobject/cover.html

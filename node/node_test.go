@@ -8,19 +8,32 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
 )
 
-func newConfig() Config {
-	c := NewConfig()
+func newConfig() (c Config) {
+	c = NewConfig()
 	if testing.Verbose() {
-		c.Debug = true
-		c.Config.Debug = true
+		c.Logger = log.NewLogger("[node] ", true)
+		c.Config.Logger = log.NewLogger("[pool] ", true)
 	} else {
-		c.Out = ioutil.Discard
-		c.Config.Out = ioutil.Discard
+		c.Logger = log.NewLogger("", false)
+		c.Logger.SetOutput(ioutil.Discard)
 	}
-	return c
+	return
+}
+
+func newConfigName(name string) (c Config) {
+	c = NewConfig()
+	if testing.Verbose() {
+		c.Logger = log.NewLogger("["+name+"] ", true)
+		c.Config.Logger = log.NewLogger("[p:"+name+"] ", true)
+	} else {
+		c.Logger = log.NewLogger("", false)
+		c.Logger.SetOutput(ioutil.Discard)
+	}
+	return
 }
 
 func TestNode_connecting(t *testing.T) {
@@ -68,8 +81,7 @@ type SmallGroup struct {
 func filledNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
-	conf := newConfig()
-	conf.Name = "source"
+	conf := newConfigName("source")
 	n := NewNode(conf, db, so)
 	root := so.NewRoot(pub)
 	so.Register(
@@ -100,8 +112,7 @@ func filledNode(pub cipher.PubKey, sec cipher.SecKey) *Node {
 func newNode(name string) *Node {
 	db := data.NewDB()
 	so := skyobject.NewContainer(db)
-	conf := newConfig()
-	conf.Name = name
+	conf := newConfigName(name)
 	return NewNode(conf, db, so)
 }
 
@@ -184,9 +195,10 @@ func TestNode_sourcePipeDrain(t *testing.T) {
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	for _, x := range []*Node{pipe, drain} {
-		xs := drain.db.Stat()
-		t.Logf("%s: %v", x.conf.Name, xs)
+	names := []string{"pipe", "drain"}
+	for i, x := range []*Node{pipe, drain} {
+		xs := x.db.Stat()
+		t.Logf("%s: %v", names[i], xs)
 		if xs.Total != ss.Total {
 			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
 		}
@@ -236,9 +248,10 @@ func TestNode_sourcePipeDrain2(t *testing.T) {
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	for _, x := range []*Node{pipe, drain} {
-		xs := drain.db.Stat()
-		t.Logf("%s: %v", x.conf.Name, xs)
+	names := []string{"pipe", "drain"}
+	for i, x := range []*Node{pipe, drain} {
+		xs := x.db.Stat()
+		t.Logf("%s: %v", names[i], xs)
 		if xs.Total != ss.Total {
 			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
 		}
@@ -288,9 +301,10 @@ func TestNode_sourcePipeDrain3(t *testing.T) {
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	for _, x := range []*Node{pipe, drain} {
-		xs := drain.db.Stat()
-		t.Logf("%s: %v", x.conf.Name, xs)
+	names := []string{"pipe", "drain"}
+	for i, x := range []*Node{pipe, drain} {
+		xs := x.db.Stat()
+		t.Logf("%s: %v", names[i], xs)
 		if xs.Total != ss.Total {
 			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
 		}
@@ -340,9 +354,10 @@ func TestNode_sourcePipeDrain4(t *testing.T) {
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	for _, x := range []*Node{pipe, drain} {
-		xs := drain.db.Stat()
-		t.Logf("%s: %v", x.conf.Name, xs)
+	names := []string{"pipe", "drain"}
+	for i, x := range []*Node{pipe, drain} {
+		xs := x.db.Stat()
+		t.Logf("%s: %v", names[i], xs)
 		if xs.Total != ss.Total {
 			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
 		}
@@ -372,29 +387,20 @@ func TestNode_replication(t *testing.T) {
 	}
 	// connect n1-n4
 	for i, nd := range []*Node{n1, n2, n3, n4} {
-		info, err := nd.Info()
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		address := nd.pool.Address()
 		// subscribe to the feed first
 		nd.Subscribe(pub)
 		for j, ns := range []*Node{n1, n2, n3, n4} {
 			if i == j {
 				continue
 			}
-			if err = ns.Connect(info.Address); err != nil {
+			if err := ns.Connect(address); err != nil {
 				t.Error("connecting error: ", err)
 			}
 		}
 	}
 	// connect n1 to source
-	info, err := source.Info()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if err = n1.Connect(info.Address); err != nil {
+	if err := n1.Connect(source.pool.Address()); err != nil {
 		t.Error(err)
 		return
 	}
@@ -453,8 +459,7 @@ func TestNode_sourcePipeDrainTest(t *testing.T) {
 	{
 		db := data.NewDB()
 		so := skyobject.NewContainer(db)
-		conf := newConfig()
-		conf.Name = "source"
+		conf := newConfigName("source")
 		source = NewNode(conf, db, so)
 		source.Start()
 		defer source.Close()
@@ -529,9 +534,10 @@ func TestNode_sourcePipeDrainTest(t *testing.T) {
 	// inspect
 	ss := source.db.Stat()
 	t.Log("source: ", ss)
-	for _, x := range []*Node{pipe, drain} {
+	names := []string{"pipe", "drain"}
+	for i, x := range []*Node{pipe, drain} {
 		xs := x.db.Stat()
-		t.Logf("%s: %v", x.conf.Name, xs)
+		t.Logf("%s: %v", names[i], xs)
 		if xs.Total != ss.Total {
 			t.Errorf("wrong object count: want %d, got %d", ss.Total, xs.Total)
 		}
