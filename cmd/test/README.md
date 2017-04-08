@@ -15,6 +15,22 @@ connects to source and connects to drain.
 This way the inetermediate cxod will take data from the source,
 keep the data and pass the data to the drain.
 
+##### RPC addresses
+
++ source "[::]:55000"
++ drain "[::]:55006"
++ cxod (pipe) "[::]:55001"
+
+##### Explore running instances
+
+Example for the `source`
+
+```bash
+cd cmd/cli
+./cli -a "[::]:55000"
+> blah
+```
+
 ### Run
 
 ```
