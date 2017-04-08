@@ -97,3 +97,5 @@ Owner: <reference>
 ### Bash script
 
 There is `run.sh` file
+
+Use `./run.sh 2>&1 | tee output.out` to keep output in file to explore it later
