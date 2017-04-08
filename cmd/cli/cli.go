@@ -331,14 +331,7 @@ func inject(rpc *client.Client, ss []string) (err error) {
 
 func want(rpc *client.Client, ss []string) (err error) {
 	var pub string
-	switch len(ss) {
-	case 0:
-		err = errors.New("missing public key argument")
-		return
-	case 1:
-		pub = ss[1]
-	default:
-		err = ErrTooManyArguments
+	if pub, err = args(ss); err != nil {
 		return
 	}
 	var public cipher.PubKey
@@ -360,14 +353,7 @@ func want(rpc *client.Client, ss []string) (err error) {
 
 func got(rpc *client.Client, ss []string) (err error) {
 	var pub string
-	switch len(ss) {
-	case 0:
-		err = errors.New("missing public key argument")
-		return
-	case 1:
-		pub = ss[1]
-	default:
-		err = ErrTooManyArguments
+	if pub, err = args(ss); err != nil {
 		return
 	}
 	var public cipher.PubKey
@@ -386,7 +372,8 @@ func got(rpc *client.Client, ss []string) (err error) {
 			fmt.Println("  +", k.Hex(), l)
 		}
 		fmt.Println("  -------------------------------")
-		fmt.Println("  total: ", data.HumanMemory(total))
+		fmt.Printf("  total objects: %d, total size %s\n",
+			len(list), data.HumanMemory(total))
 	}
 	return
 }

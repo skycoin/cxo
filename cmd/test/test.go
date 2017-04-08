@@ -41,9 +41,8 @@ func main() {
 
 	// start source
 	source := exec.Command("./source/source",
-		"-a", "[::]",
-		"-p", "44000",
-		"-r", "55000", // rpc address
+		"-a", "[::]:44000",
+		"-r", "[::]:55000", // rpc address
 		"-pub", pub.Hex(),
 		"-sec", sec.Hex())
 	sourcePipe := &ColoredPipe{CYAN}
@@ -57,6 +56,7 @@ func main() {
 	// start drain
 	drain := exec.Command("./drain/drain",
 		"-a", "[::]:44006",
+		"-r", "[::]:55006",
 		"-pub", pub.Hex())
 	drainPipe := &ColoredPipe{MAGENTA}
 	drain.Stderr, drain.Stdout = drainPipe, drainPipe
