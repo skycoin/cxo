@@ -199,11 +199,25 @@ func (n *Node) Start() {
 //
 //     return
 //
+// The call of the Share is non-blocking. This
+// way it's safe to call it from main thread
 func (n *Node) Share(pub cipher.PubKey) {
+	// first, try to send without creating goroutine
 	select {
 	case n.share <- pub:
+		return
 	case <-n.quit:
+		return
+	default:
 	}
+	// second, create a goroutine and try to
+	// send from the goroutine asynchronously
+	go func() {
+		select {
+		case n.share <- pub:
+		case <-n.quit:
+		}
+	}()
 }
 
 func (n *Node) subscribe() {

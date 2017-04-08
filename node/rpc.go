@@ -40,7 +40,7 @@ func (n *Node) Subscribe(pub cipher.PubKey) {
 		for _, address := range n.conf.Known[pub] {
 			n.pool.Connect(address)
 		}
-		go n.Share(pub) // trigger update of wanted objects etc
+		n.Share(pub) // trigger update of wanted objects etc
 	})
 }
 
@@ -89,7 +89,7 @@ func (n *Node) Inject(hash cipher.SHA256,
 		}
 		root.Touch()            // update timestamp and seq
 		n.so.AddRoot(root, sec) // replace with previous and sign
-		go n.Share(pub)         // send the new root to subscribers
+		n.Share(pub)            // send the new root to subscribers
 	})
 	return
 }
@@ -145,5 +145,13 @@ func (n *Node) Terminate() (err error) {
 	if err == ErrClosed {
 		err = nil
 	}
+	return
+}
+
+// Execute some task in main thread to be sure
+// that accessing skyobject.Container is
+// thread safe
+func (n *Node) Execute(task func()) (err error) {
+	err = n.enqueueRpcEvent(task)
 	return
 }
