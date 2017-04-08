@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"io"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -23,6 +24,10 @@ var (
 	ErrMalformedMessage = errors.New("malformed message")
 )
 
+//
+// TODO: use logger instad of configs for node and node/gnet
+//
+
 // A Config represents configurations of Node
 type Config struct {
 	gnet.Config
@@ -40,6 +45,9 @@ type Config struct {
 
 	// RemoteClose is used to deny or allow close the Node using RPC
 	RemoteClose bool
+
+	// Out for ligs. If the Out is nil then default (os.Stderr) used
+	Out io.Writer
 }
 
 // NewConfig creates Config filled down with default values
@@ -75,7 +83,7 @@ type Node struct {
 
 // NewNode creates Node with given config and DB. If given database is nil
 // then it panics
-func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
+func NewNode(conf Config, db *data.DB, so *skyobject.Container) (n *Node) {
 	if db == nil {
 		panic("NewNode: given database is nil")
 	}
@@ -87,13 +95,17 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) *Node {
 	}
 	conf.Config.Debug = conf.Debug
 	conf.Config.Name = "p:" + conf.Name
-	return &Node{
+	n = &Node{
 		Logger: log.NewLogger("["+conf.Name+"] ", conf.Debug),
 		conf:   conf,
 		db:     db,
 		so:     so,
 		subs:   make(map[cipher.PubKey]struct{}),
 	}
+	if conf.Out != nil {
+		n.SetOutput(conf.Out)
+	}
+	return
 }
 
 // Start is used to launch the Node. The Start is non-blocking
@@ -271,7 +283,7 @@ func (n *Node) handleConnectEvent(ce *gnet.Conn, want skyobject.Set) {
 }
 
 func (n *Node) handleMsgEvent(me gnet.Message, want skyobject.Set) {
-	n.Debugf("handle message: %T", me.Value)
+	n.Debugf("handle message: %T, from %s", me.Value, me.Conn.Addr())
 	switch x := me.Value.(type) {
 	case *Announce:
 		if _, ok := want[skyobject.Reference(x.Hash)]; ok {
@@ -296,11 +308,7 @@ func (n *Node) handleMsgEvent(me gnet.Message, want skyobject.Set) {
 		if _, ok := n.subs[x.Pub]; !ok {
 			return // don't subscribed to the feed
 		}
-		root := n.so.Root(x.Pub)
-		if root == nil {
-			return
-		}
-		if root.Time >= x.Time {
+		if root := n.so.Root(x.Pub); root != nil && root.Time >= x.Time {
 			return // already have (the same or newer)
 		}
 		me.Conn.Send(&RequestRoot{x.Pub, 0})
