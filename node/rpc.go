@@ -1,6 +1,8 @@
 package node
 
 import (
+	"fmt"
+
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
@@ -153,5 +155,61 @@ func (n *Node) Terminate() (err error) {
 // thread safe
 func (n *Node) Execute(task func()) (err error) {
 	err = n.enqueueRpcEvent(task)
+	return
+}
+
+// Want returns missing objects of given root
+func (n *Node) Want(pub cipher.PubKey) (w []cipher.SHA256, err error) {
+	n.enqueueRpcEvent(func() {
+		if _, ok := n.subs[pub]; !ok {
+			err = fmt.Errorf("not subscribed to %s", pub.Hex())
+			return
+		}
+		root := n.so.Root(pub)
+		if root == nil {
+			return // not an error
+		}
+		var set skyobject.Set
+		if set, err = root.Want(); err != nil {
+			return
+		}
+		if len(set) == 0 {
+			return // no objects
+		}
+		w = make([]cipher.SHA256, 0, len(set))
+		for k := range set {
+			w = append(w, cipher.SHA256(k))
+		}
+		return
+	})
+	return
+}
+
+// Got returns full list of objects that the root object has got.
+// The method returns reference key and size of the object in bytes
+func (n *Node) Got(pub cipher.PubKey) (g map[cipher.SHA256]int, err error) {
+	n.enqueueRpcEvent(func() {
+		if _, ok := n.subs[pub]; !ok {
+			err = fmt.Errorf("not subscribed to %s", pub.Hex())
+			return
+		}
+		root := n.so.Root(pub)
+		if root == nil {
+			return // not an error
+		}
+		var set skyobject.Set
+		if set, err = root.Got(); err != nil {
+			return
+		}
+		if len(set) == 0 {
+			return // no objects
+		}
+		g = make(map[cipher.SHA256]int, len(set))
+		for k := range set {
+			data, _ := n.db.Get(cipher.SHA256(k))
+			g[cipher.SHA256(k)] = len(data)
+		}
+		return
+	})
 	return
 }

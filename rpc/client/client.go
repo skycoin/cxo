@@ -12,12 +12,15 @@ import (
 	"github.com/skycoin/cxo/rpc/comm"
 )
 
-//     "rpc.Connect",     address string,    _       *struct{}
-//     "rpc.Disconnect",  address string,    _       *struct{}
-//     "rpc.List"         _       struct{},  list    *[]string
-//     "rpc.Info",        _       struct{},  address *string
-//     "rpc.Stat",        _       struct{},  stat    *data.Stat
-//     "rpc.Terminate",   _       struct{},  _       *struct{}
+//     "rpc.Connect",     address      string,  _       *struct{}
+//     "rpc.Disconnect",  address      string,  _       *struct{}
+//     "rpc.Inject",      params  comm.Inject,  _       *struct{}
+//     "rpc.List"         _          struct{},  list    *[]string
+//     "rpc.Want"         pub   cipher.PubKey,  w       []cipher.SHA256
+//     "rpc.Got"          pub   cipher.PubKey,  g       map[cipher.SHA256]int
+//     "rpc.Info",        _          struct{},  info    *comm.Info
+//     "rpc.Stat",        _          struct{},  stat    *data.Stat
+//     "rpc.Terminate",   _          struct{},  _       *struct{}
 
 // A Client represents RPC client
 type Client struct {
@@ -91,5 +94,19 @@ func (c *Client) Terminate() (err error) {
 	if err == io.ErrUnexpectedEOF {
 		err = nil
 	}
+	return
+}
+
+// Want returns list of missing object for given root
+func (c *Client) Want(pub cipher.PubKey) (w []cipher.SHA256, err error) {
+	err = c.r.Call("rpc.Want", pub, &w)
+	return
+}
+
+// Got returns list of objects of given root that the node
+// has got. The map containe object key mapped to size of
+// object in bytes
+func (c *Client) Got(pub cipher.PubKey) (g map[cipher.SHA256]int, err error) {
+	err = c.r.Call("rpc.Got", pub, &g)
 	return
 }

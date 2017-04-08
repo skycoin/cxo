@@ -5,6 +5,8 @@
 //     "rpc.Disconnect",  address      string,  _       *struct{}
 //     "rpc.Inject",      params  comm.Inject,  _       *struct{}
 //     "rpc.List"         _          struct{},  list    *[]string
+//     "rpc.Want"         pub   cipher.PubKey,  w       []cipher.SHA256
+//     "rpc.Got"          pub   cipher.PubKey,  g       map[cipher.SHA256]int
 //     "rpc.Info",        _          struct{},  info    *comm.Info
 //     "rpc.Stat",        _          struct{},  stat    *data.Stat
 //     "rpc.Terminate",   _          struct{},  _       *struct{}
@@ -143,5 +145,23 @@ func (s *Server) Stat(_ struct{}, stat *data.Stat) (err error) {
 
 func (s *Server) Terminate(_ struct{}, _ *struct{}) (err error) {
 	err = s.n.Terminate()
+	return
+}
+
+func (s *Server) Want(pub cipher.PubKey, w *[]cipher.SHA256) (err error) {
+	var ww []cipher.SHA256
+	if ww, err = s.n.Want(pub); err != nil {
+		return
+	}
+	*w = ww
+	return
+}
+
+func (s *Server) Got(pub cipher.PubKey, g *map[cipher.SHA256]int) (err error) {
+	var gg map[cipher.SHA256]int
+	if gg, err = s.n.Got(pub); err != nil {
+		return
+	}
+	*g = gg
 	return
 }
