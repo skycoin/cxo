@@ -142,19 +142,8 @@ func (n *Node) Start() {
 // nothing. A call of the Share is useful only if you update the root
 // using skyobject API and want to publish it. For example
 //
-//     db := data.NewDB()
-//     so := skyobject.NewContainer(db)
 //
-//     conf := node.NewConfig()
-//     conf.Name = "example node"
-//     conf.Debug = true
-//
-//     n := node.NewNode(conf, db, so)
-//
-//     n.Start()
-//     defer n.Close()
-//
-//     // example root object
+//     // example objects
 //
 //     type FirstObject struct {
 //     	Name  string
@@ -166,47 +155,69 @@ func (n *Node) Start() {
 //     	Value uint32
 //     }
 //
+//     db := data.NewDB()
+//     so := skyobject.NewContainer(db)
+//
+//     // register objects we're going to use
+//
 //     so.Register("FirstObject", FirstObject{})
 //     so.Register("SecondObject", SecondObject{})
 //
+//     conf := node.NewConfig()
+//     conf.Name = "example node"
+//     conf.Debug = true
+//
+//     n := node.NewNode(conf, db, so)
+//
+//     n.Start()
+//     defer n.Close()
+//
+//     // example root object (pub) and its owner (sec)
+//
 //     pub, sec := cipher.GenerateKeyPair()
 //
-//     // create root object using public key
-//     root := so.NewRoot(pub)
-//     root.Inject(FirstObject{
-//     	Name:  "Old Uncle Tom Cobley",
-//     	Value: 411,
-//     })
-//     so.AddRoot(root, sec)
+//     // work with skyobject from main processing thread
+//     // to be sure that the work is thread safe
 //
-//     // share the root
-//     n.Share(pub)
+//     n.Execute(func() {
+//         // create root object using public key
+//         root := so.NewRoot(pub)
+//         root.Inject(FirstObject{
+//         	Name:  "Old Uncle Tom Cobley",
+//         	Value: 411,
+//         })
+//         so.AddRoot(root, sec)
+//
+//         // share the root
+//         n.Share(pub)
+//     })
 //
 //     //
 //     // stuff
 //     //
 //
-//     // get the root from container by public key
-//     root := so.Root(pub)
-//     root.Inject(SecondObject{
-//     	Name: "Billy Kid",
-//     	Value: 16,
-//     })
-//     so.AddRoot(root, sec)
+//     n.Execute(func() {
+//          // get the root from container by public key
+//          root := so.Root(pub)
+//          root.Inject(SecondObject{
+//          	Name: "Billy Kid",
+//          	Value: 16,
+//          })
+//          so.AddRoot(root, sec)
 //
-//     // share the root again
-//     n.Share(pub)
+//          // share the root again
+//          n.Share(pub)
+//     })
 //
 //     return
 //
 // The call of the Share is non-blocking. This
-// way it's safe to call it from main thread
+// way it's safe to call it from main processing
+// thread
 func (n *Node) Share(pub cipher.PubKey) {
 	// first, try to send without creating goroutine
 	select {
-	case n.share <- pub:
-		return
-	case <-n.quit:
+	case n.share <- pub: // ignore <-n.quit
 		return
 	default:
 	}
