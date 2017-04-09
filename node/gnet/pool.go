@@ -142,6 +142,7 @@ func (p *Pool) Listen(address string) (err error) {
 	if p.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
+	p.wg.Add(1)
 	go p.listen(p.l)
 	return
 }
@@ -151,13 +152,14 @@ func (p *Pool) listen(l net.Listener) {
 		c   net.Conn
 		err error
 	)
+	// closing
+	defer p.wg.Done()
+	defer l.Close()
+	defer p.Debug("stop accept loop")
+	// accept loop
 	p.Debug("start accept loop")
-	defer func() {
-		l.Close()
-		p.Debug("stop accept loop")
-	}()
 	for {
-		p.acquireBlock()
+		p.acquireBlock() // don't block for unlimited connections
 		if c, err = l.Accept(); err != nil {
 			select {
 			case <-p.quit:
@@ -305,6 +307,7 @@ func (p *Pool) Close() {
 		c.close(closeDontRemove) // don't remove
 		delete(p.conns, a)       // and remove
 	}
+	p.wg.Wait() // await all goroutines created
 	return
 }
 

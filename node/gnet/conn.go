@@ -123,6 +123,7 @@ func newConn(c net.Conn, p *Pool) (x *Conn) {
 }
 
 func (c *Conn) handle() {
+	c.pool.wg.Add(2)
 	go c.handleRead()
 	go c.handleWrite()
 }
@@ -219,12 +220,12 @@ func (c *Conn) handleRead() {
 
 		terminate bool // semantic
 	)
-	defer func() {
-		// remove from the goroutine
-		// (no fear of deadlocks)
-		c.close(closeSyncRemove)
-		c.pool.Debugf("%s end read loop", c.Addr())
-	}()
+	// closing
+	defer c.pool.wg.Done()
+	// remove from the goroutine (no fear of deadlocks)
+	defer c.close(closeSyncRemove)
+	defer c.pool.Debugf("%s end read loop", c.Addr())
+	// read loop
 	for {
 		if c.isClosed() {
 			return
@@ -300,12 +301,12 @@ func (c *Conn) handleWrite() {
 		pingc = c.pingt.C
 		defer c.pingt.Stop()
 	}
-	defer func() {
-		// remove from the goroutine
-		// (no fear of deadlocks)
-		c.close(closeSyncRemove)
-		c.pool.Debugf("%s end write loop", c.Addr())
-	}()
+	// closing
+	defer c.pool.wg.Done()
+	// remove from the goroutine (no fear of deadlocks)
+	defer c.close(closeSyncRemove)
+	defer c.pool.Debugf("%s end write loop", c.Addr())
+	// write loop
 	for {
 		select {
 		case <-pingc:
