@@ -363,11 +363,7 @@ func TestConn_handle(t *testing.T) {
 	conf.PingInterval = 0
 	conn, pipe := net.Pipe()
 	p := NewPool(conf)
-	defer func() {
-		if err := closePool(p); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	defer p.Close()
 	p.Register(NewPrefix("ANYM"), &Any{})
 	c := newConn(conn, p)
 	defer c.Close()
@@ -411,62 +407,22 @@ func TestConn_handle(t *testing.T) {
 	}
 }
 
-func TestConn_sendEncodedMessage(t *testing.T) {
-	//
-}
-
-func TestConn_isClosed(t *testing.T) {
-	//
-}
-
-func TestConn_read(t *testing.T) {
-	//
-}
-
-func TestConn_write(t *testing.T) {
-	//
-}
-
-func TestConn_flush(t *testing.T) {
-	//
-}
-
-func TestConn_sendPing(t *testing.T) {
-	//
-}
-
-func TestConn_handleRead(t *testing.T) {
-	//
-}
-
-func TestConn_handleWrite(t *testing.T) {
-	//
-}
+//
+// public methods
+//
 
 func TestConn_Addr(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestConn_Send(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestConn_Broadcast(t *testing.T) {
-	//
-}
-
-func TestConn_close(t *testing.T) {
-	//
+	// TODO
 }
 
 func TestConn_Close(t *testing.T) {
-	//
-}
-
-func Test_deadReader_Read(t *testing.T) {
-	//
-}
-
-func Test_deadWriter_Write(t *testing.T) {
-	//
+	// TODO
 }
