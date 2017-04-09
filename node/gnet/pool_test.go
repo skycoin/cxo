@@ -199,7 +199,11 @@ func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
 		return
 	}
 	time.Sleep(50 * time.Millisecond)
-	if len(s.conns) != 2 {
+	var connsLen int
+	s.Lock()
+	connsLen = len(s.conns)
+	s.Unlock()
+	if connsLen != 2 {
 		s.Close()
 		c1.Close()
 		c2.Close()

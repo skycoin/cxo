@@ -46,7 +46,7 @@ cd ../cxod
 go build
 
 
-# build conductor (conductor is WHITE, node is GREEN)
+# build conductor
 cd ../test
 go build
 
@@ -60,7 +60,7 @@ cd drain
 go build
 cd ..
 
-# run everything (including GREEN cxod)
+# run everything (including RED, GREEN, BROWN, BLUE, GRAY cxod)
 ./test
 
 # hit Ctrl+C to terminate
@@ -98,4 +98,5 @@ Owner: <reference>
 
 There is `run.sh` file
 
-Use `./run.sh 2>&1 | tee output.out` to keep output in file to explore it later
+Use `./run.sh 2>&1 | tee output.out` to keep output in the file
+and explore it later

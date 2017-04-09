@@ -57,7 +57,7 @@ func main() {
 		log.Print(err)
 		return
 	}
-	defer source.Process.Kill()
+	defer source.Process.Signal(os.Kill)
 
 	// start drain
 	drain := exec.Command("./drain/drain",
@@ -70,7 +70,7 @@ func main() {
 		log.Print(err)
 		return
 	}
-	defer drain.Process.Kill()
+	defer drain.Process.Signal(os.Kill)
 
 	type Pipe struct {
 		Color  string
@@ -95,7 +95,7 @@ func main() {
 			-debug          \
 			-rpc-address %s \
 			%s
-			`, p.Listen, fmt.Sprintf("NODE #%d", i+1), p.RPC, pub.Hex())
+			`, p.Listen, fmt.Sprintf("'NODE #%d'", i+1), p.RPC, pub.Hex())
 		node := exec.Command("../cxod/cxod",
 			"-address", p.Listen,
 			"-log-prefix", fmt.Sprintf("NODE #%d", i+1),
@@ -109,7 +109,7 @@ func main() {
 			log.Print(err)
 			return
 		}
-		defer node.Process.Kill()
+		defer node.Process.Signal(os.Kill)
 
 		time.Sleep(1 * time.Second)
 

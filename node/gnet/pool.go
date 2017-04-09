@@ -5,7 +5,6 @@ import (
 	"net"
 	"reflect"
 	"sync"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
@@ -346,35 +345,29 @@ func NewPool(c Config) (p *Pool) {
 		p.sem = make(chan struct{}, c.MaxConnections)
 	}
 	p.quit = make(chan struct{})
-	if c.PingInterval > 0 {
-		go p.sendPings()
-	}
+	p.Printf(`[INF] create pool:
+    max connections   %d
+    max messageSize   %d
+    dial timeout      %v
+    read timeout      %v
+    write timeout     %v
+    read buffer size  %d
+    write buffer size %d
+    read queue size   %d
+    write queue size  %d
+    ping interval     %v
+`,
+		c.MaxConnections,
+		c.MaxMessageSize,
+		c.DialTimeout,
+		c.ReadTimeout,
+		c.WriteTimeout,
+		c.ReadBufferSize,
+		c.WriteBufferSize,
+		c.ReadQueueSize,
+		c.WriteQueueSize,
+		c.PingInterval)
 	return
-}
-
-func (p *Pool) sendPings() {
-	p.Debug("broadcast PING every ", p.conf.PingInterval)
-	var pingt *time.Ticker = time.NewTicker(p.conf.PingInterval)
-	defer func() {
-		pingt.Stop()
-		p.Debug("stop broadcasting PING")
-	}()
-	for {
-		select {
-		case <-pingt.C:
-			// broadcast PING
-			p.RLock() // map lock
-			defer p.RUnlock()
-			for _, c := range p.conns {
-				if err := c.sendEncodedMessage(ping); err != nil {
-					p.Printf("[ERR] %s error sending PING: %v",
-						c.Addr(), err)
-				}
-			}
-		case <-p.quit:
-			return
-		}
-	}
 }
 
 func (p *Pool) IsConnExist(address string) (yep bool) {
