@@ -11,14 +11,17 @@ import (
 const (
 	MaxConnections  int           = 1024
 	MaxMessageSize  int           = 8192
-	DialTimeout     time.Duration = 28 * time.Second
-	ReadTimeout     time.Duration = 28 * time.Second
-	WriteTimeout    time.Duration = 28 * time.Second
+	DialTimeout     time.Duration = 25 * time.Second
+	ReadTimeout     time.Duration = 25 * time.Second
+	WriteTimeout    time.Duration = 25 * time.Second
 	ReadBufferSize  int           = 4096
 	WriteBufferSize int           = 4096
 	ReadQueueSize   int           = 64 * 256 // 1/4
 	WriteQueueSize  int           = 64
-	PingInterval    time.Duration = 5 * time.Second
+	PingInterval    time.Duration = 23 * time.Second
+
+	minPingInterval time.Duration = 400 * time.Millisecond
+	minTimeout      time.Duration = 2 * minPingInterval
 )
 
 // ConnectionHandler represents function that used
@@ -94,8 +97,9 @@ func NewConfig() (c Config) {
 }
 
 // replace negative values wiht defaults;
-// set PingInterval to min(ReadTimeout, WriteTimeout)
-// if the interval is less then the minimum
+// set PingInterval to (min(ReadTimeout,
+// WriteTimeout) - minPingInterval) if the
+// interval is lesser
 func (c *Config) applyDefaults() {
 	if c.MaxConnections < 0 {
 		c.MaxConnections = MaxConnections
@@ -127,14 +131,16 @@ func (c *Config) applyDefaults() {
 	if c.PingInterval < 0 {
 		c.PingInterval = PingInterval
 	}
-	var mt time.Duration
-	if c.ReadTimeout < c.WriteTimeout {
-		mt = c.WriteTimeout
-	} else {
-		mt = c.ReadTimeout
+	// min timeouts
+	if c.ReadTimeout > 0 && c.ReadTimeout < minTimeout {
+		c.ReadTimeout = minTimeout
 	}
-	if c.PingInterval < mt {
-		c.PingInterval = mt
+	if c.WriteTimeout > 0 && c.WriteTimeout < minTimeout {
+		c.WriteTimeout = minTimeout
+	}
+	// ping interval
+	if c.PingInterval < minPingInterval {
+		c.PingInterval = minPingInterval
 	}
 	return
 }

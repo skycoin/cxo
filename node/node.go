@@ -94,6 +94,18 @@ func NewNode(conf Config, db *data.DB, so *skyobject.Container) (n *Node) {
 		so:     so,
 		subs:   make(map[cipher.PubKey]struct{}),
 	}
+	n.Printf(`create node:
+    listen                  %s
+    remote close            %t
+    RPC events channel size %d
+    known                   %v
+    subscribe               %v
+`,
+		conf.Listen,
+		conf.RemoteClose,
+		conf.RPCEvents,
+		conf.Known,     // TODO: humanize
+		conf.Subscribe) // TODO: humanize
 	return
 }
 
@@ -361,6 +373,9 @@ func (n *Node) handleMsgEvent(me gnet.Message, want skyobject.Set) {
 		}
 		// broadcast except
 		me.Conn.Broadcast(&AnnounceRoot{root.Pub, root.Time})
+	default:
+		n.Printf("[ERR] unknow message received %T", me.Value)
+		me.Conn.Close()
 	}
 }
 

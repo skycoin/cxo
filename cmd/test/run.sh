@@ -1,22 +1,15 @@
 #!/bin/sh
 
-set -e
-
 echo "build cxod"
-cd ../cxod
-go build -race
+cd ../cxod && go build -race || ( pkill -P $$ && exit 1 )
 echo "build cli"
-cd ../cli
-go build -race
+cd ../cli && go build -race || ( pkill -P $$ && exit 1 )
 echo "build test"
-cd ../test
-go build -race
+cd ../test && go build -race || ( pkill -P $$ && exit 1 )
 echo "build source"
-cd source
-go build -race
+cd source && go build -race || ( pkill -P $$ && exit 1 )
 echo "build drain"
-cd ../drain
-go build -race
+cd ../drain && go build -race || ( pkill -P $$ && exit 1 )
 echo "start tests"
-cd ..
-./test
+cd .. && ./test || ( pkill -P $$ && exit 1 )
+pkill -P $$
