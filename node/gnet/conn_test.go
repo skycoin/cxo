@@ -357,25 +357,27 @@ func TestConn_lastUsed(t *testing.T) {
 }
 
 func TestConn_handle(t *testing.T) {
-	// conf := testConfig()
-	// conf.ReadTimeout, conf.WriteTimeout = 0, 0
-	// conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
-	// conn, pipe := net.Pipe()
-	// p := NewPool(conf)
-	// p.Register("ANYM", &Any{})
-	// c := newConn(conn, p)
-	// defer c.close(closeDontRemove)
-	// // c.pool.wg.Add(2)
-	// // go c.handleRead()
-	// // go c.handleWrite()
-	// c.handle()
-	// // prepare
-	// wg := new(sync.WaitGroup)
-	// wg.Add(3)
-	// // write to the pipe (send)
-	// //
-	// // read from the pipe (receive)
-	// //
+	conf := testConfig()
+	conf.ReadTimeout, conf.WriteTimeout = 0, 0
+	conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
+	conn, pipe := net.Pipe()
+	p := NewPool(conf)
+	p.Register(NewPrefix("ANYM"), &Any{})
+	c := newConn(conn, p)
+	defer c.close(closeDontRemove)
+	// ----
+	// c.pool.wg.Add(2)
+	// go c.handleRead()
+	// go c.handleWrite()
+	// ----
+	c.handle()
+	// prepare
+	wg := new(sync.WaitGroup)
+	wg.Add(3)
+	// write to the pipe (send)
+	//
+	// read from the pipe (receive)
+	//
 }
 
 func TestConn_sendEncodedMessage(t *testing.T) {

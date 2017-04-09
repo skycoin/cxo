@@ -2,7 +2,7 @@ package gnet
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"io/ioutil"
 	"testing"
 	"time"
@@ -192,47 +192,75 @@ func connsCount(p *Pool) int {
 	return len(p.conns)
 }
 
+func closePool(p *Pool) (err error) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.Close()
+	}()
+	select {
+	case <-time.After(100 * time.Millisecond):
+		err = errors.New("slow closing")
+	case <-done:
+	}
+	return
+}
+
 // listening server and two clients connected to the server
 // all has Any registered
-func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
+func testS2C(t *testing.T, sn, c1n, c2n string) (s, c1, c2 *Pool) {
 	s = testPoolName(sn)
 	c1 = testPoolName(c1n)
 	c2 = testPoolName(c2n)
-	if err = s.Listen(""); err != nil { // any address
-		return
+	if err := s.Listen(""); err != nil { // any address
+		t.Fatal(err)
 	}
 	s.Register(NewPrefix("ANYM"), &Any{})
 	c1.Register(NewPrefix("ANYM"), &Any{})
 	c2.Register(NewPrefix("ANYM"), &Any{})
-	address := s.Address()
-	if err = c1.Connect(address); err != nil {
-		s.Close()
-		return
+	if err := c1.Connect(s.Address()); err != nil {
+		if err := closePool(s); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err = c2.Connect(address); err != nil {
-		s.Close()
-		c1.Close()
-		return
+	if err := c2.Connect(s.Address()); err != nil {
+		if err := closePool(c1); err != nil {
+			t.Fatal(err)
+		}
+		if err := closePool(s); err != nil {
+			t.Fatal(err)
+		}
 	}
 	time.Sleep(50 * time.Millisecond)
-	if connsCount(s) != 2 {
-		s.Close()
-		c1.Close()
-		c2.Close()
-		err = fmt.Errorf("invalid connections map length: %d", len(s.conns))
+	if cc := connsCount(s); cc != 2 {
+		if err := closePool(c2); err != nil {
+			t.Fatal(err)
+		}
+		if err := closePool(c1); err != nil {
+			t.Fatal(err)
+		}
+		if err := closePool(s); err != nil {
+			t.Fatal(err)
+		}
+		t.Fatalf("invalid connections map length: %d", cc)
 	}
 	return
 }
 
 func TestPool_BroadcastExcept(t *testing.T) {
-	s, h, e, err := testS2C("send", "recv1", "recv2")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer s.Close() // broadcast
-	defer h.Close() // handle
-	defer e.Close() // except
+	s, h, e := testS2C(t, "send", "recv1", "recv2")
+	// broadcast
+	defer func() {
+		if err := closePool(e); err != nil {
+			t.Error(err)
+		}
+		if err := closePool(h); err != nil {
+			t.Error(err)
+		}
+		if err := closePool(s); err != nil {
+			t.Error(err)
+		}
+	}()
 	var except string
 	if connsCount(e) != 1 {
 		t.Error("wrong connections size:", len(except))
@@ -268,14 +296,18 @@ func TestPool_BroadcastExcept(t *testing.T) {
 }
 
 func TestPool_Broadcast(t *testing.T) {
-	s, c1, c2, err := testS2C("send", "recv1", "recv2")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer s.Close()  // broadcast
-	defer c1.Close() // receive
-	defer c2.Close() // receive
+	s, c1, c2 := testS2C(t, "send", "recv1", "recv2")
+	defer func() {
+		if err := closePool(c2); err != nil {
+			t.Error(err)
+		}
+		if err := closePool(c1); err != nil {
+			t.Error(err)
+		}
+		if err := closePool(s); err != nil {
+			t.Error(err)
+		}
+	}()
 	t.Log("Broadcast")
 	s.Broadcast(&Any{"data"})
 	select {
@@ -320,7 +352,11 @@ func TestPool_listen(t *testing.T) {
 	pc := testConfigName("server")
 	pc.ConnectionHandler = func(c *Conn) { serverConn <- c.Addr() }
 	p := NewPool(pc)
-	defer p.Close()
+	defer func() {
+		if err := closePool(p); err != nil {
+			t.Error(err)
+		}
+	}()
 	if err := p.Listen(""); err != nil {
 		t.Error(err)
 		return
@@ -328,7 +364,11 @@ func TestPool_listen(t *testing.T) {
 	cc := testConfigName("client")
 	cc.ConnectionHandler = func(c *Conn) { clientConn <- c.Addr() }
 	c := NewPool(cc)
-	defer c.Close()
+	defer func() {
+		if err := closePool(c); err != nil {
+			t.Error(err)
+		}
+	}()
 	if err := c.Connect(p.Address()); err != nil {
 		t.Error(err)
 		return
