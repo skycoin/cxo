@@ -201,7 +201,17 @@ func TestConn_lastUsed(t *testing.T) {
 }
 
 func TestConn_handle(t *testing.T) {
-	//
+	// conf := testConfig()
+	// conf.ReadTimeout, conf.WriteTimeout = 0, 0
+	// conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
+	// conn, pipe := net.Pipe()
+	// p := NewPool(conf)
+	// c := newConn(conn, p)
+	// defer c.close(false, false)
+	// // TODO
+	// _ = pipe
+	// //c.handle() // starts handlRead and handleWrite methods
+	// //
 }
 
 func TestConn_sendEncodedMessage(t *testing.T) {

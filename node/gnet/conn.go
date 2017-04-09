@@ -35,6 +35,21 @@ var (
 	pong = []byte{'<', '-', '-', '-', 0, 0, 0, 0} // pong message ("<---")
 )
 
+// closing behaviour
+type connClosing int
+
+const (
+	// close connection and remove it from
+	// related pool asynchronously
+	closeAsyncRemove connClosing = iota // default
+	// close and remove from the same goroutine
+	// (prevent gouroutine creation)
+	closeSyncRemove
+	// close, but don't remove (related pool will
+	// remove the connection itself)
+	closeDontRemove
+)
+
 type Conn struct {
 	conn net.Conn // connection
 
@@ -199,7 +214,9 @@ func (c *Conn) handleRead() {
 		terminate bool // semantic
 	)
 	defer func() {
-		c.close(true, true) // remove, sync
+		// remove from the goroutine
+		// (no fear of deadlocks)
+		c.close(closeSyncRemove)
 		c.pool.Debugf("%s end read loop", c.Addr())
 	}()
 	for {
@@ -278,7 +295,9 @@ func (c *Conn) handleWrite() {
 		defer c.pingt.Stop()
 	}
 	defer func() {
-		c.close(true, true) // remove, sync
+		// remove from the goroutine
+		// (no fear of deadlocks)
+		c.close(closeSyncRemove)
 		c.pool.Debugf("%s end write loop", c.Addr())
 	}()
 	for {
@@ -336,16 +355,16 @@ func (c *Conn) Broadcast(m interface{}) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
-func (c *Conn) close(remove, async bool) (err error) {
+func (c *Conn) close(closing connClosing) (err error) {
 	c.releaseOnce.Do(func() {
 		close(c.closed)
 		c.pool.release()
-		if remove {
-			if async {
-				go c.pool.removeConnection(c.Addr()) // async
-			} else {
-				c.pool.removeConnection(c.Addr()) // same goroutine
-			}
+		switch closing { // behavoiur of removing from related pool
+		case closeSyncRemove:
+			c.pool.removeConnection(c.Addr()) // same goroutine
+		case closeAsyncRemove:
+			go c.pool.removeConnection(c.Addr()) // async
+		default: // don't remove (pool will remove the connection itself)
 		}
 	})
 	err = c.conn.Close()
@@ -354,7 +373,9 @@ func (c *Conn) close(remove, async bool) (err error) {
 
 // Close connection
 func (c *Conn) Close() (err error) {
-	err = c.close(true, true) // remove async
+	// remove async by default to
+	// preven possible deadlocks
+	err = c.close(closeAsyncRemove)
 	return
 }
 

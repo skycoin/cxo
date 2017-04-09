@@ -273,8 +273,8 @@ func (p *Pool) Disconnect(address string) {
 	p.Lock()
 	defer p.Unlock()
 	if c, ok := p.conns[address]; ok {
-		c.close(false, false)
-		delete(p.conns, address)
+		c.close(closeDontRemove) // don't remove
+		delete(p.conns, address) // and remove
 	}
 }
 
@@ -299,8 +299,8 @@ func (p *Pool) Close() {
 		p.l.Close()
 	}
 	for a, c := range p.conns {
-		c.close(false, false)
-		delete(p.conns, a)
+		c.close(closeDontRemove) // don't remove
+		delete(p.conns, a)       // and remove
 	}
 	return
 }
