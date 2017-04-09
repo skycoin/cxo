@@ -307,7 +307,7 @@ func (p *Pool) Close() {
 		c.close(closeDontRemove) // don't remove
 		delete(p.conns, a)       // and remove
 	}
-	p.wg.Wait() // await all goroutines created
+	//p.wg.Wait() // await all goroutines created
 	return
 }
 

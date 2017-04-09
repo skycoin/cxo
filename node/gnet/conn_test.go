@@ -9,7 +9,31 @@ import (
 	"time"
 )
 
+// unfortunately, net.Pipe returns connections
+// that doesn't supports deadlines
+func DeadPipe(t *testing.T) (a, b net.Conn, l net.Listener) {
+	var err error
+	if l, err = net.Listen("tcp", ""); err != nil {
+		t.Fatal("can't create mock listener:", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var err error
+		if b, err = l.Accept(); err != nil {
+			t.Fatal("can't accept mock connection:", err)
+		}
+	}()
+	a, err = net.DialTimeout("tcp", l.Addr().String(), 100*time.Millisecond)
+	if err != nil {
+		t.Fatal("can't dial to mock listener:", err)
+	}
+	<-done
+	return
+}
+
 func Test_newConn(t *testing.T) {
+	// no buffers, no timeouts
 	t.Run("unbuffered no timeouts", func(t *testing.T) {
 		conf := testConfig()
 		conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
@@ -52,6 +76,7 @@ func Test_newConn(t *testing.T) {
 			t.Error("wrong value of back reference to pool")
 		}
 	})
+	// unbuffered with timeouts (TODO: dead pipe)
 	t.Run("unbuffered read timeout", func(t *testing.T) {
 		conf := testConfig()
 		conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
@@ -63,6 +88,10 @@ func Test_newConn(t *testing.T) {
 			t.Error("wrong type of reader")
 		} else if x.c != c {
 			t.Error("wrong value of reader")
+		}
+		// SetReadDeadline error (net.Pipe doesn't supports SetReadDeadline)
+		if _, err := c.r.Read(nil); err == nil {
+			t.Error("missing error of SetReadDeadline")
 		}
 	})
 	t.Run("unbuffered write timeout", func(t *testing.T) {
@@ -77,7 +106,12 @@ func Test_newConn(t *testing.T) {
 		} else if x.c != c {
 			t.Error("wrong value of writer")
 		}
+		// SetWriteDeadline error (net.Pipe doesn't supports SetWriteDeadline)
+		if _, err := c.w.Write(nil); err == nil {
+			t.Error("missing error of SetWriteDeadline")
+		}
 	})
+	// buffered
 	t.Run("read buffer no timeouts", func(t *testing.T) {
 		conf := testConfig()
 		conf.ReadBufferSize, conf.WriteBufferSize = 4096, 0
@@ -118,7 +152,7 @@ func Test_newConn(t *testing.T) {
 			return
 		}
 		if string(b) != example {
-			t.Error("wron value read:", string(b))
+			t.Error("wrong value read:", string(b))
 		}
 		await.Wait()
 	})
@@ -172,7 +206,129 @@ func Test_newConn(t *testing.T) {
 		}
 		await.Wait()
 	})
-	// TODO: buffered + timeouts
+	// buffered + timeouts
+	t.Run("read buffer with timeout", func(t *testing.T) {
+		conf := testConfig()
+		conf.ReadBufferSize, conf.WriteBufferSize = 4096, 0
+		conf.ReadTimeout, conf.WriteTimeout = minTimeout, 0
+		p := NewPool(conf)
+		conn, write, listener := DeadPipe(t) // for example
+		defer listener.Close()
+		c := newConn(conn, p)
+		if _, ok := c.r.(*bufio.Reader); !ok {
+			t.Error("wrong type of reader")
+		}
+		if c.buffered {
+			t.Error("buffered must be false")
+		}
+		var example string = "example"
+		// test reading from c.r
+		done := make(chan struct{})
+		await := new(sync.WaitGroup)
+		await.Add(2)
+		go func() {
+			defer await.Done()
+			select {
+			case <-done:
+			case <-time.After(100*time.Millisecond + minTimeout):
+			}
+			write.Close()
+			conn.Close()
+		}()
+		go func() {
+			defer await.Done()
+			defer close(done)
+			// first, write without deadline errors to
+			// check out last used time of connections
+			if _, err := write.Write([]byte(example)); err != nil {
+				t.Error("writing error:", err)
+				return
+			}
+			// second, trigger deadline timeout error
+			time.Sleep(minTimeout)
+		}()
+		b := make([]byte, len(example))
+		// read and check last used time
+		st := time.Now()
+		if _, err := c.r.Read(b); err != nil {
+			t.Error("reading error:", err)
+			c.conn.Close()
+		} else {
+			et := time.Now()
+			if c.lasttm.Before(st) || c.lasttm.After(et) {
+				t.Error("wrong last used time")
+			}
+			if _, err := c.r.Read(b); err == nil {
+				t.Error("missing read-deadline error")
+			}
+		}
+		await.Wait()
+	})
+	t.Run("write buffer with timeout", func(t *testing.T) {
+		conf := testConfig()
+		conf.ReadBufferSize, conf.WriteBufferSize = 0, 4096
+		conf.ReadTimeout, conf.WriteTimeout = 0, minTimeout
+		p := NewPool(conf)
+		conn, read, listener := DeadPipe(t) // for example
+		defer listener.Close()
+		c := newConn(conn, p)
+		if _, ok := c.w.(*bufio.Writer); !ok {
+			t.Error("wrong type of writer")
+		}
+		if !c.buffered {
+			t.Error("buffered must be true")
+		}
+		if c.bw == nil {
+			t.Error("missing *bufio.Writer")
+			return
+		}
+		var example string = "example"
+		// test reading from c.r
+		done := make(chan struct{})
+		await := new(sync.WaitGroup)
+		await.Add(2)
+		go func() {
+			defer await.Done()
+			select {
+			case <-done:
+			case <-time.After(100*time.Millisecond + minTimeout):
+			}
+			read.Close()
+			conn.Close()
+		}()
+		go func() {
+			defer await.Done()
+			defer close(done)
+			// first, read without deadline errors to
+			// check out last used time of connections
+			b := make([]byte, len(example))
+			if _, err := read.Read(b); err != nil {
+				t.Error("reading error:", err)
+			}
+		}()
+		// write and check last used time
+		st := time.Now()
+		if _, err := c.w.Write([]byte(example)); err != nil {
+			t.Error("writing error:", err)
+			c.conn.Close()
+		} else if err := c.bw.Flush(); err != nil {
+			t.Error("flushing error:", err)
+			c.conn.Close()
+		} else {
+			et := time.Now()
+			if c.lasttm.Before(st) || c.lasttm.After(et) {
+				t.Error("wrong last used time")
+			}
+			// set WriteTimout to negative value to get the error
+			c.pool.conf.WriteTimeout = -5 * time.Second
+			if _, err := c.w.Write([]byte(example)); err == nil {
+				if err := c.bw.Flush(); err == nil {
+					t.Error("missing write-deadline error")
+				}
+			}
+		}
+		await.Wait()
+	})
 }
 
 func TestConn_updateLastUsed(t *testing.T) {
@@ -206,10 +362,13 @@ func TestConn_handle(t *testing.T) {
 	// conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
 	// conn, pipe := net.Pipe()
 	// p := NewPool(conf)
-	// p.Register("ANYM", *Any{})
+	// p.Register("ANYM", &Any{})
 	// c := newConn(conn, p)
 	// defer c.close(closeDontRemove)
-	// c.handle() // starts handleRead and handleWrite methods
+	// // c.pool.wg.Add(2)
+	// // go c.handleRead()
+	// // go c.handleWrite()
+	// c.handle()
 	// // prepare
 	// wg := new(sync.WaitGroup)
 	// wg.Add(3)

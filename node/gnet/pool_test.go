@@ -147,7 +147,17 @@ func TestPool_acquire(t *testing.T) {
 }
 
 func TestPool_acquireBlock(t *testing.T) {
-	// TODO: test blocking
+	t.Run("no limit", func(t *testing.T) {
+		c := testConfig()
+		c.MaxConnections = 0
+		p := NewPool(c)
+		defer p.Close()
+		if p.sem != nil {
+			t.Error("create sem channel wihtout limit of connections")
+		}
+		p.acquireBlock()
+	})
+	// TODO
 }
 
 func TestPool_release(t *testing.T) {
@@ -176,6 +186,12 @@ func TestPool_release(t *testing.T) {
 	})
 }
 
+func connsCount(p *Pool) int {
+	p.RLock()
+	defer p.RUnlock()
+	return len(p.conns)
+}
+
 // listening server and two clients connected to the server
 // all has Any registered
 func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
@@ -199,11 +215,7 @@ func testS2C(sn, c1n, c2n string) (s, c1, c2 *Pool, err error) {
 		return
 	}
 	time.Sleep(50 * time.Millisecond)
-	var connsLen int
-	s.Lock()
-	connsLen = len(s.conns)
-	s.Unlock()
-	if connsLen != 2 {
+	if connsCount(s) != 2 {
 		s.Close()
 		c1.Close()
 		c2.Close()
@@ -222,13 +234,19 @@ func TestPool_BroadcastExcept(t *testing.T) {
 	defer h.Close() // handle
 	defer e.Close() // except
 	var except string
-	if len(e.conns) != 1 {
+	if connsCount(e) != 1 {
 		t.Error("wrong connections size:", len(except))
 		return
 	}
-	for _, c := range e.conns {
-		except = c.conn.LocalAddr().String()
+	e.RLock()
+	{
+		for _, c := range e.conns {
+			except = c.conn.LocalAddr().String()
+			break
+		}
 	}
+	e.RUnlock()
+	t.Log("BroadcastExcept")
 	s.BroadcastExcept(&Any{"data"}, except)
 	select {
 	case m := <-h.Receive():
@@ -258,6 +276,7 @@ func TestPool_Broadcast(t *testing.T) {
 	defer s.Close()  // broadcast
 	defer c1.Close() // receive
 	defer c2.Close() // receive
+	t.Log("Broadcast")
 	s.Broadcast(&Any{"data"})
 	select {
 	case <-c1.Receive():
@@ -272,11 +291,20 @@ func TestPool_Broadcast(t *testing.T) {
 }
 
 func TestPool_Listen(t *testing.T) {
-	p := testPool()
-	if err := p.Listen(""); err != nil {
-		t.Error(err)
-	}
-	p.Close()
+	t.Run("arbitrary", func(t *testing.T) {
+		p := testPool()
+		defer p.Close()
+		if err := p.Listen(""); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("invalid address", func(t *testing.T) {
+		p := testPool()
+		defer p.Close()
+		if err := p.Listen("-1-2-3-4-5-"); err == nil {
+			t.Error("listen with invalid address")
+		}
+	})
 }
 
 func firstConnection(p *Pool) (fc *Conn) {
@@ -342,7 +370,39 @@ func TestPool_Connect(t *testing.T) {
 }
 
 func TestPool_Register(t *testing.T) {
-	//
+	t.Run("norm", func(t *testing.T) {
+		defer shouldNotPanic(t)
+		p := testPool()
+		p.Register(NewPrefix("ANYM"), &Any{})
+	})
+	t.Run("type twice", func(t *testing.T) {
+		defer shouldPanic(t)
+		p := testPool()
+		p.Register(NewPrefix("ANYM"), &Any{})
+		p.Register(NewPrefix("SOME"), &Any{})
+	})
+	t.Run("prefix twice", func(t *testing.T) {
+		type Some struct {
+			Int int64
+		}
+		defer shouldPanic(t)
+		p := testPool()
+		p.Register(NewPrefix("ANYM"), &Any{})
+		p.Register(NewPrefix("ANYM"), &Some{})
+	})
+	t.Run("invalid type", func(t *testing.T) {
+		type Some interface {
+			Some() int64
+		}
+		defer shouldPanic(t)
+		p := testPool()
+		p.Register(NewPrefix("Some"), Some(nil))
+	})
+	t.Run("invalid prefix", func(t *testing.T) {
+		defer shouldPanic(t)
+		p := testPool()
+		p.Register(Prefix{'-', '-', '-', '>'}, &Any{})
+	})
 }
 
 func TestPool_Disconnect(t *testing.T) {
@@ -368,14 +428,7 @@ func TestPool_Receive(t *testing.T) {
 func TestNewPool(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		p := testPool()
-		select {
-		case <-p.quit:
-			t.Error("quit closed")
-		default:
-		}
+		// todo
+		_ = p
 	})
-}
-
-func TestPool_sendPings(t *testing.T) {
-	//
 }
