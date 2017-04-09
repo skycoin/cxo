@@ -161,6 +161,7 @@ func (p *Pool) listen(l net.Listener) {
 	for {
 		p.acquireBlock() // don't block for unlimited connections
 		if c, err = l.Accept(); err != nil {
+			p.release() // release acquired
 			select {
 			case <-p.quit:
 				err = nil // drop "use of closed network connection" error
@@ -171,6 +172,7 @@ func (p *Pool) listen(l net.Listener) {
 			return
 		}
 		if err = p.handleConnection(c); err != nil {
+			p.release() // release acquired
 			p.Print("[ERR] error handling connection: ", err)
 		}
 	}
@@ -307,7 +309,8 @@ func (p *Pool) Close() {
 		c.close(closeDontRemove) // don't remove
 		delete(p.conns, a)       // and remove
 	}
-	p.wg.Wait() // await all goroutines
+	p.wg.Wait()      // await all goroutines
+	close(p.receive) // release receiving channel
 	return
 }
 
@@ -351,7 +354,7 @@ func NewPool(c Config) (p *Pool) {
 		p.sem = make(chan struct{}, c.MaxConnections)
 	}
 	p.quit = make(chan struct{})
-	p.Printf(`[INF] create pool:
+	p.Debugf(`create pool:
     max connections   %d
     max messageSize   %d
     dial timeout      %v

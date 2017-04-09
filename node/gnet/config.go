@@ -139,7 +139,7 @@ func (c *Config) applyDefaults() {
 		c.WriteTimeout = minTimeout
 	}
 	// ping interval
-	if c.PingInterval < minPingInterval {
+	if c.PingInterval > 0 && c.PingInterval < minPingInterval {
 		c.PingInterval = minPingInterval
 	}
 	return

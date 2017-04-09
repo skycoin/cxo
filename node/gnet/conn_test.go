@@ -360,24 +360,55 @@ func TestConn_handle(t *testing.T) {
 	conf := testConfig()
 	conf.ReadTimeout, conf.WriteTimeout = 0, 0
 	conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
+	conf.PingInterval = 0
 	conn, pipe := net.Pipe()
 	p := NewPool(conf)
+	defer func() {
+		if err := closePool(p); err != nil {
+			t.Fatal(err)
+		}
+	}()
 	p.Register(NewPrefix("ANYM"), &Any{})
 	c := newConn(conn, p)
-	defer c.close(closeDontRemove)
+	defer c.Close()
 	// ----
 	// c.pool.wg.Add(2)
 	// go c.handleRead()
 	// go c.handleWrite()
 	// ----
+	p.acquire() // add connection
 	c.handle()
-	// prepare
-	wg := new(sync.WaitGroup)
-	wg.Add(3)
 	// write to the pipe (send)
-	//
+	if _, err := pipe.Write(p.encodeMessage(&Any{"read"})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case m := <-p.Receive():
+		if a, ok := m.Value.(*Any); !ok {
+			t.Errorf("wrong type of message received: %T", a.Value)
+		} else if a.Value != "read" {
+			t.Error("wrong value received:", a.Value)
+		} else {
+			// write to the connection
+			m.Conn.Send(&Any{"write"})
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("slow receiving")
+	}
 	// read from the pipe (receive)
-	//
+	// PREFIX, msg len, string len, string
+	reply := make([]byte, PrefixLength+4+4+len("write"))
+	if n, err := io.ReadFull(pipe, reply); err != nil {
+		t.Fatal("error reading reply:", err)
+	} else if n != PrefixLength+4+4+len("write") {
+		t.Fatal("wrong reply length:", n)
+	}
+	if string(reply[:PrefixLength]) != "ANYM" {
+		t.Error("wrong message prefix")
+	}
+	if string(reply[PrefixLength+4+4:]) != "write" {
+		t.Error("wrong data")
+	}
 }
 
 func TestConn_sendEncodedMessage(t *testing.T) {

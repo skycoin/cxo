@@ -14,11 +14,17 @@ import (
 // helper functons
 //
 
+func resetConfig(c *Config) {
+	c.PingInterval = 0                         // prevent
+	c.WriteTimeout = 0                         // start
+	c.ReadTimeout = 0                          // sending pings
+	c.ReadBufferSize, c.WriteBufferSize = 0, 0 // don't use buffers
+	c.MaxConnections = 0                       // avoid using sem channel
+}
+
 func testConfig() (c Config) {
 	c = NewConfig()
-	c.PingInterval = 0 // prevent
-	c.WriteTimeout = 0 // start
-	c.ReadTimeout = 0  // sending pings
+	resetConfig(&c)
 	if testing.Verbose() {
 		c.Logger = log.NewLogger("[test] ", true)
 	} else {
@@ -30,9 +36,7 @@ func testConfig() (c Config) {
 
 func testConfigName(name string) (c Config) {
 	c = NewConfig()
-	c.PingInterval = 0 // prevent
-	c.WriteTimeout = 0 // start
-	c.ReadTimeout = 0  // sending pings
+	resetConfig(&c)
 	if testing.Verbose() {
 		c.Logger = log.NewLogger("["+name+"] ", true)
 	} else {
@@ -131,13 +135,15 @@ func TestPool_acquire(t *testing.T) {
 	})
 	t.Run("limited", func(t *testing.T) {
 		c := testConfig()
-		c.MaxConnections = 1
+		c.MaxConnections = 1000
 		p := NewPool(c)
 		defer p.Close()
-		if !p.acquire() {
-			t.Error("can't acquire without limit")
+		for i := 0; i < 1000; i++ {
+			if !p.acquire() {
+				t.Error("can't acquire:", i)
+			}
 		}
-		if len(p.sem) != 1 {
+		if len(p.sem) != 1000 {
 			t.Error("invalid length of limiting channel")
 		}
 		if p.acquire() {
@@ -157,7 +163,19 @@ func TestPool_acquireBlock(t *testing.T) {
 		}
 		p.acquireBlock()
 	})
-	// TODO
+	t.Run("limited", func(t *testing.T) {
+		c := testConfig()
+		c.MaxConnections = 1000
+		p := NewPool(c)
+		for i := 0; i < 1000; i++ {
+			p.acquireBlock()
+		}
+		if len(p.sem) != 1000 {
+			t.Error("invalid length of limiting channel")
+		}
+		p.Close()
+		p.acquireBlock() // don't block closed channel
+	})
 }
 
 func TestPool_release(t *testing.T) {
@@ -170,11 +188,11 @@ func TestPool_release(t *testing.T) {
 	})
 	t.Run("limited", func(t *testing.T) {
 		c := testConfig()
-		c.MaxConnections = 1
+		c.MaxConnections = 1000
 		p := NewPool(c)
 		defer p.Close()
 		if !p.acquire() {
-			t.Error("can't acquire without limit")
+			t.Error("can't acquire")
 		}
 		if len(p.sem) != 1 {
 			t.Error("invalid length of limiting channel")
