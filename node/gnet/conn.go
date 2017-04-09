@@ -35,21 +35,6 @@ var (
 	pong = []byte{'<', '-', '-', '-', 0, 0, 0, 0} // pong message ("<---")
 )
 
-// closing behaviour
-type connClosing int
-
-const (
-	// close connection and remove it from
-	// related pool asynchronously
-	closeAsyncRemove connClosing = iota // default
-	// close and remove from the same goroutine
-	// (prevent gouroutine creation)
-	closeSyncRemove
-	// close, but don't remove (related pool will
-	// remove the connection itself)
-	closeDontRemove
-)
-
 type Conn struct {
 	conn net.Conn // connection
 
@@ -67,8 +52,8 @@ type Conn struct {
 	wq     chan []byte   // write queue
 	closed chan struct{} // connection was closed
 
-	pool        *Pool // back read only reference
-	releaseOnce sync.Once
+	pool      *Pool // back read only reference
+	closeOnce sync.Once
 }
 
 func (c *Conn) updateLastUsed() {
@@ -223,7 +208,7 @@ func (c *Conn) handleRead() {
 	// closing
 	defer c.pool.wg.Done()
 	// remove from the goroutine (no fear of deadlocks)
-	defer c.close(closeSyncRemove)
+	defer c.Close()
 	defer c.pool.Debugf("%s end read loop", c.Addr())
 	// read loop
 	for {
@@ -304,7 +289,7 @@ func (c *Conn) handleWrite() {
 	// closing
 	defer c.pool.wg.Done()
 	// remove from the goroutine (no fear of deadlocks)
-	defer c.close(closeSyncRemove)
+	defer c.Close()
 	defer c.pool.Debugf("%s end write loop", c.Addr())
 	// write loop
 	for {
@@ -362,27 +347,13 @@ func (c *Conn) Broadcast(m interface{}) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
-func (c *Conn) close(closing connClosing) (err error) {
-	c.releaseOnce.Do(func() {
-		close(c.closed)
-		c.pool.release()
-		switch closing { // behavoiur of removing from related pool
-		case closeSyncRemove:
-			c.pool.removeConnection(c.Addr()) // same goroutine
-		case closeAsyncRemove:
-			go c.pool.removeConnection(c.Addr()) // async
-		default: // don't remove (pool will remove the connection itself)
-		}
-	})
-	err = c.conn.Close()
-	return
-}
-
 // Close connection
 func (c *Conn) Close() (err error) {
-	// remove async by default to
-	// preven possible deadlocks
-	err = c.close(closeAsyncRemove)
+	c.closeOnce.Do(func() {
+		close(c.closed)         // chan
+		c.pool.delete(c.Addr()) // map
+		err = c.conn.Close()    // connection (inclusive release)
+	})
 	return
 }
 

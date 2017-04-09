@@ -262,6 +262,7 @@ func testS2C(t *testing.T, sn, c1n, c2n string) (s, c1, c2 *Pool) {
 		}
 		t.Fatalf("invalid connections map length: %d", cc)
 	}
+	time.Sleep(100 * time.Millisecond)
 	return
 }
 
@@ -280,18 +281,11 @@ func TestPool_BroadcastExcept(t *testing.T) {
 		}
 	}()
 	var except string
-	if connsCount(e) != 1 {
-		t.Error("wrong connections size:", len(except))
-		return
+	if fc := firstConnection(e); fc == nil {
+		t.Error("wrong connections count")
+	} else {
+		except = fc.conn.LocalAddr().String()
 	}
-	e.RLock()
-	{
-		for _, c := range e.conns {
-			except = c.conn.LocalAddr().String()
-			break
-		}
-	}
-	e.RUnlock()
 	t.Log("BroadcastExcept")
 	s.BroadcastExcept(&Any{"data"}, except)
 	select {
@@ -358,6 +352,8 @@ func TestPool_Listen(t *testing.T) {
 }
 
 func firstConnection(p *Pool) (fc *Conn) {
+	p.RLock()
+	defer p.RUnlock()
 	for _, c := range p.conns {
 		fc = c
 		return
@@ -424,7 +420,42 @@ func TestPool_removeConnection(t *testing.T) {
 }
 
 func TestPool_Connect(t *testing.T) {
-	//
+	t.Run("fields", func(t *testing.T) {
+		sc := testConfigName("server")
+		sc.MaxConnections = 1000
+		s := NewPool(sc)
+		if err := s.Listen(""); err != nil {
+			t.Fatal(err)
+		}
+		cc := testConfigName("client")
+		cc.MaxConnections = 1000
+		c := NewPool(cc)
+		if err := c.Connect(s.Address()); err != nil {
+			t.Fatal(err)
+		}
+		var sf, cf *Conn
+		if sf = firstConnection(s); sf == nil {
+			t.Fatal("missing connection")
+		}
+		if cf = firstConnection(c); cf == nil {
+			t.Fatal("missing connection")
+		}
+		if sf.Addr() != cf.conn.LocalAddr().String() {
+			t.Error("missmatch adresses")
+		}
+		if cf.Addr() != sf.conn.LocalAddr().String() {
+			t.Error("missmatch adresses")
+		}
+		if len(s.sem) != 2 { // connection + next accept
+			t.Error("wrong sem len of server:", len(s.sem))
+		}
+		if len(c.sem) != 1 {
+			t.Error("wrong sem len of client:", len(s.sem))
+		}
+		// close the server
+		s.Close()
+		// TODO
+	})
 }
 
 func TestPool_Register(t *testing.T) {
