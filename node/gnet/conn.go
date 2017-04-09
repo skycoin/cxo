@@ -132,6 +132,12 @@ func (c *Conn) sendEncodedMessage(m []byte) (err error) {
 	case c.wq <- m:
 	case <-c.closed:
 		err = ErrClosedConn
+	default:
+		// if some connection can't send messages as fast as they
+		// appears, then this connection should be closed to
+		// prevent other connections be closed by timeout awaiting
+		// the connection inside Broadcast* methods of Pool
+		err = ErrWriteQueueFull
 	}
 	return
 }

@@ -206,11 +206,16 @@ func TestConn_handle(t *testing.T) {
 	// conf.ReadBufferSize, conf.WriteBufferSize = 0, 0
 	// conn, pipe := net.Pipe()
 	// p := NewPool(conf)
+	// p.Register("ANYM", *Any{})
 	// c := newConn(conn, p)
-	// defer c.close(false, false)
-	// // TODO
-	// _ = pipe
-	// //c.handle() // starts handlRead and handleWrite methods
+	// defer c.close(closeDontRemove)
+	// c.handle() // starts handleRead and handleWrite methods
+	// // prepare
+	// wg := new(sync.WaitGroup)
+	// wg.Add(3)
+	// // write to the pipe (send)
+	// //
+	// // read from the pipe (receive)
 	// //
 }
 

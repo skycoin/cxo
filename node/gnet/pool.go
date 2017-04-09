@@ -36,6 +36,7 @@ type Pool struct {
 	receive chan Message     // receive messages
 	sem     chan struct{}    // max connections
 
+	wg        sync.WaitGroup // close
 	closeOnce sync.Once
 	quit      chan struct{} // quit
 }
@@ -123,6 +124,8 @@ Loop:
 		}
 		if err = c.sendEncodedMessage(em); err != nil {
 			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+			c.close(closeDontRemove) // terminate connection
+			delete(p.conns, address) // and remove from the pool
 		}
 	}
 }
