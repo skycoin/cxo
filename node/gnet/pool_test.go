@@ -2,6 +2,9 @@ package gnet
 
 import (
 	"io/ioutil"
+	"net"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -35,6 +38,34 @@ func timeLimit(tm time.Duration, fatal func()) (breakChan chan struct{}) {
 			fatal()
 		}
 	}()
+	return
+}
+
+// limited closing of a pool
+
+func closePool(t *testing.T, p *Pool, tm time.Duration) {
+	done := timeLimit(50*time.Millisecond, func() {
+		if _, file, no, ok := runtime.Caller(1); ok {
+			file = filepath.Base(file)
+			t.Fatalf("closing of pool is too slow: %s:%d", file, no)
+		} else {
+			t.Fatal("closing of pool is too slow")
+		}
+	})
+	p.Close()
+	close(done)
+}
+
+func dial(t *testing.T, address string, tm time.Duration) (conn net.Conn) {
+	var err error
+	if conn, err = net.DialTimeout("tcp", address, tm); err != nil {
+		if _, file, no, ok := runtime.Caller(1); ok {
+			file = filepath.Base(file)
+			t.Fatalf("unexpected dialing error (%s:%d): %v", file, no, err)
+		} else {
+			t.Fatal("unexpected dialing error:", err)
+		}
+	}
 	return
 }
 
@@ -127,16 +158,33 @@ func TestNewPool(t *testing.T) {
 	})
 	t.Run("immediate close", func(t *testing.T) {
 		p := NewPool(Config{})
-		done := timeLimit(50*time.Millisecond, func() {
-			t.Fatal("closing of pool is too slow")
-		})
-		p.Close()
-		close(done)
+		closePool(t, p, 50*time.Millisecond)
 	})
 }
 
 func TestPool_Listen(t *testing.T) {
-	// TODO: high priority
+	t.Run("invalid address", func(t *testing.T) {
+		p := NewPool(testConfigName("Listen/invalid address"))
+		defer p.Close()
+		if err := p.Listen("-1-2-3-4-5-"); err == nil {
+			t.Error("missing error listening on invalid address")
+		}
+	})
+	t.Run("arbitrary address", func(t *testing.T) {
+		p := NewPool(testConfigName("Listen/arbitrary address"))
+		defer closePool(t, p, 50*time.Millisecond)
+		if err := p.Listen(""); err != nil {
+			t.Error("unexpected listeninig error:", err)
+		}
+	})
+	t.Run("accept", func(t *testing.T) {
+		p := NewPool(testConfigName("Listen/accept"))
+		defer closePool(t, p, 50*time.Millisecond)
+		if err := p.Listen(""); err != nil {
+			t.Error("unexpected listeninig error:", err)
+		}
+		dial(t, p.l.Addr().String(), 50*time.Millisecond).Close()
+	})
 }
 
 func TestPool_Connect(t *testing.T) {
