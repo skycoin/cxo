@@ -103,6 +103,15 @@ func connectionsLength(p *Pool) int {
 	return len(p.conns)
 }
 
+func firstConnection(p *Pool) (c *Conn) {
+	p.cmx.RLock()
+	defer p.cmx.RUnlock()
+	for _, c = range p.conns {
+		break
+	}
+	return
+}
+
 // Any is type for tests
 type Any struct{ Value string }
 
@@ -309,7 +318,45 @@ func TestPool_Connect(t *testing.T) {
 }
 
 func TestPool_Disconnect(t *testing.T) {
-	// TODO: high priority
+	t.Run("not found", func(t *testing.T) {
+		p := NewPool(testConfigName("Disconnect/not_found"))
+		defer p.Close()
+		if err := p.Disconnect("127.0.0.1:1599"); err == nil {
+			t.Errorf("missing %q error", ErrNotFound)
+		} else if err != ErrNotFound {
+			t.Errorf("unexpected error: want %q, got %q", ErrNotFound, err)
+		}
+	})
+	t.Run("found", func(t *testing.T) {
+		connected := make(chan struct{}, 2)
+		disconnected := make(chan struct{}, 2)
+		conf := testConfigName("Disconnect/found")
+		conf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
+		conf.DisconnectHandler = func(*Conn) { disconnected <- struct{}{} }
+		p := NewPool(conf)
+		defer p.Close()
+		l := listen(t) // test listener
+		defer l.Close()
+		if err := p.Connect(l.Addr().String()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		if !readChan(TM, connected) {
+			t.Fatal("slow connecting")
+		}
+		// unfortunately we can't use l.Addr().String to disconnect the
+		// connection because it returns [::]:<port> but connection
+		// stored in map using [::1]:<port>. There is a way to use
+		// RemoteAdrr of the underlying net.Conn that is (*Conn).Addr()
+		if err := p.Disconnect(firstConnection(p).Addr()); err != nil {
+			t.Error("unexpected disconnecting error:", err)
+		}
+		if !readChan(TM, disconnected) {
+			t.Fatal("slow disconnecting")
+		}
+		if connectionsLength(p) != 0 {
+			t.Error("map is not clear")
+		}
+	})
 }
 
 func TestPool_BroadcastExcept(t *testing.T) {
