@@ -28,6 +28,11 @@ const (
 // to do some work on new connections
 type ConnectionHandler func(c *Conn)
 
+// DisconnectHandler represents callback that
+// called directly after an establised connection
+// was closed
+type DisconnectHandler func(c *Conn)
+
 type Config struct {
 	// MaxConnections - incoming and outgoing
 	// together
@@ -72,9 +77,13 @@ type Config struct {
 	// interval is greater too
 	PingInterval time.Duration // ping interval
 
-	// ConnectionHandler is a handler that called whe
+	// ConnectionHandler called when
 	// a new connections was created
 	ConnectionHandler ConnectionHandler
+
+	// DisconnectHandler called directly after
+	// an establised connection was closed
+	DisconnectHandler DisconnectHandler
 
 	// Logger to use. If it's nil then default logger used
 	Logger log.Logger

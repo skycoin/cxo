@@ -353,6 +353,9 @@ func (c *Conn) Close() (err error) {
 		close(c.closed)         // chan
 		c.pool.delete(c.Addr()) // map
 		err = c.conn.Close()    // connection (inclusive release)
+		if c.pool.conf.DisconnectHandler != nil {
+			c.pool.conf.DisconnectHandler(c)
+		}
 	})
 	return
 }

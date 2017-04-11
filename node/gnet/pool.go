@@ -150,9 +150,10 @@ type limitedConnection struct {
 	release     func()
 }
 
-func (l *limitedConnection) Close() error {
+func (l *limitedConnection) Close() (err error) {
+	err = l.Conn.Close()
 	l.releaseOnce.Do(l.release)
-	return l.Conn.Close()
+	return
 }
 
 // ------------------------------- accept ----------------------------------- //
@@ -179,11 +180,17 @@ func (p *Pool) accept(l net.Listener) (c net.Conn, err error) {
 
 // Listen start listening on given address
 func (p *Pool) Listen(address string) (err error) {
+	// don't listen if the pool was closed
+	if p.isClosed() {
+		err = ErrClosed
+		return
+	}
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
 	if p.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
+	p.Print("[INF] listening on ", p.l.Addr().String())
 	p.wg.Add(1)
 	go p.listen(p.l)
 	return
@@ -220,11 +227,12 @@ func (p *Pool) listen(l net.Listener) {
 // --------------------------------- dial ----------------------------------- //
 
 func (p *Pool) dial(address string) (c net.Conn, err error) {
+	// check out limit of connections
 	if !p.acquire() {
 		err = ErrConnectionsLimit
 		return
 	}
-	if c, err = net.Dial("tpc", address); err != nil {
+	if c, err = net.Dial("tcp", address); err != nil {
 		p.release()
 		return
 	}
@@ -241,11 +249,12 @@ func (p *Pool) dial(address string) (c net.Conn, err error) {
 func (p *Pool) dialTimeout(address string,
 	timeout time.Duration) (c net.Conn, err error) {
 
+	// check out limit of connections
 	if !p.acquire() {
 		err = ErrConnectionsLimit
 		return
 	}
-	if c, err = net.DialTimeout("tpc", address, timeout); err != nil {
+	if c, err = net.DialTimeout("tcp", address, timeout); err != nil {
 		p.release()
 		return
 	}
@@ -271,11 +280,6 @@ func (p *Pool) Connect(address string) (err error) {
 	// don't connect if the pool was closed
 	if p.isClosed() {
 		err = ErrClosed
-		return
-	}
-	// check out limit of connections
-	if !p.acquire() {
-		err = ErrConnectionsLimit
 		return
 	}
 	// preliminary check

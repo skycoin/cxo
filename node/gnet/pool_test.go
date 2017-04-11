@@ -11,6 +11,9 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
+// default timeout for some parts of tests
+const TM time.Duration = 50 * time.Millisecond
+
 func testConfig() Config { return testConfigName("") }
 
 func testConfigName(name string) (c Config) {
@@ -29,31 +32,43 @@ func testConfigName(name string) (c Config) {
 
 // a limited by time task
 
-func timeLimit(tm time.Duration, fatal func()) (breakChan chan struct{}) {
-	breakChan = make(chan struct{})
+func timeLimit(tm time.Duration, limitedTask func()) (get bool) {
+	done := make(chan struct{})
 	go func() {
-		select {
-		case <-breakChan:
-		case <-time.After(tm):
-			fatal()
-		}
+		defer close(done)
+		limitedTask()
 	}()
+	select {
+	case <-done:
+		get = true
+	case <-time.After(tm):
+	}
+	return
+}
+
+// limited reading from struct{} channel
+
+func readChan(tm time.Duration, c <-chan struct{}) (get bool) {
+	select {
+	case <-c:
+		get = true
+	case <-time.After(tm):
+	}
 	return
 }
 
 // limited closing of a pool
 
 func closePool(t *testing.T, p *Pool, tm time.Duration) {
-	done := timeLimit(50*time.Millisecond, func() {
+	get := timeLimit(tm, func() { p.Close() })
+	if !get {
 		if _, file, no, ok := runtime.Caller(1); ok {
 			file = filepath.Base(file)
 			t.Fatalf("closing of pool is too slow: %s:%d", file, no)
 		} else {
 			t.Fatal("closing of pool is too slow")
 		}
-	})
-	p.Close()
-	close(done)
+	}
 }
 
 func dial(t *testing.T, address string, tm time.Duration) (conn net.Conn) {
@@ -67,6 +82,25 @@ func dial(t *testing.T, address string, tm time.Duration) (conn net.Conn) {
 		}
 	}
 	return
+}
+
+func listen(t *testing.T) (l net.Listener) {
+	var err error
+	if l, err = net.Listen("tcp", ""); err != nil {
+		if _, file, no, ok := runtime.Caller(1); ok {
+			file = filepath.Base(file)
+			t.Fatalf("unexpected listening error (%s:%d): %v", file, no, err)
+		} else {
+			t.Fatal("unexpected listening error:", err)
+		}
+	}
+	return
+}
+
+func connectionsLength(p *Pool) int {
+	p.cmx.RLock()
+	defer p.cmx.RUnlock()
+	return len(p.conns)
 }
 
 // Any is type for tests
@@ -158,7 +192,7 @@ func TestNewPool(t *testing.T) {
 	})
 	t.Run("immediate close", func(t *testing.T) {
 		p := NewPool(Config{})
-		closePool(t, p, 50*time.Millisecond)
+		closePool(t, p, TM)
 	})
 }
 
@@ -172,23 +206,106 @@ func TestPool_Listen(t *testing.T) {
 	})
 	t.Run("arbitrary address", func(t *testing.T) {
 		p := NewPool(testConfigName("Listen/arbitrary address"))
-		defer closePool(t, p, 50*time.Millisecond)
+		defer closePool(t, p, TM)
 		if err := p.Listen(""); err != nil {
 			t.Error("unexpected listeninig error:", err)
 		}
 	})
 	t.Run("accept", func(t *testing.T) {
 		p := NewPool(testConfigName("Listen/accept"))
-		defer closePool(t, p, 50*time.Millisecond)
+		defer closePool(t, p, TM)
 		if err := p.Listen(""); err != nil {
 			t.Error("unexpected listeninig error:", err)
 		}
-		dial(t, p.l.Addr().String(), 50*time.Millisecond).Close()
+		dial(t, p.l.Addr().String(), TM).Close()
+	})
+	t.Run("closed pool", func(t *testing.T) {
+		p := NewPool(testConfigName("Listen/closed pool"))
+		closePool(t, p, TM)
+		if err := p.Listen("127.0.0.1:3000"); err == nil {
+			t.Error("missing error listening on closed pool")
+		} else if err != ErrClosed {
+			t.Errorf("unexpected error: want %q, got %q", ErrClosed, err)
+		}
+	})
+	t.Run("connections limit", func(t *testing.T) {
+		connect := make(chan struct{}, 2)
+		disconnect := make(chan struct{}, 2)
+		conf := testConfigName("Listen/connections limit")
+		conf.MaxConnections = 1 // 0 - unlimited
+		conf.ConnectionHandler = func(*Conn) { connect <- struct{}{} }
+		conf.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
+		p := NewPool(conf)
+		defer closePool(t, p, TM)
+		if err := p.Listen(""); err != nil {
+			t.Fatal("unexpected listening error:", err)
+		}
+		c1 := dial(t, p.l.Addr().String(), TM)
+		c2 := dial(t, p.l.Addr().String(), TM)
+		if !readChan(TM, connect) {
+			t.Fatal("connecting is too slow")
+		}
+		if connectionsLength(p) != 1 {
+			t.Fatal("accepted out of limit")
+		}
+		c1.Close() // release
+		if !readChan(TM, disconnect) {
+			t.Error("disconnecting is too slow")
+		}
+		if !readChan(TM, connect) {
+			t.Fatal("connecting is too slow")
+		}
+		if connectionsLength(p) != 1 {
+			t.Fatal("accepted out of limit")
+		}
+		c2.Close()
+		if !readChan(TM, disconnect) {
+			t.Error("disconnecting is too slow")
+		}
+		if connectionsLength(p) != 0 {
+			t.Error("doesn't release closed connections")
+		}
 	})
 }
 
 func TestPool_Connect(t *testing.T) {
-	// TODO: high priority
+	t.Run("invalid address", func(t *testing.T) {
+		p := NewPool(testConfigName("Connect/invalid address"))
+		defer closePool(t, p, TM)
+		if err := p.Connect("-1-2-3-4-5-"); err == nil {
+			t.Error("mising error connecting to invalid address")
+		}
+	})
+	t.Run("closed pool", func(t *testing.T) {
+		p := NewPool(testConfigName("Connect/closed pool"))
+		closePool(t, p, TM)
+		if err := p.Connect("127.0.0.1:3000"); err == nil {
+			t.Error("missing error connecting on closed pool")
+		} else if err != ErrClosed {
+			t.Errorf("unexpected error: want %q, got %q", ErrClosed, err)
+		}
+	})
+	t.Run("connections limit", func(t *testing.T) {
+		conf := testConfigName("Listen/connections limit")
+		conf.MaxConnections = 1 // 0 - unlimited
+		p := NewPool(conf)
+		defer closePool(t, p, TM)
+		l1 := listen(t) // test listener
+		defer l1.Close()
+		if err := p.Connect(l1.Addr().String()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		l2 := listen(t) // another listener required because of unique addresses
+		defer l2.Close()
+		if err := p.Connect(l2.Addr().String()); err == nil {
+			t.Fatal("allow connection out of limit")
+		} else if err != ErrConnectionsLimit {
+			t.Errorf("unexpected error: want %q, got %q",
+				ErrConnectionsLimit, err)
+		}
+	})
+	// TODO: low priority
+	//   - dial timeout test
 }
 
 func TestPool_Disconnect(t *testing.T) {
