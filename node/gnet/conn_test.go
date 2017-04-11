@@ -11,8 +11,9 @@ import (
 
 // unfortunately, net.Pipe returns connections
 // that doesn't supports deadlines
-func DeadPipe(t *testing.T) (a, b net.Conn, l net.Listener) {
+func DeadPipe(t *testing.T) (a, b net.Conn) {
 	var err error
+	var l net.Listener
 	if l, err = net.Listen("tcp", ""); err != nil {
 		t.Fatal("can't create mock listener:", err)
 	}
@@ -23,6 +24,7 @@ func DeadPipe(t *testing.T) (a, b net.Conn, l net.Listener) {
 		if b, err = l.Accept(); err != nil {
 			t.Fatal("can't accept mock connection:", err)
 		}
+		l.Close()
 	}()
 	a, err = net.DialTimeout("tcp", l.Addr().String(), 100*time.Millisecond)
 	if err != nil {
@@ -212,8 +214,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadBufferSize, conf.WriteBufferSize = 4096, 0
 		conf.ReadTimeout, conf.WriteTimeout = minTimeout, 0
 		p := NewPool(conf)
-		conn, write, listener := DeadPipe(t) // for example
-		defer listener.Close()
+		conn, write := DeadPipe(t) // for example
 		c := newConn(conn, p)
 		if _, ok := c.r.(*bufio.Reader); !ok {
 			t.Error("wrong type of reader")
@@ -269,8 +270,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadBufferSize, conf.WriteBufferSize = 0, 4096
 		conf.ReadTimeout, conf.WriteTimeout = 0, minTimeout
 		p := NewPool(conf)
-		conn, read, listener := DeadPipe(t) // for example
-		defer listener.Close()
+		conn, read := DeadPipe(t) // for example
 		c := newConn(conn, p)
 		if _, ok := c.w.(*bufio.Writer); !ok {
 			t.Error("wrong type of writer")
@@ -412,17 +412,30 @@ func TestConn_handle(t *testing.T) {
 //
 
 func TestConn_Addr(t *testing.T) {
-	// TODO
+	// TODO: low proirity
 }
 
 func TestConn_Send(t *testing.T) {
-	// TODO
+	// TODO: high priority
 }
 
 func TestConn_Broadcast(t *testing.T) {
-	// TODO
+	// TODO: high priority
 }
 
 func TestConn_Close(t *testing.T) {
-	// TODO
+	p1 := NewPool(testConfigName("Close 1"))
+	defer p1.Close()
+	if err := p1.Listen(""); err != nil {
+		t.Error("unexpected listening error:", err)
+	}
+	p2 := NewPool(testConfigName("Close 2"))
+	defer p2.Close()
+	if err := p2.Connect(p1.Address()); err != nil {
+		t.Fatal("unexpected conneccting error:", err)
+	}
+	firstConnection(p1).Close()
+	if connectionsLength(p1) != 0 {
+		t.Error("closng connectin doesn't delete the connection from pool")
+	}
 }

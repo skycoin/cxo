@@ -328,10 +328,8 @@ func TestPool_Disconnect(t *testing.T) {
 		}
 	})
 	t.Run("found", func(t *testing.T) {
-		connected := make(chan struct{}, 2)
 		disconnected := make(chan struct{}, 2)
 		conf := testConfigName("Disconnect/found")
-		conf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
 		conf.DisconnectHandler = func(*Conn) { disconnected <- struct{}{} }
 		p := NewPool(conf)
 		defer p.Close()
@@ -339,9 +337,6 @@ func TestPool_Disconnect(t *testing.T) {
 		defer l.Close()
 		if err := p.Connect(l.Addr().String()); err != nil {
 			t.Fatal("unexpected connecting error:", err)
-		}
-		if !readChan(TM, connected) {
-			t.Fatal("slow connecting")
 		}
 		// unfortunately we can't use l.Addr().String to disconnect the
 		// connection because it returns [::]:<port> but connection
@@ -372,15 +367,15 @@ func TestPool_Register(t *testing.T) {
 }
 
 func TestPool_Address(t *testing.T) {
-	// TODO: high priority
+	// TODO: mid. priority
 }
 
 func TestPool_Connections(t *testing.T) {
-	// TODO: high priority
+	// TODO: mid. priority
 }
 
 func TestPool_IsConnExist(t *testing.T) {
-	// TODO: high priority
+	// TODO: low priority
 }
 
 func TestPool_Receive(t *testing.T) {
