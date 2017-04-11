@@ -412,11 +412,49 @@ func TestConn_handle(t *testing.T) {
 //
 
 func TestConn_Addr(t *testing.T) {
-	// TODO: low proirity
+	p := NewPool(testConfigName("Addr"))
+	defer p.Close()
+	l := listen(t)
+	defer l.Close()
+	if err := p.Connect(l.Addr().String()); err != nil {
+		t.Fatal("unexpeceted connecting error:", err)
+	}
+	c := firstConnection(p)
+	if want, got := c.conn.RemoteAddr().String(), c.Addr(); want != got {
+		t.Errorf("unexpected Addr() value: want %q, got %q", want, got)
+	}
 }
 
 func TestConn_Send(t *testing.T) {
-	// TODO: high priority
+	s := NewPool(testConfigName("Send (sender)"))
+	s.Register(NewPrefix("ANYM"), &Any{})
+	defer s.Close()
+	if err := s.Listen(""); err != nil {
+		t.Error("unexpected listening error:", err)
+	}
+	r := NewPool(testConfigName("Send (receiver)"))
+	r.Register(NewPrefix("ANYM"), &Any{})
+	defer r.Close()
+	if err := r.Connect(s.Address()); err != nil {
+		t.Fatal("unexpected conneccting error:", err)
+	}
+	c := firstConnection(s) // sending to the connection
+	c.Send(&Any{"data"})
+	select {
+	case m := <-r.Receive():
+		la, ra := m.Conn.conn.LocalAddr().String(), c.conn.RemoteAddr().String()
+		if la != ra {
+			t.Errorf("received from unexpeted connection: %v - %v", la, ra)
+		}
+		if a, ok := m.Value.(*Any); !ok {
+			t.Errorf("unexpected type of received message: %T", m.Value)
+		} else if a.Value != "data" {
+			t.Errorf("unexepeced data received: want %q, got %q",
+				"data", a.Value)
+		}
+	case <-time.After(TM):
+		t.Fatal("slow receiving")
+	}
 }
 
 func TestConn_Broadcast(t *testing.T) {
