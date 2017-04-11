@@ -429,13 +429,18 @@ func TestConn_Close(t *testing.T) {
 	if err := p1.Listen(""); err != nil {
 		t.Error("unexpected listening error:", err)
 	}
-	p2 := NewPool(testConfigName("Close 2"))
+	conf2 := testConfigName("Close 1")
+	conf2.MaxConnections = 1 // to be sure that the limit is set
+	p2 := NewPool(conf2)
 	defer p2.Close()
 	if err := p2.Connect(p1.Address()); err != nil {
 		t.Fatal("unexpected conneccting error:", err)
 	}
-	firstConnection(p1).Close()
-	if connectionsLength(p1) != 0 {
+	firstConnection(p2).Close()
+	if connectionsLength(p2) != 0 {
 		t.Error("closng connectin doesn't delete the connection from pool")
+	}
+	if len(p2.sem) != 0 {
+		t.Error("closing connection doesn't release limit")
 	}
 }
