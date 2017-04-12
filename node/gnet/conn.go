@@ -52,8 +52,8 @@ type Conn struct {
 	wq     chan []byte   // write queue
 	closed chan struct{} // connection was closed
 
-	pool        *Pool // back read only reference
-	releaseOnce sync.Once
+	pool      *Pool // back read only reference
+	closeOnce sync.Once
 }
 
 func (c *Conn) updateLastUsed() {
@@ -108,6 +108,7 @@ func newConn(c net.Conn, p *Pool) (x *Conn) {
 }
 
 func (c *Conn) handle() {
+	c.pool.wg.Add(2)
 	go c.handleRead()
 	go c.handleWrite()
 }
@@ -117,6 +118,12 @@ func (c *Conn) sendEncodedMessage(m []byte) (err error) {
 	case c.wq <- m:
 	case <-c.closed:
 		err = ErrClosedConn
+	default:
+		// if some connection can't send messages as fast as they
+		// appears, then this connection should be closed to
+		// prevent other connections be closed by timeout awaiting
+		// the connection inside Broadcast* methods of Pool
+		err = ErrWriteQueueFull
 	}
 	return
 }
@@ -198,10 +205,12 @@ func (c *Conn) handleRead() {
 
 		terminate bool // semantic
 	)
-	defer func() {
-		c.close(true, true) // remove, sync
-		c.pool.Debugf("%s end read loop", c.Addr())
-	}()
+	// closing
+	defer c.pool.wg.Done()
+	// remove from the goroutine (no fear of deadlocks)
+	defer c.Close()
+	defer c.pool.Debugf("%s end read loop", c.Addr())
+	// read loop
 	for {
 		if c.isClosed() {
 			return
@@ -277,10 +286,12 @@ func (c *Conn) handleWrite() {
 		pingc = c.pingt.C
 		defer c.pingt.Stop()
 	}
-	defer func() {
-		c.close(true, true) // remove, sync
-		c.pool.Debugf("%s end write loop", c.Addr())
-	}()
+	// closing
+	defer c.pool.wg.Done()
+	// remove from the goroutine (no fear of deadlocks)
+	defer c.Close()
+	defer c.pool.Debugf("%s end write loop", c.Addr())
+	// write loop
 	for {
 		select {
 		case <-pingc:
@@ -336,25 +347,16 @@ func (c *Conn) Broadcast(m interface{}) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
-func (c *Conn) close(remove, async bool) (err error) {
-	c.releaseOnce.Do(func() {
-		close(c.closed)
-		c.pool.release()
-		if remove {
-			if async {
-				go c.pool.removeConnection(c.Addr()) // async
-			} else {
-				c.pool.removeConnection(c.Addr()) // same goroutine
-			}
-		}
-	})
-	err = c.conn.Close()
-	return
-}
-
 // Close connection
 func (c *Conn) Close() (err error) {
-	err = c.close(true, true) // remove async
+	c.closeOnce.Do(func() {
+		close(c.closed)         // chan
+		c.pool.delete(c.Addr()) // map
+		err = c.conn.Close()    // connection (inclusive release)
+		if c.pool.conf.DisconnectHandler != nil {
+			c.pool.conf.DisconnectHandler(c)
+		}
+	})
 	return
 }
 

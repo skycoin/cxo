@@ -5,6 +5,7 @@ import (
 	"net"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
@@ -17,6 +18,8 @@ var (
 	ErrClosed = errors.New("the pool was closed")
 	// ErrConnectionsLimit occurs when ... (TODO)
 	ErrConnectionsLimit = errors.New("connections limit reached")
+	// ErrNotFound ...(TODO)
+	ErrNotFound = errors.New("not found")
 )
 
 type Pool struct {
@@ -30,15 +33,326 @@ type Pool struct {
 	reg map[reflect.Type]Prefix // registery
 	rev map[Prefix]reflect.Type // inverse registery
 
-	// pool
-	l       net.Listener     // listener
-	conns   map[string]*Conn // remote address -> connection
-	receive chan Message     // receive messages
-	sem     chan struct{}    // max connections
+	// pool --------------------------------------------------+
+	lmx sync.RWMutex  // listener mutex                       |
+	l   net.Listener  // listener                             |
+	sem chan struct{} // max connections                      |
+	//                                                        |
+	cmx   sync.RWMutex     // connections mutex               |
+	conns map[string]*Conn // remote address -> connection    |
+	// -------------------------------------------------------+
 
+	receive chan Message // receive messages
+
+	wg        sync.WaitGroup // close
 	closeOnce sync.Once
 	quit      chan struct{} // quit
 }
+
+// NewPool creates new Pool instance
+// with given config
+func NewPool(c Config) (p *Pool) {
+	c.applyDefaults()
+	p = new(Pool)
+	if c.Logger == nil {
+		p.Logger = log.NewLogger("", false)
+	} else {
+		p.Logger = c.Logger
+	}
+	p.conf = c
+	p.reg = make(map[reflect.Type]Prefix)
+	p.rev = make(map[Prefix]reflect.Type)
+	p.conns = make(map[string]*Conn, c.MaxConnections)
+	p.receive = make(chan Message, c.ReadQueueSize)
+	if c.MaxConnections != 0 {
+		p.sem = make(chan struct{}, c.MaxConnections)
+	}
+	p.quit = make(chan struct{})
+	p.Debugf(`create pool:
+    max connections   %d
+    max messageSize   %d
+    dial timeout      %v
+    read timeout      %v
+    write timeout     %v
+    read buffer size  %d
+    write buffer size %d
+    read queue size   %d
+    write queue size  %d
+    ping interval     %v
+`,
+		c.MaxConnections,
+		c.MaxMessageSize,
+		c.DialTimeout,
+		c.ReadTimeout,
+		c.WriteTimeout,
+		c.ReadBufferSize,
+		c.WriteBufferSize,
+		c.ReadQueueSize,
+		c.WriteQueueSize,
+		c.PingInterval)
+	return
+}
+
+// -------------------------------------------------------------------------- //
+//                                 helpers                                    //
+// -------------------------------------------------------------------------- //
+
+func (p *Pool) isClosed() (closed bool) {
+	select {
+	case <-p.quit:
+		closed = true
+	default:
+	}
+	return
+}
+
+// -------------------------------------------------------------------------- //
+//                            listen and dial                                 //
+// -------------------------------------------------------------------------- //
+
+// -------------------------------- limit ----------------------------------- //
+
+// blocking acquire
+func (p *Pool) acquireBlock() (err error) {
+	if p.sem != nil {
+		select {
+		case p.sem <- struct{}{}: // blocking acquire
+		case <-p.quit:
+			err = ErrClosed
+		}
+	}
+	return
+}
+
+// try acquire
+func (p *Pool) acquire() (got bool) {
+	if got = (p.sem == nil); !got {
+		select {
+		case p.sem <- struct{}{}:
+			got = true
+		default:
+		}
+	}
+	return
+}
+
+func (p *Pool) release() {
+	if p.sem != nil {
+		<-p.sem
+	}
+}
+
+// ------------------------- limited connection ----------------------------- //
+
+type limitedConnection struct {
+	net.Conn
+	releaseOnce sync.Once
+	release     func()
+}
+
+func (l *limitedConnection) Close() (err error) {
+	err = l.Conn.Close()
+	l.releaseOnce.Do(l.release)
+	return
+}
+
+// ------------------------------- accept ----------------------------------- //
+
+func (p *Pool) accept(l net.Listener) (c net.Conn, err error) {
+	if err = p.acquireBlock(); err != nil {
+		return
+	}
+	if c, err = l.Accept(); err != nil {
+		p.release()
+		return
+	}
+	if p.sem == nil {
+		return
+	}
+	c = &limitedConnection{
+		Conn:    c,
+		release: p.release,
+	}
+	return
+}
+
+// ------------------------------- listen ----------------------------------- //
+
+// Listen start listening on given address
+func (p *Pool) Listen(address string) (err error) {
+	// don't listen if the pool was closed
+	if p.isClosed() {
+		err = ErrClosed
+		return
+	}
+	p.lmx.Lock()
+	defer p.lmx.Unlock()
+	if p.l, err = net.Listen("tcp", address); err != nil {
+		return
+	}
+	p.Print("[INF] listening on ", p.l.Addr().String())
+	p.wg.Add(1)
+	go p.listen(p.l)
+	return
+}
+
+func (p *Pool) listen(l net.Listener) {
+	var (
+		c   net.Conn
+		err error
+	)
+	// closing
+	defer p.wg.Done()
+	defer l.Close()
+	defer p.Debug("stop accept loop")
+	// accept loop
+	p.Debug("start accept loop")
+	for {
+		if c, err = p.accept(l); err != nil {
+			select {
+			case <-p.quit:
+				err = nil // drop "use of closed network connection" error
+				return
+			default:
+			}
+			p.Print("[ERR] accept error: ", err)
+			return
+		}
+		if err = p.handleConnection(c); err != nil {
+			p.Print("[ERR] error handling connection: ", err)
+		}
+	}
+}
+
+// --------------------------------- dial ----------------------------------- //
+
+func (p *Pool) dial(address string) (c net.Conn, err error) {
+	// check out limit of connections
+	if !p.acquire() {
+		err = ErrConnectionsLimit
+		return
+	}
+	if c, err = net.Dial("tcp", address); err != nil {
+		p.release()
+		return
+	}
+	if p.sem == nil {
+		return
+	}
+	c = &limitedConnection{
+		Conn:    c,
+		release: p.release,
+	}
+	return
+}
+
+func (p *Pool) dialTimeout(address string,
+	timeout time.Duration) (c net.Conn, err error) {
+
+	// check out limit of connections
+	if !p.acquire() {
+		err = ErrConnectionsLimit
+		return
+	}
+	if c, err = net.DialTimeout("tcp", address, timeout); err != nil {
+		p.release()
+		return
+	}
+	if p.sem == nil {
+		return
+	}
+	c = &limitedConnection{
+		Conn:    c,
+		release: p.release,
+	}
+	return
+}
+
+// ------------------------------- connect ---------------------------------- //
+
+// Connect to given address. The Connect is blocking method and should
+// not be called from main processing thread
+func (p *Pool) Connect(address string) (err error) {
+	var (
+		ok bool
+		c  net.Conn
+	)
+	// don't connect if the pool was closed
+	if p.isClosed() {
+		err = ErrClosed
+		return
+	}
+	// preliminary check
+	p.cmx.RLock()                     // >--------------------+
+	if _, ok = p.conns[address]; ok { //                      |
+		p.cmx.RUnlock()            // <-----------------------+
+		err = ErrConnAlreadyExists //                         |
+		return                     //                         |
+	} //                                                      |
+	p.cmx.RUnlock() // <--------------------------------------+
+	// dial
+	if p.conf.DialTimeout > 0 {
+		c, err = p.dialTimeout(address, p.conf.DialTimeout)
+	} else {
+		c, err = p.dial(address)
+	}
+	if err != nil {
+		return
+	}
+	// with check of p.conns
+	err = p.handleConnection(c)
+	return
+}
+
+// -------------------------------- handle ---------------------------------- //
+
+func (p *Pool) handleConnection(c net.Conn) (err error) {
+	p.Debug("got new connection: ", c.RemoteAddr().String())
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+	var (
+		address = c.RemoteAddr().String()
+		ok      bool
+
+		x *Conn
+	)
+	if _, ok = p.conns[address]; ok {
+		err = ErrConnAlreadyExists
+		c.Close()
+		return
+	}
+	x = newConn(c, p)
+	p.conns[address] = x // add the connection to the pool
+	x.handle()           // async non-blocking method
+	if p.conf.ConnectionHandler != nil {
+		p.conf.ConnectionHandler(x) // invoke the callback
+	}
+	return
+}
+
+// ------------------------------ disconnect -------------------------------- //
+
+func (p *Pool) get(address string) (c *Conn) {
+	p.cmx.RLock()
+	defer p.cmx.RUnlock()
+	return p.conns[address]
+}
+
+// Disconnect connection with given address. It returns
+// closing error if any or ErrNotFound if connection
+// doesn't exist
+func (p *Pool) Disconnect(address string) (err error) {
+	if c := p.get(address); c != nil {
+		err = c.Close()
+	} else {
+		err = ErrNotFound
+	}
+	return
+}
+
+// -------------------------------------------------------------------------- //
+//                                 encode                                     //
+// -------------------------------------------------------------------------- //
 
 func (p *Pool) encodeMessage(m interface{}) (data []byte) {
 	var (
@@ -65,41 +379,9 @@ func (p *Pool) encodeMessage(m interface{}) (data []byte) {
 	return
 }
 
-// acquire returns true if number of connections
-// less then p.conf.MaxConnections
-func (p *Pool) acquire() (ok bool) {
-	if p.conf.MaxConnections == 0 {
-		return true // no limit for connections
-	}
-	select {
-	case p.sem <- struct{}{}:
-		ok = true // acquire
-	default:
-	}
-	return
-}
-
-// blocking acquire (for l.Accept())
-func (p *Pool) acquireBlock() {
-	if p.conf.MaxConnections == 0 {
-		return // no limit for connections
-	}
-	select {
-	case p.sem <- struct{}{}: // acquire
-	case <-p.quit:
-	}
-}
-
-// release connection
-func (p *Pool) release() {
-	if p.conf.MaxConnections == 0 {
-		return // no limit for connections
-	}
-	select {
-	case <-p.sem: // release
-	case <-p.quit:
-	}
-}
+// -------------------------------------------------------------------------- //
+//                              broadcasting                                  //
+// -------------------------------------------------------------------------- //
 
 // BroadcastExcept given message to all connections of the Pool
 // except enumerated by 'except' argument
@@ -112,8 +394,8 @@ func (p *Pool) BroadcastExcept(m interface{}, except ...string) {
 
 		err error
 	)
-	p.RLock() // map lock
-	defer p.RUnlock()
+	p.cmx.RLock()         // map lock
+	defer p.cmx.RUnlock() // and unlock
 Loop:
 	for address, c = range p.conns {
 		for _, e = range except {
@@ -121,9 +403,14 @@ Loop:
 				continue Loop // except
 			}
 		}
-		if err = c.sendEncodedMessage(em); err != nil {
-			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+		p.cmx.RUnlock() // temporary unlock
+		{
+			if err = c.sendEncodedMessage(em); err != nil {
+				p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+				c.Close()
+			}
 		}
+		p.cmx.RLock() // and lock back
 	}
 }
 
@@ -132,118 +419,16 @@ func (p *Pool) Broadcast(m interface{}) {
 	p.BroadcastExcept(m)
 }
 
-// Listen start listening on given address
-func (p *Pool) Listen(address string) (err error) {
-	p.Lock()
-	defer p.Unlock()
-	if p.l, err = net.Listen("tcp", address); err != nil {
-		return
-	}
-	go p.listen(p.l)
-	return
-}
-
-func (p *Pool) listen(l net.Listener) {
-	var (
-		c   net.Conn
-		err error
-	)
-	p.Debug("start accept loop")
-	defer func() {
-		l.Close()
-		p.Debug("stop accept loop")
-	}()
-	for {
-		p.acquireBlock()
-		if c, err = l.Accept(); err != nil {
-			select {
-			case <-p.quit:
-				err = nil // drop "use of closed network connection" error
-				return
-			default:
-			}
-			p.Print("[ERR] accept error: ", err)
-			return
-		}
-		if err = p.handleConnection(c); err != nil {
-			p.Print("[ERR] error handling connection: ", err)
-		}
-	}
-}
-
-func (p *Pool) handleConnection(c net.Conn) (err error) {
-	p.Debug("got new connection: ", c.RemoteAddr().String())
-	p.Lock()
-	defer p.Unlock()
-	var (
-		address = c.RemoteAddr().String()
-		ok      bool
-
-		x *Conn
-	)
-	if _, ok = p.conns[address]; ok {
-		err = ErrConnAlreadyExists
-		c.Close()
-		return
-	}
-	x = newConn(c, p)
-	p.conns[address] = x // add the connection to the pool
-	x.handle()           // async non-blocking method
-	if p.conf.ConnectionHandler != nil {
-		p.conf.ConnectionHandler(x) // invoke the callback
-	}
-	return
-}
-
 // remove closed connection form the Pool
-func (p *Pool) removeConnection(address string) {
-	p.Lock()
-	defer p.Unlock()
+func (p *Pool) delete(address string) {
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
 	delete(p.conns, address)
 }
 
-// Connect to given address. The Connect is blocking method and should
-// not be called from main processing thread
-func (p *Pool) Connect(address string) (err error) {
-	var (
-		ok bool
-		c  net.Conn
-	)
-	// don't connect if the pool was closed
-	select {
-	case <-p.quit:
-		err = ErrClosed
-		return
-	default:
-	}
-	// check out limit of connections
-	if ok = p.acquire(); !ok {
-		err = ErrConnectionsLimit
-		return
-	}
-	// preliminary check
-	p.RLock()
-	if _, ok = p.conns[address]; ok {
-		p.RUnlock()
-		err = ErrConnAlreadyExists
-		return
-	}
-	p.RUnlock()
-	// dial
-	if p.conf.DialTimeout > 0 {
-		c, err = net.DialTimeout("tcp", address, p.conf.DialTimeout)
-		if err != nil {
-			return
-		}
-	} else {
-		if c, err = net.Dial("tcp", address); err != nil {
-			return
-		}
-	}
-	// with check of p.conns
-	err = p.handleConnection(c)
-	return
-}
+// -------------------------------------------------------------------------- //
+//                                 registry                                   //
+// -------------------------------------------------------------------------- //
 
 // Register given message with given prefix. The method panics
 // if given prefix invalid or already registered. It also panics
@@ -268,47 +453,24 @@ func (p *Pool) Register(prefix Prefix, msg interface{}) {
 	p.rev[prefix] = typ
 }
 
-// Disconnect connection with given address
-func (p *Pool) Disconnect(address string) {
-	p.Lock()
-	defer p.Unlock()
-	if c, ok := p.conns[address]; ok {
-		c.close(false, false)
-		delete(p.conns, address)
-	}
-}
+// -------------------------------------------------------------------------- //
+//                                information                                 //
+// -------------------------------------------------------------------------- //
 
 // Address returns listening address or empty string
 func (p *Pool) Address() (address string) {
-	p.RLock()
-	defer p.RUnlock()
+	p.lmx.RLock()
+	defer p.lmx.RUnlock()
 	if p.l != nil {
 		address = p.l.Addr().String()
 	}
 	return
 }
 
-// The Close close listener and all connections related to the Pool
-func (p *Pool) Close() {
-	p.closeOnce.Do(func() {
-		close(p.quit)
-	})
-	p.Lock()
-	defer p.Unlock()
-	if p.l != nil {
-		p.l.Close()
-	}
-	for a, c := range p.conns {
-		c.close(false, false)
-		delete(p.conns, a)
-	}
-	return
-}
-
 // Connections returns list of all connections
 func (p *Pool) Connections() (cs []string) {
-	p.RLock()
-	defer p.RUnlock()
+	p.cmx.RLock()
+	defer p.cmx.RUnlock()
 	if len(p.conns) == 0 {
 		return
 	}
@@ -320,59 +482,74 @@ func (p *Pool) Connections() (cs []string) {
 	return
 }
 
+// IsConnExists returns true if connections with
+// given remote address exists in the Pool
+func (p *Pool) IsConnExist(address string) (yep bool) {
+	p.cmx.RLock()
+	defer p.cmx.RUnlock()
+	_, yep = p.conns[address]
+	return
+}
+
+// -------------------------------------------------------------------------- //
+//                                   inflow                                   //
+// -------------------------------------------------------------------------- //
+
 // Receive returns channel of recieved data with
-// connections from which the dat come from
+// connections from which the data come from. When
+// Pool closed the channel is closed too. I.e.
+// it can be used in range reading loop
+//
+//     // handle incoming messages until Pool closed
+//     go func(receive <-chan gnet.Message){
+//         for msg :=<-receive {
+//             // handle msg
+//         }
+//     }(pool.Receive())
+//
 func (p *Pool) Receive() <-chan Message {
 	return p.receive
 }
 
-// NewPool creates new Pool instance
-// with given config
-func NewPool(c Config) (p *Pool) {
-	c.applyDefaults()
-	p = new(Pool)
-	if c.Logger == nil {
-		p.Logger = log.NewLogger("", false)
-	} else {
-		p.Logger = c.Logger
+// -------------------------------------------------------------------------- //
+//                                   close                                    //
+// -------------------------------------------------------------------------- //
+
+func (p *Pool) closeConnections() {
+	p.cmx.RLock()         // map lock
+	defer p.cmx.RUnlock() // and unlock
+	for _, c := range p.conns {
+		p.cmx.RUnlock() // temporary unlock
+		{
+			c.Close()
+		}
+		p.cmx.RLock() // and lock back
 	}
-	p.conf = c
-	p.reg = make(map[reflect.Type]Prefix)
-	p.rev = make(map[Prefix]reflect.Type)
-	p.conns = make(map[string]*Conn, c.MaxConnections)
-	p.receive = make(chan Message, c.ReadQueueSize)
-	if c.MaxConnections != 0 {
-		p.sem = make(chan struct{}, c.MaxConnections)
+}
+
+func (p *Pool) closeListener() (err error) {
+	p.lmx.RLock()
+	defer p.lmx.RUnlock()
+	if p.l != nil {
+		err = p.l.Close()
 	}
-	p.quit = make(chan struct{})
-	p.Printf(`[INF] create pool:
-    max connections   %d
-    max messageSize   %d
-    dial timeout      %v
-    read timeout      %v
-    write timeout     %v
-    read buffer size  %d
-    write buffer size %d
-    read queue size   %d
-    write queue size  %d
-    ping interval     %v
-`,
-		c.MaxConnections,
-		c.MaxMessageSize,
-		c.DialTimeout,
-		c.ReadTimeout,
-		c.WriteTimeout,
-		c.ReadBufferSize,
-		c.WriteBufferSize,
-		c.ReadQueueSize,
-		c.WriteQueueSize,
-		c.PingInterval)
 	return
 }
 
-func (p *Pool) IsConnExist(address string) (yep bool) {
-	p.RLock()
-	defer p.RUnlock()
-	_, yep = p.conns[address]
+// Close listener and all connections related to the Pool
+// It can return listener closing error
+func (p *Pool) Close() (err error) {
+	// chan
+	p.closeOnce.Do(func() {
+		close(p.quit)
+	})
+	// listener
+	err = p.closeListener()
+	// connections
+	p.closeConnections()
+	// await all goroutines
+	p.wg.Wait()
+	// release receiving channel
+	close(p.receive)
 	return
 }
