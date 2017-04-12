@@ -366,7 +366,54 @@ func TestPool_Disconnect(t *testing.T) {
 }
 
 func TestPool_BroadcastExcept(t *testing.T) {
-	// TODO: high priority
+	p1 := NewPool(testConfigName("BroadcastExcept (broadcaster)"))
+	p1.Register(NewPrefix("ANYM"), &Any{})
+	defer p1.Close()
+	p2 := NewPool(testConfigName("BroadcastExcept (receiver)"))
+	p2.Register(NewPrefix("ANYM"), &Any{})
+	defer p2.Close()
+	p3 := NewPool(testConfigName("BroadcastExcept (excepted)"))
+	p3.Register(NewPrefix("ANYM"), &Any{})
+	defer p3.Close()
+	if err := p1.Listen(""); err != nil {
+		t.Fatal("unexpected listening error:", err)
+	}
+	if err := p2.Connect(p1.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	if err := p3.Connect(p1.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	except := firstConnection(p3).conn.LocalAddr().String() // remote for p1
+	p1.BroadcastExcept(&Any{"first"}, except)
+	p1.Broadcast(&Any{"second"}) // without exception
+	select {
+	case m := <-p2.Receive():
+		if a, ok := m.Value.(*Any); !ok {
+			t.Errorf("unexpected type of received message: %T", m.Value)
+		} else if a.Value != "first" {
+			t.Errorf("unexepeced data received: want %q, got %q",
+				"first", a.Value)
+		}
+	case <-time.After(TM):
+		t.Error("slow receiving")
+	}
+	// drop p2 "second"
+	select {
+	case m := <-p3.Receive():
+		if a, ok := m.Value.(*Any); !ok {
+			t.Errorf("unexpected type of received message: %T", m.Value)
+		} else if a.Value != "second" {
+			if a.Value == "first" {
+				t.Error("received from excepted connection")
+			} else {
+				t.Errorf("unexepeced data received: want %q, got %q",
+					"second", a.Value)
+			}
+		}
+	case <-time.After(TM):
+		t.Error("slow receiving")
+	}
 }
 
 func TestPool_Broadcast(t *testing.T) {
@@ -379,6 +426,30 @@ func TestPool_Register(t *testing.T) {
 		defer p.Close()
 		defer shouldPanic(t)
 		p.Register(Prefix{'-', '-', '-', '-'}, &Any{})
+	})
+	t.Run("invalid type", func(t *testing.T) {
+		type Some interface{}
+		p := NewPool(testConfigName("Register/invalid type"))
+		defer p.Close()
+		defer shouldPanic(t)
+		p.Register(NewPrefix("SOME"), Some(nil))
+	})
+	t.Run("register type twice", func(t *testing.T) {
+		p := NewPool(testConfigName("Register/register type twice"))
+		defer p.Close()
+		p.Register(NewPrefix("ANYM"), &Any{})
+		defer shouldPanic(t)
+		p.Register(NewPrefix("SOME"), &Any{})
+	})
+	t.Run("register prefix twice", func(t *testing.T) {
+		p := NewPool(testConfigName("Register/register prefix twice"))
+		defer p.Close()
+		p.Register(NewPrefix("ANYM"), &Any{})
+		type Some struct {
+			Int int64
+		}
+		defer shouldPanic(t)
+		p.Register(NewPrefix("ANYM"), &Some{})
 	})
 }
 
