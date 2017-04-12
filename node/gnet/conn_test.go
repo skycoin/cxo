@@ -426,39 +426,87 @@ func TestConn_Addr(t *testing.T) {
 }
 
 func TestConn_Send(t *testing.T) {
-	s := NewPool(testConfigName("Send (sender)"))
-	s.Register(NewPrefix("ANYM"), &Any{})
-	defer s.Close()
-	if err := s.Listen(""); err != nil {
-		t.Error("unexpected listening error:", err)
-	}
-	r := NewPool(testConfigName("Send (receiver)"))
-	r.Register(NewPrefix("ANYM"), &Any{})
-	defer r.Close()
-	if err := r.Connect(s.Address()); err != nil {
-		t.Fatal("unexpected conneccting error:", err)
-	}
-	c := firstConnection(s) // sending to the connection
-	c.Send(&Any{"data"})
-	select {
-	case m := <-r.Receive():
-		la, ra := m.Conn.conn.LocalAddr().String(), c.conn.RemoteAddr().String()
-		if la != ra {
-			t.Errorf("received from unexpeted connection: %v - %v", la, ra)
+	t.Run("send receive", func(t *testing.T) {
+		r := NewPool(testConfigName("Send (receiver)"))
+		r.Register(NewPrefix("ANYM"), &Any{})
+		defer r.Close()
+		if err := r.Listen(""); err != nil {
+			t.Error("unexpected listening error:", err)
 		}
-		if a, ok := m.Value.(*Any); !ok {
-			t.Errorf("unexpected type of received message: %T", m.Value)
-		} else if a.Value != "data" {
-			t.Errorf("unexepeced data received: want %q, got %q",
-				"data", a.Value)
+		s := NewPool(testConfigName("Send (sender)"))
+		s.Register(NewPrefix("ANYM"), &Any{})
+		defer s.Close()
+		if err := s.Connect(r.Address()); err != nil {
+			t.Fatal("unexpected conneccting error:", err)
 		}
-	case <-time.After(TM):
-		t.Fatal("slow receiving")
-	}
+		c := firstConnection(s) // sending to the connection
+		c.Send(&Any{"data"})
+		select {
+		case m := <-r.Receive():
+			la := m.Conn.conn.LocalAddr().String()
+			ra := c.conn.RemoteAddr().String()
+			if la != ra {
+				t.Errorf("received from unexpeted connection: %v - %v", la, ra)
+			}
+			if a, ok := m.Value.(*Any); !ok {
+				t.Errorf("unexpected type of received message: %T", m.Value)
+			} else if a.Value != "data" {
+				t.Errorf("unexepeced data received: want %q, got %q",
+					"data", a.Value)
+			}
+		case <-time.After(TM):
+			t.Fatal("slow receiving")
+		}
+	})
+	t.Run("send size limit", func(t *testing.T) {
+		r := NewPool(testConfigName("Send (receiver)"))
+		r.Register(NewPrefix("ANYM"), &Any{})
+		defer r.Close()
+		if err := r.Listen(""); err != nil {
+			t.Error("unexpected listening error:", err)
+		}
+		sc := testConfigName("Send (sender)")
+		sc.MaxMessageSize = 1 // 1 byte max allowed
+		s := NewPool(sc)
+		s.Register(NewPrefix("ANYM"), &Any{})
+		defer s.Close()
+		if err := s.Connect(r.Address()); err != nil {
+			t.Fatal("unexpected conneccting error:", err)
+		}
+		c := firstConnection(s) // sending to the connection
+		defer shouldPanic(t)
+		c.Send(&Any{"data"})
+	})
+	t.Run("receive size limit", func(t *testing.T) {
+		disconnect := make(chan struct{}, 1)
+		rc := testConfigName("Send (receiver)")
+		rc.MaxMessageSize = 1 // 1 byte max allowed
+		rc.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
+		r := NewPool(rc)
+		r.Register(NewPrefix("ANYM"), &Any{})
+		defer r.Close()
+		if err := r.Listen(""); err != nil {
+			t.Error("unexpected listening error:", err)
+		}
+		s := NewPool(testConfigName("Send (sender)"))
+		s.Register(NewPrefix("ANYM"), &Any{})
+		defer s.Close()
+		if err := s.Connect(r.Address()); err != nil {
+			t.Fatal("unexpected conneccting error:", err)
+		}
+		c := firstConnection(s) // sending to the connection
+		c.Send(&Any{"data"})
+		// receiver must handle the head of the message and
+		// close the connection because the message exceeds max
+		// size allowed for the receiver
+		if !readChan(TM, disconnect) {
+			t.Error("slow or missing disconnecting")
+		}
+	})
 }
 
 func TestConn_Broadcast(t *testing.T) {
-	// TODO: high priority
+	// TODO: low priority (implemented in Pool_BroadcastExcept)
 }
 
 func TestConn_Close(t *testing.T) {

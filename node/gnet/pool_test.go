@@ -71,6 +71,17 @@ func closePool(t *testing.T, p *Pool, tm time.Duration) {
 	}
 }
 
+func shouldPanic(t *testing.T) {
+	if recover() == nil {
+		if _, file, no, ok := runtime.Caller(1); ok {
+			file = filepath.Base(file)
+			t.Fatalf("missing panicing: %s:%d", file, no)
+		} else {
+			t.Fatal("missing panicing")
+		}
+	}
+}
+
 func dial(t *testing.T, address string, tm time.Duration) (conn net.Conn) {
 	var err error
 	if conn, err = net.DialTimeout("tcp", address, tm); err != nil {
@@ -359,11 +370,16 @@ func TestPool_BroadcastExcept(t *testing.T) {
 }
 
 func TestPool_Broadcast(t *testing.T) {
-	// TODO: high priority
+	// TODO: low priority (implemented in Pool_BroadcastExcept)
 }
 
 func TestPool_Register(t *testing.T) {
-	// TODO: high priority
+	t.Run("invalid prefix", func(t *testing.T) {
+		p := NewPool(testConfigName("Register/invalid prefix"))
+		defer p.Close()
+		defer shouldPanic(t)
+		p.Register(Prefix{'-', '-', '-', '-'}, &Any{})
+	})
 }
 
 func TestPool_Address(t *testing.T) {
@@ -379,7 +395,7 @@ func TestPool_IsConnExist(t *testing.T) {
 }
 
 func TestPool_Receive(t *testing.T) {
-	// TODO: high priority
+	// TODO: low priority (implemented in Conn_Send)
 }
 
 func TestPool_Close(t *testing.T) {
