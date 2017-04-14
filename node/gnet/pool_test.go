@@ -474,3 +474,39 @@ func TestPool_Receive(t *testing.T) {
 func TestPool_Close(t *testing.T) {
 	// TODO: high priority
 }
+
+func TestPool_conf_AcceptFailureHandler(t *testing.T) {
+	// FROZEN due to never happens.
+	//
+	// the error can hapens if reconnecting is faster then closing
+	// a connection
+
+	// conf := testConfigName("conf AcceptFailureHandler")
+	// acceptFailure := make(chan error, 1)
+	// conf.AcceptFailureHandler = func(c net.Conn, err error) {
+	// 	acceptFailure <- err
+	// }
+	// p := NewPool(conf)
+	// defer p.Close()
+	// if err := p.Listen(""); err != nil {
+	// 	t.Fatal("unexpected listening error:", err)
+	// }
+	// c1 := dial(t, p.Address(), TM) // invoke fatal if some error occurs
+	// defer c1.Close()
+	// dl := net.Dialer{}
+	// dl.Timeout = TM
+	// dl.LocalAddr = c1.LocalAddr()
+	// c2, err := dl.Dial("tcp", p.Address())
+	// if err != nil {
+	// 	t.Fatal("unexpected dialing error:", err)
+	// }
+	// defer c2.Close()
+	// select {
+	// case err := <-acceptFailure:
+	// 	if err != ErrConnAlreadyExists {
+	// 		t.Error("AcceptFailureHandler got unexpected error:", err)
+	// 	}
+	// case <-time.After(TM):
+	// 	t.Error("AcceptFailureHandler wasn't called a few time")
+	// }
+}

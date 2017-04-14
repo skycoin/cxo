@@ -35,7 +35,9 @@ var (
 	// ErrMessageSizeLimit occurs when a message
 	// bigger then configured size limit received
 	ErrMessageSizeLimit = errors.New("message exceed size limit allowed")
-	// ErrManualDisconnect is a reason for disconnecting
+	// ErrManualDisconnect is a reason for disconnecting using
+	// Disconnect method of Pool. If you use Close method of Conn
+	// then the reason will be ErrClosedConn
 	ErrManualDisconnect = errors.New("manual disconnect")
 )
 
@@ -396,7 +398,7 @@ func (c *Conn) Close() (err error) {
 			select {
 			case dreason = <-c.dreason:
 			default:
-				dreason = ErrClosedConn // manual disconnect
+				dreason = ErrClosedConn
 			}
 			c.pool.conf.DisconnectHandler(c, dreason)
 		}
