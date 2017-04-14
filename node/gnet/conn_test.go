@@ -530,3 +530,30 @@ func TestConn_Close(t *testing.T) {
 		t.Error("closing connection doesn't release limit")
 	}
 }
+
+func TestConn_IsIncoming(t *testing.T) {
+	s := NewPool(testConfigName("IsIncomig server"))
+	defer s.Close()
+	if err := s.Listen(""); err != nil {
+		t.Fatal("unexpected listening error:", err)
+	}
+	c := NewPool(testConfigName("IsIncoming client"))
+	defer c.Close()
+	if err := c.Connect(s.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	if sc := firstConnection(s); !sc.IsIncoming() {
+		t.Error("IsIncoming false for incoming connection")
+	} else if sc.IsOutgoing() {
+		t.Error("IsOutgoing true for incoming connection")
+	}
+	if cc := firstConnection(c); cc.IsIncoming() {
+		t.Error("IsIncoming true for outgoing connection")
+	} else if !cc.IsOutgoing() {
+		t.Error("IsOutgoing false for outgoign connection")
+	}
+}
+
+func TestConn_IsOutgoing(t *testing.T) {
+	// implemented inside Conn_IsIncoming
+}
