@@ -20,6 +20,11 @@ var (
 	ErrConnectionsLimit = errors.New("connections limit reached")
 	// ErrNotFound ...(TODO)
 	ErrNotFound = errors.New("not found")
+	//
+	ErrRejectedBySendFilter = errors.New("the message rejected by send-filter")
+	//
+	ErrRejectedByReceiveFilter = errors.New(
+		"the message rejected by receive filter")
 )
 
 type Pool struct {
@@ -32,6 +37,10 @@ type Pool struct {
 	// registery
 	reg map[reflect.Type]Prefix // registery
 	rev map[Prefix]reflect.Type // inverse registery
+
+	// filters
+	sendf []FilterFunc
+	recvf []FilterFunc
 
 	// pool --------------------------------------------------+
 	lmx sync.RWMutex  // listener mutex                       |
@@ -364,10 +373,14 @@ func (p *Pool) encodeMessage(m interface{}) (data []byte) {
 		prefix Prefix
 		ok     bool
 
-		em []byte
+		em  []byte
+		err error
 	)
 	if prefix, ok = p.reg[val.Type()]; !ok {
 		p.Panicf("send unregistered message: %T", m)
+	}
+	if err = p.allowSend(prefix); err != nil {
+		p.Panicf("%v: %s", err, prefix.String())
 	}
 	em = encoder.Serialize(m)
 	if p.conf.MaxMessageSize > 0 && len(em) > p.conf.MaxMessageSize {
@@ -456,6 +469,64 @@ func (p *Pool) Register(prefix Prefix, msg interface{}) {
 	}
 	p.reg[typ] = prefix
 	p.rev[prefix] = typ
+}
+
+// -------------------------------------------------------------------------- //
+//                                 filters                                    //
+// -------------------------------------------------------------------------- //
+
+// FilterFunc represents allow-filter that returns true
+// for messages allowed for sending/receiving. If no filters
+// given then the Pool will allow all registered messages.
+// Sending a message that not allowed by filters causes panic.
+// Receiving filtered message closes connection with
+// ErrRejectedByReceiveFilter
+type FilterFunc func(prefix Prefix) bool
+
+// AddSendFilter appends sending filter. The method
+// is not thread safe (like Register) You must to
+// set up all filters before using the Pool
+func (p *Pool) AddSendFilter(filter FilterFunc) {
+	if filter == nil {
+		p.Panic("nil filter given")
+	}
+	p.sendf = append(p.sendf, filter)
+}
+
+// AddReceiveFilter append receiving filter. The method
+// is not thread safe (like Register). You must to
+// set up all filter before using the Pool
+func (p *Pool) AddReceiveFilter(filter FilterFunc) {
+	if filter == nil {
+		p.Panic("nil filter given")
+	}
+	p.recvf = append(p.recvf, filter)
+}
+
+func (p *Pool) allowSend(prefix Prefix) (err error) {
+	if len(p.sendf) == 0 { // allow all registered
+		return
+	}
+	for _, f := range p.sendf {
+		if f(prefix) {
+			return
+		}
+	}
+	err = ErrRejectedBySendFilter
+	return
+}
+
+func (p *Pool) allowReceive(prefix Prefix) (err error) {
+	if len(p.recvf) == 0 { // allow all registered
+		return
+	}
+	for _, f := range p.recvf {
+		if f(prefix) {
+			return
+		}
+	}
+	err = ErrRejectedByReceiveFilter
+	return
 }
 
 // -------------------------------------------------------------------------- //

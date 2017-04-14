@@ -261,6 +261,12 @@ func (c *Conn) handleRead() {
 				c.Addr(), string(p[:]))
 			return
 		}
+		if err = c.pool.allowReceive(p); err != nil {
+			c.setDisconnectReason(ErrRejectedByReceiveFilter)
+			c.pool.Printf("[ERR] %s message rejected by receive filter: %s",
+				c.Addr(), p.String())
+			return
+		}
 		if err = encoder.DeserializeRaw(head[PrefixLength:], &ln); err != nil {
 			c.setDisconnectReason(err)
 			c.pool.Printf("[ERR] %s error decoding message length: %v",

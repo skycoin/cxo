@@ -532,7 +532,10 @@ func TestConn_Close(t *testing.T) {
 }
 
 func TestConn_IsIncoming(t *testing.T) {
-	s := NewPool(testConfigName("IsIncomig server"))
+	connected := make(chan struct{}, 1)
+	sconf := testConfigName("IsIncomig server")
+	sconf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
+	s := NewPool(sconf)
 	defer s.Close()
 	if err := s.Listen(""); err != nil {
 		t.Fatal("unexpected listening error:", err)
@@ -541,6 +544,9 @@ func TestConn_IsIncoming(t *testing.T) {
 	defer c.Close()
 	if err := c.Connect(s.Address()); err != nil {
 		t.Fatal("unexpected connecting error:", err)
+	}
+	if !readChan(TM, connected) {
+		t.Fatal("slow connecting")
 	}
 	if sc := firstConnection(s); !sc.IsIncoming() {
 		t.Error("IsIncoming false for incoming connection")
