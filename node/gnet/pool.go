@@ -219,6 +219,9 @@ func (p *Pool) listen(l net.Listener) {
 			return
 		}
 		if err = p.handleConnection(c, false); err != nil {
+			if p.conf.AcceptFailureHandler != nil {
+				p.conf.AcceptFailureHandler(c, err)
+			}
 			p.Print("[ERR] error handling connection: ", err)
 		}
 	}

@@ -37,7 +37,9 @@ type DisconnectHandler func(c *Conn, err error)
 
 // AcceptFailureHandler represents callbac that
 // called when a conenction accepted by listener
-// but can't be handled for some reason
+// but can't be handled for some reason. The 'c'
+// argument is closed connection. By the way,
+// the err argument can by ErrAlreadyExists only
 type AcceptFailureHandler func(c net.Conn, err error)
 
 type Config struct {
@@ -95,7 +97,8 @@ type Config struct {
 	// AcceptFailureHandler represents callbac that
 	// called when a conenction accepted by listener
 	// but can't be handled for some reason. The
-	// err argument desribe the reason
+	// err argument desribe the reason. By the way
+	// the
 	AcceptFailureHandler AcceptFailureHandler
 
 	// Logger to use. If it's nil then default logger used
