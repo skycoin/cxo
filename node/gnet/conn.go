@@ -404,14 +404,14 @@ func (c *Conn) Close() (err error) {
 	return
 }
 
-// Incoming returns true if the Conn was accepted
+// IsIncoming returns true if the Conn was accepted
 // by listener. I.e. the Conn is incoming from
 // some remote node
-func (c *Conn) Incoming() bool { return !c.outgoing }
+func (c *Conn) IsIncoming() bool { return !c.outgoing }
 
-// Outgoing is opposite to Incoming. It returns true
+// IsOutgoing is opposite to Incoming. It returns true
 // if the Conn created using Connect method of the Pool
-func (c *Conn) Outgoing() bool { return c.outgoing }
+func (c *Conn) IsOutgoing() bool { return c.outgoing }
 
 // read with deadline
 type deadReader struct {
