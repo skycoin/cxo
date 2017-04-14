@@ -45,9 +45,24 @@ func Example() {
 
 	// register types to send/receive
 
-	pool.Register(gnet.NewPrefix("AMSG"), &A{})
-	pool.Register(gnet.NewPrefix("BMSG"), &B{})
-	pool.Register(gnet.NewPrefix("CMSG"), &C{})
+	amsgp := gnet.NewPrefix("AMSG") // prefixes
+	bmsgp := gnet.NewPrefix("BMSG") //
+	cmsgp := gnet.NewPrefix("CMSG") //
+
+	pool.Register(amsgp, &A{})
+	pool.Register(bmsgp, &B{})
+	pool.Register(cmsgp, &C{})
+
+	// By default the Pool allows all registered messages to
+	// send and receive. It's possible to provide allow-filters
+	pool.AddSendFilter(func(p gnet.Prefix) bool {
+		return p == amsgp || p == bmsgp
+	})
+	pool.AddReceiveFilter(func(p gnet.Prefix) bool {
+		return p == amsgp || p == cmsgp
+	})
+	// - allow send only A and B (otherwise panic)
+	// - allow receive only A and C (otherwise close connection)
 
 	// start listener if need
 
