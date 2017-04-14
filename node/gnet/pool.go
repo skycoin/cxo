@@ -218,7 +218,10 @@ func (p *Pool) listen(l net.Listener) {
 			p.Print("[ERR] accept error: ", err)
 			return
 		}
-		if err = p.handleConnection(c); err != nil {
+		if err = p.handleConnection(c, false); err != nil {
+			if p.conf.AcceptFailureHandler != nil {
+				p.conf.AcceptFailureHandler(c, err)
+			}
 			p.Print("[ERR] error handling connection: ", err)
 		}
 	}
@@ -300,13 +303,13 @@ func (p *Pool) Connect(address string) (err error) {
 		return
 	}
 	// with check of p.conns
-	err = p.handleConnection(c)
+	err = p.handleConnection(c, true)
 	return
 }
 
 // -------------------------------- handle ---------------------------------- //
 
-func (p *Pool) handleConnection(c net.Conn) (err error) {
+func (p *Pool) handleConnection(c net.Conn, outgoing bool) (err error) {
 	p.Debug("got new connection: ", c.RemoteAddr().String())
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
@@ -321,7 +324,7 @@ func (p *Pool) handleConnection(c net.Conn) (err error) {
 		c.Close()
 		return
 	}
-	x = newConn(c, p)
+	x = newConn(c, p, outgoing)
 	p.conns[address] = x // add the connection to the pool
 	x.handle()           // async non-blocking method
 	if p.conf.ConnectionHandler != nil {
@@ -343,6 +346,7 @@ func (p *Pool) get(address string) (c *Conn) {
 // doesn't exist
 func (p *Pool) Disconnect(address string) (err error) {
 	if c := p.get(address); c != nil {
+		c.setDisconnectReason(ErrManualDisconnect)
 		err = c.Close()
 	} else {
 		err = ErrNotFound
@@ -406,6 +410,7 @@ Loop:
 		p.cmx.RUnlock() // temporary unlock
 		{
 			if err = c.sendEncodedMessage(em); err != nil {
+				c.setDisconnectReason(err)
 				p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
 				c.Close()
 			}

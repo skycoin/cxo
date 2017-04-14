@@ -26,6 +26,19 @@ var (
 	ErrConnAlreadyExists = errors.New("connection alredy exists")
 	// ErrClosedConn occurs when connection is closed
 	ErrClosedConn = errors.New("dead connection")
+	// ErrUnregisteredMessageReceived occurs when some message
+	// that the pool don't know about was received
+	ErrUnregisteredMessageReceived = errors.New("unregistered message received")
+	// ErrNegativeMessageLength occurs when received
+	// message has a negative lehgth
+	ErrNegativeMessageLength = errors.New("negative length of message received")
+	// ErrMessageSizeLimit occurs when a message
+	// bigger then configured size limit received
+	ErrMessageSizeLimit = errors.New("message exceed size limit allowed")
+	// ErrManualDisconnect is a reason for disconnecting using
+	// Disconnect method of Pool. If you use Close method of Conn
+	// then the reason will be ErrClosedConn
+	ErrManualDisconnect = errors.New("manual disconnect")
 )
 
 // connection related service variables
@@ -54,6 +67,13 @@ type Conn struct {
 
 	pool      *Pool // back read only reference
 	closeOnce sync.Once
+
+	// is the connection created using
+	// Connect method
+	outgoing bool
+
+	// disconnect reasons
+	dreason chan error
 }
 
 func (c *Conn) updateLastUsed() {
@@ -69,8 +89,9 @@ func (c *Conn) lastUsed() time.Duration {
 	return time.Now().Sub(c.lasttm)
 }
 
-func newConn(c net.Conn, p *Pool) (x *Conn) {
+func newConn(c net.Conn, p *Pool, outgoing bool) (x *Conn) {
 	x = new(Conn)
+	x.outgoing = outgoing
 	x.conn = c
 	// set up reader
 	if p.conf.ReadBufferSize > 0 { // buffered reading
@@ -104,6 +125,7 @@ func newConn(c net.Conn, p *Pool) (x *Conn) {
 	x.wq = make(chan []byte, p.conf.WriteQueueSize)
 	x.pool = p
 	x.closed = make(chan struct{})
+	x.dreason = make(chan error, 1) // don't block
 	return
 }
 
@@ -141,6 +163,7 @@ func (c *Conn) read(data []byte) (terminate bool) {
 	if _, err := c.r.Read(data); err != nil {
 		terminate = true
 		if !c.isClosed() { // don't log about the error if the Conn closed
+			c.setDisconnectReason(err)
 			c.pool.Printf("[ERR] %s reading error: %v", c.Addr(), err)
 		}
 	}
@@ -151,6 +174,7 @@ func (c *Conn) write(data []byte) (terminate bool) {
 	if _, err := c.w.Write(data); err != nil {
 		terminate = true
 		if !c.isClosed() { // don't log about the error if the Conn closed
+			c.setDisconnectReason(err)
 			c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
 		}
 	}
@@ -161,6 +185,7 @@ func (c *Conn) flush() (terminate bool) {
 	if c.buffered && c.bw.Buffered() > 0 {
 		if err := c.bw.Flush(); err != nil {
 			if !c.isClosed() { // don't log about the error if closed
+				c.setDisconnectReason(err)
 				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
 			}
 		}
@@ -220,6 +245,7 @@ func (c *Conn) handleRead() {
 		}
 		if bytes.Compare(head, ping) == 0 { // handle pings automatically
 			if err = c.sendEncodedMessage(pong); err != nil { // send pong back
+				c.setDisconnectReason(err)
 				c.pool.Printf("[ERR] %s error sending PONG: %v", c.Addr(), err)
 				return
 			}
@@ -230,22 +256,26 @@ func (c *Conn) handleRead() {
 		}
 		copy(p[:], head) // create prefix from head[:PrefixLength]
 		if typ, ok = c.pool.rev[p]; !ok {
+			c.setDisconnectReason(ErrUnregisteredMessageReceived)
 			c.pool.Printf("[ERR] %s unregistered message received: %s",
 				c.Addr(), string(p[:]))
 			return
 		}
 		if err = encoder.DeserializeRaw(head[PrefixLength:], &ln); err != nil {
+			c.setDisconnectReason(err)
 			c.pool.Printf("[ERR] %s error decoding message length: %v",
 				c.Addr(), err)
 			return
 		}
 		l = int(ln)
 		if l < 0 {
+			c.setDisconnectReason(ErrNegativeMessageLength)
 			c.pool.Printf("[ERR] %s got message with negative length error: %d",
 				c.Addr(), l)
 			return
 		}
 		if c.pool.conf.MaxMessageSize > 0 && l > c.pool.conf.MaxMessageSize {
+			c.setDisconnectReason(ErrMessageSizeLimit)
 			c.pool.Printf("[ERR] %s received message exceeds max size: %d",
 				c.Addr(), l)
 			return
@@ -260,6 +290,7 @@ func (c *Conn) handleRead() {
 		}
 		val = reflect.New(typ)
 		if _, err = encoder.DeserializeRawToValue(body, val); err != nil {
+			c.setDisconnectReason(err)
 			c.pool.Printf("[ERR] %s decoding message error: %v", c.Addr(), err)
 			return
 		}
@@ -336,6 +367,7 @@ func (c *Conn) Addr() string {
 func (c *Conn) Send(m interface{}) {
 	var err error
 	if err = c.sendEncodedMessage(c.pool.encodeMessage(m)); err != nil {
+		c.setDisconnectReason(err)
 		c.pool.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
 		c.Close() // terminate the connection
 	}
@@ -347,6 +379,14 @@ func (c *Conn) Broadcast(m interface{}) {
 	c.pool.BroadcastExcept(m, c.Addr())
 }
 
+// provide some reason for closing
+func (c *Conn) setDisconnectReason(err error) {
+	select {
+	case c.dreason <- err:
+	default: // already have a reson
+	}
+}
+
 // Close connection
 func (c *Conn) Close() (err error) {
 	c.closeOnce.Do(func() {
@@ -354,11 +394,26 @@ func (c *Conn) Close() (err error) {
 		c.pool.delete(c.Addr()) // map
 		err = c.conn.Close()    // connection (inclusive release)
 		if c.pool.conf.DisconnectHandler != nil {
-			c.pool.conf.DisconnectHandler(c)
+			var dreason error
+			select {
+			case dreason = <-c.dreason:
+			default:
+				dreason = ErrClosedConn
+			}
+			c.pool.conf.DisconnectHandler(c, dreason)
 		}
 	})
 	return
 }
+
+// IsIncoming returns true if the Conn was accepted
+// by listener. I.e. the Conn is incoming from
+// some remote node
+func (c *Conn) IsIncoming() bool { return !c.outgoing }
+
+// IsOutgoing is opposite to Incoming. It returns true
+// if the Conn created using Connect method of the Pool
+func (c *Conn) IsOutgoing() bool { return c.outgoing }
 
 // read with deadline
 type deadReader struct {

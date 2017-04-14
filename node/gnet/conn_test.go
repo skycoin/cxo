@@ -42,7 +42,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 0
 		p := NewPool(conf)
 		conn, _ := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if c == nil {
 			t.Fatal("newConn return nil")
 		}
@@ -85,7 +85,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 5*time.Second, 0
 		p := NewPool(conf)
 		conn, _ := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if x, ok := c.r.(*deadReader); !ok {
 			t.Error("wrong type of reader")
 		} else if x.c != c {
@@ -102,7 +102,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 5*time.Second
 		p := NewPool(conf)
 		conn, _ := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if x, ok := c.w.(*deadWriter); !ok {
 			t.Error("wrong type of writer")
 		} else if x.c != c {
@@ -120,7 +120,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 0
 		p := NewPool(conf)
 		conn, write := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.r.(*bufio.Reader); !ok {
 			t.Error("wrong type of reader")
 		}
@@ -164,7 +164,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 0
 		p := NewPool(conf)
 		conn, read := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.w.(*bufio.Writer); !ok {
 			t.Error("wrong type of reader")
 		}
@@ -215,7 +215,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = minTimeout, 0
 		p := NewPool(conf)
 		conn, write := DeadPipe(t) // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.r.(*bufio.Reader); !ok {
 			t.Error("wrong type of reader")
 		}
@@ -271,7 +271,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, minTimeout
 		p := NewPool(conf)
 		conn, read := DeadPipe(t) // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.w.(*bufio.Writer); !ok {
 			t.Error("wrong type of writer")
 		}
@@ -365,7 +365,7 @@ func TestConn_handle(t *testing.T) {
 	p := NewPool(conf)
 	defer p.Close()
 	p.Register(NewPrefix("ANYM"), &Any{})
-	c := newConn(conn, p)
+	c := newConn(conn, p, false)
 	defer c.Close()
 	// ----
 	// c.pool.wg.Add(2)
@@ -481,7 +481,7 @@ func TestConn_Send(t *testing.T) {
 		disconnect := make(chan struct{}, 1)
 		rc := testConfigName("Send (receiver)")
 		rc.MaxMessageSize = 1 // 1 byte max allowed
-		rc.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
+		rc.DisconnectHandler = func(*Conn, error) { disconnect <- struct{}{} }
 		r := NewPool(rc)
 		r.Register(NewPrefix("ANYM"), &Any{})
 		defer r.Close()
@@ -529,4 +529,86 @@ func TestConn_Close(t *testing.T) {
 	if len(p2.sem) != 0 {
 		t.Error("closing connection doesn't release limit")
 	}
+}
+
+func TestConn_IsIncoming(t *testing.T) {
+	s := NewPool(testConfigName("IsIncomig server"))
+	defer s.Close()
+	if err := s.Listen(""); err != nil {
+		t.Fatal("unexpected listening error:", err)
+	}
+	c := NewPool(testConfigName("IsIncoming client"))
+	defer c.Close()
+	if err := c.Connect(s.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	if sc := firstConnection(s); !sc.IsIncoming() {
+		t.Error("IsIncoming false for incoming connection")
+	} else if sc.IsOutgoing() {
+		t.Error("IsOutgoing true for incoming connection")
+	}
+	if cc := firstConnection(c); cc.IsIncoming() {
+		t.Error("IsIncoming true for outgoing connection")
+	} else if !cc.IsOutgoing() {
+		t.Error("IsOutgoing false for outgoign connection")
+	}
+}
+
+func TestConn_IsOutgoing(t *testing.T) {
+	// implemented inside Conn_IsIncoming
+}
+
+func TestConn_conf_DisconnectHandler(t *testing.T) {
+	t.Run("manual disconnect", func(t *testing.T) {
+		disconnected := make(chan error, 2)
+		conf := testConfigName("conf DisconnectHandler/manual disconnect")
+		conf.DisconnectHandler = func(_ *Conn, err error) {
+			disconnected <- err
+		}
+		p := NewPool(conf)
+		defer p.Close()
+		l := listen(t) // test listener
+		defer l.Close()
+		if err := p.Connect(l.Addr().String()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		// unfortunately we can't use l.Addr().String to disconnect the
+		// connection because it returns [::]:<port> but connection
+		// stored in map using [::1]:<port>. There is a way to use
+		// RemoteAdrr of the underlying net.Conn that is (*Conn).Addr()
+		if err := p.Disconnect(firstConnection(p).Addr()); err != nil {
+			t.Error("unexpected disconnecting error:", err)
+		}
+		select {
+		case err := <-disconnected:
+			if err != ErrManualDisconnect {
+				t.Error("unexpected disconnect reason:", err)
+			}
+		case <-time.After(TM):
+			t.Error("slow disconnecting")
+		}
+	})
+	t.Run("close", func(t *testing.T) {
+		disconnected := make(chan error, 2)
+		conf := testConfigName("conf DisconnectHandler/close")
+		conf.DisconnectHandler = func(_ *Conn, err error) {
+			disconnected <- err
+		}
+		p := NewPool(conf)
+		defer p.Close()
+		l := listen(t) // test listener
+		defer l.Close()
+		if err := p.Connect(l.Addr().String()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		firstConnection(p).Close()
+		select {
+		case err := <-disconnected:
+			if err != ErrClosedConn {
+				t.Error("unexpected disconnect reason:", err)
+			}
+		case <-time.After(TM):
+			t.Error("slow disconnecting")
+		}
+	})
 }
