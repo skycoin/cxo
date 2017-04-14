@@ -42,7 +42,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 0
 		p := NewPool(conf)
 		conn, _ := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if c == nil {
 			t.Fatal("newConn return nil")
 		}
@@ -85,7 +85,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 5*time.Second, 0
 		p := NewPool(conf)
 		conn, _ := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if x, ok := c.r.(*deadReader); !ok {
 			t.Error("wrong type of reader")
 		} else if x.c != c {
@@ -102,7 +102,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 5*time.Second
 		p := NewPool(conf)
 		conn, _ := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if x, ok := c.w.(*deadWriter); !ok {
 			t.Error("wrong type of writer")
 		} else if x.c != c {
@@ -120,7 +120,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 0
 		p := NewPool(conf)
 		conn, write := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.r.(*bufio.Reader); !ok {
 			t.Error("wrong type of reader")
 		}
@@ -164,7 +164,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, 0
 		p := NewPool(conf)
 		conn, read := net.Pipe() // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.w.(*bufio.Writer); !ok {
 			t.Error("wrong type of reader")
 		}
@@ -215,7 +215,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = minTimeout, 0
 		p := NewPool(conf)
 		conn, write := DeadPipe(t) // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.r.(*bufio.Reader); !ok {
 			t.Error("wrong type of reader")
 		}
@@ -271,7 +271,7 @@ func Test_newConn(t *testing.T) {
 		conf.ReadTimeout, conf.WriteTimeout = 0, minTimeout
 		p := NewPool(conf)
 		conn, read := DeadPipe(t) // for example
-		c := newConn(conn, p)
+		c := newConn(conn, p, false)
 		if _, ok := c.w.(*bufio.Writer); !ok {
 			t.Error("wrong type of writer")
 		}
@@ -365,7 +365,7 @@ func TestConn_handle(t *testing.T) {
 	p := NewPool(conf)
 	defer p.Close()
 	p.Register(NewPrefix("ANYM"), &Any{})
-	c := newConn(conn, p)
+	c := newConn(conn, p, false)
 	defer c.Close()
 	// ----
 	// c.pool.wg.Add(2)
@@ -481,7 +481,7 @@ func TestConn_Send(t *testing.T) {
 		disconnect := make(chan struct{}, 1)
 		rc := testConfigName("Send (receiver)")
 		rc.MaxMessageSize = 1 // 1 byte max allowed
-		rc.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
+		rc.DisconnectHandler = func(*Conn, error) { disconnect <- struct{}{} }
 		r := NewPool(rc)
 		r.Register(NewPrefix("ANYM"), &Any{})
 		defer r.Close()

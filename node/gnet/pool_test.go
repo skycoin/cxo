@@ -254,7 +254,7 @@ func TestPool_Listen(t *testing.T) {
 		conf := testConfigName("Listen/connections limit")
 		conf.MaxConnections = 1 // 0 - unlimited
 		conf.ConnectionHandler = func(*Conn) { connect <- struct{}{} }
-		conf.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
+		conf.DisconnectHandler = func(*Conn, error) { disconnect <- struct{}{} }
 		p := NewPool(conf)
 		defer closePool(t, p, TM)
 		if err := p.Listen(""); err != nil {
@@ -341,7 +341,9 @@ func TestPool_Disconnect(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		disconnected := make(chan struct{}, 2)
 		conf := testConfigName("Disconnect/found")
-		conf.DisconnectHandler = func(*Conn) { disconnected <- struct{}{} }
+		conf.DisconnectHandler = func(*Conn, error) {
+			disconnected <- struct{}{}
+		}
 		p := NewPool(conf)
 		defer p.Close()
 		l := listen(t) // test listener

@@ -2,6 +2,7 @@ package gnet
 
 import (
 	"flag"
+	"net"
 	"time"
 
 	"github.com/skycoin/cxo/node/log"
@@ -30,8 +31,14 @@ type ConnectionHandler func(c *Conn)
 
 // DisconnectHandler represents callback that
 // called directly after an establised connection
-// was closed
-type DisconnectHandler func(c *Conn)
+// was closed. The err argument represents reason
+// by which the Conn was closed
+type DisconnectHandler func(c *Conn, err error)
+
+// AcceptFailureHandler represents callbac that
+// called when a conenction accepted by listener
+// but can't be handled for some reason
+type AcceptFailureHandler func(c net.Conn, err error)
 
 type Config struct {
 	// MaxConnections - incoming and outgoing
@@ -84,6 +91,12 @@ type Config struct {
 	// DisconnectHandler called directly after
 	// an establised connection was closed
 	DisconnectHandler DisconnectHandler
+
+	// AcceptFailureHandler represents callbac that
+	// called when a conenction accepted by listener
+	// but can't be handled for some reason. The
+	// err argument desribe the reason
+	AcceptFailureHandler AcceptFailureHandler
 
 	// Logger to use. If it's nil then default logger used
 	Logger log.Logger
