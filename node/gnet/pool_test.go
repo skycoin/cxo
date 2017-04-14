@@ -510,3 +510,126 @@ func TestPool_conf_AcceptFailureHandler(t *testing.T) {
 	// 	t.Error("AcceptFailureHandler wasn't called a few time")
 	// }
 }
+
+func TestPool_AddSendFilter(t *testing.T) {
+	t.Run("no filters", func(t *testing.T) {
+		p := NewPool(testConfigName("AddSendFilter/no filters"))
+		defer p.Close()
+		p.Register(NewPrefix("ANYM"), &Any{})
+		p.Broadcast(&Any{})
+	})
+	t.Run("filter", func(t *testing.T) {
+		p := NewPool(testConfigName("AddSendFilter/filter"))
+		anyp := NewPrefix("ANYM")
+		p.Register(anyp, &Any{})
+		p.AddSendFilter(func(p Prefix) bool { return p == anyp })
+		p.Broadcast(&Any{})
+	})
+	t.Run("deny", func(t *testing.T) {
+		p := NewPool(testConfigName("AddSendFilter/deny"))
+		defer p.Close()
+		type Some struct{ Int int64 }
+		p.Register(NewPrefix("ANYM"), &Any{})
+		somep := NewPrefix("SOME")
+		p.Register(somep, &Some{})
+		p.AddSendFilter(func(p Prefix) bool { return p == somep })
+		defer shouldPanic(t)
+		p.Broadcast(&Any{})
+	})
+}
+
+func TestPool_AddReceiveFilter(t *testing.T) {
+	t.Run("no filters", func(t *testing.T) {
+		connected := make(chan struct{}, 1)
+		rconf := testConfigName("AddSendFilter/no filters: receiver")
+		rconf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
+		r := NewPool(rconf)
+		defer r.Close()
+		r.Register(NewPrefix("ANYM"), &Any{})
+		if err := r.Listen(""); err != nil {
+			t.Fatal("unexpected listening error:", err)
+		}
+		s := NewPool(testConfigName("AddSendFilter/no filters: sender"))
+		defer s.Close()
+		s.Register(NewPrefix("ANYM"), &Any{})
+		if err := s.Connect(r.Address()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		if !readChan(TM, connected) {
+			t.Fatal("slow connecting")
+		}
+		s.Broadcast(&Any{"data"})
+		select {
+		case <-r.Receive():
+		case <-time.After(TM):
+			t.Error("slow receiving")
+		}
+	})
+	t.Run("filter", func(t *testing.T) {
+		connected := make(chan struct{}, 1)
+		rconf := testConfigName("AddSendFilter/no filters: receiver")
+		rconf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
+		r := NewPool(rconf)
+		defer r.Close()
+		anyp := NewPrefix("ANYM")
+		r.Register(anyp, &Any{})
+		r.AddReceiveFilter(func(p Prefix) bool { return p == anyp })
+		if err := r.Listen(""); err != nil {
+			t.Fatal("unexpected listening error:", err)
+		}
+		s := NewPool(testConfigName("AddSendFilter/no filters: sender"))
+		defer s.Close()
+		s.Register(NewPrefix("ANYM"), &Any{})
+		if err := s.Connect(r.Address()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		if !readChan(TM, connected) {
+			t.Fatal("slow connecting")
+		}
+		s.Broadcast(&Any{"data"})
+		select {
+		case <-r.Receive():
+		case <-time.After(TM):
+			t.Error("slow receiving")
+		}
+	})
+	t.Run("deny", func(t *testing.T) {
+		connected := make(chan struct{}, 1)
+		disconnected := make(chan struct{}, 1)
+		rconf := testConfigName("AddSendFilter/no filters: receiver")
+		rconf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
+		rconf.DisconnectHandler = func(_ *Conn, err error) {
+			if err != ErrRejectedByReceiveFilter {
+				t.Error("unexpected disconnecting error:", err)
+			}
+			disconnected <- struct{}{}
+		}
+		r := NewPool(rconf)
+		defer r.Close()
+		type Some struct{ Int int64 }
+		anyp := NewPrefix("ANYM")
+		r.Register(anyp, &Any{})
+		r.Register(NewPrefix("SOME"), &Some{})
+		// Allow Any but deny all other
+		r.AddReceiveFilter(func(p Prefix) bool { return p == anyp })
+		if err := r.Listen(""); err != nil {
+			t.Fatal("unexpected listening error:", err)
+		}
+		s := NewPool(testConfigName("AddSendFilter/no filters: sender"))
+		defer s.Close()
+		s.Register(NewPrefix("ANYM"), &Any{})
+		s.Register(NewPrefix("SOME"), &Some{})
+		if err := s.Connect(r.Address()); err != nil {
+			t.Fatal("unexpected connecting error:", err)
+		}
+		if !readChan(TM, connected) {
+			t.Fatal("slow connecting")
+		}
+		s.Broadcast(&Some{98})
+		select {
+		case <-disconnected:
+		case <-time.After(TM):
+			t.Error("slow or missing disconnecting")
+		}
+	})
+}
