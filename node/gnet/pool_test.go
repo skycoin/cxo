@@ -633,3 +633,57 @@ func TestPool_AddReceiveFilter(t *testing.T) {
 		}
 	})
 }
+
+func TestPool_SendTo(t *testing.T) {
+	connected := make(chan struct{}, 3)
+	sconf := testConfigName("SendTo server")
+	sconf.ConnectionHandler = func(c *Conn) { connected <- struct{}{} }
+	s := NewPool(sconf)
+	s.Register(NewPrefix("ANYM"), &Any{})
+	defer s.Close()
+	c1 := NewPool(testConfigName("SendTo client 1"))
+	defer c1.Close()
+	c1.Register(NewPrefix("ANYM"), &Any{})
+	c2 := NewPool(testConfigName("SendTo client 2"))
+	defer c2.Close()
+	c2.Register(NewPrefix("ANYM"), &Any{})
+	c3 := NewPool(testConfigName("SendTo client 3"))
+	defer c3.Close()
+	c3.Register(NewPrefix("ANYM"), &Any{})
+	if err := s.Listen(""); err != nil {
+		t.Fatal("unexpected listening error:", err)
+	}
+	if err := c1.Connect(s.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	if err := c2.Connect(s.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	if err := c3.Connect(s.Address()); err != nil {
+		t.Fatal("unexpected connecting error:", err)
+	}
+	for i := 0; i < 3; i++ {
+		select {
+		case <-connected:
+		case <-time.After(TM):
+			t.Fatal("slow or missing connecting")
+		}
+	}
+	s.SendTo(&Any{"ha-ha"}, []string{
+		firstConnection(c1).conn.LocalAddr().String(),
+		firstConnection(c2).conn.LocalAddr().String(),
+		// don't send to c3
+	})
+	for _, cc := range []*Pool{c1, c2} {
+		select {
+		case <-cc.Receive():
+		case <-time.After(TM):
+			t.Error("slow receiving")
+		}
+	}
+	select {
+	case <-c3.Receive():
+		t.Error("SendTo sends to connection not in list")
+	case <-time.After(TM):
+	}
+}

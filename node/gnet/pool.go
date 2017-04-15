@@ -420,15 +420,15 @@ Loop:
 				continue Loop // except
 			}
 		}
-		p.cmx.RUnlock() // temporary unlock
-		{
-			if err = c.sendEncodedMessage(em); err != nil {
-				c.setDisconnectReason(err)
-				p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+		if err = c.sendEncodedMessage(em); err != nil {
+			c.setDisconnectReason(err)
+			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+			p.cmx.RUnlock() // temporary unlock
+			{
 				c.Close()
 			}
+			p.cmx.RLock() // and lock back
 		}
-		p.cmx.RLock() // and lock back
 	}
 }
 
@@ -437,11 +437,33 @@ func (p *Pool) Broadcast(m interface{}) {
 	p.BroadcastExcept(m)
 }
 
-// remove closed connection form the Pool
-func (p *Pool) delete(address string) {
-	p.cmx.Lock()
-	defer p.cmx.Unlock()
-	delete(p.conns, address)
+// SendTo sends given message to all enumerated connections if they exists
+func (p *Pool) SendTo(m interface{}, addresses []string) {
+	var (
+		em []byte = p.encodeMessage(m)
+
+		address string
+		c       *Conn
+		ok      bool
+
+		err error
+	)
+	p.cmx.RLock()         // map lock
+	defer p.cmx.RUnlock() // map unlock
+	for _, address = range addresses {
+		if c, ok = p.conns[address]; !ok {
+			continue
+		}
+		if err = c.sendEncodedMessage(em); err != nil {
+			c.setDisconnectReason(err)
+			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
+			p.cmx.RUnlock() // temporary unlock
+			{
+				c.Close()
+			}
+			p.cmx.RLock() // and lock back
+		}
+	}
 }
 
 // -------------------------------------------------------------------------- //
@@ -590,6 +612,13 @@ func (p *Pool) Receive() <-chan Message {
 // -------------------------------------------------------------------------- //
 //                                   close                                    //
 // -------------------------------------------------------------------------- //
+
+// remove closed connection form the Pool
+func (p *Pool) delete(address string) {
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+	delete(p.conns, address)
+}
 
 func (p *Pool) closeConnections() {
 	p.cmx.RLock()         // map lock
