@@ -29,6 +29,21 @@ const (
 // is unique identifier of type of a message
 type Prefix [PrefixLength]byte
 
+// NewPrefix creates prefix using given string.
+// It panics if length of the string is not
+// PrefixLength and if the string contains
+// characters invalid for Prefix
+func NewPrefix(p string) (prefix Prefix) {
+	if len(p) != PrefixLength {
+		panic("invalid legth")
+	}
+	copy(prefix[:], p)
+	if err := prefix.Validate(); err != nil {
+		panic(err)
+	}
+	return
+}
+
 // prefix related errors
 var (
 	ErrSpecialCharacterInPrefix     = errors.New("special character in prefix")
