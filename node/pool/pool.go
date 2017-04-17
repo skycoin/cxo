@@ -7,6 +7,7 @@ import (
 
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/node/pool/registry"
+	"github.com/skycoin/cxo/node/pool/transport"
 )
 
 type Config struct{}
@@ -21,20 +22,20 @@ type Pool struct {
 	reg *registry.Registry
 
 	// registered transports
-	transports map[Schema]Transport
+	transports map[transport.Schema]transport.Transport
 
 	lmx       sync.RWMutex
-	listeners map[string]Listener
+	listeners map[string]transport.Listener
 	cmx       sync.RWMutex
-	conns     map[string]Conn
+	conns     map[string]transport.Conn
 
-	receive chan MessageContext // inflow
+	receive chan transport.MessageContext // inflow
 
-	newc    chan Conn
-	closedc chan Conn
+	newc    chan transport.Conn
+	closedc chan transport.Conn
 
-	newl    chan Listener
-	closedl chan Listener
+	newl    chan transport.Listener
+	closedl chan transport.Listener
 
 	sem chan struct{} // connections limit (if set)
 
@@ -48,7 +49,7 @@ type Pool struct {
 // thread safe. All transports should be added before using
 // the pool. If Initialize method of given transport returns an
 // error the AddTransport method panics with the error
-func (p *Pool) AddTransport(t Transport) {
+func (p *Pool) AddTransport(t transport.Transport) {
 	if _, ok := p.transports[t.Schema()]; ok {
 		panic("transport already registered: " + string(t.Schema()))
 	}
@@ -57,33 +58,33 @@ func (p *Pool) AddTransport(t Transport) {
 }
 
 // Receive all messages using the channel
-func (p *Pool) Receive() <-chan MessageContext {
+func (p *Pool) Receive() <-chan transport.MessageContext {
 	return p.receive
 }
 
 // NewConnections retusn channel to
 // receive all new connections
-func (p *Pool) NewConnections() <-chan Conn {
+func (p *Pool) NewConnections() <-chan transport.Conn {
 	return p.newc
 }
 
 // ClosedConnections returns channel
 // to receive all closed connections
 // until the Pool closed
-func (p *Pool) ClosedConnections() <-chan Conn {
+func (p *Pool) ClosedConnections() <-chan transport.Conn {
 	return p.closedc
 }
 
 // NewConnections retusn channel to
 // receive all new listeners
-func (p *Pool) NewListeners() <-chan Listener {
+func (p *Pool) NewListeners() <-chan transport.Listener {
 	return p.newl
 }
 
 // ClosedListeners returns channel
 // to receive all closed listeners
 // until the Pool closed
-func (p *Pool) ClosedListeners() <-chan Listener {
+func (p *Pool) ClosedListeners() <-chan transport.Listener {
 	return p.closedl
 }
 
@@ -104,7 +105,7 @@ func (p *Pool) Connections() (cs []string) {
 
 // Connection returns connection by remote address or nil
 // if the connection doesn't exists
-func (p *Pool) Connection(address string) (c Conn) {
+func (p *Pool) Connection(address string) (c transport.Conn) {
 	p.cmx.RLock()
 	defer p.cmx.RUnlock()
 	c = p.conns[address]
@@ -128,21 +129,21 @@ func (p *Pool) Listeners() (ls []string) {
 
 // Listener returns listener by listening address or nil
 // if the listener doesn't exists
-func (p *Pool) Listener(address string) (l Listener) {
+func (p *Pool) Listener(address string) (l transport.Listener) {
 	p.lmx.RLock()
 	defer p.lmx.RUnlock()
 	l = p.listeners[address]
 	return
 }
 
-func (p *Pool) enqueueNewConnection(c Conn) {
+func (p *Pool) enqueueNewConnection(c transport.Conn) {
 	select {
 	case p.newc <- c:
 	case <-p.quit:
 	}
 }
 
-func (p *Pool) enqueueClosedConn(c Conn) {
+func (p *Pool) enqueueClosedConn(c transport.Conn) {
 	select {
 	case <-p.quit:
 	default:
@@ -153,14 +154,14 @@ func (p *Pool) enqueueClosedConn(c Conn) {
 	}
 }
 
-func (p *Pool) enqueueNewListener(l Listener) {
+func (p *Pool) enqueueNewListener(l transport.Listener) {
 	select {
 	case p.newl <- l:
 	case <-p.quit:
 	}
 }
 
-func (p *Pool) enqueueClosedListener(l Listener) {
+func (p *Pool) enqueueClosedListener(l transport.Listener) {
 	select {
 	case <-p.quit:
 	default:
@@ -255,7 +256,7 @@ func (p *Pool) acquire() (got bool) {
 	return
 }
 
-func (p *Pool) release(c Conn) {
+func (p *Pool) release(c transport.Conn) {
 	if p.sem != nil {
 		<-p.sem
 	}
@@ -267,7 +268,7 @@ func (p *Pool) release(c Conn) {
 // ------------------------- connection wrapper ----------------------------- //
 
 type connection struct {
-	Conn
+	transport.Conn
 	releaseOnce sync.Once
 	release     func()
 }
@@ -280,7 +281,7 @@ func (l *connection) Close() (err error) {
 
 // ------------------------------- accept ----------------------------------- //
 
-func (p *Pool) accept(l Listener) (c Conn, err error) {
+func (p *Pool) accept(l transport.Listener) (c transport.Conn, err error) {
 	if err = p.acquireBlock(); err != nil {
 		return
 	}
@@ -305,7 +306,7 @@ func (p *Pool) Listen(address string) (err error) {
 		return
 	}
 	// take a look the schema
-	schema, addr := SplitSchemaAddress(address)
+	schema, addr := transport.SplitSchemaAddress(address)
 	if schema == "" {
 		err = fmt.Errorf("missing schema in %q", address)
 		return
@@ -314,7 +315,7 @@ func (p *Pool) Listen(address string) (err error) {
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
 	// take a look transports
-	transport, ok := p.transports[schema]
+	t, ok := p.transports[schema]
 	if !ok {
 		err = fmt.Errorf("unknown schema: %q", schema)
 		return
@@ -326,8 +327,8 @@ func (p *Pool) Listen(address string) (err error) {
 			return
 		}
 	}
-	var l Listener
-	if l, err = transport.Listen(address); err != nil {
+	var l transport.Listener
+	if l, err = t.Listen(address); err != nil {
 		return
 	}
 	// strict check map of listeners (impossible check)
@@ -345,9 +346,9 @@ func (p *Pool) Listen(address string) (err error) {
 	return
 }
 
-func (p *Pool) listen(l Listener) {
+func (p *Pool) listen(l transport.Listener) {
 	var (
-		c   Conn
+		c   transport.Conn
 		err error
 	)
 	// closing
@@ -375,7 +376,7 @@ func (p *Pool) listen(l Listener) {
 // --------------------------------- dial ----------------------------------- //
 
 // Dial to given address
-func (p *Pool) Dial(address string) (c Conn, err error) {
+func (p *Pool) Dial(address string) (c transport.Conn, err error) {
 	var ok bool
 	// don't connect if the pool was closed
 	if p.isClosed() {
@@ -383,7 +384,7 @@ func (p *Pool) Dial(address string) (c Conn, err error) {
 		return
 	}
 	// schema and address
-	schema, addr := SplitSchemaAddress(address)
+	schema, addr := transport.SplitSchemaAddress(address)
 	if schema == "" {
 		err = fmt.Errorf("missing schema in %q", address)
 		return
@@ -429,7 +430,7 @@ func (p *Pool) Dial(address string) (c Conn, err error) {
 
 // -------------------------------- handle ---------------------------------- //
 
-func (p *Pool) handleConnection(c Conn) (err error) {
+func (p *Pool) handleConnection(c transport.Conn) (err error) {
 	p.Debug("got new connection: ", c.Address())
 	p.cmx.Lock()
 	defer p.cmx.Unlock()

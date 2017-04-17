@@ -1,14 +1,12 @@
-package pool
+// Package transport contains common transporting types and
+// interfaces
+package transport
 
 import (
 	"strings"
 
 	"github.com/skycoin/cxo/node/pool/registry"
 )
-
-//
-// common types and interfaces
-//
 
 // A Schema is connection schema such as "tcp", "tls+tcp", etc
 type Schema string
@@ -36,7 +34,7 @@ type Transport interface {
 	Schema() Schema
 
 	// Initialize the transport, providing
-	// registry with filters and shared receiver
+	// registry with filters, and shared receiver
 	// channel for incoming messages
 	Initialize(reg *registry.Registry, receiver chan<- MessageContext)
 
