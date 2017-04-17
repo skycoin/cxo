@@ -138,6 +138,9 @@ type Registry struct {
 // limit is zero then no limit used
 func NewRegistry(messageSizeLimit int) (r *Registry) {
 	r = new(Registry)
+	if messageSizeLimit < 0 {
+		messageSizeLimit = MaxSize
+	}
 	r.max = messageSizeLimit
 	r.reg = make(map[Prefix]reflect.Type)
 	r.inv = make(map[reflect.Type]Prefix)
@@ -187,7 +190,8 @@ func (r *Registry) AddReceiveFilter(filter PrefixFilterFunc) {
 }
 
 // AllowSend returns true if all send-filters allows messages with
-// given prefix to send
+// given prefix to send. The AllowSend check filters only, it can
+// returns true for unregistered types too and never panics
 func (r *Registry) AllowSend(p Prefix) (allow bool) {
 	allow = r.sendf.allow(p)
 	return
@@ -195,14 +199,16 @@ func (r *Registry) AllowSend(p Prefix) (allow bool) {
 
 // AllowReceive returns true if all send-filters allows messages with
 // given prefix to be received. The method can be used to break connection
-// with unwanted messages skipping reading the whole message
+// with unwanted messages skipping reading the whole message.
+// The AllowReceive check filters only, it can returns true for
+// unregistered types too and never panics
 func (r *Registry) AllowReceive(p Prefix) (allow bool) {
 	allow = r.recvf.allow(p)
 	return
 }
 
-// Type returns registered reflect.Type by given prefix and true or
-// nil and false if the Prefix was not registered
+// Type returns registered reflect.Type by given prefix and true,
+// or nil and false if the Prefix was not registered
 func (r *Registry) Type(p Prefix) (typ reflect.Type, ok bool) {
 	typ, ok = r.reg[p]
 	return
@@ -221,7 +227,7 @@ func (r *Registry) Enocde(m Message) (p []byte, err error) {
 	if !ok {
 		panic("encoding unregistered type: " + typ.String())
 	}
-	if !r.sendf.allow(prefix) {
+	if !r.AllowSend(prefix) {
 		err = &ErrFiltered{true, prefix} // sending
 		return
 	}
@@ -252,7 +258,7 @@ var (
 // DecodeHead decodes message head: Prefix + encoded length. Length
 // of given head should be PrefixLength + 4 (length of message). The
 // method returns error if decoded length of message exceeds size
-// limit provided to NewRegistery
+// limit provided to NewRegistery. The method doesn't validate prefix
 func (r *Registry) DecodeHead(head []byte) (p Prefix, l int, err error) {
 	if len(head) != PrefixLength+4 {
 		err = ErrInvalidHeadLength
@@ -261,12 +267,12 @@ func (r *Registry) DecodeHead(head []byte) (p Prefix, l int, err error) {
 	copy(p[:], head)
 	var ln uint32
 	if err = encoder.DeserializeRaw(head[PrefixLength:], &ln); err != nil {
-		return
+		return // never happens
 	}
 	l = int(ln)
 	if l < 0 {
-		err = ErrNegativeLength
-	} else if l > r.max {
+		err = ErrNegativeLength // for 32-bit CPUs
+	} else if r.max > 0 && l > r.max {
 		err = ErrSizeLimit
 	}
 	return
@@ -274,14 +280,14 @@ func (r *Registry) DecodeHead(head []byte) (p Prefix, l int, err error) {
 
 // Decode body of a message type of which described by given prefix. The
 // method can returns decoding or filtering error (see ErrFiltered). The
-// method can also returns ErrNotRegistered
+// method can also returns ErrNotRegistered. The method doesn't check size limt
 func (r *Registry) Decode(prefix Prefix, p []byte) (v Message, err error) {
 	typ, ok := r.Type(prefix)
 	if !ok {
 		err = ErrNotRegistered
 		return
 	}
-	if !r.recvf.allow(prefix) {
+	if !r.AllowReceive(prefix) {
 		err = &ErrFiltered{false, prefix} // receiving
 		return
 	}
