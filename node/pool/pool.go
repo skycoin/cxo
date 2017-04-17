@@ -3,304 +3,13 @@ package pool
 import (
 	"errors"
 	"fmt"
-	"io"
-	"net"
-	"reflect"
-	"strings"
 	"sync"
-	"time"
-	"unicode"
-
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/node/log"
+	"github.com/skycoin/cxo/node/pool/registry"
 )
 
-// prefix related constants
-const (
-	// PrefixLength is length of a Prefix
-	PrefixLength int = 4
-	// PrefixSpecial is reserved character, not allowed for
-	// using in Prefixes. Beside the rune any space character or
-	// an unprintabel characters are not allowed too
-	PrefixSpecial rune = '-'
-)
-
-// Prefix represents message prefix, that
-// is unique identifier of type of a message
-type Prefix [PrefixLength]byte
-
-// prefix related errors
-var (
-	ErrSpecialCharacterInPrefix     = errors.New("special character in prefix")
-	ErrSpaceInPrefix                = errors.New("space in prefix")
-	ErrUnprintableCharacterInPrefix = errors.New(
-		"unprintable character in preix")
-)
-
-// Validate returns error if the Prefix is invalid
-func (p Prefix) Validate() error {
-	var r rune
-	for _, r = range p.String() {
-		if r == PrefixSpecial {
-			return ErrSpecialCharacterInPrefix
-		}
-		if r == ' ' { // ASCII space
-			return ErrSpaceInPrefix
-		}
-		if !unicode.IsPrint(r) {
-			return ErrUnprintableCharacterInPrefix
-		}
-	}
-	return
-}
-
-// String implements fmt.Stringer interface
-func (p Prefix) String() string {
-	return string(p)
-}
-
-// PrefixFilterFunc is an allow-filter
-type PrefixFilterFunc func(Prefix) bool
-
-// ErrFiltered represents errors that occurs when some
-// prefix rejected by a `PrefixFilterFunc`s
-type ErrFiltered struct {
-	send   bool
-	prefix Prefix
-}
-
-// Sending returns true if the error occurs during sending a message.
-// Otherwise this error emitted by receive-filters
-func (e *ErrFiltered) Sending() bool {
-	return e.send
-}
-
-// Error implements error interface
-func (e *ErrFiltered) Error() string {
-	if e.send {
-		return fmt.Sprintf("[%s] rejected by send-filter", e.prefix.String())
-	}
-	return fmt.Sprintf("[%s] rejected by receive-filter", e.prefix.String())
-}
-
-// set of prefix filters
-type filter []PrefixFilterFunc
-
-func (f filter) allow(p Prefix) (allow bool) {
-	if len(f) == 0 {
-		return true // allow
-	}
-	for _, filter := range f {
-		if filter(p) {
-			return true // allow
-		}
-	}
-	return // deny
-}
-
-// A Message repreents any type that can be registered, encoded and
-// decoded
-type Message interface{}
-
-// A Registry represents registry of types
-// to send/receive. The Registry is not thread safe.
-// I.e. you need to call all Register/AddSendFilter/AddReceiveFilter
-// before using the Registry, before share reference to it to other
-// goroutines
-type Registry struct {
-	reg map[Prefix]reflect.Type
-	inv map[reflect.Type]Prefix
-
-	sendf filter
-	recvf filter
-}
-
-func (*Registry) typeOf(i Message) reflect.Type {
-	return reflect.Indirect(reflect.ValueOf(i)).Type()
-}
-
-// Register type of given value with given prefix. The method
-// panics if prefix is malformed or already registered, and
-// if the type already registered. The method also panics if
-// the type can't be encoded
-func (r *Registry) Register(prefix Prefix, i Message) {
-	if err := prefix.Validate(); err != nil {
-		panic(err)
-	}
-	if _, ok := r.reg[prefix]; ok {
-		panic("register prefix twice")
-	}
-	typ := r.typeOf(i)
-	if _, ok := r.inv[typ]; ok {
-		panic("register type twice")
-	}
-	encoder.Serialize(i) // can panic if the type is invalid for the encoder
-	r.reg[prefix] = typ
-	r.reg[typ] = prefix
-}
-
-// AddSendFilter to filter sending. By default all registered types allowed
-// to sending. The filter should returns true for prefixes allowed to send
-func (r *Registry) AddSendFilter(filter PrefixFilterFunc) {
-	if filter == nil {
-		panic("nil filter")
-	}
-	r.sendf = append(r.sendf, filter)
-}
-
-// AddReceiveFilter to filter receiving. By default all registered types allowed
-// to receive. The filter should returns true for prefixes allowed to receive
-func (r *Registry) AddReceiveFilter(filter PrefixFilterFunc) {
-	if filter == nil {
-		panic("nil filter")
-	}
-	r.recvf = append(r.recvf, filter)
-}
-
-// AllowSend returns true if all send-filters allows messages with
-// given prefix to send
-func (r *Registry) AllowSend(p Prefix) (allow bool) {
-	allow = r.sendf.allow(p)
-	return
-}
-
-// AllowReceive returns true if all send-filters allows messages with
-// given prefix to be received. The method can be used to break connection
-// with unwanted messages skipping reading the whole message
-func (r *Registry) AllowReceive(p Prefix) (allow bool) {
-	allow = r.recvf.allow(p)
-	return
-}
-
-// Type returns registered reflect.Type by given prefix and true or
-// nil and false if the Prefix was not registered
-func (r *Registry) Type(p Prefix) (typ reflect.Type, ok bool) {
-	typ, ok = r.reg[p]
-	return
-}
-
-// Encode given message. The method panics if type of given value
-// is not registered. It can return filtering error (see ErrFiltered)
-func (r *Registry) Enocde(m Message) (p []byte, err error) {
-	typ := r.typeOf(m)
-	prefix, ok := r.reg[typ]
-	if !ok {
-		panic("encoding unregistered type: " + typ.String())
-	}
-	if !r.sendf.allow(prefix) {
-		err = &ErrFiltered{true, prefix} // sending
-		return
-	}
-	p = encoder.Serialize(m)
-	return
-}
-
-// Registry related errors
-var (
-	ErrNotRegistered      = errors.New("not registered prefix")
-	ErrIncompliteDecoding = errors.New("incomlite decoding")
-)
-
-// Decode body of a message type of which described by given prefix. The
-// method can returns decoding or filtering error (see ErrFiltered). The
-// method can also returns ErrNotRegistered
-func (r *Registry) Decode(prefix Prefix, p []byte) (v Message, err error) {
-	typ, ok := r.Type(prefix)
-	if !ok {
-		err = ErrNotRegistered
-		return
-	}
-	if !r.recvf.allow(prefix) {
-		err = &ErrFiltered{false, prefix} // receiving
-		return
-	}
-	val := reflect.New(typ)
-	if err = r.DecodeValue(p, val); err != nil {
-		return
-	}
-	v = val.Interface()
-	return
-}
-
-// DecodeValue skips all receive-filters and uses reflect.Value instead of
-// Prefix. The method is short-hand for encoder.DeserializeRawToValue
-func (*Registry) DecodeValue(p []byte, val reflect.Value) (err error) {
-	var n int
-	n, err = encoder.DeserializeRawToValue(p, val)
-	if err == nil && n < len(p) {
-		err = ErrIncompliteDecoding
-	}
-	return
-}
-
-// A Schema is connection schema such as "tcp", "tls+tcp", etc
-type Schema string
-
-// MessageContext represents received message with
-// conection from which the message received
-type MessageContext struct {
-	Message Message // received message
-	Conn    Conn    // connection from wich the message received
-}
-
-// A Transport represents transporting interface
-type Transport interface {
-	// Schema of the Transport
-	Schema() Schema
-
-	// Initialize the transport, providing
-	// registry with filters and shared receiver
-	// channel for incoming messages
-	Initialize(reg *Registry, receiver chan<- MessageContext)
-
-	// Dial to given address
-	Dial(address string) (c Conn, err error)
-	// Listen on given address
-	Listen(address string) (l Listener, err error)
-}
-
-// A Listener represents listener interface.
-// All methods of the listener are thread safe
-type Listener interface {
-	// Accept connection
-	Accept() (c Conn, err error)
-	// Address the Listener listening on
-	// with schema
-	Address() string
-	// Close the Listener
-	Close() (err error)
-}
-
-// A Conn represents connection interface.
-// All methods of the connection are thread-safe
-type Conn interface {
-	// Address returns address of remote node
-	// with schema. For example tcp://127.0.0.1:9987
-	Address() string
-	// Send given message to remote node. The method
-	// returns immediately
-	Send(m Message) (err error)
-	// SendRaw sends encoded message with
-	// length and prefix to remote node. The
-	// method returns immediately
-	SendRaw(p []byte) (err error)
-	// Close the connection
-	Close() (err error)
-
-	// IsIncoming returns true if the connection
-	// accepted by a listener. If the connection
-	// created using Dial method then the
-	// IsIncoming method returns false
-	IsIncoming() bool
-
-	//
-	// Attach any user-provided value to the connection
-	//
-
-	Value() (value interface{}) // get the value
-	SetValue(value interface{}) // set the value
-}
+type Config struct{}
 
 // A Pool represents pool of listeners and connections
 type Pool struct {
@@ -309,7 +18,7 @@ type Pool struct {
 	log.Logger // logger of the Pool
 
 	// registry
-	reg *Registry
+	reg *registry.Registry
 
 	// registered transports
 	transports map[Schema]Transport
@@ -422,7 +131,7 @@ func (p *Pool) Listeners() (ls []string) {
 func (p *Pool) Listener(address string) (l Listener) {
 	p.lmx.RLock()
 	defer p.lmx.RUnlock()
-	c = p.listeners[address]
+	l = p.listeners[address]
 	return
 }
 
@@ -571,7 +280,7 @@ func (l *connection) Close() (err error) {
 
 // ------------------------------- accept ----------------------------------- //
 
-func (p *Pool) accept(l net.Listener) (c Conn, err error) {
+func (p *Pool) accept(l Listener) (c Conn, err error) {
 	if err = p.acquireBlock(); err != nil {
 		return
 	}
@@ -587,16 +296,6 @@ func (p *Pool) accept(l net.Listener) (c Conn, err error) {
 }
 
 // ------------------------------- listen ----------------------------------- //
-
-// SplitSchemaAddress split given string by "://"
-func SplitSchemaAddress(address string) (schema Schema, addr string) {
-	if ss := strings.Split(address, "://"); len(ss) == 2 {
-		schema, addr = Schema(ss[0]), ss[1]
-	} else if len(ss) == 1 {
-		schema = Schema(ss[0])
-	}
-	return
-}
 
 // Listen on given address
 func (p *Pool) Listen(address string) (err error) {
@@ -642,7 +341,7 @@ func (p *Pool) Listen(address string) (err error) {
 	p.listeners[address] = l
 	p.enqueueNewListener(l)
 	p.await.Add(1)
-	go p.listen(p.l)
+	go p.listen(l)
 	return
 }
 
@@ -717,7 +416,7 @@ func (p *Pool) Dial(address string) (c Conn, err error) {
 		p.release(nil)
 		return
 	}
-	c = &limitedConnection{
+	c = &connection{
 		Conn:    c,
 		release: func() { p.release(c) },
 	}
@@ -741,8 +440,8 @@ func (p *Pool) handleConnection(c Conn) (err error) {
 	// strict check
 	if _, ok = p.conns[address]; ok {
 		err = fmt.Errorf("connection to %s already exists", address)
-		p.release(nil) // close
-		c.Conn.Close() // skipping p.release(c)
+		p.release(nil)               // close
+		c.(*connection).Conn.Close() // skipping p.release(c)
 		return
 	}
 	// add
