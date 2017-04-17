@@ -51,12 +51,12 @@ func (p Prefix) Validate() error {
 			return ErrUnprintableCharacterInPrefix
 		}
 	}
-	return
+	return nil
 }
 
 // String implements fmt.Stringer interface
 func (p Prefix) String() string {
-	return string(p)
+	return string(p[:])
 }
 
 // PrefixFilterFunc is an allow-filter
@@ -117,6 +117,18 @@ type Registry struct {
 	recvf filter
 }
 
+// NewRegistry creates new empty Registry with provided
+// limit of message size in bytes. If the limit is negative
+// then default value used instead (see MaxSize). If the
+// limit is zero then no limit used
+func NewRegistry(messageSizeLimit int) (r *Registry) {
+	r = new(Registry)
+	r.max = messageSizeLimit
+	r.reg = make(map[Prefix]reflect.Type)
+	r.inv = make(map[reflect.Type]Prefix)
+	return
+}
+
 func (*Registry) typeOf(i Message) reflect.Type {
 	return reflect.Indirect(reflect.ValueOf(i)).Type()
 }
@@ -138,7 +150,7 @@ func (r *Registry) Register(prefix Prefix, i Message) {
 	}
 	encoder.Serialize(i) // can panic if the type is invalid for the encoder
 	r.reg[prefix] = typ
-	r.reg[typ] = prefix
+	r.inv[typ] = prefix
 }
 
 // AddSendFilter to filter sending. By default all registered types allowed
@@ -190,7 +202,7 @@ func (r *Registry) Type(p Prefix) (typ reflect.Type, ok bool) {
 // + 4 (encoded length) + PrefixLength
 func (r *Registry) Enocde(m Message) (p []byte, err error) {
 	typ := r.typeOf(m)
-	prefix, ok := r.reg[typ]
+	prefix, ok := r.inv[typ]
 	if !ok {
 		panic("encoding unregistered type: " + typ.String())
 	}
@@ -202,7 +214,7 @@ func (r *Registry) Enocde(m Message) (p []byte, err error) {
 	if r.max > 0 && len(em) > r.max {
 		panic(fmt.Errorf(
 			"try to send message greater than size limit %T, %d (%d)",
-			m, len(em), p.conf.MaxMessageSize,
+			m, len(em), r.max,
 		))
 	}
 	p = make([]byte, 0, 4+PrefixLength+len(em))
