@@ -463,7 +463,7 @@ func TestPool_Connections(t *testing.T) {
 	// TODO: mid. priority
 }
 
-func TestPool_IsConnExist(t *testing.T) {
+func TestPool_Connection(t *testing.T) {
 	// TODO: low priority
 }
 

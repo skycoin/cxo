@@ -589,6 +589,15 @@ func (p *Pool) IsConnExist(address string) (yep bool) {
 	return
 }
 
+// Connection return *Conn by address. If connection
+// doesn't exists the method returns nil
+func (p *Pool) Connection(address string) (c *Conn) {
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+	c = p.conns[address]
+	return
+}
+
 // -------------------------------------------------------------------------- //
 //                                   inflow                                   //
 // -------------------------------------------------------------------------- //
