@@ -254,7 +254,7 @@ func TestPool_Listen(t *testing.T) {
 		conf := testConfigName("Listen/connections limit")
 		conf.MaxConnections = 1 // 0 - unlimited
 		conf.ConnectionHandler = func(*Conn) { connect <- struct{}{} }
-		conf.DisconnectHandler = func(*Conn, error) { disconnect <- struct{}{} }
+		conf.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
 		p := NewPool(conf)
 		defer closePool(t, p, TM)
 		if err := p.Listen(""); err != nil {
@@ -341,9 +341,7 @@ func TestPool_Disconnect(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		disconnected := make(chan struct{}, 2)
 		conf := testConfigName("Disconnect/found")
-		conf.DisconnectHandler = func(*Conn, error) {
-			disconnected <- struct{}{}
-		}
+		conf.DisconnectHandler = func(*Conn) { disconnected <- struct{}{} }
 		p := NewPool(conf)
 		defer p.Close()
 		l := listen(t) // test listener
@@ -598,12 +596,7 @@ func TestPool_AddReceiveFilter(t *testing.T) {
 		disconnected := make(chan struct{}, 1)
 		rconf := testConfigName("AddSendFilter/no filters: receiver")
 		rconf.ConnectionHandler = func(*Conn) { connected <- struct{}{} }
-		rconf.DisconnectHandler = func(_ *Conn, err error) {
-			if err != ErrRejectedByReceiveFilter {
-				t.Error("unexpected disconnecting error:", err)
-			}
-			disconnected <- struct{}{}
-		}
+		rconf.DisconnectHandler = func(_ *Conn) { disconnected <- struct{}{} }
 		r := NewPool(rconf)
 		defer r.Close()
 		type Some struct{ Int int64 }

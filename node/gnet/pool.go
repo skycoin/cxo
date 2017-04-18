@@ -1,6 +1,7 @@
 package gnet
 
 import (
+	"crypto/tls"
 	"errors"
 	"net"
 	"reflect"
@@ -196,8 +197,14 @@ func (p *Pool) Listen(address string) (err error) {
 	}
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
-	if p.l, err = net.Listen("tcp", address); err != nil {
-		return
+	if p.conf.TLSConfig != nil {
+		if p.l, err = tls.Listen("tcp", address, p.conf.TLSConfig); err != nil {
+			return
+		}
+	} else {
+		if p.l, err = net.Listen("tcp", address); err != nil {
+			return
+		}
 	}
 	p.Print("[INF] listening on ", p.l.Addr().String())
 	p.wg.Add(1)
@@ -228,9 +235,6 @@ func (p *Pool) listen(l net.Listener) {
 			return
 		}
 		if err = p.handleConnection(c, false); err != nil {
-			if p.conf.AcceptFailureHandler != nil {
-				p.conf.AcceptFailureHandler(c, err)
-			}
 			p.Print("[ERR] error handling connection: ", err)
 		}
 	}
@@ -244,7 +248,12 @@ func (p *Pool) dial(address string) (c net.Conn, err error) {
 		err = ErrConnectionsLimit
 		return
 	}
-	if c, err = net.Dial("tcp", address); err != nil {
+	if p.conf.TLSConfig != nil {
+		c, err = tls.Dial("tcp", address, p.conf.TLSConfig)
+	} else {
+		c, err = net.Dial("tcp", address)
+	}
+	if err != nil {
 		p.release()
 		return
 	}
@@ -266,7 +275,13 @@ func (p *Pool) dialTimeout(address string,
 		err = ErrConnectionsLimit
 		return
 	}
-	if c, err = net.DialTimeout("tcp", address, timeout); err != nil {
+	if p.conf.TLSConfig != nil {
+		var d net.Dialer = net.Dialer{Timeout: timeout}
+		c, err = tls.DialWithDialer(&d, "tcp", address, p.conf.TLSConfig)
+	} else {
+		c, err = net.DialTimeout("tcp", address, timeout)
+	}
+	if err != nil {
 		p.release()
 		return
 	}
@@ -355,7 +370,6 @@ func (p *Pool) get(address string) (c *Conn) {
 // doesn't exist
 func (p *Pool) Disconnect(address string) (err error) {
 	if c := p.get(address); c != nil {
-		c.setDisconnectReason(ErrManualDisconnect)
 		err = c.Close()
 	} else {
 		err = ErrNotFound
@@ -421,7 +435,6 @@ Loop:
 			}
 		}
 		if err = c.sendEncodedMessage(em); err != nil {
-			c.setDisconnectReason(err)
 			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
 			p.cmx.RUnlock() // temporary unlock
 			{
@@ -455,7 +468,6 @@ func (p *Pool) SendTo(m interface{}, addresses []string) {
 			continue
 		}
 		if err = c.sendEncodedMessage(em); err != nil {
-			c.setDisconnectReason(err)
 			p.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
 			p.cmx.RUnlock() // temporary unlock
 			{
@@ -580,15 +592,6 @@ func (p *Pool) Connections() (cs []string) {
 	return
 }
 
-// IsConnExists returns true if connections with
-// given remote address exists in the Pool
-func (p *Pool) IsConnExist(address string) (yep bool) {
-	p.cmx.RLock()
-	defer p.cmx.RUnlock()
-	_, yep = p.conns[address]
-	return
-}
-
 // Connection return *Conn by address. If connection
 // doesn't exists the method returns nil
 func (p *Pool) Connection(address string) (c *Conn) {
@@ -653,17 +656,17 @@ func (p *Pool) closeListener() (err error) {
 // Close listener and all connections related to the Pool
 // It can return listener closing error
 func (p *Pool) Close() (err error) {
-	// chan
+	// once
 	p.closeOnce.Do(func() {
 		close(p.quit)
+		// listener
+		err = p.closeListener()
+		// connections
+		p.closeConnections()
+		// await all goroutines
+		p.wg.Wait()
+		// release receiving channel
+		close(p.receive)
 	})
-	// listener
-	err = p.closeListener()
-	// connections
-	p.closeConnections()
-	// await all goroutines
-	p.wg.Wait()
-	// release receiving channel
-	close(p.receive)
 	return
 }

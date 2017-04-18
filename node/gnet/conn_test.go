@@ -481,7 +481,7 @@ func TestConn_Send(t *testing.T) {
 		disconnect := make(chan struct{}, 1)
 		rc := testConfigName("Send (receiver)")
 		rc.MaxMessageSize = 1 // 1 byte max allowed
-		rc.DisconnectHandler = func(*Conn, error) { disconnect <- struct{}{} }
+		rc.DisconnectHandler = func(*Conn) { disconnect <- struct{}{} }
 		r := NewPool(rc)
 		r.Register(NewPrefix("ANYM"), &Any{})
 		defer r.Close()
@@ -566,11 +566,9 @@ func TestConn_IsOutgoing(t *testing.T) {
 
 func TestConn_conf_DisconnectHandler(t *testing.T) {
 	t.Run("manual disconnect", func(t *testing.T) {
-		disconnected := make(chan error, 2)
+		disconnected := make(chan *Conn, 2)
 		conf := testConfigName("conf DisconnectHandler/manual disconnect")
-		conf.DisconnectHandler = func(_ *Conn, err error) {
-			disconnected <- err
-		}
+		conf.DisconnectHandler = func(c *Conn) { disconnected <- c }
 		p := NewPool(conf)
 		defer p.Close()
 		l := listen(t) // test listener
@@ -586,20 +584,18 @@ func TestConn_conf_DisconnectHandler(t *testing.T) {
 			t.Error("unexpected disconnecting error:", err)
 		}
 		select {
-		case err := <-disconnected:
-			if err != ErrManualDisconnect {
-				t.Error("unexpected disconnect reason:", err)
+		case c := <-disconnected:
+			if c == nil {
+				t.Error("missing connection")
 			}
 		case <-time.After(TM):
 			t.Error("slow disconnecting")
 		}
 	})
 	t.Run("close", func(t *testing.T) {
-		disconnected := make(chan error, 2)
+		disconnected := make(chan *Conn, 2)
 		conf := testConfigName("conf DisconnectHandler/close")
-		conf.DisconnectHandler = func(_ *Conn, err error) {
-			disconnected <- err
-		}
+		conf.DisconnectHandler = func(c *Conn) { disconnected <- c }
 		p := NewPool(conf)
 		defer p.Close()
 		l := listen(t) // test listener
@@ -609,9 +605,9 @@ func TestConn_conf_DisconnectHandler(t *testing.T) {
 		}
 		firstConnection(p).Close()
 		select {
-		case err := <-disconnected:
-			if err != ErrClosedConn {
-				t.Error("unexpected disconnect reason:", err)
+		case c := <-disconnected:
+			if c == nil {
+				t.Error("missing connection")
 			}
 		case <-time.After(TM):
 			t.Error("slow disconnecting")
