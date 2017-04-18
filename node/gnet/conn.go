@@ -72,6 +72,9 @@ type Conn struct {
 	// Connect method
 	outgoing bool
 
+	vmx   sync.Mutex
+	value interface{}
+
 	// disconnect reasons
 	dreason chan error
 }
@@ -428,4 +431,20 @@ func (d *deadWriter) Write(p []byte) (n int, err error) {
 		d.c.updateLastUsed()
 	}
 	return
+}
+
+// Value returns value attached to the
+// connnection using SetValue
+func (c *Conn) Value() interface{} {
+	c.vmx.Lock()
+	defer c.vmx.Unlock()
+	return c.value
+}
+
+// SetValue attach given value to the
+// connection or clear it if v is nil
+func (c *Conn) SetValue(v interface{}) {
+	c.vmx.Lock()
+	defer c.vmx.Unlock()
+	c.value = v
 }
