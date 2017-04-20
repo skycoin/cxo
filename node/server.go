@@ -63,13 +63,6 @@ type Server struct {
 	// feeds the server share and subscribed to
 	share []cipher.PubKey
 
-	// address of server -> feeds the server share
-	servers map[string][]cipher.PubKey
-	// address of client -> feeds the client subscribed to
-	clients map[string][]cipher.PubKey
-
-	pending []string // pending connections
-
 	// new connections
 	connect chan *gnet.Conn
 
@@ -92,8 +85,6 @@ func NewServer(c Config, db *data.DB, so *skyobject.Container) (s *Server) {
 	s.conf = Config
 	s.db = db
 	s.so = so
-	s.servers = make(map[string][]cipher.PubKey)
-	s.clients = make(map[string][]cipher.PubKey)
 	s.connect = make(chan *gnet.Conn, 64) // todo: configure
 	s.rpc = make(chan rpcEvent, 10)       // todo: configure
 	c.Config.ConnectionHandler = s.onConnect
