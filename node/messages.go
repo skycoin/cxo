@@ -37,7 +37,7 @@ func (*SyncMsg) MsgType() MsgType { return SyncMsgType }
 // Feed filed of the message
 type RootMsg struct {
 	Feed cipher.PubKey
-	Time int64
+	Sig  cipher.Sig
 	Root []byte
 }
 

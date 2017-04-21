@@ -8,90 +8,24 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/skycoin/src/mesh/app"
+	"github.com/skycoin/skycoin/src/mesh/messages"
+	"github.com/skycoin/skycoin/src/mesh/nodemanager"
+
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/node/log"
-	"github.com/skycoin/cxo/rpc/server"
 	"github.com/skycoin/cxo/skyobject"
 )
 
-const (
-	// default listening address
-	ADDRESS = "127.0.0.1"
-	PORT    = 9987
-)
+type Config struct {
+	Host string
+}
 
-// Fill down known hosts
-var knownHosts = map[cipher.SHA256][]string{}
-
-func getConfigs() (nc node.Config, rc server.Config) {
-	var lc log.Config
-	// get defaults
-	nc = node.NewConfig()
-	rc = server.NewConfig()
-	//
-	flag.StringVar(&nc.Listen,
-		"address",
-		ADDRESS,
-		"Address to listen on. Set to empty string for arbitrary assignment")
-
-	nc.Config.FromFlags() // gnet.Config
-
-	lc.FromFlags() // logger configs
-
-	flag.BoolVar(&nc.RemoteClose,
-		"remote-close",
-		nc.RemoteClose,
-		"allow close the node using RPC client")
-
-	flag.BoolVar(&rc.Enable,
-		"rpc",
-		rc.Enable,
-		"use rpc")
-	flag.IntVar(&nc.RPCEvents,
-		"rpc-events",
-		nc.RPCEvents,
-		"rpc events chan size")
-	flag.StringVar(&rc.Address,
-		"rpc-address",
-		rc.Address,
-		"address for rpc")
-	flag.IntVar(&rc.Max,
-		"rpc-max",
-		rc.Max,
-		"maximum rpc-connections")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s <flags> [known hosts]\n", os.Args[0])
-		flag.PrintDefaults()
-	}
-
-	var help bool
-	flag.BoolVar(&help, "h", false, "show help")
-
-	flag.Parse()
-
-	if help {
-		fmt.Printf("Usage: %s <flags> [subscribe to]\n", os.Args[0])
-		flag.PrintDefaults()
-		os.Exit(0)
-	}
-
-	for _, sb := range flag.Args() { // subscribe
-		pk, err := cipher.PubKeyFromHex(sb)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "malformed public key to subscribe to:\n"+
-				"  %q\n"+
-				"  %v\n", sb, err)
-			os.Exit(1)
-		}
-		nc.Subscribe = append(nc.Subscribe, pk)
-	}
-
-	nc.Logger = log.NewLogger("["+lc.Prefix+"] ", lc.Debug)
-	nc.Config.Logger = log.NewLogger("[p:"+lc.Prefix+"] ", lc.Debug)
-
-	return
+func (c *Config) fromFlags() {
+	flag.StringVar(&c.Host,
+		"h",
+		"[::]",
+		"server host")
 }
 
 func waitInterrupt(quit <-chan struct{}) {
@@ -105,58 +39,82 @@ func waitInterrupt(quit <-chan struct{}) {
 
 func main() {
 
-	// exit code
-	var code int
-	defer func() { os.Exit(code) }()
-
-	var err error
-
 	var (
-		db  *data.DB
-		so  *skyobject.Container
-		n   *node.Node
-		rpc *server.Server
-
-		nc node.Config
-		rc server.Config
+		db *data.DB             = data.NewDB()
+		so *skyobject.Container = skyobject.NewContainer(db)
+		nd *node.Node           = node.NewNode(db, so)
+		c  Config
 	)
 
-	db = data.NewDB()
+	c.fromFlags()
+	flag.Parse()
 
-	so = skyobject.NewContainer(db)
+	meshnet := nodemanager.NewNetwork()
+	defer nodemanager.Shutdown()
 
-	//
-	// Get configurations from flags
-	//
+	address := meshnet.AddNewNode(c.Host)
 
-	nc, rc = getConfigs() // node config, rpc config
+	fmt.Println("host:           ", c.Host)
+	fmt.Println("server address: ", address.Hex())
 
-	//
-	// Node
-	//
-
-	n = node.NewNode(nc, db, so)
-
-	// can panic
-	n.Start()
-	defer n.Close()
-
-	//
-	// RPC
-	//
-
-	if rc.Enable {
-		rpc = server.NewServer(rc, n) // , so)
-		if err = rpc.Start(); err != nil {
-			fmt.Fprintln(os.Stderr, "error starting RPC:", err)
-			code = 1
-			return
-		}
-		defer rpc.Close()
+	_, err := app.NewServer(meshnet, address, Handler(db, so, nd))
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
 
-	// waiting for SIGING or termination using RPC
+	fmt.Println("started")
+
+	// rpc
+
+	// waiting for SIGINT or termination using RPC
 
 	waitInterrupt(n.Quiting())
 
+}
+
+func Handler(db *data.DB, so *skyobject.Container,
+	nd *node.Node) func([]byte) []byte {
+
+	want := make(skyobject.Set)
+
+	return func(in []byte) (out []byte) {
+		msg, err := node.Decode(in)
+		if err != nil {
+			fmt.Println("error decoding message:", err)
+			return
+		}
+		switch m := msg.(type) {
+		case *node.SyncMsg:
+			// add feeds of remote node to internal list
+		case *node.RootMsg:
+			for _, f := range nd.Feeds() {
+				if f == m.Feed {
+					ok, err := so.AddEncodedRoot(m.Root, m.Feed, m.Sig)
+					if err != nil {
+						fmt.Println("error adding root object: ", err)
+						// TODO: close connection
+						return
+					}
+					if !ok {
+						return // older then existsing one
+					}
+					// todo: send updates to related connections except this one
+					return
+				}
+			}
+		case *node.RequestMsg:
+			if data, ok := db.Get(m.Hash); ok {
+				return node.Encode(&node.DataMsg{data})
+			}
+		case *node.DataMsg:
+			hash := cipher.SumSHA256(m.Data)
+			if _, ok := want[skyobject.Reference(hash)]; ok {
+				db.Set(hash, m.Data)
+				delete(want, hash)
+			}
+		default:
+			fmt.Printf("unexpected message type: %T\n", msg)
+		}
+	}
 }
