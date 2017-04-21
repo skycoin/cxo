@@ -80,7 +80,7 @@ func (n *Node) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 			}
 			wn = make([]cipher.SHA256, 0, len(set))
 			for w := range set {
-				wn = append(wn, w)
+				wn = append(wn, cipher.SHA256(w))
 			}
 			return // done
 		}
@@ -107,7 +107,7 @@ func (n *Node) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
 			}
 			gt = make([]cipher.SHA256, 0, len(set))
 			for g := range set {
-				gt = append(gt, g)
+				gt = append(gt, cipher.SHA256(g))
 			}
 			return // done
 		}
@@ -119,4 +119,9 @@ func (n *Node) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
 // Feeds returns list of subscriptions of the Node
 func (n *Node) Feeds() []cipher.PubKey {
 	return n.feeds
+}
+
+// Stat is short hand to get statistic of underlying database
+func (n *Node) Stat() data.Stat {
+	return n.db.Stat()
 }
