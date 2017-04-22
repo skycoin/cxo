@@ -69,10 +69,9 @@ func main() {
 	var (
 		db   *data.DB             = data.NewDB()
 		so   *skyobject.Container = skyobject.NewContainer(db)
-		nd   *node.Node           = node.NewNode(db, so)
+		s    *Server              = NewServer(db, so)
 		c    Config               = NewConfig()
 		quit chan struct{}        = make(chan struct{})
-		rmx  sync.Mutex           // rpc lock
 	)
 
 	c.fromFlags()
@@ -86,7 +85,7 @@ func main() {
 	fmt.Println("host:           ", c.Host)
 	fmt.Println("server address: ", address.Hex())
 
-	_, err := app.NewServer(meshnet, address, Handler(db, so, nd, &rmx))
+	_, err := app.NewServer(meshnet, address, s.Handler())
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -97,10 +96,7 @@ func main() {
 	// RPC
 
 	rcvr := &RPCReceiver{
-		lock:       &rmx,
-		db:         db,
-		so:         so,
-		nd:         nd,
+		s:          s,
 		allowClose: c.RemoteClose,
 		quit:       quit,
 	}
@@ -117,8 +113,33 @@ func main() {
 
 }
 
-func Handler(db *data.DB, so *skyobject.Container,
-	nd *node.Node, rmx *sync.Mutex) (handler func([]byte) []byte) {
+type Server struct {
+	sync.Mutex
+	db    *data.DB
+	so    *skyobject.Container
+	nd    *node.Node
+	peers map[cipher.PubKey]*Peer
+}
+
+func NewServer(db *data.DB, so *skyobject.Container) (s *Server) {
+	s = new(Server)
+	s.db = db
+	s.so = so
+	s.nd = node.NewNode(db, so)
+	s.peers = make(map[cipher.PubKey]*Peer)
+	return
+}
+
+// TODO: waiting for mesh
+//   + on connect
+//   + on disconnect
+
+type Peer struct {
+	Conn  struct{}        // TODO: waiting for mesh
+	Feeds []cipher.PubKey // feeds of the peer
+}
+
+func (s *Server) Handler() (handler func([]byte) []byte) {
 
 	want := make(skyobject.Set)
 
@@ -131,16 +152,16 @@ func Handler(db *data.DB, so *skyobject.Container,
 		}
 
 		// concurent access to databse, container and node
-		rmx.Lock()
-		defer rmx.Unlock()
+		s.Lock()
+		defer s.Unlock()
 
 		switch m := msg.(type) {
 		case *node.SyncMsg:
 			// add feeds of remote node to internal list
 		case *node.RootMsg:
-			for _, f := range nd.Feeds() {
+			for _, f := range s.nd.Feeds() {
 				if f == m.Feed {
-					ok, err := so.AddEncodedRoot(m.Root, m.Feed, m.Sig)
+					ok, err := s.so.AddEncodedRoot(m.Root, m.Feed, m.Sig)
 					if err != nil {
 						fmt.Println("error adding root object: ", err)
 						// TODO: close connection
@@ -154,13 +175,13 @@ func Handler(db *data.DB, so *skyobject.Container,
 				}
 			}
 		case *node.RequestMsg:
-			if data, ok := db.Get(m.Hash); ok {
+			if data, ok := s.db.Get(m.Hash); ok {
 				return node.Encode(&node.DataMsg{data})
 			}
 		case *node.DataMsg:
 			hash := cipher.SumSHA256(m.Data)
 			if _, ok := want[skyobject.Reference(hash)]; ok {
-				db.Set(hash, m.Data)
+				s.db.Set(hash, m.Data)
 				delete(want, skyobject.Reference(hash))
 			}
 		default:
@@ -171,14 +192,14 @@ func Handler(db *data.DB, so *skyobject.Container,
 	return
 }
 
-// RPC
+//                                                                            //
+// ========================================================================== //
+//                                   RPC                                      //
+// ========================================================================== //
+//                                                                            //
 
 type RPCReceiver struct {
-	lock *sync.Mutex
-
-	db *data.DB
-	so *skyobject.Container
-	nd *node.Node
+	s *Server
 
 	allowClose bool
 	quit       chan struct{}
@@ -187,10 +208,10 @@ type RPCReceiver struct {
 func (r *RPCReceiver) Subscribe(feed cipher.PubKey,
 	subscribed *bool) (err error) {
 
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.s.Lock()
+	defer r.s.Unlock()
 
-	*subscribed = r.nd.Subscribe(feed)
+	*subscribed = r.s.nd.Subscribe(feed)
 
 	// TODO: send SyncMsg to peers
 
@@ -200,10 +221,10 @@ func (r *RPCReceiver) Subscribe(feed cipher.PubKey,
 func (r *RPCReceiver) Unsubscribe(feed cipher.PubKey,
 	unsubscribed *bool) (err error) {
 
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.s.Lock()
+	defer r.s.Unlock()
 
-	*unsubscribed = r.nd.Unsubscribe(feed)
+	*unsubscribed = r.s.nd.Unsubscribe(feed)
 
 	// TODO: send SyncMsg to peers
 
@@ -211,12 +232,12 @@ func (r *RPCReceiver) Unsubscribe(feed cipher.PubKey,
 }
 
 func (r *RPCReceiver) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.s.Lock()
+	defer r.s.Unlock()
 
 	buf := new(bytes.Buffer)
 
-	root := r.so.Root(feed)
+	root := r.s.so.Root(feed)
 	if root == nil {
 		err = node.ErrNoRootObject
 		return
@@ -330,11 +351,11 @@ func inspect(w io.Writer, val *skyobject.Value, err error, prefix string) {
 func (r *RPCReceiver) Want(feed cipher.PubKey,
 	list *[]cipher.SHA256) (err error) {
 
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.s.Lock()
+	defer r.s.Unlock()
 
 	var wn []cipher.SHA256
-	if wn, err = r.nd.Want(feed); err == nil {
+	if wn, err = r.s.nd.Want(feed); err == nil {
 		*list = wn
 	}
 
@@ -344,11 +365,11 @@ func (r *RPCReceiver) Want(feed cipher.PubKey,
 func (r *RPCReceiver) Got(feed cipher.PubKey,
 	list *[]cipher.SHA256) (err error) {
 
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.s.Lock()
+	defer r.s.Unlock()
 
 	var gt []cipher.SHA256
-	if gt, err = r.nd.Got(feed); err == nil {
+	if gt, err = r.s.nd.Got(feed); err == nil {
 		*list = gt
 	}
 
@@ -357,18 +378,18 @@ func (r *RPCReceiver) Got(feed cipher.PubKey,
 
 func (r *RPCReceiver) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.s.Lock()
+	defer r.s.Unlock()
 
-	*list = r.nd.Feeds()
+	*list = r.s.nd.Feeds()
 
 	return
 }
 
 func (r *RPCReceiver) Stat(_ struct{}, stat *data.Stat) (err error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	var s data.Stat = r.db.Stat()
+	r.s.Lock()
+	defer r.s.Unlock()
+	var s data.Stat = r.s.db.Stat()
 	stat = &s
 	return
 }
