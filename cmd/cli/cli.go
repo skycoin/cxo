@@ -254,6 +254,8 @@ func executeCommand(command string, rpc *nodemanager.RPCClient) (terminate bool,
 		err = want(rpc, ss)
 	case "got":
 		err = got(rpc, ss)
+	case "feeds":
+		err = feeds(rpc)
 	case "stat":
 		err = stat(rpc)
 	case "terminate":
@@ -291,14 +293,18 @@ func showHelp() {
     ...
   list_routes
     ...
+  subscribe <public key>
+    subscribe to given feed
+  unsubscribe <public key>
+    unsubscribe from given feed
   tree <public key>
     print object tree of given root object
   want <public key>
     want returns list of hashes of missing object of given feed
   got <public key>
     got returns list of objects given feed already has with size
-  info
-    obtain information about the server (listening address and list of feeds)
+  feeds
+    obtain list of feeds of the server
   stat
     obtain database statistic
   terminate
@@ -315,13 +321,52 @@ func showHelp() {
 //                            cxo related commands                            //
 // ========================================================================== //
 
-func tree(rpc *nodemanager.RPCClient, ss []string) (err error) {
-	var pub string
-	if pub, err = args(ss); err != nil {
+// helper
+func publicKeyArg(ss []string) (pub cipher.PubKey, err error) {
+	var pubs string
+	if pubs, err = args(ss); err != nil {
 		return
 	}
+	pub, err = cipher.PubKeyFromHex(pubs)
+	return
+}
+
+func subscribe(rpc *nodemanager.RPCClient, ss []string) (err error) {
 	var public cipher.PubKey
-	if public, err = cipher.PubKeyFromHex(pub); err != nil {
+	if public, err = publicKeyArg(ss); err != nil {
+		return
+	}
+	var subscribed bool
+	if err = rpc.Client.Call("cxo.Subscribe", public, &subscribed); err == nil {
+		if subscribed {
+			fmt.Println("  subscribed")
+		} else {
+			fmt.Println("  already subscribed")
+		}
+	}
+	return
+}
+
+func unsubscribe(rpc *nodemanager.RPCClient, ss []string) (err error) {
+	var public cipher.PubKey
+	if public, err = publicKeyArg(ss); err != nil {
+		return
+	}
+	var unsubscribed bool
+	err = rpc.Client.Call("cxo.Unsubscribe", public, &unsubscribed)
+	if err == nil {
+		if unsubscribed {
+			fmt.Println("  unsubscribed")
+		} else {
+			fmt.Println("  not subscribed")
+		}
+	}
+	return
+}
+
+func tree(rpc *nodemanager.RPCClient, ss []string) (err error) {
+	var public cipher.PubKey
+	if public, err = publicKeyArg(ss); err != nil {
 		return
 	}
 	var tree []byte
@@ -336,12 +381,8 @@ func tree(rpc *nodemanager.RPCClient, ss []string) (err error) {
 }
 
 func want(rpc *nodemanager.RPCClient, ss []string) (err error) {
-	var pub string
-	if pub, err = args(ss); err != nil {
-		return
-	}
 	var public cipher.PubKey
-	if public, err = cipher.PubKeyFromHex(pub); err != nil {
+	if public, err = publicKeyArg(ss); err != nil {
 		return
 	}
 	var list []cipher.SHA256
@@ -358,12 +399,8 @@ func want(rpc *nodemanager.RPCClient, ss []string) (err error) {
 }
 
 func got(rpc *nodemanager.RPCClient, ss []string) (err error) {
-	var pub string
-	if pub, err = args(ss); err != nil {
-		return
-	}
 	var public cipher.PubKey
-	if public, err = cipher.PubKeyFromHex(pub); err != nil {
+	if public, err = publicKeyArg(ss); err != nil {
 		return
 	}
 	var list map[cipher.SHA256]int
@@ -380,6 +417,21 @@ func got(rpc *nodemanager.RPCClient, ss []string) (err error) {
 		fmt.Println("  -------------------------------")
 		fmt.Printf("  total objects: %d, total size %s\n",
 			len(list), data.HumanMemory(total))
+	}
+	return
+}
+
+func feeds(rpc *nodemanager.RPCClient) (err error) {
+	var feeds []cipher.PubKey
+	if err = rpc.Client.Call("cxo.Feeds", nil, &feeds); err != nil {
+		return
+	}
+	if len(feeds) == 0 {
+		fmt.Println("  no feeds")
+		return
+	}
+	for _, f := range feeds {
+		fmt.Println("  +", f.Hex())
 	}
 	return
 }

@@ -53,9 +53,9 @@ func (n *Node) Unsubscribe(feed cipher.PubKey) (remove bool) {
 }
 
 var (
-	// ErrNoRootbject occurs when an action requires root object
+	// ErrNoRootObject occurs when an action requires root object
 	// but the root object doesn't exists
-	ErrNoRootbject = errors.New("no root object")
+	ErrNoRootObject = errors.New("no root object")
 	// ErrNotSubscribed occurs when an action requires subscription
 	// to a feed, but the Node doesn't subscribed to the feed
 	ErrNotSubscribed = errors.New("not subscribed")
@@ -68,7 +68,7 @@ func (n *Node) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 		if f == feed {
 			root := n.so.Root(feed)
 			if root == nil {
-				err = ErrNoRootbject
+				err = ErrNoRootObject
 				return
 			}
 			var set skyobject.Set
@@ -95,7 +95,7 @@ func (n *Node) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
 		if f == feed {
 			root := n.so.Root(feed)
 			if root == nil {
-				err = ErrNoRootbject
+				err = ErrNoRootObject
 				return
 			}
 			var set skyobject.Set
