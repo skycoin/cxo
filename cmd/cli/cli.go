@@ -4,9 +4,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/peterh/liner"
@@ -47,6 +49,11 @@ var (
 		"terminate",
 		"quit",
 		"exit",
+	}
+
+	status = [...]string{
+		0: "DISCONNECTED",
+		1: "CONNECTED",
 	}
 )
 
@@ -173,14 +180,15 @@ func loadHistory(line *liner.State) (err error) {
 	}
 	defer fl.Close()
 	_, err = line.ReadHistory(fl)
+	return
 }
 
 func saveHistory(line *liner.State) {
+	var fl *os.File
 	hf, err := histroyFilePath()
 	if err != nil {
 		goto Error
 	}
-	var fl *os.File
 	if fl, err = os.Create(hf); err != nil {
 		goto Error
 	}
@@ -206,6 +214,15 @@ func args(ss []string) (string, error) {
 func executeCommand(command string, rpc *nodemanager.RPCClient) (terminate bool,
 	err error) {
 
+	defer func() {
+		if rec := recover(); rec != nil {
+			terminate = true
+			if err == nil {
+				err = fmt.Errorf("panic: ", rec)
+			}
+		}
+	}()
+
 	ss := strings.Fields(command)
 	if len(ss) == 0 {
 		return
@@ -213,23 +230,23 @@ func executeCommand(command string, rpc *nodemanager.RPCClient) (terminate bool,
 	switch strings.ToLower(ss[0]) {
 	// mesh related commands
 	case "add_node":
-		err = addNode(rpc, ss)
+		err = addNode(rpc, ss[1:])
 	case "add_nodes":
-		err = addNodes(rpc, ss)
+		err = addNodes(rpc, ss[1:])
 	case "list_nodes":
 		err = listNodes(rpc)
 	case "connect":
-		err = connectNodes(rpc, ss)
+		err = connectNodes(rpc, ss[1:])
 	case "list_all_transports":
 		err = listAllTransports(rpc)
 	case "list_transports":
-		err = listTransports(rpc, ss)
+		err = listTransports(rpc, ss[1:])
 	case "build_route":
-		err = buildRoute(rpc, ss)
+		err = buildRoute(rpc, ss[1:])
 	case "find_route":
-		err = findRoute(rpc, ss)
+		err = findRoute(rpc, ss[1:])
 	case "list_routes":
-		err = listRoutes(rpc, ss)
+		err = listRoutes(rpc, ss[1:])
 	// cxo related commants
 	case "tree":
 		err = tree(rpc, ss)
@@ -237,8 +254,6 @@ func executeCommand(command string, rpc *nodemanager.RPCClient) (terminate bool,
 		err = want(rpc, ss)
 	case "got":
 		err = got(rpc, ss)
-	case "info":
-		err = info(rpc)
 	case "stat":
 		err = stat(rpc)
 	case "terminate":
@@ -380,7 +395,11 @@ func stat(rpc *nodemanager.RPCClient) (err error) {
 }
 
 func term(rpc *nodemanager.RPCClient) (err error) {
-	if err = rpc.Client.Call("cxo.Terminate", nil, nil); err == nil {
+	err = rpc.Client.Call("cxo.Terminate", nil, nil)
+	if err == io.ErrUnexpectedEOF {
+		err = nil
+	}
+	if err == nil {
 		fmt.Println("  terminated")
 	}
 	return
@@ -390,158 +409,156 @@ func term(rpc *nodemanager.RPCClient) (err error) {
 //                           mesh related commands                            //
 // ========================================================================== //
 
-func addNode(client *nodemanager.RPCClient, args []string) {
+func addNode(client *nodemanager.RPCClient, args []string) (err error) {
 
-	response, err := client.SendToRPC("AddNode", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("AddNode", args); err != nil {
 		return
 	}
 
 	var nodeId cipher.PubKey
-	err = messages.Deserialize(response, &nodeId)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &nodeId); err != nil {
 		return
 	}
 
-	fmt.Println("Added node with ID", nodeId.Hex())
+	fmt.Println("  Added node with ID", nodeId.Hex())
+	return
 }
 
-func addNodes(client *nodemanager.RPCClient, args []string) {
+func addNodes(client *nodemanager.RPCClient, args []string) (err error) {
 
 	if len(args) == 0 {
-		fmt.Printf("\nPoint the number of nodes, please\n\n")
+		err = fmt.Errorf("Point the number of nodes, please")
 		return
 	}
-	n, err := strconv.Atoi(args[0])
-	if err != nil || n < 1 {
-		fmt.Printf("\nArgument should be a number > 0, not %s\n\n", args[0])
+	var n int
+	if n, err = strconv.Atoi(args[0]); err != nil || n < 1 {
+		err = fmt.Errorf("Argument should be a number > 0, not %s", args[0])
 		return
 	}
 
-	response, err := client.SendToRPC("AddNodes", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("AddNodes", args); err != nil {
 		return
 	}
 
 	var nodes []cipher.PubKey
-	err = messages.Deserialize(response, &nodes)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &nodes); err != nil {
 		return
 	}
 
 	for i, nodeId := range nodes {
-		fmt.Printf("%d\tAdded node with ID %s\n", i, nodeId.Hex())
+		fmt.Printf("  %d  Added node with ID %s\n", i, nodeId.Hex())
 	}
 	fmt.Println("")
+	return
 }
 
-func listNodes(client *nodemanager.RPCClient) {
+func listNodes(client *nodemanager.RPCClient) (err error) {
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
-	fmt.Printf("\nNODES(%d total):\n\n", len(nodes))
-	fmt.Println("Num\tID\n")
+	fmt.Printf("  NODES(%d total):\n\n", len(nodes))
+	fmt.Println("  Num\tID\n")
 	for i, nodeId := range nodes {
-		fmt.Printf("%d\t%s\n", i, nodeId.Hex())
+		fmt.Printf("  %d\t%s\n", i, nodeId.Hex())
 	}
+	return
 }
 
-func connectNodes(client *nodemanager.RPCClient, args []string) {
+func connectNodes(client *nodemanager.RPCClient, args []string) (err error) {
 	if len(args) != 2 {
-		fmt.Println("There should be 2 nodes to connect")
+		err = errors.New("There should be 2 nodes to connect")
 		return
 	}
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
 	n := len(nodes)
 	if n < 2 {
-		fmt.Printf("Need at least 2 nodes to connect, have %d\n\n", n)
+		err = fmt.Errorf("Need at least 2 nodes to connect, have %d\n\n", n)
 		return
 	}
 
 	node0, node1 := args[0], args[1]
 
 	if !testNodes(node0, n) || !testNodes(node1, n) {
-		fmt.Println("\nSkipping connecting nodes due to errors")
+		err = errors.New("Skipping connecting nodes due to errors")
 		return
 	}
 
 	if node0 == node1 {
-		fmt.Println("\nNode can't be connected to itself")
+		err = errors.New("Node can't be connected to itself")
 		return
 	}
 
-	response, err := client.SendToRPC("ConnectNodes", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("ConnectNodes", args); err != nil {
 		return
 	}
 
 	var transports []messages.TransportId
-	err = messages.Deserialize(response, &transports)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &transports); err != nil {
 		return
 	}
 
 	if transports[0] == 0 || transports[1] == 0 {
-		fmt.Println("Error connecting nodes, probably already connected")
+		err = errors.New("Error connecting nodes, probably already connected")
 		return
 	}
 
-	fmt.Printf("Transport ID from node %s to %s is %d\n", node0, node1, transports[0])
-	fmt.Printf("Transport ID from node %s to %s is %d\n", node1, node0, transports[1])
+	fmt.Printf("  Transport ID from node %s to %s is %d\n",
+		node0, node1, transports[0])
+	fmt.Printf("  Transport ID from node %s to %s is %d\n",
+		node1, node0, transports[1])
+	return
 }
 
-func listAllTransports(client *nodemanager.RPCClient) {
-	response, err := client.SendToRPC("ListAllTransports", []string{})
+func listAllTransports(client *nodemanager.RPCClient) (err error) {
+	var response []byte
+	response, err = client.SendToRPC("ListAllTransports", []string{})
 	if err != nil {
-		errorOut(err)
 		return
 	}
 	var transports []transport.TransportInfo
-	err = messages.Deserialize(response, &transports)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &transports); err != nil {
 		return
 	}
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
-	fmt.Printf("\nTRANSPORTS(%d total):\n\n", len(transports))
-	fmt.Println("Num\tID\t\t\tStatus\t\tNodeFrom\tNodeTo\n")
+	fmt.Printf("  TRANSPORTS(%d total):\n\n", len(transports))
+	fmt.Println("  Num\tID\t\t\tStatus\t\tNodeFrom\tNodeTo\n")
 	for i, transportInfo := range transports {
-		fmt.Printf("%d\t%d\t%s\t%d\t\t%d\n", i, transportInfo.TransportId, status[transportInfo.Status], getNodeNumber(transportInfo.NodeFrom, nodes), getNodeNumber(transportInfo.NodeTo, nodes))
+		fmt.Printf("  %d\t%d\t%s\t%d\t\t%d\n",
+			i,
+			transportInfo.TransportId,
+			status[transportInfo.Status],
+			getNodeNumber(transportInfo.NodeFrom, nodes),
+			getNodeNumber(transportInfo.NodeTo, nodes),
+		)
 	}
+	return
 }
 
-func listTransports(client *nodemanager.RPCClient, args []string) {
+func listTransports(client *nodemanager.RPCClient, args []string) (err error) {
 
 	if len(args) != 1 {
-		fmt.Println("\nShould be 1 argument, the node number")
+		err = errors.New("Should be 1 argument, the node number")
 		return
 	}
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
@@ -549,7 +566,7 @@ func listTransports(client *nodemanager.RPCClient, args []string) {
 	n := len(nodes)
 
 	if n == 0 {
-		fmt.Println("\nThere are no nodes so far, so no transports")
+		err = errors.New("There are no nodes so far, so no transports")
 		return
 	}
 
@@ -557,43 +574,47 @@ func listTransports(client *nodemanager.RPCClient, args []string) {
 		return
 	}
 
-	response, err := client.SendToRPC("ListTransports", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("ListTransports", args); err != nil {
 		return
 	}
 
 	var transports []transport.TransportInfo
-	err = messages.Deserialize(response, &transports)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &transports); err != nil {
 		return
 	}
 
-	fmt.Printf("\nTRANSPORTS FOR NODE %s (%d total):\n\n", nodenum, len(transports))
-	fmt.Println("Num\tID\t\t\tStatus\t\tNodeFrom\tNodeTo\n")
+	fmt.Printf("  TRANSPORTS FOR NODE %s (%d total):\n\n",
+		nodenum, len(transports))
+	fmt.Println("  Num\tID\t\t\tStatus\t\tNodeFrom\tNodeTo\n")
 	for i, transportInfo := range transports {
-		fmt.Printf("%d\t%d\t%s\t%d\t\t%d\n", i, transportInfo.TransportId, status[transportInfo.Status], getNodeNumber(transportInfo.NodeFrom, nodes), getNodeNumber(transportInfo.NodeTo, nodes))
+		fmt.Printf("  %d\t%d\t%s\t%d\t\t%d\n",
+			i,
+			transportInfo.TransportId,
+			status[transportInfo.Status],
+			getNodeNumber(transportInfo.NodeFrom, nodes),
+			getNodeNumber(transportInfo.NodeTo, nodes),
+		)
 	}
 	fmt.Println("")
+	return
 }
 
-func buildRoute(client *nodemanager.RPCClient, args []string) {
+func buildRoute(client *nodemanager.RPCClient, args []string) (err error) {
 
 	if len(args) < 2 {
-		fmt.Println("\nRoute must contain 2 or more nodes")
+		err = errors.New("Route must contain 2 or more nodes")
 		return
 	}
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
 	n := len(nodes)
 	if n < 2 {
-		fmt.Printf("Need at least 2 nodes to build a route, have %d\n\n", n)
+		err = fmt.Errorf("Need at least 2 nodes to build a route, have %d", n)
 		return
 	}
 
@@ -603,43 +624,40 @@ func buildRoute(client *nodemanager.RPCClient, args []string) {
 		}
 	}
 
-	response, err := client.SendToRPC("BuildRoute", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("BuildRoute", args); err != nil {
 		return
 	}
 
 	var routes []messages.RouteId
-	err = messages.Deserialize(response, &routes)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &routes); err != nil {
 		return
 	}
 
-	fmt.Printf("\nROUTES (%d total):\n\n", len(routes))
-	fmt.Println("Num\tID\n\n")
+	fmt.Printf("  ROUTES (%d total):\n\n", len(routes))
+	fmt.Println("  Num\tID\n\n")
 	for i, routeRuleId := range routes {
-		fmt.Printf("%d\t%d\n", i, routeRuleId)
+		fmt.Printf("  %d\t%d\n", i, routeRuleId)
 	}
 	fmt.Println("")
+	return
 }
 
-func findRoute(client *nodemanager.RPCClient, args []string) {
+func findRoute(client *nodemanager.RPCClient, args []string) (err error) {
 
 	if len(args) != 2 {
-		fmt.Println("\nRoute should be built between 2 nodes")
+		err = errors.New("Route should be built between 2 nodes")
 		return
 	}
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
 	n := len(nodes)
 	if n < 2 {
-		fmt.Printf("Need at least 2 nodes to build a route, have %d\n\n", n)
+		err = fmt.Errorf("Need at least 2 nodes to build a route, have %d", n)
 		return
 	}
 
@@ -649,37 +667,34 @@ func findRoute(client *nodemanager.RPCClient, args []string) {
 		}
 	}
 
-	response, err := client.SendToRPC("FindRoute", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("FindRoute", args); err != nil {
 		return
 	}
 
 	var routes []messages.RouteId
-	err = messages.Deserialize(response, &routes)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &routes); err != nil {
 		return
 	}
 
-	fmt.Printf("\nROUTES (%d total):\n\n", len(routes))
-	fmt.Println("Num\tID\n\n")
+	fmt.Printf("  ROUTES (%d total):\n\n", len(routes))
+	fmt.Println("  Num\tID\n\n")
 	for i, routeRuleId := range routes {
-		fmt.Printf("%d\t%d\n", i, routeRuleId)
+		fmt.Printf("  %d\t%d\n", i, routeRuleId)
 	}
 	fmt.Println("")
+	return
 }
 
-func listRoutes(client *nodemanager.RPCClient, args []string) {
+func listRoutes(client *nodemanager.RPCClient, args []string) (err error) {
 
 	if len(args) != 1 {
-		fmt.Println("\nShould be 1 argument, the node number")
+		err = errors.New("Should be 1 argument, the node number")
 		return
 	}
 
-	nodes, err := getNodes(client)
-	if err != nil {
-		errorOut(err)
+	var nodes []cipher.PubKey
+	if nodes, err = getNodes(client); err != nil {
 		return
 	}
 
@@ -687,7 +702,7 @@ func listRoutes(client *nodemanager.RPCClient, args []string) {
 	n := len(nodes)
 
 	if n == 0 {
-		fmt.Println("\nThere are no nodes so far, so no routes")
+		err = errors.New("There are no nodes so far, so no routes")
 		return
 	}
 
@@ -695,29 +710,27 @@ func listRoutes(client *nodemanager.RPCClient, args []string) {
 		return
 	}
 
-	response, err := client.SendToRPC("ListRoutes", args)
-	if err != nil {
-		errorOut(err)
+	var response []byte
+	if response, err = client.SendToRPC("ListRoutes", args); err != nil {
 		return
 	}
 
 	var routes []node.RouteRule
-	err = messages.Deserialize(response, &routes)
-	if err != nil {
-		errorOut(err)
+	if err = messages.Deserialize(response, &routes); err != nil {
 		return
 	}
 
-	fmt.Printf("\nROUTES FOR NODE %s (%d total):\n", nodenum, len(routes))
+	fmt.Printf("  ROUTES FOR NODE %s (%d total):\n", nodenum, len(routes))
 	for i, routeRule := range routes {
-		fmt.Printf("\nROUTE %d\n\n", i)
-		fmt.Println("Incoming transport\t", routeRule.IncomingTransport)
-		fmt.Println("Outgoing transport\t", routeRule.OutgoingTransport)
-		fmt.Println("Incoming route\t\t", routeRule.IncomingRoute)
-		fmt.Println("Outgoing route\t\t", routeRule.OutgoingRoute)
-		fmt.Println("------------------")
+		fmt.Printf("\n  ROUTE %d\n\n", i)
+		fmt.Println("  Incoming transport\t", routeRule.IncomingTransport)
+		fmt.Println("  Outgoing transport\t", routeRule.OutgoingTransport)
+		fmt.Println("  Incoming route\t\t", routeRule.IncomingRoute)
+		fmt.Println("  Outgoing route\t\t", routeRule.OutgoingRoute)
+		fmt.Println("  ------------------")
 	}
 	fmt.Println("")
+	return
 }
 
 //=============helper functions===========
