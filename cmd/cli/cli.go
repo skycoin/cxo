@@ -41,10 +41,12 @@ var (
 		"find_route",
 		"list_routes",
 		// cxo related commands
+		"subscribe",
+		"unsubscribe",
 		"tree",
 		"want",
 		"got",
-		"info",
+		"feeds",
 		"stat",
 		"terminate",
 		"quit",
@@ -248,6 +250,10 @@ func executeCommand(command string, rpc *nodemanager.RPCClient) (terminate bool,
 	case "list_routes":
 		err = listRoutes(rpc, ss[1:])
 	// cxo related commants
+	case "subscribe":
+		err = subscribe(rpc, ss)
+	case "unsubscribe":
+		err = unsubscribe(rpc, ss)
 	case "tree":
 		err = tree(rpc, ss)
 	case "want":
@@ -423,7 +429,7 @@ func got(rpc *nodemanager.RPCClient, ss []string) (err error) {
 
 func feeds(rpc *nodemanager.RPCClient) (err error) {
 	var feeds []cipher.PubKey
-	if err = rpc.Client.Call("cxo.Feeds", nil, &feeds); err != nil {
+	if err = rpc.Client.Call("cxo.Feeds", struct{}{}, &feeds); err != nil {
 		return
 	}
 	if len(feeds) == 0 {
@@ -438,7 +444,7 @@ func feeds(rpc *nodemanager.RPCClient) (err error) {
 
 func stat(rpc *nodemanager.RPCClient) (err error) {
 	var stat data.Stat
-	if err = rpc.Client.Call("cxo.Stat", nil, &stat); err != nil {
+	if err = rpc.Client.Call("cxo.Stat", struct{}{}, &stat); err != nil {
 		return
 	}
 	fmt.Println("  Total objects:", stat.Total)
@@ -447,7 +453,7 @@ func stat(rpc *nodemanager.RPCClient) (err error) {
 }
 
 func term(rpc *nodemanager.RPCClient) (err error) {
-	err = rpc.Client.Call("cxo.Terminate", nil, nil)
+	err = rpc.Client.Call("cxo.Terminate", struct{}{}, &struct{}{})
 	if err == io.ErrUnexpectedEOF {
 		err = nil
 	}
