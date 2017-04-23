@@ -13,7 +13,8 @@ import (
 
 // be sure that all messages implements Msg interface
 var (
-	_ Msg = &SyncMsg{}
+	_ Msg = &AddFeedMsg{}
+	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
 	_ Msg = &RequestMsg{}
 	_ Msg = &DataMsg{}
@@ -24,15 +25,25 @@ type Msg interface {
 	MsgType() MsgType
 }
 
-// A SyncMsg sent from one node to another one to
-// notify the remote node about feeds the sender
+// A AddFeedMsg sent from one node to another one to
+// notify the remote node about new feed the sender
 // interesting in
-type SyncMsg struct {
-	Feeds []cipher.PubKey
+type AddFeedMsg struct {
+	Feed cipher.PubKey
 }
 
 // MsgType implements Msg interface
-func (*SyncMsg) MsgType() MsgType { return SyncMsgType }
+func (*AddFeedMsg) MsgType() MsgType { return AddFeedMsgType }
+
+// A DelFeedMsg sent from one node to another one to
+// notify the remote node about feed the sender
+// doesn't interesting in anymore
+type DelFeedMsg struct {
+	Feed cipher.PubKey
+}
+
+// MsgType implements Msg interface
+func (*DelFeedMsg) MsgType() MsgType { return DelFeedMsgType }
 
 // A RootMsg sent from one node to another one
 // to update root object of feed described in
@@ -49,7 +60,7 @@ func (*RootMsg) MsgType() MsgType { return RootMsgType }
 // A RequestMsg represents requesting data
 // the node want to get
 type RequestMsg struct {
-	Hash cipher.SHA256
+	Hash []cipher.SHA256
 }
 
 // MsgType implements Msg interface
@@ -68,15 +79,17 @@ func (*DataMsg) MsgType() MsgType { return DataMsgType }
 type MsgType uint8
 
 const (
-	SyncMsgType    MsgType = 1 + iota // SyncMsg 1
-	RootMsgType                       // RootMsg 2
-	RequestMsgType                    // RequestMsg 3
-	DataMsgType                       // DataMsg 4
+	AddFeedMsgType MsgType = 1 + iota // AddFeedMsg 1
+	DelFeedMsgType                    // DelFeedMsg 2
+	RootMsgType                       // RootMsg 3
+	RequestMsgType                    // RequestMsg 4
+	DataMsgType                       // DataMsg 5
 )
 
 // MsgType to string mapping
 var msgTypeString = [...]string{
-	SyncMsgType:    "SYNC",
+	AddFeedMsgType: "ADD",
+	DelFeedMsgType: "DEL",
 	RootMsgType:    "ROOT",
 	RequestMsgType: "REQUEST",
 	DataMsgType:    "DATA",
@@ -91,7 +104,8 @@ func (m MsgType) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
-	SyncMsgType:    reflect.TypeOf(SyncMsg{}),
+	AddFeedMsgType: reflect.TypeOf(AddFeedMsg{}),
+	DelFeedMsgType: reflect.TypeOf(DelFeedMsg{}),
 	RootMsgType:    reflect.TypeOf(RootMsg{}),
 	RequestMsgType: reflect.TypeOf(RequestMsg{}),
 	DataMsgType:    reflect.TypeOf(DataMsg{}),

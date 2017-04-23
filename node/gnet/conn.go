@@ -588,6 +588,12 @@ func (c *Conn) Close() (err error) {
 	return
 }
 
+// Closed returns closing channel that sends
+// when the connection is closed
+func (c *Conn) Closed() <-chan struct{} {
+	return c.closed
+}
+
 // ========================================================================== //
 //                       last used and deadlines                              //
 // ========================================================================== //

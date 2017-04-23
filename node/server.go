@@ -139,7 +139,7 @@ func (s *Server) Start() (err error) {
 
 		s.conf.Log.Debug,
 	)
-	// start litener
+	// start listener
 	if err = s.pool.Listen(s.conf.Listen); err != nil {
 		return
 	}
@@ -152,7 +152,6 @@ func (s *Server) Start() (err error) {
 		}
 		s.Print("rpc listen on ", s.rpc.Address())
 	}
-	go s.handle()
 	return
 }
 
@@ -180,33 +179,105 @@ func (s *Server) connectHandler(c *gnet.Conn) {
 		boolString(c.IsIncoming(), "incoming", "outgoing"),
 		boolString(c.IsIncoming(), "from", "to"),
 		c.Addr())
+	go s.handle(c)
 }
 
 func (s *Server) disconnectHandler(c *gnet.Conn) {
 	s.Debugf("closed connection %s", c.Addr())
 }
 
-func (s *Server) handle() {
+// handle connection
+func (s *Server) handle(c *gnet.Conn) {
 	var (
-		quit    <-chan struct{}     = s.quit
-		receive <-chan gnet.Message = s.pool.Receive()
+		quit    <-chan struct{} = s.quit
+		receive <-chan []byte   = c.ReceiveQueue()
+		closed  <-chan struct{} = c.Closed()
 
-		m gnet.Message
+		p   []byte
+		msg Msg
+
+		err error
 	)
 
 	for {
 		select {
-		case m = <-receive:
-			s.handleMessage(m)
+		case p = <-receive:
+			if msg, err = Decode(p); err != nil {
+				s.Print("[ERR] error decoding message:", err)
+				c.Close()
+			}
+			s.handleMessage(c, msg)
+		case <-closed:
+			s.Printf("[INF] %s connection was closed", c.Address())
+			return
 		case <-quit:
 			return
 		}
 	}
 }
 
-func (s *Server) handleMessage(m gnet.Message) {
-	s.Debug("got message %T", m.Value)
+// blocking
+func sendToConn(c *gnet.Conn, msg Msg) {
 	select {
-	//
+	case <-c.Cloed():
+	case c.SendQueue() <- msg:
+	}
+}
+
+func contains(f cipher.PubKey, feeds []cipher.PubKey) bool {
+	for _, x := range feeds {
+		if x == f {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) getRoot(feed cipher.PubKey) *skyobject.Root {
+	s.Lock()
+	defer s.Unlock()
+	return s.so.Root(feed)
+}
+
+func (s *Server) handleMessage(c *gnet.Conn, msg Msg) {
+	s.Debug("got message %T", msg)
+	switch x := msg.(type) {
+	case *AddFeedMsg:
+		var feeds []cipher.PubKey
+		if val := c.Value(); val != nil {
+			feeds = val.([]cipher.PubKey)
+		}
+		if contains(x.Feed, feeds) {
+			return // already
+		}
+		feeds = append(feeds, x.Feed)
+		c.SetValue(feeds)
+		root := s.getRoot(x.Feed)
+		if root == nil {
+			return // haven't got
+		}
+		sendToConn(c, &RootMsg{x.Feed, root.Sig, root.Encode()}) // can block
+	case *DelFeedMsg:
+		var feeds []cipher.PubKey
+		if val := c.Value(); val != nil {
+			feeds = val.([]cipher.PubKey)
+		}
+		for i, f := range feeds {
+			if f == x.Feed {
+				feeds = append(feeds[:i], feeds[i+1:]...) // delete
+				c.SetValue(feeds)
+				return
+			}
+		}
+	case *RootMsg:
+		//
+	case *RequestMsg:
+		for _, hash := range x.Hash {
+			if data, ok := s.db.Get(hash); ok {
+				sendToConn(c, &DataMsg{data})
+			}
+		}
+	case *DataMsg:
+		//
 	}
 }
