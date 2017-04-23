@@ -3,210 +3,183 @@ package gnet
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/skycoin/cxo/node/log"
 )
 
-// config defaults
+// defaults
 const (
-	MaxConnections  int           = 1024
-	MaxMessageSize  int           = 8192
-	DialTimeout     time.Duration = 25 * time.Second
-	ReadTimeout     time.Duration = 25 * time.Second
-	WriteTimeout    time.Duration = 25 * time.Second
-	ReadBufferSize  int           = 4096
-	WriteBufferSize int           = 4096
-	ReadQueueSize   int           = 64 * 256 // 1/4
-	WriteQueueSize  int           = 64
-	PingInterval    time.Duration = 23 * time.Second
+	MaxConnections int = 10 * 1000 // default connections limit
+	MaxMessageSize int = 16 * 1024 // default message size
 
-	minPingInterval time.Duration = 400 * time.Millisecond
-	minTimeout      time.Duration = 2 * minPingInterval
+	DialTimeout  time.Duration = 5 * time.Second // default timeout
+	ReadTimeout  time.Duration = 5 * time.Second // default timeout
+	WriteTimeout time.Duration = 5 * time.Second // default timeout
+
+	ReadQueueLen  int = 128 //
+	WriteQueueLen int = 128 //
+
+	RedialTimeout    time.Duration = 100 * time.Millisecond //
+	MaxRedialTimeout time.Duration = 5 * time.Second        //
+	RedialsLimit     int           = 0                      // 0 - infinity
+
+	ReadBufferSize  int = 4096 //
+	WriteBufferSize int = 4096 //
 )
 
-// ConnectionHandler represents function that used
-// to do some work on new connections
+// ConnectionHandler called by pool when
+// it has got new connection
 type ConnectionHandler func(c *Conn)
 
-// DisconnectHandler represents callback that
-// called directly after an establised connection
+// DisconnectHandler called when a connections
 // was closed
 type DisconnectHandler func(c *Conn)
 
+// A Config represents configurations of a Pool
 type Config struct {
-	// MaxConnections - incoming and outgoing
-	// together
-	MaxConnections int
-	// MaxMessageSize is limit of message size to
-	// prevent reading any malformed big message.
-	// A Pool will panic if you try to send message
-	// exceeds the limit. If a Pool receive a message
-	// that exceeds the limit then the Pool closes
-	// connection from which the message coming from
-	MaxMessageSize int
+	MaxConnections int //
+	// MaxMessageSize limits messages to send. If the size is 0
+	// then no limit used. But if the size is set and a conection
+	// receive a message greater then the size, the Pool close
+	// this connection. Sending a message greater then the size
+	// causes panic (!)
+	MaxMessageSize int //
 
-	// DialTimeout, ReadTimeout and WriteTimeout are
-	// used to read, write and dial with provided
-	// timeout. If timeout is zero then no timeout
-	// used (no time limit)
-	DialTimeout  time.Duration // dial timeout
-	ReadTimeout  time.Duration // read timeout
-	WriteTimeout time.Duration // write timeout
+	DialTimeout  time.Duration //
+	ReadTimeout  time.Duration //
+	WriteTimeout time.Duration //
 
-	// ReadBufferSize and WriteBufferSize are used for
-	// buffered reading and writing. If the value is
-	// zero then no buffers are used. If the value is
-	// negative then default buffer size is used
-	ReadBufferSize  int
-	WriteBufferSize int
+	ReadQueueLen  int //
+	WriteQueueLen int //
 
-	// ReadQueueSize is size of reading queue. The queue
-	// is shared for all connections. All connections
-	// read messages and put them to the queue
-	ReadQueueSize int
-	// WriteQueueSize is size of connection related queue.
-	// Every connection has its own write queue
-	WriteQueueSize int
+	RedialTimeout    time.Duration //
+	MaxRedialTimeout time.Duration //
+	RedialsLimit     int           //
 
-	// PingInterval used to send pings every
-	// PingInterval time. If the interval is zero
-	// then sending of pings is not used. But the
-	// interval can't be less then
-	// min(ReadTimeout, WriteTimeout). I.e. if
-	// a timeout grater then zero, then the
-	// interval is greater too
-	PingInterval time.Duration // ping interval
+	ReadBufferSize  int //
+	WriteBufferSize int //
 
-	// ConnectionHandler called when
-	// a new connections was created
-	ConnectionHandler ConnectionHandler
+	ConnectionHandler ConnectionHandler // on conenct callback
+	DisconnectHandler DisconnectHandler // on disconnect callback
 
-	// DisconnectHandler called directly after
-	// an establised connection was closed
-	DisconnectHandler DisconnectHandler
+	TLSConfig *tls.Config // use TLS if it's not nil
 
-	// Logger to use. If it's nil then default logger used
-	Logger log.Logger
-
-	// TLSConfig containes tls configurations. If the field
-	// is nil, then TLS is not used. Otherwise TLS enabled
-	TLSConfig *tls.Config // tls config
+	Logger log.Logger // use the logger
 }
 
-// NewConfig returns Config filled with defaults valus
-// and given name
+// NewConfig creates new configurations
+// filled with default values
 func NewConfig() (c Config) {
 	c.MaxConnections = MaxConnections
 	c.MaxMessageSize = MaxMessageSize
+
 	c.DialTimeout = DialTimeout
 	c.ReadTimeout = ReadTimeout
 	c.WriteTimeout = WriteTimeout
+
+	c.ReadQueueLen = ReadQueueLen
+	c.WriteQueueLen = WriteQueueLen
+
+	c.RedialTimeout = RedialTimeout
+	c.MaxRedialTimeout = MaxRedialTimeout
+	c.RedialsLimit = RedialsLimit
+
 	c.ReadBufferSize = ReadBufferSize
 	c.WriteBufferSize = WriteBufferSize
-	c.ReadQueueSize = ReadQueueSize
-	c.WriteQueueSize = WriteQueueSize
-	c.PingInterval = PingInterval
 	return
 }
 
-// replace negative values wiht defaults;
-// set PingInterval to (min(ReadTimeout,
-// WriteTimeout) - minPingInterval) if the
-// interval is lesser
-func (c *Config) applyDefaults() {
-	if c.MaxConnections < 0 {
-		c.MaxConnections = MaxConnections
-	}
-	if c.MaxMessageSize < 0 {
-		c.MaxMessageSize = MaxMessageSize
-	}
-	if c.DialTimeout < 0 {
-		c.DialTimeout = DialTimeout
-	}
-	if c.ReadTimeout < 0 {
-		c.ReadTimeout = ReadTimeout
-	}
-	if c.WriteTimeout < 0 {
-		c.WriteTimeout = WriteTimeout
-	}
-	if c.ReadBufferSize < 0 {
-		c.ReadBufferSize = ReadBufferSize
-	}
-	if c.WriteBufferSize < 0 {
-		c.WriteBufferSize = WriteBufferSize
-	}
-	if c.ReadQueueSize < 0 {
-		c.ReadQueueSize = ReadQueueSize
-	}
-	if c.WriteQueueSize < 0 {
-		c.WriteQueueSize = WriteQueueSize
-	}
-	if c.PingInterval < 0 {
-		c.PingInterval = PingInterval
-	}
-	// min timeouts
-	if c.ReadTimeout > 0 && c.ReadTimeout < minTimeout {
-		c.ReadTimeout = minTimeout
-	}
-	if c.WriteTimeout > 0 && c.WriteTimeout < minTimeout {
-		c.WriteTimeout = minTimeout
-	}
-	// ping interval
-	if c.PingInterval > 0 && c.PingInterval < minPingInterval {
-		c.PingInterval = minPingInterval
-	}
-	return
-}
-
-// FromFlags is helper to obtain value s from
-// commandline flags. Values of the struct will
-// be set after flag.Parse() call. I.e. call the
-// method before flag.Parse(), use the Config after
-// flag.Parse()
+// FromFlags obtains configurations from command
+// line flags. Call the method before `flag.Parse()`
+// For example
+//
+//     c := gnet.NewConfig()
+//     c.FromFlags()
+//     flag.Parse()
+//
 func (c *Config) FromFlags() {
 	flag.IntVar(&c.MaxConnections,
-		"max-conn",
-		MaxConnections,
-		"max connections")
+		"max-conns",
+		c.MaxConnections,
+		"max connections (0 - no limit)")
 	flag.IntVar(&c.MaxMessageSize,
 		"max-msg-size",
-		MaxMessageSize,
-		"max message size")
+		c.MaxMessageSize,
+		"max message size (0 - no limit)")
 
 	flag.DurationVar(&c.DialTimeout,
 		"dial-timeout",
-		DialTimeout,
-		"dial timeout")
+		c.DialTimeout,
+		"dial timeout (0 - no limit)")
 	flag.DurationVar(&c.ReadTimeout,
 		"read-timeout",
-		ReadTimeout,
-		"read timeout")
+		c.ReadTimeout,
+		"read timeout (0 - no limit)")
 	flag.DurationVar(&c.WriteTimeout,
 		"write-timeout",
-		WriteTimeout,
-		"write timeout")
+		c.WriteTimeout,
+		"write timeout (0 - no limit)")
+
+	flag.IntVar(&c.ReadQueueLen,
+		"read-qlen",
+		c.ReadQueueLen,
+		"read queue length")
+	flag.IntVar(&c.WriteQueueLen,
+		"write-qlen",
+		c.WriteQueueLen,
+		"write queue length")
+
+	flag.DurationVar(&c.RedialTimeout,
+		"redial-timeout",
+		c.RedialTimeout,
+		"redial timeout")
+	flag.DurationVar(&c.MaxRedialTimeout,
+		"max-redial-timeout",
+		c.MaxRedialTimeout,
+		"max redial timeout")
+	flag.IntVar(&c.RedialsLimit,
+		"redials-limit",
+		c.RedialsLimit,
+		"redials limit (0 - no limit)")
 
 	flag.IntVar(&c.ReadBufferSize,
 		"read-buf",
-		ReadBufferSize,
-		"reading buffer size")
+		c.ReadBufferSize,
+		"read buffer size (0 - unbuffered)")
 	flag.IntVar(&c.WriteBufferSize,
 		"write-buf",
-		WriteBufferSize,
-		"writing buffer size")
+		c.WriteBufferSize,
+		"write buffer size (0 - unbuffered)")
+}
 
-	flag.IntVar(&c.ReadQueueSize,
-		"readq",
-		ReadQueueSize,
-		"shared reading queue size")
-	flag.IntVar(&c.WriteQueueSize,
-		"writeq",
-		WriteQueueSize,
-		"write queue size")
-
-	flag.DurationVar(&c.PingInterval,
-		"ping",
-		PingInterval,
-		"interval to send pings")
+// Validate the Config
+func (c *Config) Validate() (err error) {
+	if c.MaxConnections < 0 {
+		err = fmt.Errorf("negative MaxConnections %v", c.MaxConnections)
+	} else if c.MaxMessageSize < 0 {
+		err = fmt.Errorf("negative MaxMessageSize %v", c.MaxMessageSize)
+	} else if c.DialTimeout < 0 {
+		err = fmt.Errorf("negative DialTimeout %v", c.DialTimeout)
+	} else if c.ReadTimeout < 0 {
+		err = fmt.Errorf("negative ReadTimeout %v", c.ReadTimeout)
+	} else if c.WriteTimeout < 0 {
+		err = fmt.Errorf("negative WriteTimeout %v", c.WriteTimeout)
+	} else if c.ReadQueueLen < 0 {
+		err = fmt.Errorf("negative ReadQueueLen %v", c.ReadQueueLen)
+	} else if c.WriteQueueLen < 0 {
+		err = fmt.Errorf("negative WriteQueueLen %v", c.WriteQueueLen)
+	} else if c.RedialTimeout < 0 {
+		err = fmt.Errorf("negative RedialTimeout %v", c.RedialTimeout)
+	} else if c.MaxRedialTimeout < 0 {
+		err = fmt.Errorf("negative MaxRedialTimeout %v", c.MaxRedialTimeout)
+	} else if c.RedialsLimit < 0 {
+		err = fmt.Errorf("negative RedialsLimit %v", c.RedialsLimit)
+	} else if c.ReadBufferSize < 0 {
+		err = fmt.Errorf("negative ReadBufferSize %v", c.ReadBufferSize)
+	} else if c.WriteBufferSize < 0 {
+		err = fmt.Errorf("negative WriteBufferSize %v", c.WriteBufferSize)
+	}
+	return
 }

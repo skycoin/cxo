@@ -7,6 +7,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/node/gnet"
 )
 
 // be sure that all messages implements Msg interface
