@@ -162,9 +162,10 @@ func (cn *Conn) dialing() (c net.Conn, err error) {
 		if cn.p.conf.DialTimeout > 0 {
 			var d net.Dialer
 			d.Timeout = cn.p.conf.DialTimeout
-			c, err = tls.DialWithDialer(&d, "tcp", address, cn.p.conf.TLSConfig)
+			c, err = tls.DialWithDialer(&d, "tcp", cn.address,
+				cn.p.conf.TLSConfig)
 		} else {
-			c, err = tls.Dial("tcp", address, cn.p.conf.TLSConfig)
+			c, err = tls.Dial("tcp", cn.address, cn.p.conf.TLSConfig)
 		}
 	}
 	return
@@ -195,7 +196,7 @@ func (cn *Conn) updateConnection(c net.Conn) {
 	cn.cmx.Lock()
 	defer cn.cmx.Unlock()
 
-	c.dialo = new(sync.Once) // refresh
+	cn.dialo = new(sync.Once) // refresh
 
 	cn.conn = c
 	cn.state = ConnStateConnected
@@ -294,7 +295,7 @@ TriggerLoop:
 
 func (c *Conn) read() {
 	defer c.p.await.Done()
-	defer c.c.Close()
+	defer c.Close()
 	var (
 		head []byte = make([]byte, 4)
 		body []byte
@@ -369,6 +370,8 @@ func (c *Conn) writeMsg(w io.Writer, head, body []byte) (redial bool) {
 	}
 
 	binary.LittleEndian.PutUint32(head, uint32(len(body)))
+
+	var err error
 
 	// write the head
 	if _, err = w.Write(head); err != nil {
@@ -547,6 +550,7 @@ func (c *Conn) Close() (err error) {
 			dh(c)
 		}
 	})
+	return
 }
 
 // ========================================================================== //

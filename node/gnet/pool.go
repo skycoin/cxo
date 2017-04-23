@@ -29,7 +29,7 @@ type Pool struct {
 	conns map[string]*Conn
 
 	lmx sync.Mutex
-	l   *net.Listener
+	l   net.Listener
 
 	sem chan struct{} // connections limit
 
@@ -47,7 +47,7 @@ func NewPool(c Config) (p *Pool, err error) {
 		return
 	}
 	p = new(Pool)
-	p.conf = C
+	p.conf = c
 
 	if c.Logger == nil {
 		p.Logger = log.NewLogger("[pool]", false)
@@ -142,7 +142,7 @@ func (p *Pool) listen(l net.Listener) {
 			}
 			return
 		}
-		if err = p.acceptConnection(c); err != nil {
+		if _, err = p.acceptConnection(c); err != nil {
 			p.release()
 			p.Print("[ERR] accepting connection: ", err)
 		}
