@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"strconv"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -81,19 +82,33 @@ func NewServerSoDB(sc ServerConfig, db *data.DB,
 	return
 }
 
+func zeroString(x int) string {
+	if x == 0 {
+		return "no limit"
+	}
+	return strconv.Itoa(x)
+}
+
 // Start the server
 func (s *Server) Start() (err error) {
 	s.Debugf(`strting server:
-    max connections:      %d
-    max message size:     %d
+    max connections:      %s
+    max message size:     %s
+
     dial timeout:         %v
     read timeout:         %v
     write timeout:        %v
-    read buffer size:     %d
-    write buffer size:    %d
-    read queue size:      %d
-    write queue size:     %d
-    ping interval:        %d
+
+    read queue:           %d
+    write queue:          %d
+
+    redial timeout:       %d
+    max redial timeout:   %d
+    redials limit:        %d
+
+    read buffer:          %d
+    write buffer:         %d
+
     TLS:                  %t
 
     enable RPC:           %t
@@ -103,16 +118,18 @@ func (s *Server) Start() (err error) {
 
     debug:                %t
 `,
-		s.conf.MaxConnections,
-		s.conf.MaxMessageSize,
+		zeroString(s.conf.MaxConnections),
+		zeroString(s.conf.MaxMessageSize),
 		s.conf.DialTimeout,
 		s.conf.ReadTimeout,
 		s.conf.WriteTimeout,
+		s.conf.ReadQueueLen,
+		s.conf.WriteQueueLen,
+		s.conf.RedialTimeout,
+		s.conf.MaxRedialTimeout,
+		s.conf.RedialsLimit,
 		s.conf.ReadBufferSize,
 		s.conf.WriteBufferSize,
-		s.conf.ReadQueueSize,
-		s.conf.WriteQueueSize,
-		s.conf.PingInterval,
 		s.conf.TLSConfig != nil,
 
 		s.conf.EnableRPC,
@@ -167,7 +184,6 @@ func (s *Server) connectHandler(c *gnet.Conn) {
 
 func (s *Server) disconnectHandler(c *gnet.Conn) {
 	s.Debugf("closed connection %s", c.Addr())
-	/// TODO: reconnect by reason
 }
 
 func (s *Server) handle() {

@@ -18,15 +18,15 @@ const (
 	ReadTimeout  time.Duration = 5 * time.Second // default timeout
 	WriteTimeout time.Duration = 5 * time.Second // default timeout
 
-	ReadQueueLen  int = 128 //
-	WriteQueueLen int = 128 //
+	ReadQueueLen  int = 128 // default
+	WriteQueueLen int = 128 // default
 
-	RedialTimeout    time.Duration = 100 * time.Millisecond //
-	MaxRedialTimeout time.Duration = 5 * time.Second        //
+	RedialTimeout    time.Duration = 100 * time.Millisecond // default
+	MaxRedialTimeout time.Duration = 5 * time.Second        // default
 	RedialsLimit     int           = 0                      // 0 - infinity
 
-	ReadBufferSize  int = 4096 //
-	WriteBufferSize int = 4096 //
+	ReadBufferSize  int = 4096 // default
+	WriteBufferSize int = 4096 // default
 )
 
 // ConnectionHandler called by pool when
@@ -39,7 +39,9 @@ type DisconnectHandler func(c *Conn)
 
 // A Config represents configurations of a Pool
 type Config struct {
-	MaxConnections int //
+	// MaxConnections is connections limit for both, incoming and
+	// outgoing connections
+	MaxConnections int
 	// MaxMessageSize limits messages to send. If the size is 0
 	// then no limit used. But if the size is set and a conection
 	// receive a message greater then the size, the Pool close
@@ -47,19 +49,19 @@ type Config struct {
 	// causes panic (!)
 	MaxMessageSize int //
 
-	DialTimeout  time.Duration //
-	ReadTimeout  time.Duration //
-	WriteTimeout time.Duration //
+	DialTimeout  time.Duration // dial timeout
+	ReadTimeout  time.Duration // read deadline
+	WriteTimeout time.Duration // write deadline
 
-	ReadQueueLen  int //
-	WriteQueueLen int //
+	ReadQueueLen  int // reading queue length
+	WriteQueueLen int // // writing queue length
 
-	RedialTimeout    time.Duration //
-	MaxRedialTimeout time.Duration //
-	RedialsLimit     int           //
+	RedialTimeout    time.Duration // timeout between redials
+	MaxRedialTimeout time.Duration // increase RedilaTimeout up to it every time
+	RedialsLimit     int           // doesn't work and likely to be removed
 
-	ReadBufferSize  int //
-	WriteBufferSize int //
+	ReadBufferSize  int // reading buffer
+	WriteBufferSize int // writing buffer
 
 	ConnectionHandler ConnectionHandler // on conenct callback
 	DisconnectHandler DisconnectHandler // on disconnect callback
