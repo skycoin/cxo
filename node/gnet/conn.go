@@ -320,6 +320,11 @@ DialLoop:
 	ReadLoop:
 		for {
 			if _, err = io.ReadFull(r, head); err != nil {
+				select {
+				case <-c.closed:
+					return
+				default:
+				}
 				c.p.Printf("[ERR] %s reading error: %v",
 					c.conn.RemoteAddr().String(),
 					err)
@@ -344,6 +349,11 @@ DialLoop:
 			body = make([]byte, l) // create new slice
 			// and read it
 			if _, err = io.ReadFull(r, body); err != nil {
+				select {
+				case <-c.closed:
+					return
+				default:
+				}
 				c.p.Printf("[ERR] %s reading error: %v",
 					c.conn.RemoteAddr().String(),
 					err)
@@ -360,7 +370,9 @@ DialLoop:
 	}
 }
 
-func (c *Conn) writeMsg(w io.Writer, head, body []byte) (redial bool) {
+func (c *Conn) writeMsg(w io.Writer, head, body []byte) (terminate,
+	redial bool) {
+
 	if c.p.conf.MaxMessageSize > 0 &&
 		len(body) > c.p.conf.MaxMessageSize {
 		c.p.Panicf(
@@ -375,6 +387,12 @@ func (c *Conn) writeMsg(w io.Writer, head, body []byte) (redial bool) {
 
 	// write the head
 	if _, err = w.Write(head); err != nil {
+		select {
+		case <-c.closed:
+			terminate = true
+			return
+		default:
+		}
 		c.p.Printf("[ERR] %s writing error: %v",
 			c.conn.RemoteAddr().String(),
 			err)
@@ -384,6 +402,12 @@ func (c *Conn) writeMsg(w io.Writer, head, body []byte) (redial bool) {
 
 	// write the body
 	if _, err = w.Write(body); err != nil {
+		select {
+		case <-c.closed:
+			terminate = true
+			return
+		default:
+		}
 		c.p.Printf("[ERR] %s writing error: %v",
 			c.conn.RemoteAddr().String(),
 			err)
@@ -401,7 +425,7 @@ func (c *Conn) write() {
 
 		err error
 
-		redial bool
+		terminate, redial bool
 
 		w  io.Writer
 		bw *bufio.Writer
@@ -424,7 +448,10 @@ DialLoop:
 				return
 			}
 
-			if redial = c.writeMsg(w, head, body); redial == true {
+			switch terminate, redial = c.writeMsg(w, head, body); {
+			case terminate:
+				return
+			case redial:
 				c.triggerDialing()
 				continue DialLoop
 			}
@@ -433,7 +460,10 @@ DialLoop:
 			for {
 				select {
 				case body = <-c.writeq:
-					if redial = c.writeMsg(w, head, body); redial == true {
+					switch terminate, redial = c.writeMsg(w, head, body); {
+					case terminate:
+						return
+					case redial:
 						c.triggerDialing()
 						continue DialLoop
 					}
@@ -441,6 +471,11 @@ DialLoop:
 					// flush the buffer if writing is buffered
 					if bw != nil {
 						if err = bw.Flush(); err != nil {
+							select {
+							case <-c.closed:
+								return
+							default:
+							}
 							c.p.Printf("[ERR] %s flushing buffer error: %v",
 								c.conn.RemoteAddr().String(),
 								err)

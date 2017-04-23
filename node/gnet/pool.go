@@ -50,7 +50,7 @@ func NewPool(c Config) (p *Pool, err error) {
 	p.conf = c
 
 	if c.Logger == nil {
-		p.Logger = log.NewLogger("[pool]", false)
+		p.Logger = log.NewLogger("[pool] ", false)
 	} else {
 		p.Logger = c.Logger
 	}
@@ -114,6 +114,7 @@ func (p *Pool) Listen(address string) (err error) {
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
 	p.l = l
+	p.await.Add(1)
 	go p.listen(l)
 	return
 }
@@ -126,8 +127,13 @@ func (p *Pool) listen(l net.Listener) {
 	p.Debug("start accept loop")
 	defer p.Debug("stop accept loop")
 
-	var c net.Conn
-	var err error
+	var (
+		c   net.Conn
+		err error
+
+		ch ConnectionHandler
+		cn *Conn
+	)
 
 	for {
 		if err = p.acquireBlock(); err != nil {
@@ -142,9 +148,11 @@ func (p *Pool) listen(l net.Listener) {
 			}
 			return
 		}
-		if _, err = p.acceptConnection(c); err != nil {
+		if cn, err = p.acceptConnection(c); err != nil {
 			p.release()
 			p.Print("[ERR] accepting connection: ", err)
+		} else if ch = p.conf.ConnectionHandler; ch != nil {
+			ch(cn)
 		}
 	}
 }
@@ -202,7 +210,36 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 	// the config is malformed
 
 	cn = p.createConnection(address)
+	if ch := p.conf.ConnectionHandler; ch != nil {
+		ch(cn)
+	}
 	return
+}
+
+// ========================================================================== //
+//                                connections                                 //
+// ========================================================================== //
+
+// Connections returns list of all connections
+func (p *Pool) Connections() (cs []string) {
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+	if len(p.conns) == 0 {
+		return
+	}
+	cs = make([]string, 0, len(p.conns))
+	for a := range p.conns {
+		cs = append(cs, a)
+	}
+	return
+}
+
+// Connections returns a connection by address
+// or nil if connectios with given address doesn't exists
+func (p *Pool) Connection(address string) *Conn {
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+	return p.conns[address]
 }
 
 // ========================================================================== //
