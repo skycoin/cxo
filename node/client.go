@@ -23,13 +23,15 @@ type Client struct {
 	db *data.DB
 
 	feeds []cipher.PubKey
-
 	srvfs []cipher.PubKey // server feeds
 
 	eventq chan Event // events
 
-	conf  ClientConfig
-	pool  *gnet.Pool
+	conf ClientConfig
+	pool *gnet.Pool
+
+	quito sync.Once
+	quit  chan struct{}
 	await sync.WaitGroup
 }
 
@@ -87,10 +89,21 @@ func (c *Client) Start(address string) (err error) {
 
 // Close client
 func (c *Client) Close() (err error) {
+	c.quito.Do(func() {
+		close(c.quit)
+	})
 	err = c.pool.Close()
 	// TODO: drain events
 	c.await.Wait()
 	return
+}
+
+func (c *Client) connectHandler(cn *gnet.Conn) {
+	c.Debug("connected to ", cn.Address())
+}
+
+func (c *Client) disconnectHandler(cn *gnet.Conn) {
+	c.Debug("disconnected from ", cn.Address())
 }
 
 func (c *Client) handle(cn *gnet.Conn) {
@@ -136,12 +149,135 @@ func (c *Client) handle(cn *gnet.Conn) {
 func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 	switch x := msg.(type) {
 	case *AddFeedMsg:
-		//
+		for _, f := range c.srvfs {
+			if f == x.Feed {
+				return // already have the feed
+			}
+		}
+		c.srvfs = append(c.srvfs, x.Feed)
 	case *DelFeedMsg:
-		//
+		for i, f := range c.srvfs {
+			if f == x.Feed {
+				c.srvfs = append(c.srvfs[:i], c.srvfs[i+1:]...)
+				return
+			}
+		}
 	case *RootMsg:
-		//
+		for _, f := range c.feeds {
+			if f == x.Feed {
+				ok, err := c.so.AddEncodedRoot(x.Feed, x.Sig, x.Root)
+				if err != nil {
+					c.Print("[ERR] error decoding root: ", err)
+					return
+				}
+				if !ok {
+					return // older
+				}
+				return
+			}
+		}
 	case *DataMsg:
-		//
+		for _, f := range c.feeds {
+			if x.Feed == f {
+				hash := cipher.SumSHA256(x.Data)
+				root := c.so.Root(x.Feed)
+				if root == nil {
+					return // doesn't have a root object of the feed
+				}
+				want, err := root.Want()
+				if err != nil {
+					c.Print("[ERR] malformed root: ", err)
+					// TODO: reset roo object
+					return
+				}
+				if _, ok := want[skyobject.Reference(hash)]; ok {
+					c.db.Set(hash, x.Data)
+					return
+				}
+				return // don't want the data
+			}
+		}
 	}
+}
+
+func (c *Client) sendMessage(cn *gnet.Conn, msg Msg) (ok bool) {
+	select {
+	case cn.SendQueue() <- msg:
+		ok = true
+	case <-cn.Closed():
+	default:
+		c.Print("[ERR] write queue full")
+		cn.Close() // fatality
+	}
+	return
+}
+
+func (c *Client) hasServerFeed(feed cipher.PubKey) (has bool) {
+	for _, sf := range c.srvfs {
+		if sf == feed {
+			has = true
+			break
+		}
+	}
+	return
+}
+
+func (c *Client) hasFeed(feed cipher.PubKey) (has bool) {
+	for _, f := range c.feeds {
+		if f == feed {
+			has = true
+			break
+		}
+	}
+	return
+}
+
+func (c *Client) Subscribe(feed cipher.PubKey) (ok bool) {
+	okChan := make(chan bool, 1)
+	select {
+	case c.eventq <- func(cn *gnet.Conn) (terminate error) {
+		if !c.hasServerFeed(feed) {
+			okChan <- false
+			return
+			// can't subscribe if connected server doesn't has the
+			// feed because it doesn't make sence
+		}
+		if c.hasFeed(feed) {
+			okChan <- false // already subscribed
+			return
+		}
+		c.feeds = append(c.feeds, feed)
+		okChan <- c.sendMessage(cn, &AddFeedMsg{feed})
+		return
+	}:
+	case <-c.quit:
+		return // false
+	}
+	ok = <-okChan
+	return
+}
+
+func (c *Client) Unsubscribe(feed cipher.PubKey) (ok bool) {
+	okChan := make(chan bool, 1)
+	select {
+	case c.eventq <- func(cn *gnet.Conn) (terminate error) {
+		for i, f := range c.feeds {
+			if f == feed {
+				c.feeds = append(c.feeds[:i], c.feeds[i+1:]...)
+				okChan <- c.sendMessage(cn, &DelFeedMsg{feed})
+				return
+			}
+		}
+		okChan <- false // don't subscribed
+		return
+	}:
+	case <-c.quit:
+		return // false
+	}
+	ok = <-okChan
+	return
+}
+
+func (c *Client) SendRoot(feed cipher.PubKey) {
+	//
 }

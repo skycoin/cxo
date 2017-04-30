@@ -15,8 +15,6 @@ var (
 	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
 	_ Msg = &DataMsg{}
-	_ Msg = &OkMsg{}
-	_ Msg = &ErrMsg{}
 )
 
 // A Msg is ommon interface for CXO messages
@@ -64,20 +62,6 @@ type DataMsg struct {
 
 // MsgType implements Msg interface
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
-
-// An OkMsg represents anwser
-type OkMsg struct{}
-
-// MsgType implements Msg interface
-func (e *OkMsg) MsgType() { return OkMsgType }
-
-// An ErrMsg represents anwser
-type ErrMsg struct {
-	Descr string
-}
-
-// MsgType implements Msg interface
-func (e *ErrMsg) MsgType() { return ErrMsgType }
 
 // A MsgType represent msg prefix
 type MsgType uint8

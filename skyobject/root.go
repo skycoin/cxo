@@ -230,6 +230,17 @@ func (r *Root) Got() (set Set, err error) {
 	return
 }
 
+// GotOf returns values of particular object from list
+// of top objects of the Root
+func (r *Root) GotOf(ref Reference) (set Set, err error) {
+	var val *Value
+	if val, err = r.ValueOf(ref); err != nil {
+		return
+	}
+	err = gotValue(val, set)
+	return
+}
+
 func gotValue(val *Value, set Set) (err error) {
 	switch val.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8,

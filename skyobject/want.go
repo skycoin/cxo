@@ -2,7 +2,13 @@ package skyobject
 
 import (
 	"reflect"
+
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
+
+//
+// TODO: DRY
+//
 
 //
 // set of keys
@@ -55,6 +61,84 @@ func (r *Root) Want() (set Set, err error) {
 			return
 		}
 	}
+	return
+}
+
+func (r *Root) valueOf(rd Reference) (val *Value, err error) {
+	// take a look at the reference
+	if rd.IsBlank() {
+		err = ErrInvalidReference // nil-references are not allowed for root
+		return
+	}
+	var dd, sd, od []byte
+	var ok bool
+	var s *Schema
+	// obtain dynamic reference, the reference points to
+	if dd, ok = r.cnt.get(rd); !ok {
+		err = &MissingObject{rd, ""}
+		return
+	}
+	// decode the dynamic reference
+	var dr Dynamic
+	if err = encoder.DeserializeRaw(dd, &dr); err != nil {
+		return
+	}
+	// is the dynamic reference valid
+	if !dr.IsValid() {
+		err = ErrInvalidReference
+		return
+	}
+	// is it blank
+	if dr.IsBlank() {
+		val = nilValue(r.cnt, nil) // no value, nor schema
+		return
+	}
+	// obtain schema of the dynamic reference
+	if sd, ok = r.cnt.get(dr.Schema); !ok {
+		err = &MissingSchema{dr.Schema}
+		return
+	}
+	// decode the schema
+	s = r.reg.newSchema()
+	if err = s.Decode(sd); err != nil {
+		return
+	}
+	// obtain object of the dynamic reference
+	if od, ok = r.cnt.get(dr.Object); !ok {
+		err = &MissingObject{key: dr.Object, schemaName: s.Name()}
+		return
+	}
+	// create value
+	val = &Value{r.cnt, s, od}
+	return
+}
+
+func (r *Root) ValueOf(ref Reference) (val *Value, err error) {
+	if r == nil {
+		return
+	}
+	if len(r.Refs) == 0 {
+		return
+	}
+	for _, rd := range r.Refs {
+		if rd != ref {
+			continue
+		}
+		return r.valueOf(rd) // val, err
+	}
+	return // nil, nil
+}
+
+// WantOf returns all wanted objects of particular object
+// from list of root objects of the feed
+func (r *Root) WantOf(ref Reference) (set Set, err error) {
+	set = make(Set)
+	var val *Value
+	if val, err = r.ValueOf(ref); err != nil {
+		err = set.Err(err)
+		return
+	}
+	err = set.Err(wantValue(val, set))
 	return
 }
 
