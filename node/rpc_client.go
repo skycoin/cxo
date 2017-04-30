@@ -11,6 +11,16 @@ type RPCClient struct {
 	c *rpc.Client
 }
 
+func NewRPCClient(address string) (rc *RPCClient, err error) {
+	var c *rpc.Client
+	if c, err = rpc.Dial("tcp", address); err != nil {
+		return
+	}
+	rc = new(RPCClient)
+	rc.c = c
+	return
+}
+
 func (r *RPCClient) Want(feed cipher.PubKey) (list []cipher.SHA256, err error) {
 	err = r.c.Call("cxo.Want", feed, &list)
 	return
@@ -79,4 +89,8 @@ func (r *RPCClient) Tree(feed cipher.PubKey) (tree []byte, err error) {
 func (r *RPCClient) Terminate() (err error) {
 	err = r.c.Call("cxo.Terminate", struct{}{}, &struct{}{})
 	return
+}
+
+func (r *RPCClient) Close() error {
+	return r.c.Close()
 }
