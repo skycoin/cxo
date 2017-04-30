@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -39,7 +40,7 @@ type Client struct {
 func NewClient(cc ClientConfig) (c *Client, err error) {
 
 	var db *data.DB = data.NewDB()
-	return NewClientSoDB(cc, db, skyobject.NewContainer(db))
+	return NewClientSoDB(cc, skyobject.NewContainer(db), db)
 }
 
 // NewClient with given database and container
@@ -65,8 +66,8 @@ func NewClientSoDB(cc ClientConfig, so *skyobject.Container,
 	c.Logger = log.NewLogger(cc.Log.Prefix, cc.Log.Debug)
 	cc.Config.Logger = c.Logger // use the same logger
 
-	cc.Config.ConnectionHandler = s.connectHandler
-	cc.Config.DisconnectHandler = s.disconnectHandler
+	cc.Config.ConnectionHandler = c.connectHandler
+	cc.Config.DisconnectHandler = c.disconnectHandler
 
 	c.conf = cc
 
@@ -85,6 +86,7 @@ func (c *Client) Start(address string) (err error) {
 	}
 	c.await.Add(1)
 	go c.handle(cn)
+	return
 }
 
 // Close client
@@ -165,7 +167,7 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 	case *RootMsg:
 		for _, f := range c.feeds {
 			if f == x.Feed {
-				ok, err := c.so.AddEncodedRoot(x.Feed, x.Sig, x.Root)
+				ok, err := c.so.AddEncodedRoot(x.Root, x.Feed, x.Sig)
 				if err != nil {
 					c.Print("[ERR] error decoding root: ", err)
 					return
@@ -202,7 +204,7 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 
 func (c *Client) sendMessage(cn *gnet.Conn, msg Msg) (ok bool) {
 	select {
-	case cn.SendQueue() <- msg:
+	case cn.SendQueue() <- Encode(msg):
 		ok = true
 	case <-cn.Closed():
 	default:
@@ -278,6 +280,112 @@ func (c *Client) Unsubscribe(feed cipher.PubKey) (ok bool) {
 	return
 }
 
-func (c *Client) SendRoot(feed cipher.PubKey) {
-	//
+// Subscribed feeds
+func (c *Client) Feeds() []cipher.PubKey {
+	reply := make(chan []cipher.PubKey, 1)
+	select {
+	case c.eventq <- func(cn *gnet.Conn) (terminate error) {
+		f := make([]cipher.PubKey, 0, len(c.feeds))
+		copy(f, c.feeds)
+		reply <- f
+		return
+	}:
+	case <-c.quit:
+		return nil
+	}
+	return <-reply
+}
+
+var ErrClosed = errors.New("closed")
+
+func (c *Client) Execute(fn func(*Container) error) error {
+	reply := make(chan error, 1)
+	select {
+	case c.eventq <- func(cn *gnet.Conn) (_ error) {
+		reply <- fn(&Container{c.so, c, cn})
+		return
+	}:
+	case <-c.quit:
+		return ErrClosed
+	}
+	return <-reply
+}
+
+type Container struct {
+	*skyobject.Container
+	client *Client
+	cn     *gnet.Conn
+}
+
+func (c *Container) NewRoot(pk cipher.PubKey) *Root {
+	return &Root{c.Container.NewRoot(pk), c.client, c.cn}
+}
+
+func (c *Container) Root(pk cipher.PubKey) (r *Root) {
+	if root := c.Container.Root(pk); root != nil {
+		r = &Root{root, c.client, c.cn}
+	}
+	return
+}
+
+func (c *Container) AddRoot(root *Root, sec cipher.SecKey) (set bool) {
+	set = c.Container.AddRoot(root.Root, sec)
+	if !set {
+		return
+	}
+	set = c.client.sendMessage(c.cn, &RootMsg{
+		root.Pub,
+		root.Sig,
+		root.Encode(),
+	})
+	if !set {
+		return // error sending
+	}
+	got, _ := root.Got()
+	for k := range got {
+		data, _ := c.client.db.Get(cipher.SHA256(k))
+		set = c.client.sendMessage(c.cn, &DataMsg{root.Pub, data})
+		if !set {
+			return // error sending
+		}
+	}
+	return
+}
+
+type Root struct {
+	*skyobject.Root
+	client *Client
+	cn     *gnet.Conn
+}
+
+func (r *Root) Inject(i interface{}) (inj skyobject.Reference) {
+	inj = r.Root.Inject(i)
+	r.client.sendMessage(r.cn, &RootMsg{
+		r.Pub,
+		r.Sig,
+		r.Encode(),
+	})
+	got, _ := r.GotOf(inj)
+	for k := range got {
+		data, _ := r.client.db.Get(cipher.SHA256(k))
+		r.client.sendMessage(r.cn, &DataMsg{r.Pub, data})
+	}
+	return
+}
+
+func (r *Root) InjectHash(hash skyobject.Reference) (err error) {
+	if err = r.Root.InjectHash(hash); err != nil {
+		return
+	}
+	r.client.sendMessage(r.cn, &RootMsg{
+		r.Pub,
+		r.Sig,
+		r.Encode(),
+	})
+	got, _ := r.GotOf(hash)
+	for k := range got {
+		data, _ := r.client.db.Get(cipher.SHA256(k))
+		r.client.sendMessage(r.cn, &DataMsg{r.Pub, data})
+	}
+	return
 }

@@ -293,7 +293,7 @@ func (s *Server) addRoot(rm *RootMsg) (ok bool, err error) {
 
 	s.somx.Lock()
 	defer s.somx.Unlock()
-	ok, err = s.so.AddEncodedRoot(rm.Feed, rm.Sig, rm.Root)
+	ok, err = s.so.AddEncodedRoot(rm.Root, rm.Feed, rm.Sig)
 	return
 }
 
@@ -352,7 +352,7 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	case *DataMsg:
 		s.fmx.RLock()
 		defer s.fmx.RUnlock()
-		if f, ok := s.feeds[x.Feed]; ok {
+		if _, ok := s.feeds[x.Feed]; ok {
 			want := s.want(x.Feed)
 			if len(want) == 0 {
 				return // don't want anything
@@ -398,7 +398,7 @@ func (s *Server) AddFeed(f cipher.PubKey) (added bool) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
 	if _, ok := s.feeds[f]; !ok {
-		s.feeds[feed], added = &feed{}, true
+		s.feeds[f], added = &feed{}, true
 	}
 	return
 }
@@ -451,7 +451,7 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
 	if len(s.feeds) == 0 {
-		reutnr
+		return
 	}
 	fs = make([]cipher.PubKey, 0, len(s.feeds))
 	for f := range s.feeds {

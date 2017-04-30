@@ -74,21 +74,13 @@ func (r *RPC) Close() (err error) {
 // - Tree
 // - Terminate
 
-func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
-	var wn []cipher.SHA256
-	if wn, err = r.ns.Want(feed); err != nil {
-		return
-	}
-	*list = wn
+func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
+	*list = r.ns.Want(feed)
 	return
 }
 
 func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
-	var gt []cipher.SHA256
-	if gt, err = r.ns.Got(feed); err != nil {
-		return
-	}
-	*list = gt
+	*list, err = r.ns.Got(feed)
 	return
 }
 
@@ -142,16 +134,12 @@ func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
 }
 
 func (r *RPC) Connect(address string, _ *struct{}) (err error) {
-	_, err = r.ns.Connect(address)
+	err = r.ns.Connect(address)
 	return
 }
 
 func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
-	if c := r.ns.Disconnect(address); c != nil {
-		c.Close()
-		return
-	}
-	err = errors.New("not found")
+	err = r.ns.Disconnect(address)
 	return
 }
 

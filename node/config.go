@@ -111,12 +111,12 @@ func (c *ClientConfig) FromFlags() {
 	c.Config.FromFlags()
 	c.Log.FromFlags()
 
-	flag.BoolVar(&s.EnableRPC,
+	flag.BoolVar(&c.EnableRPC,
 		"rpc",
-		s.EnableRPC,
+		c.EnableRPC,
 		"enable RPC server")
-	flag.StringVar(&s.RPCAddress,
+	flag.StringVar(&c.RPCAddress,
 		"rpc-address",
-		s.RPCAddress,
+		c.RPCAddress,
 		"address of RPC server")
 }
