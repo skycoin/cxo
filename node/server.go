@@ -1,8 +1,7 @@
 package node
 
 import (
-	"errors"
-	"strconv"
+	"fmt"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -14,33 +13,45 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
+type feed struct {
+	conns []*gnet.Conn // connections of the feed
+}
+
 // A Server represents CXO server
 // that includes RPC server if enabled
 // by configs
 type Server struct {
-	sync.Mutex // concurant access to the so and the feeds
+	// logger of the server
 	log.Logger
 
+	// configuratios
 	conf ServerConfig
 
+	// database
 	db *data.DB
-	so *skyobject.Container
 
-	pool  *gnet.Pool
-	feeds []cipher.PubKey
+	// skyobject
+	somx sync.RWMutex
+	so   *skyobject.Container
 
-	rpc *RPC
+	// feeds
+	fmx   sync.RWMutex
+	feeds map[cipher.PubKey]*feed
 
-	quito sync.Once
-	quit  chan struct{}
+	// connections
+	pool *gnet.Pool
+	rpc  *RPC // rpc server
+
+	// closing
+	await sync.WaitGroup
 }
 
 // NewServer creates new Server instnace using given
 // configurations. The functions creates database and
 // Container of skyobject instances internally
-func NewServer(sc ServerConfig) (s *Server) {
+func NewServer(sc ServerConfig) (s *Server, err error) {
 	var db *data.DB = data.NewDB()
-	s = NewServerSoDB(sc, db, skyobject.NewContainer(db))
+	s, err = NewServerSoDB(sc, db, skyobject.NewContainer(db))
 	return
 }
 
@@ -49,7 +60,7 @@ func NewServer(sc ServerConfig) (s *Server) {
 // instances. Th functions panics if database of Contaner
 // are nil
 func NewServerSoDB(sc ServerConfig, db *data.DB,
-	so *skyobject.Container) (s *Server) {
+	so *skyobject.Container) (s *Server, err error) {
 
 	if db == nil {
 		panic("nil db")
@@ -65,35 +76,28 @@ func NewServerSoDB(sc ServerConfig, db *data.DB,
 
 	s.db = db
 	s.so = so
+	s.feeds = make(map[cipher.PubKey]*feed)
 
 	sc.Config.Logger = s.Logger // use the same logger
 	sc.Config.ConnectionHandler = s.connectHandler
 	sc.Config.DisconnectHandler = s.disconnectHandler
-	s.pool = gnet.NewPool(sc.Config)
-
-	s.feeds = nil
+	if s.pool, err = gnet.NewPool(sc.Config); err != nil {
+		s = nil
+		return
+	}
 
 	if sc.EnableRPC == true {
-		s.rpc = newRPC(s, sc.RPCAddress)
+		s.rpc = newRPC(s)
 	}
-
-	s.quit = make(chan struct{})
 
 	return
-}
-
-func zeroString(x int) string {
-	if x == 0 {
-		return "no limit"
-	}
-	return strconv.Itoa(x)
 }
 
 // Start the server
 func (s *Server) Start() (err error) {
 	s.Debugf(`strting server:
-    max connections:      %s
-    max message size:     %s
+    max connections:      %d
+    max message size:     %d
 
     dial timeout:         %v
     read timeout:         %v
@@ -118,8 +122,8 @@ func (s *Server) Start() (err error) {
 
     debug:                %t
 `,
-		zeroString(s.conf.MaxConnections),
-		zeroString(s.conf.MaxMessageSize),
+		s.conf.MaxConnections,
+		s.conf.MaxMessageSize,
 		s.conf.DialTimeout,
 		s.conf.ReadTimeout,
 		s.conf.WriteTimeout,
@@ -152,17 +156,29 @@ func (s *Server) Start() (err error) {
 		}
 		s.Print("rpc listen on ", s.rpc.Address())
 	}
+
 	return
 }
 
 // Close the server
 func (s *Server) Close() (err error) {
-	s.quito.Do(func() {
-		close(s.quit)
-	})
 	err = s.pool.Close()
 	if s.conf.EnableRPC == true {
 		s.rpc.Close()
+	}
+	s.await.Wait()
+	return
+}
+
+// send a message to given connection
+func (s *Server) sendMessage(c *gnet.Conn, msg Msg) (ok bool) {
+	select {
+	case c.SendQueue() <- Encode(msg):
+		ok = true
+	case <-c.Closed():
+	default:
+		s.Print("[ERR] %s send queue full", c.Address())
+		c.Close()
 	}
 	return
 }
@@ -178,106 +194,273 @@ func (s *Server) connectHandler(c *gnet.Conn) {
 	s.Debugf("got new %s connection %s %s",
 		boolString(c.IsIncoming(), "incoming", "outgoing"),
 		boolString(c.IsIncoming(), "from", "to"),
-		c.Addr())
-	go s.handle(c)
+		c.Address())
+	// handle
+	s.await.Add(1)
+	go s.handleConnection(c)
+	// send feeds we are interesting in,
+	// if the connection is outgoing
+	if !c.IsIncoming() { // outgoing
+		for f := range s.feeds {
+			if !s.sendMessage(c, &AddFeedMsg{f}) {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) close(c *gnet.Conn) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+	c.Close()
+FeedsLoop:
+	for _, f := range s.feeds {
+		for i, cx := range f.conns {
+			if cx == c {
+				f.conns = append(f.conns[:i], f.conns[i+1:]...) // del
+				continue FeedsLoop
+			}
+		}
+	}
 }
 
 func (s *Server) disconnectHandler(c *gnet.Conn) {
-	s.Debugf("closed connection %s", c.Addr())
+	s.Debugf("closed connection %s", c.Address())
 }
 
-// handle connection
-func (s *Server) handle(c *gnet.Conn) {
-	var (
-		quit    <-chan struct{} = s.quit
-		receive <-chan []byte   = c.ReceiveQueue()
-		closed  <-chan struct{} = c.Closed()
+func (s *Server) handleConnection(c *gnet.Conn) {
+	defer s.await.Done()
+	defer s.close(c)
 
-		p   []byte
-		msg Msg
+	var (
+		closed  <-chan struct{} = c.Closed()
+		receive <-chan []byte   = c.ReceiveQueue()
+
+		data []byte
+		msg  Msg
 
 		err error
 	)
 
 	for {
 		select {
-		case p = <-receive:
-			if msg, err = Decode(p); err != nil {
-				s.Print("[ERR] error decoding message:", err)
-				c.Close()
-			}
-			s.handleMessage(c, msg)
 		case <-closed:
-			s.Printf("[INF] %s connection was closed", c.Address())
 			return
-		case <-quit:
-			return
+		case data = <-receive:
+			if msg, err = Decode(data); err != nil {
+				s.Printf("[ERR] %s decoding essage: %v", c.Address(), err)
+				return
+			}
+			s.handleMsg(c, msg)
 		}
 	}
+
 }
 
-// blocking
-func sendToConn(c *gnet.Conn, msg Msg) {
-	select {
-	case <-c.Cloed():
-	case c.SendQueue() <- msg:
+func (s *Server) root(pk cipher.PubKey) *skyobject.Root {
+	s.somx.RLock()
+	defer s.somx.RUnlock()
+	return s.so.Root(pk)
+}
+
+func (s *Server) want(pk cipher.PubKey) (want skyobject.Set) {
+	s.somx.RLock()
+	defer s.somx.RUnlock()
+	root := s.so.Root(pk)
+	if root == nil {
+		return
 	}
-}
-
-func contains(f cipher.PubKey, feeds []cipher.PubKey) bool {
-	for _, x := range feeds {
-		if x == f {
-			return true
-		}
+	var err error
+	want, err = root.Want()
+	if err != nil {
+		// TODO: log error and reset the root
 	}
-	return false
+	return
 }
 
-func (s *Server) getRoot(feed cipher.PubKey) *skyobject.Root {
-	s.Lock()
-	defer s.Unlock()
-	return s.so.Root(feed)
+func (s *Server) got(pk cipher.PubKey) (got skyobject.Set, err error) {
+	s.somx.RLock()
+	defer s.somx.RUnlock()
+	root := s.so.Root(pk)
+	if root == nil {
+		return
+	}
+	got, err = root.Got()
+	return
 }
 
-func (s *Server) handleMessage(c *gnet.Conn, msg Msg) {
-	s.Debug("got message %T", msg)
+func (s *Server) addRoot(rm *RootMsg) (ok bool, err error) {
+
+	s.somx.Lock()
+	defer s.somx.Unlock()
+	ok, err = s.so.AddEncodedRoot(rm.Feed, rm.Sig, rm.Root)
+	return
+}
+
+func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	switch x := msg.(type) {
 	case *AddFeedMsg:
-		var feeds []cipher.PubKey
-		if val := c.Value(); val != nil {
-			feeds = val.([]cipher.PubKey)
-		}
-		if contains(x.Feed, feeds) {
-			return // already
-		}
-		feeds = append(feeds, x.Feed)
-		c.SetValue(feeds)
-		root := s.getRoot(x.Feed)
-		if root == nil {
-			return // haven't got
-		}
-		sendToConn(c, &RootMsg{x.Feed, root.Sig, root.Encode()}) // can block
-	case *DelFeedMsg:
-		var feeds []cipher.PubKey
-		if val := c.Value(); val != nil {
-			feeds = val.([]cipher.PubKey)
-		}
-		for i, f := range feeds {
-			if f == x.Feed {
-				feeds = append(feeds[:i], feeds[i+1:]...) // delete
-				c.SetValue(feeds)
+		s.fmx.Lock()
+		defer s.fmx.Unlock()
+		if f, ok := s.feeds[x.Feed]; ok {
+			// add to feeds
+			for _, cx := range f.conns {
+				if cx == c {
+					return // already have the connection
+				}
+			}
+			f.conns = append(f.conns, c)
+			// send root to the connectiosn if we have the root
+			root := s.root(x.Feed)
+			if root == nil {
 				return
+			}
+			s.sendMessage(c, &RootMsg{x.Feed, root.Sig, root.Encode()})
+		}
+	case *DelFeedMsg:
+		s.fmx.Lock()
+		defer s.fmx.Unlock()
+		if f, ok := s.feeds[x.Feed]; ok {
+			for i, cx := range f.conns {
+				if cx == c {
+					f.conns = append(f.conns[:i], f.conns[i+1:]...) // delete
+					return
+				}
 			}
 		}
 	case *RootMsg:
-		//
-	case *RequestMsg:
-		for _, hash := range x.Hash {
-			if data, ok := s.db.Get(hash); ok {
-				sendToConn(c, &DataMsg{data})
+		s.fmx.RLock()
+		defer s.fmx.RUnlock()
+		if f, ok := s.feeds[x.Feed]; ok {
+			ok, err := s.addRoot(x)
+			if err != nil {
+				s.Print("[ERR] %s error decoding root: %v", c.Address(), err)
+				c.Close() // fatal
+				return
+			}
+			if !ok {
+				return // older root object received
+			}
+			// send the new root to subscribers
+			for _, cx := range f.conns {
+				if cx == c {
+					continue // skip connection from which the root received
+				}
+				s.sendMessage(cx, x)
 			}
 		}
 	case *DataMsg:
-		//
+		s.fmx.RLock()
+		defer s.fmx.RUnlock()
+		if f, ok := s.feeds[x.Feed]; ok {
+			want := s.want(x.Feed)
+			if len(want) == 0 {
+				return // don't want anything
+			}
+			hash := skyobject.Reference(cipher.SumSHA256(x.Data))
+			if _, ok := want[hash]; ok {
+				s.db.Set(cipher.SHA256(hash), x.Data)
+			}
+		}
 	}
+}
+
+//
+// Public methods of the Server
+//
+
+func (s *Server) Connect(address string) (err error) {
+	_, err = s.pool.Dial(address)
+	return
+}
+
+func (s *Server) Disconnect(address string) (err error) {
+	cx := s.pool.Connection(address)
+	if cx == nil {
+		err = fmt.Errorf("connection not found %q", address)
+		return
+	}
+	err = cx.Close()
+	return
+}
+
+func (s *Server) Connections() []string {
+	return s.pool.Connections()
+}
+
+func (s *Server) Connection(address string) *gnet.Conn {
+	return s.pool.Connection(address)
+}
+
+// AddFeed adds the feed to list of feeds, the Server share, and
+// sends root object of the feed to subscribers
+func (s *Server) AddFeed(f cipher.PubKey) (added bool) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+	if _, ok := s.feeds[f]; !ok {
+		s.feeds[feed], added = &feed{}, true
+	}
+	return
+}
+
+// DelFeed stops sharing given feed
+func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+	if _, ok := s.feeds[f]; ok {
+		delete(s.feeds, f)
+		deleted = true
+	}
+	return
+}
+
+// Want returns lits of objects related to given
+// feed that the server hasn't but knows about
+func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
+	set := s.want(feed)
+	if len(set) == 0 {
+		return
+	}
+	wn = make([]cipher.SHA256, 0, len(set))
+	for k := range set {
+		wn = append(wn, cipher.SHA256(k))
+	}
+	return
+}
+
+// Got returns lits of objects related to given
+// feed that the server has got
+func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
+	var set skyobject.Set
+	set, err = s.got(feed)
+	if err != nil {
+		return
+	}
+	if len(set) == 0 {
+		return
+	}
+	gt = make([]cipher.SHA256, 0, len(set))
+	for k := range set {
+		gt = append(gt, cipher.SHA256(k))
+	}
+	return
+}
+
+// List feeds the server share
+func (s *Server) Feeds() (fs []cipher.PubKey) {
+	s.fmx.RLock()
+	defer s.fmx.RUnlock()
+	if len(s.feeds) == 0 {
+		reutnr
+	}
+	fs = make([]cipher.PubKey, 0, len(s.feeds))
+	for f := range s.feeds {
+		fs = append(fs, f)
+	}
+	return
+}
+
+// database satatistic
+func (s *Server) Stat() data.Stat {
+	return s.db.Stat()
 }

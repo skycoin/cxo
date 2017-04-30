@@ -7,8 +7,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/node/gnet"
 )
 
 // be sure that all messages implements Msg interface
@@ -16,8 +14,9 @@ var (
 	_ Msg = &AddFeedMsg{}
 	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
-	_ Msg = &RequestMsg{}
 	_ Msg = &DataMsg{}
+	_ Msg = &OkMsg{}
+	_ Msg = &ErrMsg{}
 )
 
 // A Msg is ommon interface for CXO messages
@@ -57,23 +56,28 @@ type RootMsg struct {
 // MsgType implements Msg interface
 func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
-// A RequestMsg represents requesting data
-// the node want to get
-type RequestMsg struct {
-	Hash []cipher.SHA256
-}
-
-// MsgType implements Msg interface
-func (*RequestMsg) MsgType() MsgType { return RequestMsgType }
-
-// A DataMsg reperesents data the node
-// request for
+// A DataMsg reperesents a data
 type DataMsg struct {
+	Feed cipher.PubKey
 	Data []byte
 }
 
 // MsgType implements Msg interface
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
+
+// An OkMsg represents anwser
+type OkMsg struct{}
+
+// MsgType implements Msg interface
+func (e *OkMsg) MsgType() { return OkMsgType }
+
+// An ErrMsg represents anwser
+type ErrMsg struct {
+	Descr string
+}
+
+// MsgType implements Msg interface
+func (e *ErrMsg) MsgType() { return ErrMsgType }
 
 // A MsgType represent msg prefix
 type MsgType uint8
@@ -82,8 +86,7 @@ const (
 	AddFeedMsgType MsgType = 1 + iota // AddFeedMsg 1
 	DelFeedMsgType                    // DelFeedMsg 2
 	RootMsgType                       // RootMsg 3
-	RequestMsgType                    // RequestMsg 4
-	DataMsgType                       // DataMsg 5
+	DataMsgType                       // DataMsg 4
 )
 
 // MsgType to string mapping
@@ -91,7 +94,6 @@ var msgTypeString = [...]string{
 	AddFeedMsgType: "ADD",
 	DelFeedMsgType: "DEL",
 	RootMsgType:    "ROOT",
-	RequestMsgType: "REQUEST",
 	DataMsgType:    "DATA",
 }
 
@@ -107,7 +109,6 @@ var forwardRegistry = [...]reflect.Type{
 	AddFeedMsgType: reflect.TypeOf(AddFeedMsg{}),
 	DelFeedMsgType: reflect.TypeOf(DelFeedMsg{}),
 	RootMsgType:    reflect.TypeOf(RootMsg{}),
-	RequestMsgType: reflect.TypeOf(RequestMsg{}),
 	DataMsgType:    reflect.TypeOf(DataMsg{}),
 }
 
