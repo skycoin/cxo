@@ -266,6 +266,7 @@ TriggerLoop:
 	for {
 		select {
 		case <-c.dialtr: // trigger
+			c.p.Debug("redialing ", c.address)
 			tm = c.p.conf.RedialTimeout // set/reset
 		DialLoop:
 			for {
@@ -335,6 +336,7 @@ DialLoop:
 			return
 		}
 	ReadLoop:
+		c.p.Debug("start reading in loop ", c.Address())
 		for {
 			if _, err = io.ReadFull(r, head); err != nil {
 				select {
@@ -463,6 +465,7 @@ DialLoop:
 			return
 		}
 	WriteLoop:
+		c.p.Debug("start writing in loop ", c.Address())
 		for {
 			select {
 			case body = <-c.writeq: // receive
