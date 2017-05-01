@@ -129,8 +129,8 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 
 	cn.dialo = new(sync.Once)
 	cn.dialtr = make(chan struct{})
-	cn.dialrl = make(chan struct{})
-	cn.dialwl = make(chan struct{})
+	cn.dialrl = make(chan struct{}, 1)
+	cn.dialwl = make(chan struct{}, 1)
 
 	cn.closed = make(chan struct{})
 
@@ -214,18 +214,18 @@ func (cn *Conn) updateConnection(c net.Conn) {
 
 	// r io.Reader
 	if cn.p.conf.ReadBufferSize > 0 { // buffered
-		cn.r = bufio.NewReaderSize(&timedReadWriter{cn},
+		cn.r = bufio.NewReaderSize(&timedReadWriter{cn, c},
 			cn.p.conf.ReadBufferSize)
 	} else { // unbuffered
-		cn.r = &timedReadWriter{cn}
+		cn.r = &timedReadWriter{cn, c}
 	}
 	// w io.Writer
 	if cn.p.conf.WriteBufferSize > 0 {
-		cn.bw = bufio.NewWriterSize(&timedReadWriter{cn},
+		cn.bw = bufio.NewWriterSize(&timedReadWriter{cn, c},
 			cn.p.conf.WriteBufferSize)
 		cn.w = cn.bw
 	} else {
-		cn.w = &timedReadWriter{cn}
+		cn.w = &timedReadWriter{cn, c}
 	}
 }
 
@@ -340,15 +340,14 @@ DialLoop:
 		c.p.Debug("start reading in loop ", c.address)
 	ReadLoop:
 		for {
+			c.p.Debug("read message ", c.address)
 			if _, err = io.ReadFull(r, head); err != nil {
 				select {
 				case <-c.closed:
 					return
 				default:
 				}
-				c.p.Printf("[ERR] %s reading error: %v",
-					c.conn.RemoteAddr().String(),
-					err)
+				c.p.Printf("[ERR] %s reading error: %v", c.address, err)
 				if c.incoming {
 					return // don't redial if the connection is incoming
 				}
@@ -359,14 +358,12 @@ DialLoop:
 			ln = binary.LittleEndian.Uint32(head)
 			l = int(ln)
 			if l < 0 { // negative length (32-bit CPU)
-				c.p.Printf("[ERR] %s negative messge length %d",
-					c.conn.RemoteAddr().String(),
-					l)
+				c.p.Printf("[ERR] %s negative messge length %d", c.address, l)
 				return // fatal
 			}
 			if c.p.conf.MaxMessageSize > 0 && l > c.p.conf.MaxMessageSize {
 				c.p.Printf("[ERR] %s got messge exceeds max size allowed %d",
-					c.conn.RemoteAddr().String(),
+					c.address,
 					l)
 				return // fatal
 			}
@@ -379,7 +376,7 @@ DialLoop:
 				default:
 				}
 				c.p.Printf("[ERR] %s reading error: %v",
-					c.conn.RemoteAddr().String(),
+					c.address,
 					err)
 				if c.incoming {
 					return // don't redial if the connection is incoming
@@ -389,6 +386,7 @@ DialLoop:
 			}
 			select {
 			case c.readq <- body: // receive
+				c.p.Debug("msg enqueued to ReceiveQueue ", c.address)
 			case <-c.closed:
 				return
 			}
@@ -478,7 +476,8 @@ DialLoop:
 	WriteLoop:
 		for {
 			select {
-			case body = <-c.writeq: // receive
+			case body = <-c.writeq: // send
+				c.p.Debug("msg was dequeued from SendQueue ", c.address)
 			case <-c.closed:
 				return
 			}
@@ -511,6 +510,7 @@ DialLoop:
 				default:
 					// flush the buffer if writing is buffered
 					if bw != nil {
+						c.p.Debug("flush write buffer ", c.address)
 						if err = bw.Flush(); err != nil {
 							select {
 							case <-c.closed:
@@ -646,17 +646,18 @@ func (c *Conn) Closed() <-chan struct{} {
 // ========================================================================== //
 
 type timedReadWriter struct {
-	c *Conn
+	c    *Conn
+	conn net.Conn
 }
 
 func (t *timedReadWriter) Read(p []byte) (n int, err error) {
 	if t.c.p.conf.ReadTimeout > 0 {
-		err = t.c.conn.SetReadDeadline(time.Now().Add(t.c.p.conf.ReadTimeout))
+		err = t.conn.SetReadDeadline(time.Now().Add(t.c.p.conf.ReadTimeout))
 		if err != nil {
 			return
 		}
 	}
-	if n, err = t.c.conn.Read(p); n > 0 {
+	if n, err = t.conn.Read(p); n > 0 {
 		t.c.lrmx.Lock()
 		defer t.c.lrmx.Unlock()
 		t.c.lastRead = time.Now()
@@ -666,12 +667,12 @@ func (t *timedReadWriter) Read(p []byte) (n int, err error) {
 
 func (t *timedReadWriter) Write(p []byte) (n int, err error) {
 	if t.c.p.conf.WriteTimeout > 0 {
-		err = t.c.conn.SetWriteDeadline(time.Now().Add(t.c.p.conf.WriteTimeout))
+		err = t.conn.SetWriteDeadline(time.Now().Add(t.c.p.conf.WriteTimeout))
 		if err != nil {
 			return
 		}
 	}
-	if n, err = t.c.conn.Write(p); n > 0 {
+	if n, err = t.conn.Write(p); n > 0 {
 		t.c.lwmx.Lock()
 		defer t.c.lwmx.Unlock()
 		t.c.lastWrite = time.Now()

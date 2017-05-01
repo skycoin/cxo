@@ -10,7 +10,7 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
-const TM time.Duration = 50 * time.Millisecond
+const TM time.Duration = 100 * time.Millisecond
 
 // helper variables
 var (
@@ -123,4 +123,65 @@ func TestPool_Dial(t *testing.T) {
 
 func TestPool_Close(t *testing.T) {
 	//
+}
+
+func TestPool_sendReceive(t *testing.T) {
+	l, d, lc, dc, err := pair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	defer d.Close()
+	want := []byte("yo-ho-ho!")
+	select {
+	case lc.SendQueue() <- want:
+		l.Print("[TEST] sent")
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+	select {
+	case got := <-dc.ReceiveQueue():
+		d.Print("[TEST] received")
+		if string(got) != string(want) {
+			t.Error("wrong message received:", string(got))
+			return
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+}
+
+func TestPool_receiveSend(t *testing.T) {
+	l, d, lc, dc, err := pair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	defer d.Close()
+	want := []byte("yo-ho-ho!")
+	select {
+	case dc.SendQueue() <- want:
+		d.Print("[TEST] sent")
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+	time.Sleep(1 * time.Second)
+	if len(dc.SendQueue()) != 0 {
+		t.Error("msg wasn't dequeued")
+		return
+	}
+	select {
+	case got := <-lc.ReceiveQueue():
+		l.Print("[TEST] received")
+		if string(got) != string(want) {
+			t.Error("wrong message received:", string(got))
+			return
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
 }

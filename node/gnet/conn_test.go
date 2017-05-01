@@ -24,7 +24,7 @@ func TestConnState_String(t *testing.T) {
 	}
 }
 
-func pair() (l, d *Pool, dc, lc *Conn, err error) {
+func pair() (l, d *Pool, lc, dc *Conn, err error) {
 	if d, err = NewPool(newConfig("dialer")); err != nil {
 		return
 	}
@@ -57,7 +57,7 @@ func pair() (l, d *Pool, dc, lc *Conn, err error) {
 }
 
 func TestConn_Value(t *testing.T) {
-	l, d, dc, _, err := pair()
+	l, d, _, dc, err := pair()
 	if err != nil {
 		t.Fatal(err)
 	}
