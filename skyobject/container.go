@@ -51,12 +51,14 @@ func NewContainer(db *data.DB) (c *Container) {
 
 // NewRoot creates new empty root object. The method doesn't put the root
 // to the Container. Seq of the root is 0, Timestamp of the root set to now.
-func (c *Container) NewRoot(pk cipher.PubKey) (root *Root) {
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (root *Root) {
 	root = new(Root)
 	root.reg = c.reg // shared registery
 	root.cnt = c
 	root.Pub = pk
 	root.Time = time.Now().UnixNano()
+	root.Sign(sk)
+	c.roots[pk] = root
 	return
 }
 
@@ -75,21 +77,6 @@ func (c *Container) Roots() (list []cipher.PubKey) {
 // Root returns root object by its public key
 func (c *Container) Root(pk cipher.PubKey) (r *Root) {
 	return c.roots[pk]
-}
-
-// AddRoot add/replace given root object to the Container if timestamp of
-// given root is greater than timestamp of existsing root object. It's
-// possible to add a root object only if the root created by this container
-func (c *Container) AddRoot(root *Root, sec cipher.SecKey) (set bool) {
-	if root.cnt != c {
-		panic("trying to add root object from a side")
-	}
-	if root.Pub == (cipher.PubKey{}) {
-		panic("AddRoot: the root with empty public key")
-	}
-	root.Sign(sec) // sign the root
-	set = c.addRoot(root)
-	return
 }
 
 func (c *Container) addRoot(root *Root) (set bool) {

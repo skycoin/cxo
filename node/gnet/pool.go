@@ -136,9 +136,11 @@ func (p *Pool) listen(l net.Listener) {
 	)
 
 	for {
+		p.Debug("accept acquiring")
 		if err = p.acquireBlock(); err != nil {
 			return // err closed
 		}
+		p.Debug("accepting")
 		if c, err = l.Accept(); err != nil {
 			p.release()
 			select {
@@ -250,12 +252,16 @@ func (p *Pool) closeListener() (err error) {
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
 	if p.l != nil {
+		p.Debug("close listener")
+
 		err = p.l.Close()
 	}
 	return
 }
 
 func (p *Pool) closeConnections() {
+	p.Debug("close connections")
+
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
 	for _, c := range p.conns {

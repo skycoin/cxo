@@ -34,8 +34,8 @@ func TestNewContainer(t *testing.T) {
 
 func TestContainer_NewRoot(t *testing.T) {
 	c := getCont()
-	pk := pubKey()
-	root := c.NewRoot(pk)
+	pk, sk := cipher.GenerateKeyPair()
+	root := c.NewRoot(pk, sk)
 	if root.cnt != c {
 		t.Error("wrong back reference")
 	}
@@ -50,48 +50,24 @@ func TestContainer_NewRoot(t *testing.T) {
 func TestContainer_Root(t *testing.T) {
 	c := getCont()
 	pub, sec := cipher.GenerateKeyPair()
-	root := c.NewRoot(pub)
-	c.AddRoot(root, sec)
+	root := c.NewRoot(pub, sec)
 	if c.Root(pub) != root {
 		t.Error("wrong root by pk")
 	}
-	if c.Root(pubKey()) != nil {
+	if pk := pubKey(); pk != pub && c.Root(pk) != nil {
 		t.Error("expected nil, got a root")
 	}
 }
 
-func TestContainer_AddRoot(t *testing.T) {
-	t.Run("aside", func(t *testing.T) {
-		c := getCont()
-		defer shouldPanic(t)
-		c.AddRoot(&Root{}, cipher.SecKey{})
-	})
-	t.Run("newer", func(t *testing.T) {
-		c := getCont()
-		pk, sk := cipher.GenerateKeyPair()
-		r1 := c.NewRoot(pk)
-		if !c.AddRoot(r1, sk) {
-			t.Error("can't add root")
-		}
-		if c.AddRoot(r1, sk) {
-			t.Error("add with same time")
-		}
-		r2 := c.NewRoot(pk)
-		r2.Touch()
-		if !c.AddRoot(r2, sk) {
-			t.Error("can't add newer root")
-		}
-	})
-}
-
 func TestContainer_AddEncodedRoot(t *testing.T) {
-	c := getCont()
+	c1 := getCont()
 	pub, sec := cipher.GenerateKeyPair()
-	root := c.NewRoot(pub)
+	root := c1.NewRoot(pub, sec)
 	root.Touch()
 	root.Sign(sec)
 	p := root.Encode()
-	ok, err := c.AddEncodedRoot(p, root.Pub, root.Sig)
+	c2 := getCont()
+	ok, err := c2.AddEncodedRoot(p, root.Pub, root.Sig)
 	if err != nil {
 		t.Error(err)
 	}

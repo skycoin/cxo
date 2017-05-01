@@ -76,10 +76,14 @@ func NewClientSoDB(cc ClientConfig, so *skyobject.Container,
 		return
 	}
 
+	c.quit = make(chan struct{})
+
 	return
 }
 
 func (c *Client) Start(address string) (err error) {
+	c.Debug("starting client of ", address)
+
 	var cn *gnet.Conn
 	if cn, err = c.pool.Dial(address); err != nil {
 		return
@@ -91,6 +95,8 @@ func (c *Client) Start(address string) (err error) {
 
 // Close client
 func (c *Client) Close() (err error) {
+	c.Debug("closing client")
+
 	c.quito.Do(func() {
 		close(c.quit)
 	})
@@ -149,6 +155,8 @@ func (c *Client) handle(cn *gnet.Conn) {
 }
 
 func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
+	c.Debugf("handle message %T", msg)
+
 	switch x := msg.(type) {
 	case *AddFeedMsg:
 		for _, f := range c.srvfs {
@@ -203,6 +211,8 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 }
 
 func (c *Client) sendMessage(cn *gnet.Conn, msg Msg) (ok bool) {
+	c.Debugf("send message %T", msg)
+
 	select {
 	case cn.SendQueue() <- Encode(msg):
 		ok = true
@@ -317,37 +327,21 @@ type Container struct {
 	cn     *gnet.Conn
 }
 
-func (c *Container) NewRoot(pk cipher.PubKey) *Root {
-	return &Root{c.Container.NewRoot(pk), c.client, c.cn}
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (root *Root) {
+	root = &Root{c.Container.NewRoot(pk, sk), c.client, c.cn}
+	// send the root
+	c.client.sendMessage(c.cn, &RootMsg{
+		root.Pub,
+		root.Sig,
+		root.Encode(),
+	})
+	// a fresh root hasn't got any references
+	return
 }
 
 func (c *Container) Root(pk cipher.PubKey) (r *Root) {
 	if root := c.Container.Root(pk); root != nil {
 		r = &Root{root, c.client, c.cn}
-	}
-	return
-}
-
-func (c *Container) AddRoot(root *Root, sec cipher.SecKey) (set bool) {
-	set = c.Container.AddRoot(root.Root, sec)
-	if !set {
-		return
-	}
-	set = c.client.sendMessage(c.cn, &RootMsg{
-		root.Pub,
-		root.Sig,
-		root.Encode(),
-	})
-	if !set {
-		return // error sending
-	}
-	got, _ := root.Got()
-	for k := range got {
-		data, _ := c.client.db.Get(cipher.SHA256(k))
-		set = c.client.sendMessage(c.cn, &DataMsg{root.Pub, data})
-		if !set {
-			return // error sending
-		}
 	}
 	return
 }
@@ -358,31 +352,16 @@ type Root struct {
 	cn     *gnet.Conn
 }
 
-func (r *Root) Inject(i interface{}) (inj skyobject.Reference) {
-	inj = r.Root.Inject(i)
+func (r *Root) Inject(i interface{},
+	sk cipher.SecKey) (inj skyobject.Reference) {
+
+	inj = r.Root.Inject(i, sk)
 	r.client.sendMessage(r.cn, &RootMsg{
 		r.Pub,
 		r.Sig,
 		r.Encode(),
 	})
 	got, _ := r.GotOf(inj)
-	for k := range got {
-		data, _ := r.client.db.Get(cipher.SHA256(k))
-		r.client.sendMessage(r.cn, &DataMsg{r.Pub, data})
-	}
-	return
-}
-
-func (r *Root) InjectHash(hash skyobject.Reference) (err error) {
-	if err = r.Root.InjectHash(hash); err != nil {
-		return
-	}
-	r.client.sendMessage(r.cn, &RootMsg{
-		r.Pub,
-		r.Sig,
-		r.Encode(),
-	})
-	got, _ := r.GotOf(hash)
 	for k := range got {
 		data, _ := r.client.db.Get(cipher.SHA256(k))
 		r.client.sendMessage(r.cn, &DataMsg{r.Pub, data})

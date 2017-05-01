@@ -1,111 +1,101 @@
-package skyobject_test
+package main
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"reflect"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/skyobject"
 )
 
-type Age uint32
+func main() {
+	var (
+		serverAddress string = "[::]:8998"
+		publicKey     string
 
-type Group struct {
-	Name    string
-	Leader  skyobject.Reference  `skyobject:"schema=User"` // single User object
-	Members skyobject.References `skyobject:"schema=User"` // slice of Users
-	Curator skyobject.Dynamic    // a dynamic reference
-}
-
-type User struct {
-	Name   string ``
-	Age    Age    `json:"age"`
-	Hidden int    `enc:"-"` // don't use the field
-}
-
-type List struct {
-	Name     string
-	Members  skyobject.References `skyobject:"schema=User"` // alice of Users
-	MemberOf []Group
-}
-
-type Man struct {
-	Name    string
-	Age     Age
-	Seecret []byte
-	Owner   Group // not a reference
-	Friends List  // not a reference
-}
-
-func Example() {
-	// create database and container instance
-	db := data.NewDB()
-	c := skyobject.NewContainer(db)
-
-	pk, sec := cipher.GenerateKeyPair() // public and secret keys
-
-	// create new empty root object deteched from the container
-	root := c.NewRoot(pk, sec)
-
-	// register schema of User{} with name "User",
-	// thus, tags like `skyobject:"schema=User"` will refer to
-	// schema of the User{}
-	c.Register(
-		"User", User{},
-		"Group", Group{},
-		"List", List{},
-		"Man", Man{},
+		cc node.ClientConfig = node.NewClientConfig()
 	)
 
-	// Inject the Group to the root
-	root.Inject(Group{
-		Name: "a group",
-		Leader: c.Save(User{
-			"Billy Kid", 16, 90,
-		}),
-		Members: c.SaveArray(
-			User{"Bob Marley", 21, 0},
-			User{"Alice Cooper", 19, 0},
-			User{"Eva Brown", 30, 0},
-		),
-		Curator: c.Dynamic(Man{
-			Name:    "Ned Kelly",
-			Age:     28,
-			Seecret: []byte("secret key"),
-			Owner:   Group{},
-			Friends: List{},
-		}),
-	}, sec)
+	cc.FromFlags()
 
-	// Common tricks
-	// 1) Create new root
-	//      root := c.NewRoot(pubKey)
-	//      root.Inject(Blah{})
-	// 2) Replace existing root with new one (replacing references of the root)
-	//      root := c.NewRoot(pubKey)
-	//      root.Inject(Blah{})
-	// 3) Inject some object to existing root
-	//      root := c.Root(pubKey)
-	//      root.Inject(Blah{})
-	//      c.AddRoot(root, secKey) // replace
+	flag.StringVar(&serverAddress,
+		"a",
+		serverAddress,
+		"address of server to connect to")
+	flag.StringVar(&publicKey,
+		"pk",
+		"",
+		"public key (required)")
 
-	// print the tree
-	if vals, err := root.Values(); err != nil {
-		log.Print(err)
-	} else {
-		for _, val := range vals {
-			fmt.Println("---")
-			inspect(val, nil, "")
-			fmt.Println("---")
-		}
+	flag.Parse()
+
+	pk, err := cipher.PubKeyFromHex(publicKey)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	//
-	fmt.Println("===\n", db.Stat(), "\n===")
+	c, err := node.NewClient(cc)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err = c.Start(serverAddress); err != nil {
+		log.Fatal(err)
+	}
+	defer c.Close()
+
+	time.Sleep(1 * time.Second) // sync with the server
+
+	// subscribe to the feed
+	if !c.Subscribe(pk) {
+		log.Print("can't subscribe: server doesn't share the feed")
+		return
+	}
+
+	go printTree(c, pk) // print tree of the feed
+
+	waitInterrupt() // exit on SIGINT
+
+	return
+}
+
+func waitInterrupt() {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	<-sig
+}
+
+func printTree(c *node.Client, pk cipher.PubKey) {
+	for {
+		<-time.After(5 * time.Second)
+		c.Execute(func(c *node.Container) (_ error) {
+			fmt.Println("---")
+			fmt.Println("---")
+			fmt.Println("---")
+
+			root := c.Root(pk)
+			if root == nil {
+				fmt.Println("empty root")
+				return
+			}
+			vals, err := root.Values()
+			if err != nil {
+				fmt.Println("error: ", err)
+				return
+			}
+			for _, val := range vals {
+				inspect(val, err, "")
+			}
+			return
+		})
+	}
 }
 
 // create function for inspecting

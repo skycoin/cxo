@@ -29,7 +29,8 @@ func Test_signature(t *testing.T) {
 
 func Test_encodeEqual(t *testing.T) {
 	c := getCont()
-	r := c.NewRoot(pubKey())
+	pk, sk := cipher.GenerateKeyPair()
+	r := c.NewRoot(pk, sk)
 	p := r.Encode()
 	if bytes.Compare(p, r.Encode()) != 0 {
 		t.Error("encode produce different result")
@@ -58,7 +59,8 @@ func Test_encodeEqual(t *testing.T) {
 
 func Test_encodeDecode(t *testing.T) {
 	c := getCont()
-	r := c.NewRoot(pubKey())
+	pk, sk := cipher.GenerateKeyPair()
+	r := c.NewRoot(pk, sk)
 	c.Register("User", User{})
 	p := r.Encode()
 	re, err := decodeRoot(p)
@@ -94,7 +96,7 @@ func TestRoot_Encode(t *testing.T) {
 	pub, sec := cipher.GenerateKeyPair()
 	// encode
 	c1 := getCont()
-	r1 := c1.NewRoot(pub)
+	r1 := c1.NewRoot(pub, sec)
 	c1.Register("User", User{})
 	c1.Register("Group", Group{})
 	r1.Sign(sec)
@@ -125,7 +127,7 @@ func TestRoot_Got(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
-		root := c.NewRoot(pk)
+		root := c.NewRoot(pk, sk)
 		c.Register("User", User{})   // s: 1
 		c.Register("Group", Group{}) // s: +1 -> 2
 		c.Register("List", List{})   // s: +1 -> 3
@@ -147,8 +149,7 @@ func TestRoot_Got(t *testing.T) {
 				Owner:   Group{},
 				Friends: List{},
 			}),
-		})
-		c.AddRoot(root, sk)
+		}, sk)
 		set, err := root.Got()
 		if err != nil {
 			t.Error("unexpected error:", err)
@@ -161,7 +162,7 @@ func TestRoot_Got(t *testing.T) {
 	t.Run("no", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
-		root := c.NewRoot(pk)
+		root := c.NewRoot(pk, sk)
 		c.Register("User", User{})   // s: +1
 		c.Register("Group", Group{}) // s: +1 -> 2
 		c.Register("List", List{})   // s: +1 -> 3
@@ -185,8 +186,7 @@ func TestRoot_Got(t *testing.T) {
 				Owner:   Group{},
 				Friends: List{},
 			}),
-		})
-		c.AddRoot(root, sk)
+		}, sk)
 		set, _ := root.Got()
 		if l := len(set); l != 6 {
 			t.Error("unexpects count of got objects: ", l)

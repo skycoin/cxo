@@ -10,19 +10,23 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
-const TM time.Duration = 50 * time.Millisecond
+const TM time.Duration = 100 * time.Millisecond
 
 // helper variables
 var (
 	tlsc = &tls.Config{InsecureSkipVerify: true}
 )
 
-func newConfig() (c Config) {
+func newConfig(name string) (c Config) {
+	if name == "" {
+		name = "test"
+	}
 	c = NewConfig()
+	c.DialTimeout = TM // make it shorter
 	if testing.Verbose() {
-		c.Logger = log.NewLogger("[test] ", true)
+		c.Logger = log.NewLogger("["+name+"] ", true)
 	} else {
-		c.Logger = log.NewLogger("[test] ", false)
+		c.Logger = log.NewLogger("["+name+"] ", false)
 		c.Logger.SetOutput(ioutil.Discard)
 	}
 	return
@@ -73,7 +77,7 @@ func TestNewPool(t *testing.T) {
 func TestPool_Listen(t *testing.T) {
 	t.Run("connect", func(t *testing.T) {
 		connect := make(chan struct{})
-		conf := newConfig()
+		conf := newConfig("")
 		conf.ConnectionHandler = func(*Conn) { connect <- struct{}{} }
 		p, err := NewPool(conf)
 		if err != nil {
@@ -119,4 +123,65 @@ func TestPool_Dial(t *testing.T) {
 
 func TestPool_Close(t *testing.T) {
 	//
+}
+
+func TestPool_sendReceive(t *testing.T) {
+	l, d, lc, dc, err := pair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	defer d.Close()
+	want := []byte("yo-ho-ho!")
+	select {
+	case lc.SendQueue() <- want:
+		l.Print("[TEST] sent")
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+	select {
+	case got := <-dc.ReceiveQueue():
+		d.Print("[TEST] received")
+		if string(got) != string(want) {
+			t.Error("wrong message received:", string(got))
+			return
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+}
+
+func TestPool_receiveSend(t *testing.T) {
+	l, d, lc, dc, err := pair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	defer d.Close()
+	want := []byte("yo-ho-ho!")
+	select {
+	case dc.SendQueue() <- want:
+		d.Print("[TEST] sent")
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+	time.Sleep(1 * time.Second)
+	if len(dc.SendQueue()) != 0 {
+		t.Error("msg wasn't dequeued")
+		return
+	}
+	select {
+	case got := <-lc.ReceiveQueue():
+		l.Print("[TEST] received")
+		if string(got) != string(want) {
+			t.Error("wrong message received:", string(got))
+			return
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
 }

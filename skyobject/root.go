@@ -67,22 +67,13 @@ func (r *Root) Touch() {
 }
 
 // Add given object to root. The Inject creates Dynamic object from given one
-// and appends the Dynamic to the Root
-func (r *Root) Inject(i interface{}) (inj Reference) {
+// and appends the Dynamic to the Root. The Inject signs the root and touch it
+// too
+func (r *Root) Inject(i interface{}, sec cipher.SecKey) (inj Reference) {
 	inj = r.cnt.Save(r.cnt.Dynamic(i))
 	r.Refs = append(r.Refs, inj)
 	r.Touch()
-	return
-}
-
-// InjectHash injects hash of Dynamic object
-func (r *Root) InjectHash(hash Reference) (err error) {
-	if hash == (Reference{}) {
-		err = ErrInvalidReference
-		return
-	}
-	r.Refs = append(r.Refs, hash)
-	r.Touch()
+	r.Sign(sec)
 	return
 }
 
@@ -237,6 +228,7 @@ func (r *Root) GotOf(ref Reference) (set Set, err error) {
 	if val, err = r.ValueOf(ref); err != nil {
 		return
 	}
+	set = make(Set)
 	err = gotValue(val, set)
 	return
 }

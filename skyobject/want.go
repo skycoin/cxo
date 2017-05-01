@@ -132,12 +132,12 @@ func (r *Root) ValueOf(ref Reference) (val *Value, err error) {
 // WantOf returns all wanted objects of particular object
 // from list of root objects of the feed
 func (r *Root) WantOf(ref Reference) (set Set, err error) {
-	set = make(Set)
 	var val *Value
 	if val, err = r.ValueOf(ref); err != nil {
 		err = set.Err(err)
 		return
 	}
+	set = make(Set)
 	err = set.Err(wantValue(val, set))
 	return
 }
