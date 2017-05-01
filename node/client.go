@@ -76,6 +76,8 @@ func NewClientSoDB(cc ClientConfig, so *skyobject.Container,
 		return
 	}
 
+	c.quit = make(chan struct{})
+
 	return
 }
 

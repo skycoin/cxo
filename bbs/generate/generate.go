@@ -14,6 +14,10 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+// keys for example:
+// public: 03517b80b2889e4de80aae0fa2a4b2a408490f3178857df5b756e690b4524e1e61
+// secret: 3cd98cc9385225f9af47e5ff0dfc073253aa410076cf5f426c19460a1d0de976
+
 // A Board
 type Board struct {
 	Header  string
@@ -37,10 +41,10 @@ func main() {
 		serverAddress        string = "[::]:8998"
 		publicKey, secretKey string
 
-		cc node.ClientConfig = node.NewClientConfig()
+		conf node.ClientConfig = node.NewClientConfig()
 	)
 
-	cc.FromFlags()
+	conf.FromFlags()
 
 	flag.StringVar(&serverAddress,
 		"a",
@@ -66,7 +70,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	c, err := node.NewClient(cc)
+	c, err := node.NewClient(conf)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,7 +79,7 @@ func main() {
 	}
 	defer c.Close()
 
-	time.Sleep(1 * time.Second) // sync with the server
+	time.Sleep(5 * time.Second) // sync with the server
 
 	// subscribe to the feed
 	if !c.Subscribe(pk) {

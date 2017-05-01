@@ -115,11 +115,14 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 	p.conns[address] = cn // save
 	cn.p = p
 
+	cn.address = address
 	cn.incoming = false
 
 	cn.readq = make(chan []byte, p.conf.ReadQueueLen)
 	cn.writeq = make(chan []byte, p.conf.WriteQueueLen)
 
+	cn.dialo = new(sync.Once)
+	cn.dialtr = make(chan struct{})
 	cn.dialrl = make(chan struct{})
 	cn.dialwl = make(chan struct{})
 
