@@ -41,3 +41,6 @@ node/cover.html
 
 node/gnet/cover.out
 node/gnet/cover.html
+
+bbs/generate/generate
+bbs/receive/receive
