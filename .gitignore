@@ -33,13 +33,6 @@ cmd/cli/cli
 cmd/cxod/cxod
 cmd/*.out
 
-cmd/test/test
-cmd/test/source/source
-cmd/test/drain/drain
-
-cmd/test/output.out
-
-
 skyobject/cover.out
 skyobject/cover.html
 
@@ -48,3 +41,6 @@ node/cover.html
 
 node/gnet/cover.out
 node/gnet/cover.html
+
+bbs/generate/generate
+bbs/receive/receive

@@ -1,214 +1,165 @@
 package node
 
 import (
-	"fmt"
+	"errors"
+	"net"
+	"net/rpc"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/rpc/comm"
-	"github.com/skycoin/cxo/skyobject"
 )
 
-// An rpcEvent represent RPC event
-type rpcEvent func()
+// A RPC is receiver type for net/rpc.
+// It used internally by Server and it's
+// exported because net/rpc requires
+// exported types. You don't need to
+// use the RPC manually
+type RPC struct {
+	l  net.Listener
+	rs *rpc.Server
+	ns *Server
+}
 
-// enqueue rpc event
-func (n *Node) enqueueRpcEvent(evt rpcEvent) (err error) {
-	var done = make(chan struct{})
-	// enquue
-	select {
-	case n.rpce <- func() {
-		defer close(done)
-		evt()
-	}:
-	case <-n.quit:
-		err = ErrClosed
+func newRPC(s *Server) (r *RPC) {
+	r = new(RPC)
+	r.ns = s
+	r.rs = rpc.NewServer()
+	return
+}
+
+func (r *RPC) Start(address string) (err error) {
+	r.rs.RegisterName("cxo", r)
+	if r.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
-	// wait
-	select {
-	case <-done:
-	case <-n.quit:
-		err = ErrClosed
+	r.ns.await.Add(1)
+	go func(l net.Listener) {
+		defer r.ns.await.Done()
+		r.rs.Accept(l)
+	}(r.l)
+	return
+}
+
+func (r *RPC) Address() (address string) {
+	if r.l != nil {
+		address = r.l.Addr().String()
 	}
 	return
 }
 
-// Subscribe to a feed by public key
-func (n *Node) Subscribe(pub cipher.PubKey) {
-	n.enqueueRpcEvent(func() {
-		n.subs[pub] = struct{}{}
-		for _, address := range n.conf.Known[pub] {
-			n.pool.Connect(address)
-		}
-		n.Share(pub) // trigger update of wanted objects etc
-	})
-}
-
-// Connect should be called from RPC server. It trying
-// to connect to given address
-func (n *Node) Connect(address string) error {
-	return n.pool.Connect(address)
-}
-
-// Disconnect should be called from RPC server. It trying to
-// disconnect from given address
-func (n *Node) Disconnect(address string) (err error) {
-	if !n.pool.IsConnExist(address) {
-		err = ErrNotFound
-	} else {
-		n.pool.Disconnect(address)
+func (r *RPC) Close() (err error) {
+	if r.l != nil {
+		err = r.l.Close()
 	}
 	return
-}
-
-func (n *Node) Inject(hash cipher.SHA256,
-	pub cipher.PubKey, sec cipher.SecKey) (err error) {
-
-	if sec == (cipher.SecKey{}) {
-		err = ErrEmptySecret
-		return
-	}
-	if pub == (cipher.PubKey{}) {
-		err = ErrNotFound
-		return
-	}
-	n.enqueueRpcEvent(func() {
-		// skip root if we don't share it
-		if _, ok := n.subs[pub]; !ok {
-			err = ErrNotFound
-			return
-		}
-		root := n.so.Root(pub) // get root by public key
-		if root == nil {
-			err = ErrNotFound
-			return
-		}
-		// inject the hash
-		if err = root.InjectHash(skyobject.Reference(hash)); err != nil {
-			return
-		}
-		root.Touch()            // update timestamp and seq
-		n.so.AddRoot(root, sec) // replace with previous and sign
-		n.Share(pub)            // send the new root to subscribers
-	})
-	return
-}
-
-// List should be called from RPC server. The List returns all
-// connections
-func (n *Node) List() []string {
-	return n.pool.Connections()
 }
 
 //
-// TODO: Info
+// RPC methods
 //
 
-// Info is for RPC. It returns all useful inforamtions about the node
-// except statistic. I.e. it returns listening address and feed the node
-// subscribed to
-func (n *Node) Info() (info comm.Info, err error) {
-	err = n.enqueueRpcEvent(func() {
-		info.Address = n.pool.Address()
-		if len(n.subs) == 0 {
-			return
-		}
-		info.Feeds = make([]cipher.PubKey, 0, len(n.subs))
-		for pk := range n.subs {
-			info.Feeds = append(info.Feeds, pk)
-		}
-	})
+// - Want
+// - Got
+// - AddFeed
+// - DelFeed
+// - Feeds
+// - Stat
+// - Connections
+// - IncomingConnections
+// - OutgoingConnections
+// - Connect
+// - Disconnect
+// - ListeningAddress
+// - Tree
+// - Terminate
+
+func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
+	*list = r.ns.Want(feed)
 	return
 }
 
-// Stat is for RPC. It returns database statistic
-func (n *Node) Stat() (stat data.Stat, err error) {
-	err = n.enqueueRpcEvent(func() {
-		stat = n.db.Stat()
-	})
+func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
+	*list, err = r.ns.Got(feed)
 	return
 }
 
-// Terminate is the same as Close but designed for RPC.
-// If a node created with Config, RemoteClose field of which
-// set to true then it's possible to terminate the node
-// using RPC. Otherwise, the method returns ErrNotAllowed
-func (n *Node) Terminate() (err error) {
-	if !n.conf.RemoteClose {
-		err = ErrNotAllowed
+func (r *RPC) AddFeed(feed cipher.PubKey, ok *bool) (err error) {
+	*ok = r.ns.AddFeed(feed)
+	return
+}
+
+func (r *RPC) DelFeed(feed cipher.PubKey, ok *bool) (err error) {
+	*ok = r.ns.DelFeed(feed)
+	return
+}
+
+func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
+	*list = r.ns.Feeds()
+	return
+}
+
+func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
+	*stat = r.ns.Stat()
+	return
+}
+
+func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
+	*list = r.ns.Connections()
+	return
+}
+
+func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
+	var l []string
+	for _, address := range r.ns.pool.Connections() {
+		c := r.ns.pool.Connection(address)
+		if c.IsIncoming() {
+			l = append(l, address)
+		}
+	}
+	*list = l
+	return
+}
+
+func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
+	var l []string
+	for _, address := range r.ns.pool.Connections() {
+		c := r.ns.pool.Connection(address)
+		if !c.IsIncoming() {
+			l = append(l, address)
+		}
+	}
+	*list = l
+	return
+}
+
+func (r *RPC) Connect(address string, _ *struct{}) (err error) {
+	err = r.ns.Connect(address)
+	return
+}
+
+func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
+	err = r.ns.Disconnect(address)
+	return
+}
+
+func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
+	*address = r.ns.pool.Address()
+	return
+}
+
+// Tree prints objects tree for given root
+func (r *RPC) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
+	//
+	err = errors.New("not implemented yet")
+	return
+}
+
+func (r *RPC) Terminate(_ struct{}, _ *struct{}) (err error) {
+	if !r.ns.conf.RemoteClose {
+		err = errors.New("not allowed")
 		return
 	}
-	err = n.enqueueRpcEvent(func() {
-		n.close()
-	})
-	// we will have got ErrClosed from enqueueRpcEvent that
-	// is not actual error
-	if err == ErrClosed {
-		err = nil
-	}
-	return
-}
-
-// Execute some task in main thread to be sure
-// that accessing skyobject.Container is
-// thread safe
-func (n *Node) Execute(task func()) (err error) {
-	err = n.enqueueRpcEvent(task)
-	return
-}
-
-// Want returns missing objects of given root
-func (n *Node) Want(pub cipher.PubKey) (w []cipher.SHA256, err error) {
-	n.enqueueRpcEvent(func() {
-		if _, ok := n.subs[pub]; !ok {
-			err = fmt.Errorf("not subscribed to %s", pub.Hex())
-			return
-		}
-		root := n.so.Root(pub)
-		if root == nil {
-			return // not an error
-		}
-		var set skyobject.Set
-		if set, err = root.Want(); err != nil {
-			return
-		}
-		if len(set) == 0 {
-			return // no objects
-		}
-		w = make([]cipher.SHA256, 0, len(set))
-		for k := range set {
-			w = append(w, cipher.SHA256(k))
-		}
-	})
-	return
-}
-
-// Got returns full list of objects that the root object has got.
-// The method returns reference key and size of the object in bytes
-func (n *Node) Got(pub cipher.PubKey) (g map[cipher.SHA256]int, err error) {
-	n.enqueueRpcEvent(func() {
-		if _, ok := n.subs[pub]; !ok {
-			err = fmt.Errorf("not subscribed to %s", pub.Hex())
-			return
-		}
-		root := n.so.Root(pub)
-		if root == nil {
-			return // not an error
-		}
-		var set skyobject.Set
-		if set, err = root.Got(); err != nil {
-			return
-		}
-		if len(set) == 0 {
-			return // no objects
-		}
-		g = make(map[cipher.SHA256]int, len(set))
-		for k := range set {
-			data, _ := n.db.Get(cipher.SHA256(k))
-			g[cipher.SHA256(k)] = len(data)
-		}
-	})
+	r.ns.Close()
 	return
 }

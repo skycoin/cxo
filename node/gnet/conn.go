@@ -2,455 +2,632 @@ package gnet
 
 import (
 	"bufio"
-	"bytes"
-	"errors"
+	"crypto/tls"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
-	"reflect"
 	"sync"
 	"time"
-
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// connection related errors
-var (
-	// ErrWriteQueueFull occurs when a connection writes
-	// messages slower then new messages to the connection
-	// appears. A message can block sending up to
-	// WriteTimeout x 2
-	ErrWriteQueueFull = errors.New("write queue full")
-	// ErrConnAlreadyExists occurs when some the Pool already
-	// have connection to the address, but new connection to
-	// the address created anyway
-	ErrConnAlreadyExists = errors.New("connection alredy exists")
-	// ErrClosedConn occurs when connection is closed
-	ErrClosedConn = errors.New("dead connection")
-	// ErrUnregisteredMessageReceived occurs when some message
-	// that the pool don't know about was received
-	ErrUnregisteredMessageReceived = errors.New("unregistered message received")
-	// ErrNegativeMessageLength occurs when received
-	// message has a negative lehgth
-	ErrNegativeMessageLength = errors.New("negative length of message received")
-	// ErrMessageSizeLimit occurs when a message
-	// bigger then configured size limit received
-	ErrMessageSizeLimit = errors.New("message exceed size limit allowed")
-	// ErrManualDisconnect is a reason for disconnecting using
-	// Disconnect method of Pool. If you use Close method of Conn
-	// then the reason will be ErrClosedConn
-	ErrManualDisconnect = errors.New("manual disconnect")
+// A ConnState represents connection state
+type ConnState int
+
+// there are three possible states of a conenction
+const (
+	ConnStateConnected ConnState = iota // conncetion works
+	ConnStateDialing                    // dialing
+	ConnStateClosed                     // closed connection
 )
 
-// connection related service variables
-var (
-	// service messages
-	ping = []byte{'-', '-', '-', '>', 0, 0, 0, 0} // ping message ("--->")
-	pong = []byte{'<', '-', '-', '-', 0, 0, 0, 0} // pong message ("<---")
-)
+var connStateString = [...]string{
+	ConnStateConnected: "CONNECTED",
+	ConnStateDialing:   "DIALING",
+	ConnStateClosed:    "CLOSED",
+}
+
+// String implements fmt.Stringer interface
+func (c ConnState) String() string {
+	if c >= 0 && int(c) < len(connStateString) {
+		return connStateString[c]
+	}
+	return fmt.Sprintf("ConnState<%d>", c)
+}
 
 type Conn struct {
-	conn net.Conn // connection
+	address string // diaing address
 
-	r io.Reader // buffered or unbuffered reading
-	w io.Writer // buffered or unbuffered writing
+	cmx   sync.Mutex // connection lock for redialing
+	conn  net.Conn
+	state ConnState
 
-	lastmx sync.RWMutex // mutex for last time
-	lasttm time.Time    // last time reading from/writng to connection
+	r io.Reader
+	w io.Writer
 
-	bw       *bufio.Writer // if writing is buffered
-	buffered bool          // is writing buffered (writing)
+	bw *bufio.Writer // if writing is buffered
 
-	pingt *time.Timer // pings
+	incoming bool
 
-	wq     chan []byte   // write queue
-	closed chan struct{} // connection was closed
+	readq  chan []byte
+	writeq chan []byte
 
-	pool      *Pool // back read only reference
-	closeOnce sync.Once
+	dialo  *sync.Once    // trigger dialing once per connection fail
+	dialtr chan struct{} // trigger dialing
+	dialrl chan struct{} // redialing (lock read)
+	dialwl chan struct{} // redialing (lock write)
 
-	// is the connection created using
-	// Connect method
-	outgoing bool
+	lrmx      sync.Mutex
+	lastRead  time.Time
+	lwmx      sync.Mutex
+	lastWrite time.Time
 
-	// disconnect reasons
-	dreason chan error
+	p *Pool // logger and configs
+
+	vmx sync.Mutex
+	val interface{}
+
+	closeo sync.Once
+	closed chan struct{}
 }
 
-func (c *Conn) updateLastUsed() {
-	c.lastmx.Lock()
-	defer c.lastmx.Unlock()
-	c.lasttm = time.Now()
+// accept connection by listener
+func (p *Pool) acceptConnection(c net.Conn) (cn *Conn, err error) {
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+	var got bool
+	if _, got = p.conns[c.RemoteAddr().String()]; got {
+		err = fmt.Errorf("connection already exists %s",
+			c.RemoteAddr().String())
+		return
+	}
+	cn = new(Conn)
+
+	p.conns[c.RemoteAddr().String()] = cn // save
+	cn.p = p
+
+	cn.updateConnection(c)
+
+	cn.incoming = true
+
+	cn.readq = make(chan []byte, p.conf.ReadQueueLen)
+	cn.writeq = make(chan []byte, p.conf.WriteQueueLen)
+
+	cn.dialrl = make(chan struct{})
+	cn.dialwl = make(chan struct{})
+
+	close(cn.dialrl) // never block
+	close(cn.dialwl) // never block
+
+	cn.closed = make(chan struct{})
+
+	p.await.Add(2)
+	go cn.read()
+	go cn.write()
+
+	return
 }
 
-// time.Now().Sub( min(lastRead, lastWrite) )
-func (c *Conn) lastUsed() time.Duration {
-	c.lastmx.RLock()
-	defer c.lastmx.RUnlock()
-	return time.Now().Sub(c.lasttm)
+// create outgoing connections
+func (p *Pool) createConnection(address string) (cn *Conn) {
+	cn = new(Conn)
+
+	p.conns[address] = cn // save
+	cn.p = p
+
+	cn.incoming = false
+
+	cn.readq = make(chan []byte, p.conf.ReadQueueLen)
+	cn.writeq = make(chan []byte, p.conf.WriteQueueLen)
+
+	cn.dialrl = make(chan struct{})
+	cn.dialwl = make(chan struct{})
+
+	cn.closed = make(chan struct{})
+
+	p.await.Add(3)
+	go cn.dial()
+	go cn.read()
+	go cn.write()
+
+	cn.triggerDialing()
+
+	return
 }
 
-func newConn(c net.Conn, p *Pool, outgoing bool) (x *Conn) {
-	x = new(Conn)
-	x.outgoing = outgoing
-	x.conn = c
-	// set up reader
-	if p.conf.ReadBufferSize > 0 { // buffered reading
-		if p.conf.ReadTimeout > 0 { // with timeout
-			x.r = bufio.NewReaderSize(&deadReader{x}, p.conf.ReadBufferSize)
-		} else { // no timeout
-			x.r = bufio.NewReaderSize(c, p.conf.ReadBufferSize)
+// ========================================================================== //
+//                             dial/read/write                                //
+// ========================================================================== //
+
+func (c *Conn) closeConnection() {
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
+	if c.conn != nil {
+		c.conn.Close()
+		c.state = ConnStateClosed
+	}
+}
+
+func (cn *Conn) dialing() (c net.Conn, err error) {
+	// tcp or tls
+	if cn.p.conf.TLSConfig == nil {
+		// timeout or not
+		if cn.p.conf.DialTimeout > 0 {
+			c, err = net.DialTimeout("tcp", cn.address, cn.p.conf.DialTimeout)
+		} else {
+			c, err = net.Dial("tcp", cn.address)
 		}
+	} else {
+		// timeout or not
+		if cn.p.conf.DialTimeout > 0 {
+			var d net.Dialer
+			d.Timeout = cn.p.conf.DialTimeout
+			c, err = tls.DialWithDialer(&d, "tcp", cn.address,
+				cn.p.conf.TLSConfig)
+		} else {
+			c, err = tls.Dial("tcp", cn.address, cn.p.conf.TLSConfig)
+		}
+	}
+	return
+}
+
+func (c *Conn) triggerDialing() {
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
+	c.dialo.Do(func() {
+		if c.conn != nil {
+			c.conn.Close() // make sure that conn is closed
+		}
+		c.state = ConnStateDialing
+		select {
+		case c.dialtr <- struct{}{}:
+		case <-c.closed:
+		}
+	})
+}
+
+func (c *Conn) changeState(state ConnState) {
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
+	c.state = state
+}
+
+func (cn *Conn) updateConnection(c net.Conn) {
+	cn.cmx.Lock()
+	defer cn.cmx.Unlock()
+
+	cn.dialo = new(sync.Once) // refresh
+
+	cn.conn = c
+	cn.state = ConnStateConnected
+
+	// r io.Reader
+	if cn.p.conf.ReadBufferSize > 0 { // buffered
+		cn.r = bufio.NewReaderSize(&timedReadWriter{cn},
+			cn.p.conf.ReadBufferSize)
 	} else { // unbuffered
-		if p.conf.ReadTimeout > 0 { // with timeout
-			x.r = &deadReader{x}
-		} else { // no timeout
-			x.r = c
-		}
+		cn.r = &timedReadWriter{cn}
 	}
-	// set up writer
-	if p.conf.WriteBufferSize > 0 { // buffered writing
-		if p.conf.WriteTimeout > 0 { // with timeout
-			x.w = bufio.NewWriterSize(&deadWriter{x}, p.conf.WriteBufferSize)
-		} else { // no timeout
-			x.w = bufio.NewWriterSize(c, p.conf.WriteBufferSize)
-		}
-		x.buffered, x.bw = true, x.w.(*bufio.Writer)
-	} else { // unbuffered
-		if p.conf.WriteTimeout > 0 { // with timeout
-			x.w = &deadWriter{x}
-		} else { // no timeout
-			x.w = c
-		}
+	// w io.Writer
+	if cn.p.conf.WriteBufferSize > 0 {
+		cn.bw = bufio.NewWriterSize(&timedReadWriter{cn},
+			cn.p.conf.WriteBufferSize)
+		cn.w = cn.bw
+	} else {
+		cn.w = &timedReadWriter{cn}
 	}
-	x.wq = make(chan []byte, p.conf.WriteQueueSize)
-	x.pool = p
-	x.closed = make(chan struct{})
-	x.dreason = make(chan error, 1) // don't block
-	return
 }
 
-func (c *Conn) handle() {
-	c.pool.wg.Add(2)
-	go c.handleRead()
-	go c.handleWrite()
-}
-
-func (c *Conn) sendEncodedMessage(m []byte) (err error) {
+// update connection and trigger read and
+// write loops after successfull dialing
+func (c *Conn) triggerReadWrite(conn net.Conn) {
+	c.updateConnection(conn)
 	select {
-	case c.wq <- m:
+	case c.dialrl <- struct{}{}:
+		select {
+		case c.dialwl <- struct{}{}:
+		case <-c.closed:
+			return
+		}
+	case c.dialwl <- struct{}{}:
+		select {
+		case c.dialrl <- struct{}{}:
+		case <-c.closed:
+			return
+		}
 	case <-c.closed:
-		err = ErrClosedConn
-	default:
-		// if some connection can't send messages as fast as they
-		// appears, then this connection should be closed to
-		// prevent other connections be closed by timeout awaiting
-		// the connection inside Broadcast* methods of Pool
-		err = ErrWriteQueueFull
-	}
-	return
-}
-
-func (c *Conn) isClosed() (yep bool) {
-	select {
-	case <-c.closed:
-		yep = true
-	default:
-	}
-	return
-}
-
-func (c *Conn) read(data []byte) (terminate bool) {
-	if _, err := c.r.Read(data); err != nil {
-		terminate = true
-		if !c.isClosed() { // don't log about the error if the Conn closed
-			c.setDisconnectReason(err)
-			c.pool.Printf("[ERR] %s reading error: %v", c.Addr(), err)
-		}
-	}
-	return
-}
-
-func (c *Conn) write(data []byte) (terminate bool) {
-	if _, err := c.w.Write(data); err != nil {
-		terminate = true
-		if !c.isClosed() { // don't log about the error if the Conn closed
-			c.setDisconnectReason(err)
-			c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
-		}
-	}
-	return
-}
-
-func (c *Conn) flush() (terminate bool) {
-	if c.buffered && c.bw.Buffered() > 0 {
-		if err := c.bw.Flush(); err != nil {
-			if !c.isClosed() { // don't log about the error if closed
-				c.setDisconnectReason(err)
-				c.pool.Printf("[ERR] %s writing error: %v", c.Addr(), err)
-			}
-		}
-	}
-	return
-}
-
-func (c *Conn) sendPing() (terminate bool) {
-	// don't send ping if connection was used earler
-	// then time.Now() - c.pool.conf.PingInterval
-	if diff := c.pool.conf.PingInterval - c.lastUsed(); diff > minPingInterval {
-		c.pingt.Reset(diff)
 		return
 	}
-	// otherwise send the ping
-	if terminate = c.write(ping); terminate {
-		return
-	}
-	// force flushing the buffer if connection is buffered
-	if terminate = c.flush(); terminate {
-		return
-	}
-	c.pingt.Reset(c.pool.conf.PingInterval)
-	return
 }
 
-func (c *Conn) handleRead() {
-	c.pool.Debugf("%s start read loop", c.Addr())
+func (c *Conn) dial() {
+	defer c.p.await.Done()
 	var (
-		err error
+		conn net.Conn
+		err  error
 
-		head []byte = make([]byte, PrefixLength+4) // + encoded uint32 (length)
-		p    Prefix
-		ln   uint32
-		l    int
+		tm time.Duration // redial timeout
+	)
+TriggerLoop:
+	for {
+		select {
+		case <-c.dialtr: // trigger
+			tm = c.p.conf.RedialTimeout // set/reset
+		DialLoop:
+			for {
+				if conn, err = c.dialing(); err != nil {
+					c.p.Printf("[ERR] error dialing %s: %v", c.address, err)
+					if c.p.conf.MaxRedialTimeout > tm {
+						if tm == 0 {
+							tm = 100 * time.Millisecond
+						} else {
+							tm = tm * 2
+						}
+						if tm > c.p.conf.MaxRedialTimeout {
+							tm = c.p.conf.MaxRedialTimeout
+						}
+					}
+					if tm > 0 { // with timeout
+						select {
+						case <-time.After(tm):
+							continue DialLoop
+						case <-c.closed:
+							return
+						}
+					} else { // witout timeout
+						select {
+						case <-c.closed:
+							return
+						default:
+							continue DialLoop
+						}
+					}
+				}
+				// success
+				c.triggerReadWrite(conn) // and update connection
+				continue TriggerLoop     // (break DialLoop)
+			}
+		case <-c.closed:
+			return
+		}
+	}
+}
 
+func (c *Conn) read() {
+	defer c.p.await.Done()
+	defer c.Close()
+	var (
+		head []byte = make([]byte, 4)
 		body []byte
 
-		ok  bool
-		typ reflect.Type
-		val reflect.Value
+		ln uint32
+		l  int
 
-		terminate bool // semantic
+		err error
+
+		r io.Reader
 	)
-	// closing
-	defer c.pool.wg.Done()
-	// remove from the goroutine (no fear of deadlocks)
-	defer c.Close()
-	defer c.pool.Debugf("%s end read loop", c.Addr())
-	// read loop
+DialLoop:
 	for {
-		if c.isClosed() {
-			return
-		}
-		if terminate = c.read(head); terminate {
-			return
-		}
-		if bytes.Compare(head, ping) == 0 { // handle pings automatically
-			if err = c.sendEncodedMessage(pong); err != nil { // send pong back
-				c.setDisconnectReason(err)
-				c.pool.Printf("[ERR] %s error sending PONG: %v", c.Addr(), err)
-				return
-			}
-			continue // and continue
-		}
-		if bytes.Compare(head, pong) == 0 { // handle pongs automatically
-			continue // and continue
-		}
-		copy(p[:], head) // create prefix from head[:PrefixLength]
-		if typ, ok = c.pool.rev[p]; !ok {
-			c.setDisconnectReason(ErrUnregisteredMessageReceived)
-			c.pool.Printf("[ERR] %s unregistered message received: %s",
-				c.Addr(), string(p[:]))
-			return
-		}
-		if err = c.pool.allowReceive(p); err != nil {
-			c.setDisconnectReason(ErrRejectedByReceiveFilter)
-			c.pool.Printf("[ERR] %s message rejected by receive filter: %s",
-				c.Addr(), p.String())
-			return
-		}
-		if err = encoder.DeserializeRaw(head[PrefixLength:], &ln); err != nil {
-			c.setDisconnectReason(err)
-			c.pool.Printf("[ERR] %s error decoding message length: %v",
-				c.Addr(), err)
-			return
-		}
-		l = int(ln)
-		if l < 0 {
-			c.setDisconnectReason(ErrNegativeMessageLength)
-			c.pool.Printf("[ERR] %s got message with negative length error: %d",
-				c.Addr(), l)
-			return
-		}
-		if c.pool.conf.MaxMessageSize > 0 && l > c.pool.conf.MaxMessageSize {
-			c.setDisconnectReason(ErrMessageSizeLimit)
-			c.pool.Printf("[ERR] %s received message exceeds max size: %d",
-				c.Addr(), l)
-			return
-		}
-		if cap(body) < l {
-			body = make([]byte, l) // increase the body if need
-		} else {
-			body = body[:l] // but never drop it
-		}
-		if terminate = c.read(body); terminate {
-			return
-		}
-		val = reflect.New(typ)
-		if _, err = encoder.DeserializeRawToValue(body, val); err != nil {
-			c.setDisconnectReason(err)
-			c.pool.Printf("[ERR] %s decoding message error: %v", c.Addr(), err)
-			return
-		}
 		select {
-		case c.pool.receive <- Message{val.Interface(), c}:
+		case <-c.dialrl: // waiting for dialing
+			c.cmx.Lock() //	{
+			r = c.r
+			c.cmx.Unlock() // }
 		case <-c.closed:
 			return
 		}
-	}
-}
-
-// handleWrite writes encoded messages to remote connection
-// using write-buffer (if configured) and sending pings
-// (if configured)
-func (c *Conn) handleWrite() {
-	c.pool.Debugf("%s start write loop", c.Addr())
-	var (
-		data      []byte
-		pingc     <-chan time.Time
-		terminate bool // for semantic
-	)
-	if c.pool.conf.PingInterval > 0 {
-		c.pingt = time.NewTimer(c.pool.conf.PingInterval)
-		pingc = c.pingt.C
-		defer c.pingt.Stop()
-	}
-	// closing
-	defer c.pool.wg.Done()
-	// remove from the goroutine (no fear of deadlocks)
-	defer c.Close()
-	defer c.pool.Debugf("%s end write loop", c.Addr())
-	// write loop
-	for {
-		select {
-		case <-pingc:
-			c.sendPing()
-		case data = <-c.wq:
-			if terminate = c.write(data); terminate {
-				return
-			}
-			// may be there are more then one message to
-			// use full perfomance of buffered writing
-			for {
+	ReadLoop:
+		for {
+			if _, err = io.ReadFull(r, head); err != nil {
 				select {
-				case data = <-c.wq:
-					if terminate = c.write(data); terminate {
-						return
-					}
-					continue // drain the write queue if possible
-				case <-pingc:
-					c.sendPing()
-					continue // drain the write quueue if possible
+				case <-c.closed:
+					return
 				default:
 				}
-				// flush the buffer if nothing to write anymore
-				// and the buffer is not empty
-				if terminate = c.flush(); terminate {
-					return
-				}
-				break // break the loop to go to outer write loop
+				c.p.Printf("[ERR] %s reading error: %v",
+					c.conn.RemoteAddr().String(),
+					err)
+				c.triggerDialing()
+				continue DialLoop // waiting for redialing
 			}
-		case <-c.closed:
-			return
+			// the head contains message length
+			ln = binary.LittleEndian.Uint32(head)
+			l = int(ln)
+			if l < 0 { // negative length (32-bit CPU)
+				c.p.Printf("[ERR] %s negative messge length %d",
+					c.conn.RemoteAddr().String(),
+					l)
+				return // fatal
+			}
+			if c.p.conf.MaxMessageSize > 0 && l > c.p.conf.MaxMessageSize {
+				c.p.Printf("[ERR] %s got messge exceeds max size allowed %d",
+					c.conn.RemoteAddr().String(),
+					l)
+				return // fatal
+			}
+			body = make([]byte, l) // create new slice
+			// and read it
+			if _, err = io.ReadFull(r, body); err != nil {
+				select {
+				case <-c.closed:
+					return
+				default:
+				}
+				c.p.Printf("[ERR] %s reading error: %v",
+					c.conn.RemoteAddr().String(),
+					err)
+				c.triggerDialing()
+				continue DialLoop // waiting for redialing
+			}
+			select {
+			case c.readq <- body: // receive
+			case <-c.closed:
+				return
+			}
+			continue ReadLoop // semantic and code readablility
 		}
 	}
 }
 
-// Addr returns remote address
-func (c *Conn) Addr() string {
+func (c *Conn) writeMsg(w io.Writer, head, body []byte) (terminate,
+	redial bool) {
+
+	if c.p.conf.MaxMessageSize > 0 &&
+		len(body) > c.p.conf.MaxMessageSize {
+		c.p.Panicf(
+			"[CRIT] attempt to send a message exceeds"+
+				" configured max size %d", len(body))
+		return // terminate everything
+	}
+
+	binary.LittleEndian.PutUint32(head, uint32(len(body)))
+
+	var err error
+
+	// write the head
+	if _, err = w.Write(head); err != nil {
+		select {
+		case <-c.closed:
+			terminate = true
+			return
+		default:
+		}
+		c.p.Printf("[ERR] %s writing error: %v",
+			c.conn.RemoteAddr().String(),
+			err)
+		redial = true
+		return
+	}
+
+	// write the body
+	if _, err = w.Write(body); err != nil {
+		select {
+		case <-c.closed:
+			terminate = true
+			return
+		default:
+		}
+		c.p.Printf("[ERR] %s writing error: %v",
+			c.conn.RemoteAddr().String(),
+			err)
+		redial = true
+	}
+
+	return
+}
+
+func (c *Conn) write() {
+	defer c.p.await.Done()
+	defer c.Close()
+	var (
+		head, body []byte = make([]byte, 4), nil
+
+		err error
+
+		terminate, redial bool
+
+		w  io.Writer
+		bw *bufio.Writer
+	)
+DialLoop:
+	for {
+		select {
+		case <-c.dialrl: // waiting for dialing
+			c.cmx.Lock() // {
+			w, bw = c.w, c.bw
+			c.cmx.Unlock() // }
+		case <-c.closed:
+			return
+		}
+	WriteLoop:
+		for {
+			select {
+			case body = <-c.writeq: // receive
+			case <-c.closed:
+				return
+			}
+
+			switch terminate, redial = c.writeMsg(w, head, body); {
+			case terminate:
+				return
+			case redial:
+				c.triggerDialing()
+				continue DialLoop
+			}
+
+			// write all possible messages
+			for {
+				select {
+				case body = <-c.writeq:
+					switch terminate, redial = c.writeMsg(w, head, body); {
+					case terminate:
+						return
+					case redial:
+						c.triggerDialing()
+						continue DialLoop
+					}
+				default:
+					// flush the buffer if writing is buffered
+					if bw != nil {
+						if err = bw.Flush(); err != nil {
+							select {
+							case <-c.closed:
+								return
+							default:
+							}
+							c.p.Printf("[ERR] %s flushing buffer error: %v",
+								c.conn.RemoteAddr().String(),
+								err)
+							c.triggerDialing()
+							continue DialLoop
+						}
+					}
+				}
+
+				continue WriteLoop // break this small write+flush loop
+			}
+
+			continue WriteLoop // semantic and code readablility
+		}
+	}
+}
+
+// ========================================================================== //
+//                            an attached value                               //
+// ========================================================================== //
+
+// The Value returns value provided using SetValue method
+func (c *Conn) Value() interface{} {
+	c.vmx.Lock()
+	defer c.vmx.Unlock()
+	return c.val
+}
+
+// The SetValue attach any value to the connection
+func (c *Conn) SetValue(val interface{}) {
+	c.vmx.Lock()
+	defer c.vmx.Unlock()
+	c.val = val
+}
+
+// ========================================================================== //
+//                               last access                                  //
+// ========================================================================== //
+
+// LastRead from underlying net.Conn
+func (c *Conn) LastRead() time.Time {
+	c.lrmx.Lock()
+	defer c.lrmx.Unlock()
+	return c.lastRead
+}
+
+// LastWrite to underlying net.Conn
+func (c *Conn) LastWrite() time.Time {
+	c.lwmx.Lock()
+	defer c.lwmx.Unlock()
+	return c.lastWrite
+}
+
+// ========================================================================== //
+//                          send/receive queues                               //
+// ========================================================================== //
+
+// SendQueue returns channel for sending to the connection
+func (c *Conn) SendQueue() chan<- []byte {
+	return c.writeq
+}
+
+// ReceiveQueue returns receiving channel of the connection
+func (c *Conn) ReceiveQueue() <-chan []byte {
+	return c.readq
+}
+
+// ========================================================================== //
+//                              information                                   //
+// ========================================================================== //
+
+// Address of remote node. The address will be address passed
+// to (*Pool).Dial(), or remote address of underlying net.Conn
+// if the connections accepted by listener
+func (c *Conn) Address() string {
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
+	if c.address != "" {
+		return c.address
+	}
 	return c.conn.RemoteAddr().String()
 }
 
-// Send given message to the connection
-func (c *Conn) Send(m interface{}) {
-	var err error
-	if err = c.sendEncodedMessage(c.pool.encodeMessage(m)); err != nil {
-		c.setDisconnectReason(err)
-		c.pool.Printf("[ERR] %s error sending message: %v", c.Addr(), err)
-		c.Close() // terminate the connection
-	}
-	return
+// IsIncoming reports true if the Conn accepted by listener
+// and false if the Conn created using (*Pool).Dial()
+func (c *Conn) IsIncoming() bool {
+	return c.incoming
 }
 
-// Broadcast the message to all other connections except this one
-func (c *Conn) Broadcast(m interface{}) {
-	c.pool.BroadcastExcept(m, c.Addr())
+// State returns current state of the connection
+func (c *Conn) State() ConnState {
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
+	return c.state
 }
 
-// provide some reason for closing
-func (c *Conn) setDisconnectReason(err error) {
-	select {
-	case c.dreason <- err:
-	default: // already have a reson
-	}
-}
+// ========================================================================== //
+//                                  close                                     //
+// ========================================================================== //
 
-// Close connection
 func (c *Conn) Close() (err error) {
-	c.closeOnce.Do(func() {
-		close(c.closed)         // chan
-		c.pool.delete(c.Addr()) // map
-		err = c.conn.Close()    // connection (inclusive release)
-		if c.pool.conf.DisconnectHandler != nil {
-			var dreason error
-			select {
-			case dreason = <-c.dreason:
-			default:
-				dreason = ErrClosedConn
-			}
-			c.pool.conf.DisconnectHandler(c, dreason)
+	c.closeo.Do(func() {
+		close(c.closed)
+		c.closeConnection()
+		c.p.delete(c.Address())
+		if dh := c.p.conf.DisconnectHandler; dh != nil {
+			dh(c)
 		}
 	})
 	return
 }
 
-// IsIncoming returns true if the Conn was accepted
-// by listener. I.e. the Conn is incoming from
-// some remote node
-func (c *Conn) IsIncoming() bool { return !c.outgoing }
+// Closed returns closing channel that sends
+// when the connection is closed
+func (c *Conn) Closed() <-chan struct{} {
+	return c.closed
+}
 
-// IsOutgoing is opposite to Incoming. It returns true
-// if the Conn created using Connect method of the Pool
-func (c *Conn) IsOutgoing() bool { return c.outgoing }
+// ========================================================================== //
+//                       last used and deadlines                              //
+// ========================================================================== //
 
-// read with deadline
-type deadReader struct {
+type timedReadWriter struct {
 	c *Conn
 }
 
-// Read implements io.Reader interface
-func (d *deadReader) Read(p []byte) (n int, err error) {
-	err = d.c.conn.SetReadDeadline(time.Now().Add(d.c.pool.conf.ReadTimeout))
-	if err != nil {
-		return
+func (t *timedReadWriter) Read(p []byte) (n int, err error) {
+	if t.c.p.conf.ReadTimeout > 0 {
+		err = t.c.conn.SetReadDeadline(time.Now().Add(t.c.p.conf.ReadTimeout))
+		if err != nil {
+			return
+		}
 	}
-	if n, err = d.c.conn.Read(p); n > 0 {
-		d.c.updateLastUsed()
+	if n, err = t.c.conn.Read(p); n > 0 {
+		t.c.lrmx.Lock()
+		defer t.c.lrmx.Unlock()
+		t.c.lastRead = time.Now()
 	}
 	return
 }
 
-// write with deadline
-type deadWriter struct {
-	c *Conn
-}
-
-// Write implements io.Writer interface
-func (d *deadWriter) Write(p []byte) (n int, err error) {
-	err = d.c.conn.SetWriteDeadline(time.Now().Add(d.c.pool.conf.WriteTimeout))
-	if err != nil {
-		return
+func (t *timedReadWriter) Write(p []byte) (n int, err error) {
+	if t.c.p.conf.WriteTimeout > 0 {
+		err = t.c.conn.SetWriteDeadline(time.Now().Add(t.c.p.conf.WriteTimeout))
+		if err != nil {
+			return
+		}
 	}
-	if n, err = d.c.conn.Write(p); n > 0 {
-		d.c.updateLastUsed()
+	if n, err = t.c.conn.Write(p); n > 0 {
+		t.c.lwmx.Lock()
+		defer t.c.lwmx.Unlock()
+		t.c.lastWrite = time.Now()
 	}
 	return
 }
