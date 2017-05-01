@@ -91,7 +91,7 @@ func main() {
 			Post{},
 		)
 		// create empty root
-		c.AddRoot(c.NewRoot(pk), sk)
+		c.NewRoot(pk)
 		return
 	})
 
@@ -168,7 +168,7 @@ func generate(c *node.Client, pk cipher.PubKey, sk cipher.SecKey) {
 						),
 					},
 				),
-			})
+			}, sk)
 		}
 		return
 	})
