@@ -86,10 +86,6 @@ func (s *ServerConfig) FromFlags() {
 type ClientConfig struct {
 	gnet.Config            // pool configurations
 	Log         log.Config // logger configurations
-	// EnableRPC requests
-	EnableRPC bool
-	// RPCAddress of rpc server to connect to
-	RPCAddress string
 }
 
 // NewClientConfig returns ClientConfig
@@ -110,13 +106,4 @@ func NewClientConfig() (cc ClientConfig) {
 func (c *ClientConfig) FromFlags() {
 	c.Config.FromFlags()
 	c.Log.FromFlags()
-
-	flag.BoolVar(&c.EnableRPC,
-		"rpc",
-		c.EnableRPC,
-		"enable RPC server")
-	flag.StringVar(&c.RPCAddress,
-		"rpc-address",
-		c.RPCAddress,
-		"address of RPC server")
 }

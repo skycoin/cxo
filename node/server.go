@@ -43,6 +43,8 @@ type Server struct {
 	rpc  *RPC // rpc server
 
 	// closing
+	quit  chan struct{}
+	quito sync.Once
 	await sync.WaitGroup
 }
 
@@ -89,6 +91,8 @@ func NewServerSoDB(sc ServerConfig, db *data.DB,
 	if sc.EnableRPC == true {
 		s.rpc = newRPC(s)
 	}
+
+	s.quit = make(chan struct{})
 
 	return
 }
@@ -167,6 +171,9 @@ func (s *Server) Close() (err error) {
 		s.rpc.Close()
 	}
 	s.await.Wait()
+	s.quito.Do(func() {
+		close(s.quit)
+	})
 	return
 }
 
@@ -463,4 +470,8 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 // database satatistic
 func (s *Server) Stat() data.Stat {
 	return s.db.Stat()
+}
+
+func (s *Server) Quiting() <-chan struct{} {
+	return s.quit
 }

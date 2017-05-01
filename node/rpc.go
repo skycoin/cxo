@@ -149,7 +149,7 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 }
 
 // Tree prints objects tree for given root
-func (r *RPC) Tree(feed cipher.PubKey, tree []byte) (err error) {
+func (r *RPC) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
 	//
 	err = errors.New("not implemented yet")
 	return
@@ -158,6 +158,7 @@ func (r *RPC) Tree(feed cipher.PubKey, tree []byte) (err error) {
 func (r *RPC) Terminate(_ struct{}, _ *struct{}) (err error) {
 	if !r.ns.conf.RemoteClose {
 		err = errors.New("not allowed")
+		return
 	}
 	r.ns.Close()
 	return
