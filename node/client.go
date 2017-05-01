@@ -82,6 +82,8 @@ func NewClientSoDB(cc ClientConfig, so *skyobject.Container,
 }
 
 func (c *Client) Start(address string) (err error) {
+	c.Debug("starting client of ", address)
+
 	var cn *gnet.Conn
 	if cn, err = c.pool.Dial(address); err != nil {
 		return
@@ -93,6 +95,8 @@ func (c *Client) Start(address string) (err error) {
 
 // Close client
 func (c *Client) Close() (err error) {
+	c.Debug("closing client")
+
 	c.quito.Do(func() {
 		close(c.quit)
 	})
@@ -151,6 +155,8 @@ func (c *Client) handle(cn *gnet.Conn) {
 }
 
 func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
+	c.Debugf("handle message %T", msg)
+
 	switch x := msg.(type) {
 	case *AddFeedMsg:
 		for _, f := range c.srvfs {
@@ -205,6 +211,8 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 }
 
 func (c *Client) sendMessage(cn *gnet.Conn, msg Msg) (ok bool) {
+	c.Debugf("send message %T", msg)
+
 	select {
 	case cn.SendQueue() <- Encode(msg):
 		ok = true

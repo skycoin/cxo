@@ -179,6 +179,8 @@ func (s *Server) Close() (err error) {
 
 // send a message to given connection
 func (s *Server) sendMessage(c *gnet.Conn, msg Msg) (ok bool) {
+	s.Debugf("send message %T to %s", msg, c.Address())
+
 	select {
 	case c.SendQueue() <- Encode(msg):
 		ok = true
@@ -205,13 +207,12 @@ func (s *Server) connectHandler(c *gnet.Conn) {
 	// handle
 	s.await.Add(1)
 	go s.handleConnection(c)
-	// send feeds we are interesting in,
-	// if the connection is outgoing
-	if !c.IsIncoming() { // outgoing
-		for f := range s.feeds {
-			if !s.sendMessage(c, &AddFeedMsg{f}) {
-				return
-			}
+	// send feeds we are interesting in
+	s.fmx.RLock()
+	defer s.fmx.RUnlock()
+	for f := range s.feeds {
+		if !s.sendMessage(c, &AddFeedMsg{f}) {
+			return
 		}
 	}
 }
@@ -236,6 +237,9 @@ func (s *Server) disconnectHandler(c *gnet.Conn) {
 }
 
 func (s *Server) handleConnection(c *gnet.Conn) {
+	s.Debug("handle connection ", c.Address())
+	defer s.Debug("stop handling connection", c.Address())
+
 	defer s.await.Done()
 	defer s.close(c)
 
@@ -305,6 +309,8 @@ func (s *Server) addRoot(rm *RootMsg) (ok bool, err error) {
 }
 
 func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
+	s.Debugf("handle message %T from %s", msg, c.Address())
+
 	switch x := msg.(type) {
 	case *AddFeedMsg:
 		s.fmx.Lock()
@@ -453,7 +459,7 @@ func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
 	return
 }
 
-// List feeds the server share
+// Feeds the server share
 func (s *Server) Feeds() (fs []cipher.PubKey) {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
