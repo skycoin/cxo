@@ -26,7 +26,7 @@ func (r *RPCClient) Want(feed cipher.PubKey) (list []cipher.SHA256, err error) {
 	return
 }
 
-func (r *RPCClient) Got(feed cipher.PubKey) (list *[]cipher.SHA256, err error) {
+func (r *RPCClient) Got(feed cipher.PubKey) (list []cipher.SHA256, err error) {
 	err = r.c.Call("cxo.Got", feed, &list)
 	return
 }
