@@ -21,13 +21,13 @@ import (
 // A Board
 type Board struct {
 	Header  string
-	Threads skyobject.References // []Thread
+	Threads skyobject.References `skyobject:"schema=Thread"` // []Thread
 }
 
 // A Thread
 type Thread struct {
 	Header string
-	Posts  skyobject.References // []Post
+	Posts  skyobject.References `skyobject:"schema=Post"` // []Post
 }
 
 // A Post
@@ -90,9 +90,9 @@ func main() {
 	c.Execute(func(c *node.Container) (_ error) {
 		// register types to use
 		c.Register(
-			Board{},
-			Thread{},
-			Post{},
+			"Board", Board{},
+			"Thread", Thread{},
+			"Post", Post{},
 		)
 		// create empty root
 		c.NewRoot(pk, sk)

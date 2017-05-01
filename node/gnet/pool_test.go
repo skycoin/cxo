@@ -17,12 +17,16 @@ var (
 	tlsc = &tls.Config{InsecureSkipVerify: true}
 )
 
-func newConfig() (c Config) {
+func newConfig(name string) (c Config) {
+	if name == "" {
+		name = "test"
+	}
 	c = NewConfig()
+	c.DialTimeout = TM // make it shorter
 	if testing.Verbose() {
-		c.Logger = log.NewLogger("[test] ", true)
+		c.Logger = log.NewLogger("["+name+"] ", true)
 	} else {
-		c.Logger = log.NewLogger("[test] ", false)
+		c.Logger = log.NewLogger("["+name+"] ", false)
 		c.Logger.SetOutput(ioutil.Discard)
 	}
 	return
@@ -73,7 +77,7 @@ func TestNewPool(t *testing.T) {
 func TestPool_Listen(t *testing.T) {
 	t.Run("connect", func(t *testing.T) {
 		connect := make(chan struct{})
-		conf := newConfig()
+		conf := newConfig("")
 		conf.ConnectionHandler = func(*Conn) { connect <- struct{}{} }
 		p, err := NewPool(conf)
 		if err != nil {

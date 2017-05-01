@@ -228,6 +228,7 @@ func (r *Root) GotOf(ref Reference) (set Set, err error) {
 	if val, err = r.ValueOf(ref); err != nil {
 		return
 	}
+	set = make(Set)
 	err = gotValue(val, set)
 	return
 }

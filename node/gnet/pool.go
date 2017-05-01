@@ -136,9 +136,11 @@ func (p *Pool) listen(l net.Listener) {
 	)
 
 	for {
+		p.Debug("accept acquiring")
 		if err = p.acquireBlock(); err != nil {
 			return // err closed
 		}
+		p.Debug("accepting")
 		if c, err = l.Accept(); err != nil {
 			p.release()
 			select {
