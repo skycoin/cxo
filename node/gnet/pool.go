@@ -250,12 +250,16 @@ func (p *Pool) closeListener() (err error) {
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
 	if p.l != nil {
+		p.Debug("close listener")
+
 		err = p.l.Close()
 	}
 	return
 }
 
 func (p *Pool) closeConnections() {
+	p.Debug("close connections")
+
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
 	for _, c := range p.conns {

@@ -73,6 +73,8 @@ type Conn struct {
 
 // accept connection by listener
 func (p *Pool) acceptConnection(c net.Conn) (cn *Conn, err error) {
+	p.Debug("accept connection ", c.RemoteAddr().String())
+
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
 	var got bool
@@ -110,6 +112,8 @@ func (p *Pool) acceptConnection(c net.Conn) (cn *Conn, err error) {
 
 // create outgoing connections
 func (p *Pool) createConnection(address string) (cn *Conn) {
+	p.Debug("create connection: ", address)
+
 	cn = new(Conn)
 
 	p.conns[address] = cn // save
@@ -143,6 +147,8 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 // ========================================================================== //
 
 func (c *Conn) closeConnection() {
+	c.p.Debug("close connection of: ", c.Address())
+
 	c.cmx.Lock()
 	defer c.cmx.Unlock()
 	if c.conn != nil {
@@ -152,6 +158,8 @@ func (c *Conn) closeConnection() {
 }
 
 func (cn *Conn) dialing() (c net.Conn, err error) {
+	cn.p.Debug("dialing to ", cn.address)
+
 	// tcp or tls
 	if cn.p.conf.TLSConfig == nil {
 		// timeout or not
@@ -175,6 +183,8 @@ func (cn *Conn) dialing() (c net.Conn, err error) {
 }
 
 func (c *Conn) triggerDialing() {
+	c.p.Debug("trigger dialing of: ", c.Address())
+
 	c.cmx.Lock()
 	defer c.cmx.Unlock()
 	c.dialo.Do(func() {
@@ -189,13 +199,9 @@ func (c *Conn) triggerDialing() {
 	})
 }
 
-func (c *Conn) changeState(state ConnState) {
-	c.cmx.Lock()
-	defer c.cmx.Unlock()
-	c.state = state
-}
-
 func (cn *Conn) updateConnection(c net.Conn) {
+	cn.p.Debug("unpdate connection of ", c.RemoteAddr().String())
+
 	cn.cmx.Lock()
 	defer cn.cmx.Unlock()
 
@@ -224,6 +230,8 @@ func (cn *Conn) updateConnection(c net.Conn) {
 // update connection and trigger read and
 // write loops after successfull dialing
 func (c *Conn) triggerReadWrite(conn net.Conn) {
+	c.p.Debug("trigger read/write loops of ", conn.RemoteAddr().String())
+
 	c.updateConnection(conn)
 	select {
 	case c.dialrl <- struct{}{}:
@@ -244,6 +252,9 @@ func (c *Conn) triggerReadWrite(conn net.Conn) {
 }
 
 func (c *Conn) dial() {
+	c.p.Debug("start dial loop ", c.Address())
+	defer c.p.Debug("stop dial loop ", c.Address())
+
 	defer c.p.await.Done()
 	var (
 		conn net.Conn
@@ -297,6 +308,9 @@ TriggerLoop:
 }
 
 func (c *Conn) read() {
+	c.p.Debug("start read loop ", c.Address())
+	defer c.p.Debug("stop read loop ", c.Address())
+
 	defer c.p.await.Done()
 	defer c.Close()
 	var (
@@ -376,6 +390,8 @@ DialLoop:
 func (c *Conn) writeMsg(w io.Writer, head, body []byte) (terminate,
 	redial bool) {
 
+	c.p.Debug("write message to ", c.conn.RemoteAddr().String())
+
 	if c.p.conf.MaxMessageSize > 0 &&
 		len(body) > c.p.conf.MaxMessageSize {
 		c.p.Panicf(
@@ -421,6 +437,9 @@ func (c *Conn) writeMsg(w io.Writer, head, body []byte) (terminate,
 }
 
 func (c *Conn) write() {
+	c.p.Debug("start write loop of ", c.Address())
+	defer c.p.Debug("stop write loop of ", c.Address())
+
 	defer c.p.await.Done()
 	defer c.Close()
 	var (
@@ -581,6 +600,9 @@ func (c *Conn) State() ConnState {
 
 func (c *Conn) Close() (err error) {
 	c.closeo.Do(func() {
+		c.p.Debugf("closing %s...", c.Address())
+		defer c.p.Debugf("%s was closed", c.Address())
+
 		close(c.closed)
 		c.closeConnection()
 		c.p.delete(c.Address())
