@@ -48,7 +48,7 @@ func TestRoot_Want(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
-		root := c.NewRoot(pk)
+		root := c.NewRoot(pk, sk)
 		c.Register("User", User{})
 		c.Register("Group", Group{})
 		c.Register("List", List{})
@@ -70,8 +70,7 @@ func TestRoot_Want(t *testing.T) {
 				Owner:   Group{},
 				Friends: List{},
 			}),
-		})
-		c.AddRoot(root, sk)
+		}, sk)
 		set, err := root.Want()
 		if err != nil {
 			t.Error("unexpected error:", err)
@@ -87,7 +86,7 @@ func TestRoot_Want(t *testing.T) {
 	t.Run("no", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
-		root := c.NewRoot(pk)
+		root := c.NewRoot(pk, sk)
 		c.Register("User", User{})   // 1
 		c.Register("Group", Group{}) // +1 -> 2
 		c.Register("List", List{})   // +1 -> 3
@@ -111,8 +110,7 @@ func TestRoot_Want(t *testing.T) {
 				Owner:   Group{},
 				Friends: List{},
 			}),
-		})
-		c.AddRoot(root, sk)
+		}, sk)
 		set, err := root.Want()
 		if err != nil {
 			t.Error("unexpected error:", err)

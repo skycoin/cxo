@@ -49,7 +49,7 @@ func Example() {
 	pk, sec := cipher.GenerateKeyPair() // public and secret keys
 
 	// create new empty root object deteched from the container
-	root := c.NewRoot(pk)
+	root := c.NewRoot(pk, sec)
 
 	// register schema of User{} with name "User",
 	// thus, tags like `skyobject:"schema=User"` will refer to
@@ -79,43 +79,18 @@ func Example() {
 			Owner:   Group{},
 			Friends: List{},
 		}),
-	})
-
-	// Inject another object using its hash
-	usrHash := c.Save( // save an object to get its hash
-		c.Dynamic(User{ // the object must be Dynamic
-			Name: "Old Uncle Tom Cobley and all",
-			Age:  89,
-		}),
-	)
-	root.InjectHash(usrHash) // inject
-
-	// Feel free to use empty references they are treated as "nil"
-	// But for InjectHash an empty reference is illegal
-	if err := root.InjectHash(skyobject.Reference{}); err != nil {
-		log.Print("InjectHash(Reference{}) error: ", err)
-	}
-
-	root.Touch() // update timestamp of the root and increment seq number
-
-	// attach the root to the container
-
-	// Add/replace with older. The AddRoot method also signs the root object
-	c.AddRoot(root, sec)
+	}, sec)
 
 	// Common tricks
 	// 1) Create new root
 	//      root := c.NewRoot(pubKey)
 	//      root.Inject(Blah{})
-	//      c.AddRoot(root, secKey)
 	// 2) Replace existing root with new one (replacing references of the root)
 	//      root := c.NewRoot(pubKey)
 	//      root.Inject(Blah{})
-	//      c.AddRoot(root, secKey)
 	// 3) Inject some object to existing root
 	//      root := c.Root(pubKey)
 	//      root.Inject(Blah{})
-	//      root.Touch()
 	//      c.AddRoot(root, secKey) // replace
 
 	// print the tree

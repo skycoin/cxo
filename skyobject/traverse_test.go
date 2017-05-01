@@ -5,14 +5,16 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
 )
 
-func getCntRoot() (*Container, *Root) {
+func getCntRoot() (*Container, *Root, cipher.SecKey) {
 	c := NewContainer(data.NewDB())
-	return c, c.NewRoot(pubKey())
+	pk, sk := cipher.GenerateKeyPair()
+	return c, c.NewRoot(pk, sk), sk
 }
 
 func TestValue_Kind(t *testing.T) {
@@ -62,7 +64,7 @@ func TestValue_Kind(t *testing.T) {
 }
 
 func TestValue_Dereference(t *testing.T) {
-	cnt, root := getCntRoot()
+	cnt, root, sk := getCntRoot()
 	cnt.Register("User", User{})   // 1
 	cnt.Register("Group", Group{}) // +1 -> 2
 	cnt.Register("List", List{})   // +1 -> 3
@@ -84,7 +86,7 @@ func TestValue_Dereference(t *testing.T) {
 			Owner:   Group{},
 			Friends: List{},
 		}),
-	})
+	}, sk)
 	vs, err := root.Values()
 	if err != nil {
 		t.Error(err)
@@ -175,12 +177,12 @@ func TestValue_Dereference(t *testing.T) {
 
 func TestValue_Bool(t *testing.T) {
 	type Bool bool
-	cnt, root := getCntRoot()
+	cnt, root, sk := getCntRoot()
 	type X struct {
 		Bools [2]Bool
 	}
 	cnt.Register("X", X{})
-	root.Inject(X{Bools: [2]Bool{true, false}})
+	root.Inject(X{Bools: [2]Bool{true, false}}, sk)
 	vs, err := root.Values()
 	if err != nil {
 		t.Error(err)
@@ -227,12 +229,12 @@ func TestValue_Bool(t *testing.T) {
 
 func TestValue_Int(t *testing.T) {
 	t.Run("another", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		type X struct {
 			String String
 		}
 		cnt.Register("X", X{})
-		root.Inject(X{String("hello")})
+		root.Inject(X{String("hello")}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -252,7 +254,7 @@ func TestValue_Int(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		type X struct {
 			Int8  Int8
 			Int16 Int16
@@ -260,7 +262,7 @@ func TestValue_Int(t *testing.T) {
 			Int64 Int64
 		}
 		cnt.Register("X", X{})
-		root.Inject(X{0, 1, 2, 3})
+		root.Inject(X{0, 1, 2, 3}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -307,9 +309,9 @@ func TestValue_Uint(t *testing.T) {
 		type X struct {
 			String String
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{String("hello")})
+		root.Inject(X{String("hello")}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -335,9 +337,9 @@ func TestValue_Uint(t *testing.T) {
 			Uint32 Uint32
 			Uint64 Uint64
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{0, 1, 2, 3})
+		root.Inject(X{0, 1, 2, 3}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -383,9 +385,9 @@ func TestValue_String(t *testing.T) {
 		type X struct {
 			Int16 Int16
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{0})
+		root.Inject(X{0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -408,10 +410,10 @@ func TestValue_String(t *testing.T) {
 		type X struct {
 			String String
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
 		hello := "hello"
-		root.Inject(X{String(hello)})
+		root.Inject(X{String(hello)}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -445,9 +447,9 @@ func TestValue_Bytes(t *testing.T) {
 		type X struct {
 			Int16 Int16
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{0})
+		root.Inject(X{0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -471,10 +473,10 @@ func TestValue_Bytes(t *testing.T) {
 			String string
 			Bytes  []byte
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
 		hello, cya := "hello", "cya"
-		root.Inject(X{hello, []byte(cya)})
+		root.Inject(X{hello, []byte(cya)}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -518,9 +520,9 @@ func TestValue_Float(t *testing.T) {
 		type X struct {
 			Int16 Int16
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{0})
+		root.Inject(X{0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -544,9 +546,9 @@ func TestValue_Float(t *testing.T) {
 			Float32 float32
 			Float64 float64
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{5.5, 7.7})
+		root.Inject(X{5.5, 7.7}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -590,9 +592,9 @@ func TestValue_Fields(t *testing.T) {
 		type X struct {
 			Int16 int16
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("X", X{})
-		root.Inject(X{0})
+		root.Inject(X{0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -609,7 +611,7 @@ func TestValue_Fields(t *testing.T) {
 		}
 	})
 	t.Run("all", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
 		cnt.Register("Group", Group{})
 		cnt.Register("List", List{})
@@ -621,7 +623,7 @@ func TestValue_Fields(t *testing.T) {
 			Man{},
 		}
 		for _, s := range strucures {
-			root.Inject(s)
+			root.Inject(s, sk)
 		}
 		vs, err := root.Values()
 		if err != nil {
@@ -693,11 +695,11 @@ func TestValue_Fields(t *testing.T) {
 
 func TestValue_FieldByName(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
 		name := "Alice"
 		age := Age(21)
-		root.Inject(User{name, age, 0})
+		root.Inject(User{name, age, 0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -739,7 +741,7 @@ func TestValue_FieldByName(t *testing.T) {
 		}
 	})
 	t.Run("references", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
 		cnt.Register("Group", Group{})
 		cnt.Register("List", List{})
@@ -756,7 +758,7 @@ func TestValue_FieldByName(t *testing.T) {
 			Curator: cnt.Dynamic(Man{
 				Name: "Tony Hawk",
 			}),
-		})
+		}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -809,11 +811,11 @@ func TestValue_FieldByName(t *testing.T) {
 
 func TestValue_RangeFields(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		name := "Alice"
 		age := Age(21)
 		cnt.Register("User", User{})
-		root.Inject(User{name, age, 0})
+		root.Inject(User{name, age, 0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -859,7 +861,7 @@ func TestValue_RangeFields(t *testing.T) {
 		}
 	})
 	t.Run("references", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
 		cnt.Register("Group", Group{})
 		cnt.Register("List", List{})
@@ -876,7 +878,7 @@ func TestValue_RangeFields(t *testing.T) {
 			Curator: cnt.Dynamic(Man{
 				Name: "Tony Hawk",
 			}),
-		})
+		}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -920,9 +922,9 @@ func TestValue_RangeFields(t *testing.T) {
 		})
 	})
 	t.Run("pass error", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
-		root.Inject(User{"Alice", 21, 0})
+		root.Inject(User{"Alice", 21, 0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -942,9 +944,9 @@ func TestValue_RangeFields(t *testing.T) {
 		}
 	})
 	t.Run("stop", func(t *testing.T) {
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
-		root.Inject(User{"Alice", 21, 0})
+		root.Inject(User{"Alice", 21, 0}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -980,10 +982,10 @@ func TestValue_Len(t *testing.T) {
 			Float32 bool
 			Float64 bool
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
 		cnt.Register("X", X{})
-		root.Inject(X{})
+		root.Inject(X{}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -1020,7 +1022,7 @@ func TestValue_Len(t *testing.T) {
 			Y      Y
 			String String
 		}
-		cnt, root := getCntRoot()
+		cnt, root, sk := getCntRoot()
 		cnt.Register("User", User{})
 		cnt.Register("X", X{})
 		root.Inject(X{
@@ -1029,7 +1031,7 @@ func TestValue_Len(t *testing.T) {
 			Ary{},
 			Y{},
 			String("hi"),
-		})
+		}, sk)
 		vs, err := root.Values()
 		if err != nil {
 			t.Error(err)
@@ -1067,7 +1069,7 @@ func TestValue_Index(t *testing.T) {
 		Ary   Ary
 		Y     Y
 	}
-	cnt, root := getCntRoot()
+	cnt, root, sk := getCntRoot()
 	cnt.Register("User", User{})
 	cnt.Register("X", X{})
 	root.Inject(X{
@@ -1080,7 +1082,7 @@ func TestValue_Index(t *testing.T) {
 		Bools{Bool(false), Bool(true)},
 		Ary{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
 		Y{3, 2, 1},
-	})
+	}, sk)
 	values := []interface{}{
 		Users{
 			User{"Bob", 32, 0},
