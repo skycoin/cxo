@@ -91,7 +91,7 @@ func main() {
 			Post{},
 		)
 		// create empty root
-		c.NewRoot(pk)
+		c.NewRoot(pk, sk)
 		return
 	})
 
@@ -110,66 +110,53 @@ func waitInterrupt() {
 
 func generate(c *node.Client, pk cipher.PubKey, sk cipher.SecKey) {
 	c.Execute(func(c *node.Container) (_ error) {
-		for i := 0; true; i++ {
-			<-time.After(time.Second)
-			root := c.Root(pk)
-			root.Inject(Board{
-				Header: fmt.Sprintf("Board #%d", i),
-				Threads: c.SaveArray(
-					Thread{
-						Header: fmt.Sprintf("Thread #%d.1", i),
-						Posts: c.SaveArray(
-							Post{
-								Header: fmt.Sprintf("Post #%d.1.1", i),
-								Body:   fmt.Sprintf("Body #%d.1.1", i),
-							},
-							Post{
-								Header: fmt.Sprintf("Post #%d.1.2", i),
-								Body:   fmt.Sprintf("Body #%d.1.2", i),
-							},
-							Post{
-								Header: fmt.Sprintf("Post #%d.1.3", i),
-								Body:   fmt.Sprintf("Body #%d.1.3", i),
-							},
-						),
-					},
-					Thread{
-						Header: fmt.Sprintf("Thread #%d.2", i),
-						Posts: c.SaveArray(
-							Post{
-								Header: fmt.Sprintf("Post #%d.2.1", i),
-								Body:   fmt.Sprintf("Body #%d.2.1", i),
-							},
-							Post{
-								Header: fmt.Sprintf("Post #%d.2.2", i),
-								Body:   fmt.Sprintf("Body #%d.2.2", i),
-							},
-							Post{
-								Header: fmt.Sprintf("Post #%d.2.3", i),
-								Body:   fmt.Sprintf("Body #%d.2.3", i),
-							},
-						),
-					},
-					Thread{
-						Header: fmt.Sprintf("Thread #%d.3", i),
-						Posts: c.SaveArray(
-							Post{
-								Header: fmt.Sprintf("Post #%d.3.1", i),
-								Body:   fmt.Sprintf("Body #%d.3.1", i),
-							},
-							Post{
-								Header: fmt.Sprintf("Post #%d.3.2", i),
-								Body:   fmt.Sprintf("Body #%d.3.2", i),
-							},
-							Post{
-								Header: fmt.Sprintf("Post #%d.3.3", i),
-								Body:   fmt.Sprintf("Body #%d.3.3", i),
-							},
-						),
-					},
-				),
-			}, sk)
+		var i int = 0
+		select {
+		case <-time.Tick(5 * time.Second):
+			generateBoards(c, pk, sk, i) // add new board every 5 seconds
+			i++
+		case <-time.Tick(time.Minute):
+			c.NewRoot(pk, sk) // reset root every minute
+			// don't reset the i variable keeping incrementing it
 		}
 		return
 	})
+}
+
+func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
+	i int) {
+
+	root := c.Root(pk)
+	root.Inject(Board{
+		Header:  fmt.Sprintf("Board #%d", i),
+		Threads: generateThreads(c, i),
+	}, sk)
+}
+
+func generateThreads(c *node.Container, i int) (threads skyobject.References) {
+	for t := 1; t < 4; t++ {
+		ref := c.Save(Thread{
+			Header: fmt.Sprintf("Thread #%d.%t", i, t),
+			Posts:  generatePosts(c, i, t),
+		})
+		threads = append(threads, ref)
+	}
+	return
+}
+
+func generatePosts(c *node.Container, i, t int) skyobject.References {
+	return c.SaveArray(
+		Post{
+			Header: fmt.Sprintf("Post #%d.%d.1", i, t),
+			Body:   fmt.Sprintf("Body #%d.%d.1", i, t),
+		},
+		Post{
+			Header: fmt.Sprintf("Post #%d.%d.2", i, t),
+			Body:   fmt.Sprintf("Body #%d.%d.2", i, t),
+		},
+		Post{
+			Header: fmt.Sprintf("Post #%d.%d.3", i, t),
+			Body:   fmt.Sprintf("Body #%d.%d.3", i, t),
+		},
+	)
 }
