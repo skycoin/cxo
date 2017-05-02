@@ -164,7 +164,7 @@ func (r *Registry) SchemaByReference(sr Reference) (s *Schema, err error) {
 	var sd []byte
 	var ok bool
 	if sd, ok = r.db.Get(cipher.SHA256(sr)); !ok {
-		err = &MissingSchema{Reference(sr)}
+		err = &MissingSchema{sr}
 		return
 	}
 	s = r.newSchema()
