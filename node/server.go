@@ -274,29 +274,25 @@ func (s *Server) root(pk cipher.PubKey) *skyobject.Root {
 	return s.so.Root(pk)
 }
 
-func (s *Server) want(pk cipher.PubKey) (want skyobject.Set) {
+func (s *Server) wantFunc(pk cipher.PubKey, wf skyobject.WantFunc) (err error) {
 	s.somx.RLock()
 	defer s.somx.RUnlock()
 	root := s.so.Root(pk)
 	if root == nil {
 		return
 	}
-	var err error
-	want, err = root.Want()
-	if err != nil {
-		// TODO: log error and reset the root
-	}
+	err = root.WantFunc(wf)
 	return
 }
 
-func (s *Server) got(pk cipher.PubKey) (got skyobject.Set, err error) {
+func (s *Server) gotFunc(pk cipher.PubKey, gf skyobject.GotFunc) (err error) {
 	s.somx.RLock()
 	defer s.somx.RUnlock()
 	root := s.so.Root(pk)
 	if root == nil {
 		return
 	}
-	got, err = root.Got()
+	err = root.GotFunc(gf)
 	return
 }
 
@@ -308,52 +304,71 @@ func (s *Server) addRoot(rm *RootMsg) (ok bool, err error) {
 	return
 }
 
+func shortHex(a string) string {
+	return string([]byte(a)[:7])
+}
+
 func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	s.Debugf("handle message %T from %s", msg, c.Address())
 
 	switch x := msg.(type) {
 	case *AddFeedMsg:
+		ca := c.Address() // address of the connection (for debug logs)
 		s.fmx.Lock()
 		defer s.fmx.Unlock()
 		if f, ok := s.feeds[x.Feed]; ok {
 			// add to feeds
 			for _, cx := range f.conns {
 				if cx == c {
+					s.Debug("already have the connection ", ca)
 					return // already have the connection
 				}
 			}
+			s.Debug("add connection to requested feed list ", ca)
 			f.conns = append(f.conns, c)
 			// send root to the connectiosn if we have the root
 			root := s.root(x.Feed)
 			if root == nil {
+				s.Debug("don't have a root of the feed, ", ca)
 				return
 			}
+			s.Debug("send root of the feed, ", ca)
 			s.sendMessage(c, &RootMsg{x.Feed, root.Sig, root.Encode()})
+			return
 		}
+		s.Debug("don't share the feed connection request for, ", ca)
 	case *DelFeedMsg:
+		ca := c.Address() // for debug logs
 		s.fmx.Lock()
 		defer s.fmx.Unlock()
 		if f, ok := s.feeds[x.Feed]; ok {
 			for i, cx := range f.conns {
 				if cx == c {
+					s.Debug("delete connection from the feed, ", ca)
 					f.conns = append(f.conns[:i], f.conns[i+1:]...) // delete
 					return
 				}
 			}
 		}
+		s.Debug("don't share the feed to delete from ", ca)
 	case *RootMsg:
+		ca := c.Address()
 		s.fmx.RLock()
 		defer s.fmx.RUnlock()
 		if f, ok := s.feeds[x.Feed]; ok {
 			ok, err := s.addRoot(x)
 			if err != nil {
-				s.Print("[ERR] %s error decoding root: %v", c.Address(), err)
+				s.Print("[ERR] %s error decoding root: %v", ca, err)
 				c.Close() // fatal
 				return
 			}
 			if !ok {
+				s.Debug("older root received, ", ca)
 				return // older root object received
 			}
+			s.Debugf("root of [%s] was updated by %s",
+				shortHex(x.Feed.Hex()),
+				ca)
 			// send the new root to subscribers
 			for _, cx := range f.conns {
 				if cx == c {
@@ -361,20 +376,48 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 				}
 				s.sendMessage(cx, x)
 			}
+			return
 		}
+		s.Debug("don't share the feed root received for, ", ca)
 	case *DataMsg:
+		ca := c.Address() // for debug logs
 		s.fmx.RLock()
 		defer s.fmx.RUnlock()
-		if _, ok := s.feeds[x.Feed]; ok {
-			want := s.want(x.Feed)
-			if len(want) == 0 {
-				return // don't want anything
-			}
+		if f, ok := s.feeds[x.Feed]; ok {
 			hash := skyobject.Reference(cipher.SumSHA256(x.Data))
-			if _, ok := want[hash]; ok {
-				s.db.Set(cipher.SHA256(hash), x.Data)
+			sent := false
+			err := s.wantFunc(x.Feed, func(k skyobject.Reference) error {
+				if k == hash {
+					s.Debugf("add data [%s] %s",
+						shortHex(hash.String()),
+						ca)
+					s.db.Set(cipher.SHA256(hash), x.Data)
+					sent = true
+					return skyobject.ErrStopRange
+				}
+				return nil
+			})
+			if err != nil {
+				s.Print("[ERR] CRITICAL ERROR: ", err)
 			}
+			if !sent {
+				s.Debugf("don't want received data [%s] %s",
+					shortHex(hash.String()),
+					ca)
+			} else {
+				// send the new data to subscribers
+				for _, cx := range f.conns {
+					if cx == c {
+						continue // skip connection from which the data received
+					}
+					s.sendMessage(cx, x)
+				}
+			}
+			return
 		}
+		s.Debug("don't share the feed data received for, ", ca)
+	default:
+		s.Printf("[CRIT] unlandled message type %T", msg)
 	}
 }
 
@@ -429,8 +472,15 @@ func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
 
 // Want returns lits of objects related to given
 // feed that the server hasn't but knows about
-func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
-	set := s.want(feed)
+func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
+	set := make(map[skyobject.Reference]struct{})
+	err = s.wantFunc(feed, func(k skyobject.Reference) error {
+		set[k] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return
+	}
 	if len(set) == 0 {
 		return
 	}
@@ -444,8 +494,11 @@ func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
 // Got returns lits of objects related to given
 // feed that the server has got
 func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
-	var set skyobject.Set
-	set, err = s.got(feed)
+	set := make(map[skyobject.Reference]struct{})
+	err = s.gotFunc(feed, func(k skyobject.Reference) error {
+		set[k] = struct{}{}
+		return nil
+	})
 	if err != nil {
 		return
 	}

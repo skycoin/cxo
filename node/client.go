@@ -194,17 +194,17 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 				if root == nil {
 					return // doesn't have a root object of the feed
 				}
-				want, err := root.Want()
+				err := root.WantFunc(func(ref skyobject.Reference) (_ error) {
+					if ref == skyobject.Reference(hash) {
+						c.db.Set(hash, x.Data)
+						return skyobject.ErrStopRange // break the itteration
+					}
+					return
+				})
 				if err != nil {
 					c.Print("[ERR] malformed root: ", err)
 					// TODO: reset roo object
-					return
 				}
-				if _, ok := want[skyobject.Reference(hash)]; ok {
-					c.db.Set(hash, x.Data)
-					return
-				}
-				return // don't want the data
 			}
 		}
 	}
@@ -328,7 +328,7 @@ type Container struct {
 }
 
 func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (root *Root) {
-	root = &Root{c.Container.NewRoot(pk, sk), c.client, c.cn}
+	root = &Root{c.Container.NewRoot(pk, sk), c.client, c.cn, c}
 	// send the root
 	c.client.sendMessage(c.cn, &RootMsg{
 		root.Pub,
@@ -341,7 +341,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (root *Root) {
 
 func (c *Container) Root(pk cipher.PubKey) (r *Root) {
 	if root := c.Container.Root(pk); root != nil {
-		r = &Root{root, c.client, c.cn}
+		r = &Root{root, c.client, c.cn, c}
 	}
 	return
 }
@@ -350,10 +350,11 @@ type Root struct {
 	*skyobject.Root
 	client *Client
 	cn     *gnet.Conn
+	cnt    *Container // back reference
 }
 
 func (r *Root) Inject(i interface{},
-	sk cipher.SecKey) (inj skyobject.Reference) {
+	sk cipher.SecKey) (inj skyobject.Dynamic) {
 
 	inj = r.Root.Inject(i, sk)
 	r.client.sendMessage(r.cn, &RootMsg{
@@ -361,10 +362,24 @@ func (r *Root) Inject(i interface{},
 		r.Sig,
 		r.Encode(),
 	})
-	got, _ := r.GotOf(inj)
-	for k := range got {
+	// drop error, don't sent twice and more times the same object
+	sent := make(map[skyobject.Reference]struct{})
+	// TODO:
+	// r.cnt.GotOfFunc(inj, func(k skyobject.Reference) (_ error) {
+	err := r.GotFunc(func(k skyobject.Reference) (_ error) {
+		if _, ok := sent[k]; ok {
+			return
+		}
 		data, _ := r.client.db.Get(cipher.SHA256(k))
-		r.client.sendMessage(r.cn, &DataMsg{r.Pub, data})
+		r.client.Debug("[][][][] send data ", shortHex(k.String()))
+		if !r.client.sendMessage(r.cn, &DataMsg{r.Pub, data}) {
+			return skyobject.ErrStopRange // sending error
+		}
+		sent[k] = struct{}{}
+		return
+	})
+	if err != nil {
+		r.client.Print("[CRIT] GotFunc error:", err)
 	}
 	return
 }

@@ -113,18 +113,28 @@ func waitInterrupt() {
 }
 
 func generate(c *node.Client, pk cipher.PubKey, sk cipher.SecKey) {
-	c.Execute(func(c *node.Container) (_ error) {
-		var i int = 0
+	var i int = 0
+	fst, omt := time.Tick(5*time.Second), time.Tick(time.Minute)
+	for {
 		select {
-		case <-time.Tick(5 * time.Second):
-			generateBoards(c, pk, sk, i) // add new board every 5 seconds
+		case <-fst:
+			c.Execute(func(c *node.Container) (_ error) {
+				generateBoards(c, pk, sk, i) // add new board every 5 seconds
+				return
+			})
 			i++
-		case <-time.Tick(time.Minute):
-			c.NewRoot(pk, sk) // reset root every minute
+		case <-omt:
+			c.Execute(func(c *node.Container) (_ error) {
+				c.NewRoot(pk, sk) // reset root every minute
+				return
+			})
 			// don't reset the i variable keeping incrementing it
 		}
-		return
-	})
+	}
+}
+
+func shortHex(a string) string {
+	return string([]byte(a)[:7])
 }
 
 func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
@@ -140,7 +150,7 @@ func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
 func generateThreads(c *node.Container, i int) (threads skyobject.References) {
 	for t := 1; t < 4; t++ {
 		ref := c.Save(Thread{
-			Header: fmt.Sprintf("Thread #%d.%t", i, t),
+			Header: fmt.Sprintf("Thread #%d.%d", i, t),
 			Posts:  generatePosts(c, i, t),
 		})
 		threads = append(threads, ref)
@@ -163,4 +173,8 @@ func generatePosts(c *node.Container, i, t int) skyobject.References {
 			Body:   fmt.Sprintf("Body #%d.%d.3", i, t),
 		},
 	)
+}
+
+func hashTree(r *node.Root) {
+	//
 }

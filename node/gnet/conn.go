@@ -129,8 +129,8 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 
 	cn.dialo = new(sync.Once)
 	cn.dialtr = make(chan struct{})
-	cn.dialrl = make(chan struct{}, 1)
-	cn.dialwl = make(chan struct{}, 1)
+	cn.dialrl = make(chan struct{})
+	cn.dialwl = make(chan struct{})
 
 	cn.closed = make(chan struct{})
 
@@ -423,7 +423,7 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 		default:
 		}
 		c.p.Printf("[ERR] %s writing error: %v",
-			c.conn.RemoteAddr().String(),
+			c.address,
 			err)
 		redial = true
 		return
@@ -438,7 +438,7 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 		default:
 		}
 		c.p.Printf("[ERR] %s writing error: %v",
-			c.conn.RemoteAddr().String(),
+			c.address,
 			err)
 		redial = true
 	}
@@ -465,7 +465,7 @@ func (c *Conn) write() {
 DialLoop:
 	for {
 		select {
-		case <-c.dialrl: // waiting for dialing
+		case <-c.dialwl: // waiting for dialing
 			c.cmx.Lock() // {
 			w, bw = c.w, c.bw
 			c.cmx.Unlock() // }
@@ -497,6 +497,7 @@ DialLoop:
 			for {
 				select {
 				case body = <-c.writeq:
+					c.p.Debug("msg was dequeued from SendQueue ", c.address)
 					switch terminate, redial = c.writeMsg(w, body); {
 					case terminate:
 						return

@@ -54,6 +54,14 @@ func (m *MissingObject) Error() string {
 	return fmt.Sprintf("missing object %q: %s", m.schemaName, m.key.String())
 }
 
+func dropMissingError(err error) error {
+	switch err.(type) {
+	case *MissingObject, *MissingSchema:
+		return nil
+	}
+	return err
+}
+
 // ========================================================================== //
 //                                                                            //
 //                                data value                                  //
