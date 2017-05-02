@@ -104,9 +104,9 @@ func TestRoot_WantFunc(t *testing.T) {
 				Friends: List{},
 			}),
 		}, sk)
-		var i int
+		var set map[Reference]struct{} = make(map[Reference]struct{})
 		wantFunc := func(hash Reference) (_ error) {
-			i++
+			set[hash] = struct{}{}
 			return
 		}
 		err := root.WantFunc(wantFunc)
@@ -114,26 +114,28 @@ func TestRoot_WantFunc(t *testing.T) {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if i != 4 {
-			t.Error("unexpects count of wanted objects: ", i)
+		if len(set) != 4 {
+			t.Error("unexpects count of wanted objects: ", len(set))
 		}
 		c.Save(leader)
+		set = make(map[Reference]struct{}) // reset
 		err = root.WantFunc(wantFunc)
 		if err != nil {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if i != 3 {
-			t.Error("unexpects count of wanted objects: ", i)
+		if len(set) != 3 {
+			t.Error("unexpects count of wanted objects: ", len(set))
 		}
 		c.SaveArray(members...)
+		set = make(map[Reference]struct{}) // reset
 		err = root.WantFunc(wantFunc)
 		if err != nil {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if i != 0 {
-			t.Error("unexpects count of wanted objects: ", i)
+		if len(set) != 0 {
+			t.Error("unexpects count of wanted objects: ", len(set))
 		}
 	})
 }
