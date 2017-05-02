@@ -364,7 +364,9 @@ func (r *Root) Inject(i interface{},
 	})
 	// drop error, don't sent twice and more times the same object
 	sent := make(map[skyobject.Reference]struct{})
-	r.cnt.GotOfFunc(inj, func(k skyobject.Reference) (_ error) {
+	// TODO:
+	// r.cnt.GotOfFunc(inj, func(k skyobject.Reference) (_ error) {
+	err := r.GotFunc(func(k skyobject.Reference) (_ error) {
 		if _, ok := sent[k]; ok {
 			return
 		}
@@ -376,5 +378,8 @@ func (r *Root) Inject(i interface{},
 		sent[k] = struct{}{}
 		return
 	})
+	if err != nil {
+		r.client.Print("[CRIT] GotFunc error:", err)
+	}
 	return
 }
