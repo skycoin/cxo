@@ -348,5 +348,5 @@ func TestRoot_WantFunc(t *testing.T) {
 }
 
 func TestRoot_Want_and_Got(t *testing.T) {
-	//
+	// to do, or not to do
 }
