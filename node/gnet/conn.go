@@ -129,8 +129,8 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 
 	cn.dialo = new(sync.Once)
 	cn.dialtr = make(chan struct{})
-	cn.dialrl = make(chan struct{}, 1)
-	cn.dialwl = make(chan struct{}, 1)
+	cn.dialrl = make(chan struct{})
+	cn.dialwl = make(chan struct{})
 
 	cn.closed = make(chan struct{})
 
@@ -465,7 +465,7 @@ func (c *Conn) write() {
 DialLoop:
 	for {
 		select {
-		case <-c.dialrl: // waiting for dialing
+		case <-c.dialwl: // waiting for dialing
 			c.cmx.Lock() // {
 			w, bw = c.w, c.bw
 			c.cmx.Unlock() // }
