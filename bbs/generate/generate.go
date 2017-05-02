@@ -127,6 +127,10 @@ func generate(c *node.Client, pk cipher.PubKey, sk cipher.SecKey) {
 	})
 }
 
+func shortHex(a string) string {
+	return string([]byte(a)[:7])
+}
+
 func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
 	i int) {
 
@@ -135,6 +139,15 @@ func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
 		Header:  fmt.Sprintf("Board #%d", i),
 		Threads: generateThreads(c, i),
 	}, sk)
+
+	got, err := root.Got()
+	if err != nil {
+		log.Print("[ERR] GotOf error: ", err)
+	} else {
+		for k := range got {
+			log.Print(" - got: ", shortHex(k.String()))
+		}
+	}
 }
 
 func generateThreads(c *node.Container, i int) (threads skyobject.References) {
@@ -163,4 +176,8 @@ func generatePosts(c *node.Container, i, t int) skyobject.References {
 			Body:   fmt.Sprintf("Body #%d.%d.3", i, t),
 		},
 	)
+}
+
+func hashTree(r *node.Root) {
+	//
 }

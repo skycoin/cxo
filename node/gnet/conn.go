@@ -423,7 +423,7 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 		default:
 		}
 		c.p.Printf("[ERR] %s writing error: %v",
-			c.conn.RemoteAddr().String(),
+			c.address,
 			err)
 		redial = true
 		return
@@ -438,7 +438,7 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 		default:
 		}
 		c.p.Printf("[ERR] %s writing error: %v",
-			c.conn.RemoteAddr().String(),
+			c.address,
 			err)
 		redial = true
 	}
@@ -497,6 +497,7 @@ DialLoop:
 			for {
 				select {
 				case body = <-c.writeq:
+					c.p.Debug("msg was dequeued from SendQueue ", c.address)
 					switch terminate, redial = c.writeMsg(w, body); {
 					case terminate:
 						return

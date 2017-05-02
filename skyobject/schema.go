@@ -343,7 +343,7 @@ func (s *Schema) isNamed() bool {
 	return len(s.name) > 0
 }
 
-// is registered ot should be registered
+// is registered or should be registered
 func (s *Schema) isRegistered() bool {
 	return s.Kind() == reflect.Struct && s.isNamed()
 }

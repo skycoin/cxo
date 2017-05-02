@@ -308,52 +308,71 @@ func (s *Server) addRoot(rm *RootMsg) (ok bool, err error) {
 	return
 }
 
+func shortHex(a string) string {
+	return string([]byte(a)[:7])
+}
+
 func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	s.Debugf("handle message %T from %s", msg, c.Address())
 
 	switch x := msg.(type) {
 	case *AddFeedMsg:
+		ca := c.Address() // address of the connection (for debug logs)
 		s.fmx.Lock()
 		defer s.fmx.Unlock()
 		if f, ok := s.feeds[x.Feed]; ok {
 			// add to feeds
 			for _, cx := range f.conns {
 				if cx == c {
+					s.Debug("already have the connection ", ca)
 					return // already have the connection
 				}
 			}
+			s.Debug("add connection to requested feed list ", ca)
 			f.conns = append(f.conns, c)
 			// send root to the connectiosn if we have the root
 			root := s.root(x.Feed)
 			if root == nil {
+				s.Debug("don't have a root of the feed, ", ca)
 				return
 			}
+			s.Debug("send root of the feed, ", ca)
 			s.sendMessage(c, &RootMsg{x.Feed, root.Sig, root.Encode()})
+			return
 		}
+		s.Debug("don't share the feed connection request for, ", ca)
 	case *DelFeedMsg:
+		ca := c.Address() // for debug logs
 		s.fmx.Lock()
 		defer s.fmx.Unlock()
 		if f, ok := s.feeds[x.Feed]; ok {
 			for i, cx := range f.conns {
 				if cx == c {
+					s.Debug("delete connection from the feed, ", ca)
 					f.conns = append(f.conns[:i], f.conns[i+1:]...) // delete
 					return
 				}
 			}
 		}
+		s.Debug("don't share the feed to delete from ", ca)
 	case *RootMsg:
+		ca := c.Address()
 		s.fmx.RLock()
 		defer s.fmx.RUnlock()
 		if f, ok := s.feeds[x.Feed]; ok {
 			ok, err := s.addRoot(x)
 			if err != nil {
-				s.Print("[ERR] %s error decoding root: %v", c.Address(), err)
+				s.Print("[ERR] %s error decoding root: %v", ca, err)
 				c.Close() // fatal
 				return
 			}
 			if !ok {
+				s.Debug("older root received, ", ca)
 				return // older root object received
 			}
+			s.Debugf("root of [%s] was updated by %s",
+				shortHex(x.Feed.Hex()),
+				ca)
 			// send the new root to subscribers
 			for _, cx := range f.conns {
 				if cx == c {
@@ -361,20 +380,37 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 				}
 				s.sendMessage(cx, x)
 			}
+			return
 		}
+		s.Debug("don't share the feed root received for, ", ca)
 	case *DataMsg:
+		ca := c.Address() // for debug logs
 		s.fmx.RLock()
 		defer s.fmx.RUnlock()
 		if _, ok := s.feeds[x.Feed]; ok {
 			want := s.want(x.Feed)
 			if len(want) == 0 {
+				s.Debug("don't want data received, ", ca)
 				return // don't want anything
 			}
 			hash := skyobject.Reference(cipher.SumSHA256(x.Data))
 			if _, ok := want[hash]; ok {
+				s.Debugf("add data [%s] (%s)",
+					shortHex(hash.String()),
+					ca)
 				s.db.Set(cipher.SHA256(hash), x.Data)
+			} else {
+				s.Debug("don't want data received, ", ca)
+				s.Debug("the data ", shortHex(hash.String()))
+				for k := range want {
+					s.Debug(" - want ", shortHex(k.String()))
+				}
 			}
+			return
 		}
+		s.Debug("don't share the feed data received for, ", ca)
+	default:
+		s.Printf("[CRIT] unlandled message type %T", msg)
 	}
 }
 

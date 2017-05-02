@@ -45,11 +45,35 @@ func TestContainer_NewRoot(t *testing.T) {
 	if root.Pub != pk {
 		t.Error("wrong pub key")
 	}
+	hash := cipher.SumSHA256(root.Encode())
+	err := cipher.VerifySignature(root.Pub, root.Sig, hash)
+	if err != nil {
+		t.Error("signaure error:", err)
+	}
+}
+
+func TestContainer_Roots(t *testing.T) {
+	c := getCont()
+	if list := c.Roots(); len(list) != 0 {
+		t.Error("wron root objects length: want 0, got", len(list))
+	}
+	pk, sk := cipher.GenerateKeyPair()
+	c.NewRoot(pk, sk)
+	if list := c.Roots(); len(list) != 1 {
+		t.Error("wron root objects length: want 1, got", len(list))
+	} else if list[0] != pk {
+		t.Errorf("unexpected root in list: want %q, got %q",
+			shortHex(pk.Hex()),
+			shortHex(list[0].Hex()))
+	}
 }
 
 func TestContainer_Root(t *testing.T) {
 	c := getCont()
 	pub, sec := cipher.GenerateKeyPair()
+	if c.Root(pub) != nil {
+		t.Error("unexpected root")
+	}
 	root := c.NewRoot(pub, sec)
 	if c.Root(pub) != root {
 		t.Error("wrong root by pk")
@@ -77,23 +101,23 @@ func TestContainer_AddEncodedRoot(t *testing.T) {
 }
 
 func TestContainer_SchemaByReference(t *testing.T) {
-	//
+	// TODO: low priority
 }
 
 func TestContainer_Save(t *testing.T) {
-	//
+	// TODO: low priority
 }
 
 func TestContainer_SaveArray(t *testing.T) {
-	//
+	// TODO: low priority
 }
 
 func TestContainer_SaveSchema(t *testing.T) {
-	//
+	// TODO: low priority
 }
 
 func TestContainer_Dynamic(t *testing.T) {
-	//
+	// TODO: low priority
 }
 
 func TestContainer_Register(t *testing.T) {

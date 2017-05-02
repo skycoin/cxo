@@ -36,15 +36,7 @@ func findSchemaName(sr *Registry, ref Reference) (name string, ok bool) {
 	return
 }
 
-func TestSet_Add(t *testing.T) {
-	// doesn't need
-}
-
-func TestSet_Err(t *testing.T) {
-	// doesn't need
-}
-
-func TestRoot_Want(t *testing.T) {
+func TestRoot_WantFunc(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		c := NewContainer(data.NewDB())
 		pk, sk := cipher.GenerateKeyPair()
@@ -71,16 +63,17 @@ func TestRoot_Want(t *testing.T) {
 				Friends: List{},
 			}),
 		}, sk)
-		set, err := root.Want()
+		var i int
+		err := root.WantFunc(func(hash Reference) error {
+			i++
+			return nil
+		})
 		if err != nil {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if l := len(set); l != 0 {
-			t.Error("unexpects wanted objects: ", l)
-			for k := range set {
-				t.Error("missing: ", k.String())
-			}
+		if i != 0 {
+			t.Error("unexpects wanted objects: ", i)
 		}
 	})
 	t.Run("no", func(t *testing.T) {
@@ -111,31 +104,36 @@ func TestRoot_Want(t *testing.T) {
 				Friends: List{},
 			}),
 		}, sk)
-		set, err := root.Want()
+		var i int
+		wantFunc := func(hash Reference) (_ error) {
+			i++
+			return
+		}
+		err := root.WantFunc(wantFunc)
 		if err != nil {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if l := len(set); l != 4 {
-			t.Error("unexpects count of wanted objects: ", l)
+		if i != 4 {
+			t.Error("unexpects count of wanted objects: ", i)
 		}
 		c.Save(leader)
-		set, err = root.Want()
+		err = root.WantFunc(wantFunc)
 		if err != nil {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if l := len(set); l != 3 {
-			t.Error("unexpects count of wanted objects: ", l)
+		if i != 3 {
+			t.Error("unexpects count of wanted objects: ", i)
 		}
 		c.SaveArray(members...)
-		set, err = root.Want()
+		err = root.WantFunc(wantFunc)
 		if err != nil {
 			t.Error("unexpected error:", err)
 			return
 		}
-		if l := len(set); l != 0 {
-			t.Error("unexpects count of wanted objects: ", l)
+		if i != 0 {
+			t.Error("unexpects count of wanted objects: ", i)
 		}
 	})
 }

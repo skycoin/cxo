@@ -34,7 +34,7 @@ type RegistryEntity struct {
 type rootEncoding struct {
 	Time int64
 	Seq  uint64
-	Refs []Reference
+	Refs []Dynamic
 	Reg  RegistryEntities // registery
 }
 
@@ -43,8 +43,7 @@ type Root struct {
 	Time int64
 	Seq  uint64
 
-	// All of the references points to Dynamic objects
-	Refs []Reference // all references of the root
+	Refs []Dynamic // all references of the root
 
 	Sig cipher.Sig    `enc:"-"` // signature
 	Pub cipher.PubKey `enc:"-"` // public key
@@ -69,8 +68,8 @@ func (r *Root) Touch() {
 // Add given object to root. The Inject creates Dynamic object from given one
 // and appends the Dynamic to the Root. The Inject signs the root and touch it
 // too
-func (r *Root) Inject(i interface{}, sec cipher.SecKey) (inj Reference) {
-	inj = r.cnt.Save(r.cnt.Dynamic(i))
+func (r *Root) Inject(i interface{}, sec cipher.SecKey) (inj Dynamic) {
+	inj = r.cnt.Dynamic(i)
 	r.Refs = append(r.Refs, inj)
 	r.Touch()
 	r.Sign(sec)
@@ -108,189 +107,219 @@ func (r *Root) Values() (vs []*Value, err error) {
 		return
 	}
 	vs = make([]*Value, 0, len(r.Refs))
-	var (
-		s *Schema
-
-		dd     []byte
-		sd, od []byte
-		ok     bool
-	)
-	for _, rd := range r.Refs {
-		// take a look at the reference
-		if rd.IsBlank() {
-			err = ErrInvalidReference // nil-references are not allowed for root
-			return
-		}
-		// obtain dynamic reference, the reference points to
-		if dd, ok = r.cnt.get(rd); !ok {
-			err = &MissingObject{rd, ""}
-			return
-		}
-		// decode the dynamic reference
-		var dr Dynamic
-		if err = encoder.DeserializeRaw(dd, &dr); err != nil {
-			return
-		}
-		// is the dynamic reference valid
-		if !dr.IsValid() {
-			err = ErrInvalidReference
-			return
-		}
-		// is it blank
-		if dr.IsBlank() {
-			vs = append(vs, nilValue(r.cnt, nil)) // no value, nor schema
-			continue
-		}
-		// obtain schema of the dynamic reference
-		if sd, ok = r.cnt.get(dr.Schema); !ok {
-			err = &MissingSchema{dr.Schema}
-			return
-		}
-		// decode the schema
-		s = r.reg.newSchema()
-		if err = s.Decode(sd); err != nil {
-			return
-		}
-		// obtain object of the dynamic reference
-		if od, ok = r.cnt.get(dr.Object); !ok {
-			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
-			return
-		}
-		// create value
-		vs = append(vs, &Value{r.cnt, s, od})
-	}
-	return
-}
-
-// Got is opposite to Want. It returns all objects the root object has got
-func (r *Root) Got() (set Set, err error) {
-	if len(r.Refs) == 0 {
-		return
-	}
-	set = make(Set)
-	var vs []*Value = make([]*Value, 0, len(r.Refs))
-	var (
-		s *Schema
-
-		dd     []byte
-		sd, od []byte
-		ok     bool
-	)
-	for _, rd := range r.Refs {
-		if rd.IsBlank() {
-			err = ErrInvalidReference
-			return
-		}
-		if dd, ok = r.cnt.get(rd); !ok {
-			err = &MissingObject{rd, ""}
-			return
-		}
-		set.Add(rd) // got
-		var dr Dynamic
-		if err = encoder.DeserializeRaw(dd, &dr); err != nil {
-			return
-		}
-		if !dr.IsValid() {
-			err = ErrInvalidReference
-			return
-		}
-		if dr.IsBlank() { // skip blank
-			continue
-		}
-		if sd, ok = r.cnt.get(dr.Schema); !ok {
-			err = &MissingSchema{dr.Schema}
-			return
-		}
-		set.Add(dr.Schema) // got
-		s = r.reg.newSchema()
-		if err = s.Decode(sd); err != nil {
-			return
-		}
-		if od, ok = r.cnt.get(dr.Object); !ok {
-			err = &MissingObject{key: dr.Object, schemaName: s.Name()}
-			return
-		}
-		set.Add(dr.Object) // got
-		vs = append(vs, &Value{r.cnt, s, od})
-	}
-	for _, val := range vs {
-		if err = gotValue(val, set); err != nil {
-			return
-		}
-	}
-	return
-}
-
-// GotOf returns values of particular object from list
-// of top objects of the Root
-func (r *Root) GotOf(ref Reference) (set Set, err error) {
 	var val *Value
-	if val, err = r.ValueOf(ref); err != nil {
-		return
+	for _, dr := range r.Refs {
+		val, err = r.cnt.ValueOf(dr)
+		if err != nil {
+			vs = nil // GC
+			return
+		}
+		vs = append(vs, val)
 	}
-	set = make(Set)
-	err = gotValue(val, set)
 	return
 }
 
-func gotValue(val *Value, set Set) (err error) {
-	switch val.Kind() {
-	case reflect.Bool, reflect.Int8, reflect.Uint8,
-		reflect.Int16, reflect.Uint16,
-		reflect.Int32, reflect.Uint32, reflect.Float32,
-		reflect.Int64, reflect.Uint64, reflect.Float64,
-		reflect.String:
+// A GotFunc represents function that used in
+// (*Root).GotFunc() and (*Container).GotOfFunc()
+// methods. If the function returns an error
+// then caller of the GotFunc terminates and returns
+// the error. There is special case ErrStopRange
+// that used to break the itteration without
+// returning the error
+type GotFunc func(hash Reference) (err error)
+
+// GotFunc takes in function that will be recursively
+// called for objects of the Root that the Root has got
+func (r *Root) GotFunc(gf GotFunc) (err error) {
+	for _, inj := range r.Refs {
+		if err = r.cnt.GotOfFunc(inj, gf); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// GotOfFunc ranges over given Dynamic object and its childrens
+// recursively calling given GotFunc on every object that
+// underlying database contains. The GotOfFunc never returns Missing*
+// errors
+func (c *Container) GotOfFunc(inj Dynamic, gf GotFunc) (err error) {
+	val, err := c.ValueOf(inj)
+	if err != nil {
+		err = dropMissingError(err)
+		return
+	}
+	if val.Kind() == reflect.Invalid { // nil-value
+		return
+	}
+	if err = gf(inj.Schema); err != nil { // got schema of the inj
+		if err == ErrStopRange {
+			err = nil
+		}
+		return
+	}
+	if err = gf(inj.Object); err != nil { // got object of the inj
+		if err == ErrStopRange {
+			err = nil
+		}
+		return
+	}
+	if err = gotValueFunc(val, gf); err != nil {
+		if err == ErrStopRange {
+			err = nil
+		} else {
+			err = dropMissingError(err)
+		}
+	}
+	return
+}
+
+func gotValueFunc(val *Value, gf GotFunc) (err error) {
+	switch val.Schema().Kind() {
 	case reflect.Slice, reflect.Array:
 		var l int
 		if l, err = val.Len(); err != nil {
 			return
 		}
+		// we have schema of the object, but, anyway, we
+		// need to check: got we the schema
+		var es *Schema // element schema
+		if es, err = val.Schema().Elem(); err != nil {
+			return
+		} else if es.isRegistered() {
+			if sr, ok := val.c.reg.reg[es.Name()]; !ok {
+				err = ErrInvalidSchemaOrData
+				return
+			} else if _, ok := val.c.get(sr); !ok {
+				return // hasn't got (don't need extract objects without schema)
+			} else if err = gf(sr); err != nil { // got
+				return
+			}
+		}
+		//
 		for i := 0; i < l; i++ {
 			var d *Value
 			if d, err = val.Index(i); err != nil {
 				return
 			}
-			gotValue(d, set)
+			if err = gotValueFunc(d, gf); err != nil {
+				return
+			}
 		}
 	case reflect.Struct:
 		err = val.RangeFields(func(fname string, d *Value) error {
-			gotValue(d, set)
-			return nil
+			// we have schema of the object, but, anyway, we
+			// need to check: got we the schema
+			if ss := d.Schema(); ss.isRegistered() {
+				if sr, ok := val.c.reg.reg[ss.Name()]; !ok {
+					return ErrInvalidSchemaOrData
+				} else if _, ok := val.c.get(sr); !ok {
+					// hasn't got (don't need extract objects without schema)
+					return nil
+				} else if gerr := gf(sr); gerr != nil { // got
+					return gerr
+				}
+			}
+			//
+			return gotValueFunc(d, gf)
 		})
-		if err != nil {
-			return
-		}
 	case reflect.Ptr:
 		var v *Value
 		switch val.s.Name() {
 		case DYNAMIC:
 			var dr Dynamic
-			if dr, err = val.dynamic(); err != nil {
+			if dr, err = val.dynamic(); err != nil { // already validated
+				return
+			}
+			if dr.IsBlank() { // nil value
 				return
 			}
 			if _, ok := val.c.get(dr.Schema); ok {
-				set.Add(dr.Schema) // got
+				if err = gf(dr.Schema); err != nil { // got
+					return
+				}
 			} else if _, ok := val.c.get(dr.Object); ok {
 				// if no schema then no need to dereference,
 				// but need to check does object exists
-				set.Add(dr.Object) // got
+				err = gf(dr.Object) // got
 				return
 			} // else (got scema, but don't know about object)
 			if v, err = val.dereferenceDynamic(dr); err != nil {
 				return
 			}
-			set.Add(dr.Object) // got
-			err = gotValue(v, set)
+			if err = gf(dr.Object); err != nil { // got
+				return
+			}
+			err = gotValueFunc(v, gf)
 		case SINGLE:
+			// take a look the schema of the reference
+			var es *Schema
+			if es, err = val.s.Elem(); err != nil {
+				return
+			} else if sr, ok := val.c.reg.reg[es.Name()]; !ok {
+				err = ErrInvalidSchemaOrData
+				return
+			} else if _, ok := val.c.get(sr); !ok {
+				return // hasn't got
+			} else if err = gf(sr); err != nil { // got
+				return
+			}
+			//
 			var ref Reference
 			if ref, err = val.static(); err != nil {
+				return
+			}
+			if ref.IsBlank() { // nil-value
 				return
 			}
 			if v, err = val.dereferenceStatic(ref); err != nil {
 				return
 			}
-			set.Add(ref) // got
-			err = gotValue(v, set)
+			if err = gf(ref); err != nil { // got
+				return
+			}
+			err = gotValueFunc(v, gf)
+		case ARRAY:
+			// schema
+			var es *Schema
+			if es, err = val.Schema().Elem(); err != nil {
+				return
+			}
+			if sr, ok := val.c.reg.reg[es.Name()]; !ok {
+				err = ErrInvalidSchemaOrData
+				return
+			} else if err = gf(sr); err != nil { // got
+				return
+			}
+			// range over the array
+			var (
+				ln    int
+				shift int = 4                // length prefix
+				s     int = len(Reference{}) // size of Reference, bytes
+			)
+			if ln, err = getLength(val.od); err != nil || ln == 0 {
+				return
+			}
+			for i := 0; i < ln; i++ {
+				if shift+s > len(val.od) {
+					err = ErrInvalidSchemaOrData
+					return
+				}
+				var ref Reference
+				err = encoder.DeserializeRaw(val.od[shift:shift+s], &ref)
+				if err != nil {
+					return
+				}
+				shift += s         // shitf forward
+				if ref.IsBlank() { // nil
+					continue
+				}
+				if _, ok := val.c.get(ref); ok {
+					if err = gf(ref); err != nil {
+						return
+					}
+				}
+			}
 		default:
 			err = ErrInvalidType
 		}

@@ -2,87 +2,13 @@ package skyobject
 
 import (
 	"reflect"
-
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-//
-// TODO: DRY
-//
-
-//
-// set of keys
-//
-
-// A Set represents set of Reference(s)
-type Set map[Reference]struct{}
-
-// Add appends given key to the Set
-func (s Set) Add(k Reference) {
-	s[k] = struct{}{}
-}
-
-func (s *Set) AddMissing(k Reference, c *Container) {
-	if _, ok := c.get(k); !ok {
-		s.Add(k)
-	}
-}
-
-// Err is works with MissingSchema and MissingObject errors.
-// If given error is Missing* error then the Err extract key from the error
-// and append the Key to the Set returning nil. If given error is not Missing*
-// error then it returns the error
-func (s *Set) Err(err error) error {
-	switch x := err.(type) {
-	case *MissingSchema:
-		s.Add(x.Key())
-	case *MissingObject:
-		s.Add(x.Key())
-	default:
-		return err
-	}
-	return nil
-}
-
-// Want returns set of keys of missing objects. The set is empty if root is
-// nil or full. The set can be incomplite.
-func (r *Root) Want() (set Set, err error) {
-	if r == nil {
-		return // don't want anything (has no root object)
-	}
-	set = make(Set)
-	var vs []*Value
-	if vs, err = r.Values(); err != nil {
-		err = set.Err(err)
-		return
-	}
-	for _, val := range vs {
-		if err = set.Err(wantValue(val, set)); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func (r *Root) valueOf(rd Reference) (val *Value, err error) {
-	// take a look at the reference
-	if rd.IsBlank() {
-		err = ErrInvalidReference // nil-references are not allowed for root
-		return
-	}
-	var dd, sd, od []byte
+// ValueOf returns value of given Dynamic object
+func (c *Container) ValueOf(dr Dynamic) (val *Value, err error) {
+	var sd, od []byte
 	var ok bool
 	var s *Schema
-	// obtain dynamic reference, the reference points to
-	if dd, ok = r.cnt.get(rd); !ok {
-		err = &MissingObject{rd, ""}
-		return
-	}
-	// decode the dynamic reference
-	var dr Dynamic
-	if err = encoder.DeserializeRaw(dd, &dr); err != nil {
-		return
-	}
 	// is the dynamic reference valid
 	if !dr.IsValid() {
 		err = ErrInvalidReference
@@ -90,65 +16,81 @@ func (r *Root) valueOf(rd Reference) (val *Value, err error) {
 	}
 	// is it blank
 	if dr.IsBlank() {
-		val = nilValue(r.cnt, nil) // no value, nor schema
+		val = nilValue(c, nil) // no value, nor schema
 		return
 	}
 	// obtain schema of the dynamic reference
-	if sd, ok = r.cnt.get(dr.Schema); !ok {
+	if sd, ok = c.get(dr.Schema); !ok {
 		err = &MissingSchema{dr.Schema}
 		return
 	}
 	// decode the schema
-	s = r.reg.newSchema()
+	s = c.reg.newSchema()
 	if err = s.Decode(sd); err != nil {
 		return
 	}
 	// obtain object of the dynamic reference
-	if od, ok = r.cnt.get(dr.Object); !ok {
+	if od, ok = c.get(dr.Object); !ok {
 		err = &MissingObject{key: dr.Object, schemaName: s.Name()}
 		return
 	}
 	// create value
-	val = &Value{r.cnt, s, od}
+	val = &Value{c, s, od}
 	return
 }
 
-func (r *Root) ValueOf(ref Reference) (val *Value, err error) {
-	if r == nil {
-		return
+// A WantFunc represents function that used in
+// (*Root).WantFunc() and (*Container).WantOfFunc()
+// methods. If the function returns an error
+// then caller terminates and returns
+// the error. There is special case ErrStopRange
+// that used to break the itteration without
+// returning the error
+type WantFunc func(hash Reference) (err error)
+
+func errWantFunc(err error, wf WantFunc) error {
+	switch x := err.(type) {
+	case *MissingSchema:
+		return wf(x.Key())
+	case *MissingObject:
+		return wf(x.Key())
 	}
-	if len(r.Refs) == 0 {
-		return
-	}
-	for _, rd := range r.Refs {
-		if rd != ref {
-			continue
+	return err
+}
+
+// WantFunc recursively calls given WantFunc on every
+// object that the Root object hasn't got, but knows about
+func (r *Root) WantFunc(wf WantFunc) (err error) {
+	for _, inj := range r.Refs {
+		if err = r.cnt.WantOfFunc(inj, wf); err != nil {
+			return
 		}
-		return r.valueOf(rd) // val, err
 	}
-	return // nil, nil
-}
-
-// WantOf returns all wanted objects of particular object
-// from list of root objects of the feed
-func (r *Root) WantOf(ref Reference) (set Set, err error) {
-	var val *Value
-	if val, err = r.ValueOf(ref); err != nil {
-		err = set.Err(err)
-		return
-	}
-	set = make(Set)
-	err = set.Err(wantValue(val, set))
 	return
 }
 
-func wantValue(val *Value, set Set) (err error) {
+// WantOfFunc ranges over given Dynamic object and its childrens
+// recursively calling given WantFunc on every object that
+// the container hasn't got, but knows about
+func (c *Container) WantOfFunc(inj Dynamic, wf WantFunc) (err error) {
+	val, err := c.ValueOf(inj)
+	if err != nil {
+		if err = errWantFunc(err, wf); err == ErrStopRange {
+			err = nil
+		}
+		return
+	}
+	if val.Kind() == reflect.Invalid { // nil-value
+		return
+	}
+	if err = errWantFunc(wantValueFunc(val, wf), wf); err == ErrStopRange {
+		err = nil
+	}
+	return
+}
+
+func wantValueFunc(val *Value, wf WantFunc) (err error) {
 	switch val.Kind() {
-	case reflect.Bool, reflect.Int8, reflect.Uint8,
-		reflect.Int16, reflect.Uint16,
-		reflect.Int32, reflect.Uint32, reflect.Float32,
-		reflect.Int64, reflect.Uint64, reflect.Float64,
-		reflect.String:
 	case reflect.Slice, reflect.Array:
 		var l int
 		if l, err = val.Len(); err != nil {
@@ -159,27 +101,20 @@ func wantValue(val *Value, set Set) (err error) {
 			if d, err = val.Index(i); err != nil {
 				return
 			}
-			if err = wantValue(d, set); err != nil {
-				if err = set.Err(err); err != nil {
-					return
-				} // else -> continue
+			if err = errWantFunc(wantValueFunc(d, wf), wf); err != nil {
+				return
 			}
 		}
 	case reflect.Struct:
 		err = val.RangeFields(func(fname string, d *Value) error {
-			return set.Err(wantValue(d, set))
+			return errWantFunc(wantValueFunc(d, wf), wf)
 		})
-		if err != nil {
-			return
-		}
 	case reflect.Ptr:
 		var d *Value
 		if d, err = val.Dereference(); err != nil {
 			return
 		}
-		if err = wantValue(d, set); err != nil {
-			return
-		}
+		err = wantValueFunc(d, wf)
 	}
 	return
 }

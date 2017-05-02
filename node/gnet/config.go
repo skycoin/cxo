@@ -25,8 +25,8 @@ const (
 	MaxRedialTimeout time.Duration = 5 * time.Second        // default
 	RedialsLimit     int           = 0                      // 0 - infinity
 
-	ReadBufferSize  int = 4096 // default
-	WriteBufferSize int = 4096 // default
+	ReadBufferSize  int = 0 * 4096 // default
+	WriteBufferSize int = 0 * 4096 // default
 )
 
 // ConnectionHandler called by pool when

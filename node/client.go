@@ -361,7 +361,7 @@ func (r *Root) Inject(i interface{},
 		r.Sig,
 		r.Encode(),
 	})
-	got, _ := r.GotOf(inj)
+	got, _ := r.Got() // r.GotOf(inj)
 	for k := range got {
 		data, _ := r.client.db.Get(cipher.SHA256(k))
 		r.client.sendMessage(r.cn, &DataMsg{r.Pub, data})
