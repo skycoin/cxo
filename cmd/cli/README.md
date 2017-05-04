@@ -1,4 +1,4 @@
-cli
+CLI
 ===
 
-The cli is used to ...
+The CLI is used to ...

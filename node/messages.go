@@ -1,83 +1,159 @@
 package node
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
+
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/daemon/gnet"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-func init() {
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("PING"), Ping{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("PONG"), Pong{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("ANNC"), Announce{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("REQT"), Request{})
-	gnet.RegisterMessage(gnet.MessagePrefixFromString("DATA"), Data{})
-	gnet.VerifyMessages()
+// be sure that all messages implements Msg interface
+var (
+	_ Msg = &AddFeedMsg{}
+	_ Msg = &DelFeedMsg{}
+	_ Msg = &RootMsg{}
+	_ Msg = &DataMsg{}
+)
+
+// A Msg is ommon interface for CXO messages
+type Msg interface {
+	MsgType() MsgType
 }
 
-// A Ping is used to keep conections alive
-type Ping struct{}
-
-func (p *Ping) Handle(ctx *gnet.MessageContext, _ interface{}) (_ error) {
-	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Pong{})
-	return
+// A AddFeedMsg sent from one node to another one to
+// notify the remote node about new feed the sender
+// interesting in
+type AddFeedMsg struct {
+	Feed cipher.PubKey
 }
 
-// A Pong is just reply for Ping
-type Pong struct{}
+// MsgType implements Msg interface
+func (*AddFeedMsg) MsgType() MsgType { return AddFeedMsgType }
 
-func (*Pong) Handle(_ *gnet.MessageContext, _ interface{}) (_ error) {
-	return
+// A DelFeedMsg sent from one node to another one to
+// notify the remote node about feed the sender
+// doesn't interesting in anymore
+type DelFeedMsg struct {
+	Feed cipher.PubKey
 }
 
-// Announce is used to notify remote node about data the node has got
-type Announce struct {
-	Hash cipher.SHA256
+// MsgType implements Msg interface
+func (*DelFeedMsg) MsgType() MsgType { return DelFeedMsgType }
+
+// A RootMsg sent from one node to another one
+// to update root object of feed described in
+// Feed filed of the message
+type RootMsg struct {
+	Feed cipher.PubKey
+	Sig  cipher.Sig
+	Root []byte
 }
 
-func (a *Announce) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+// MsgType implements Msg interface
+func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
-	n := node.(*Node)
-	if n.db.Has(a.Hash) {
-		return
-	}
-	ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Request{a.Hash})
-	return
-}
-
-// Request is used to request data
-type Request struct {
-	Hash cipher.SHA256
-}
-
-func (r *Request) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
-
-	n := node.(*Node)
-	if data, ok := n.db.Get(r.Hash); ok {
-		ctx.Conn.ConnectionPool.SendMessage(ctx.Conn, &Data{data})
-	}
-	return
-}
-
-// Data is a pice of data
-type Data struct {
+// A DataMsg reperesents a data
+type DataMsg struct {
+	Feed cipher.PubKey
 	Data []byte
 }
 
-func (d *Data) Handle(ctx *gnet.MessageContext,
-	node interface{}) (terminate error) {
+// MsgType implements Msg interface
+func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
-	// TODO: drop data I don't asking for
+// A MsgType represent msg prefix
+type MsgType uint8
 
-	n := node.(*Node)
-	hash := cipher.SumSHA256(d.Data)
-	n.db.Set(hash, d.Data)
-	// Broadcast
-	for _, gc := range n.pool.Pool {
-		if gc != ctx.Conn {
-			n.pool.SendMessage(gc, &Announce{hash})
-		}
+const (
+	AddFeedMsgType MsgType = 1 + iota // AddFeedMsg 1
+	DelFeedMsgType                    // DelFeedMsg 2
+	RootMsgType                       // RootMsg 3
+	DataMsgType                       // DataMsg 4
+)
+
+// MsgType to string mapping
+var msgTypeString = [...]string{
+	AddFeedMsgType: "ADD",
+	DelFeedMsgType: "DEL",
+	RootMsgType:    "ROOT",
+	DataMsgType:    "DATA",
+}
+
+// String implements fmt.Stringer interface
+func (m MsgType) String() string {
+	if im := int(m); im > 0 && im < len(msgTypeString) {
+		return msgTypeString[im]
 	}
+	return fmt.Sprintf("MsgType<%d>", m)
+}
+
+var forwardRegistry = [...]reflect.Type{
+	AddFeedMsgType: reflect.TypeOf(AddFeedMsg{}),
+	DelFeedMsgType: reflect.TypeOf(DelFeedMsg{}),
+	RootMsgType:    reflect.TypeOf(RootMsg{}),
+	DataMsgType:    reflect.TypeOf(DataMsg{}),
+}
+
+// An ErrInvalidMsgType represents decoding error when
+// incoming message is malformed and its type invalid
+type ErrInvalidMsgType struct {
+	msgType MsgType
+}
+
+// MsgType return MsgType which cuse the error
+func (e ErrInvalidMsgType) MsgType() MsgType {
+	return e.msgType
+}
+
+// Error implements builtin error interface
+func (e ErrInvalidMsgType) Error() string {
+	return fmt.Sprint("invalid message type: ", e.msgType.String())
+}
+
+// Encode given message to []byte prefixed by MsgType
+func Encode(msg Msg) (p []byte) {
+	p = append(
+		[]byte{
+			byte(msg.MsgType()),
+		},
+		encoder.Serialize(msg)...)
+	return
+}
+
+var (
+	// ErrEmptyMessage occurs when you
+	// try to Decode an empty slice
+	ErrEmptyMessage = errors.New("empty message")
+	// ErrIncomplieDecoding occurs when incoming message
+	// decoded correctly but the decoding doesn't use
+	// entire encoded message
+	ErrIncomplieDecoding = errors.New("incomplite decoding")
+)
+
+// Decode encoded MsgType-prefixed data to message.
+// It can returns encoding errors or ErrInvalidMsgType
+func Decode(p []byte) (msg Msg, err error) {
+	if len(p) < 1 {
+		err = ErrEmptyMessage
+		return
+	}
+	mt := MsgType(p[0])
+	if mt <= 0 || int(mt) >= len(forwardRegistry) {
+		err = ErrInvalidMsgType{mt}
+		return
+	}
+	typ := forwardRegistry[mt]
+	val := reflect.New(typ)
+	var n int
+	if n, err = encoder.DeserializeRawToValue(p[1:], val); err != nil {
+		return
+	}
+	if n+1 != len(p) {
+		err = ErrIncomplieDecoding
+		return
+	}
+	msg = val.Interface().(Msg)
 	return
 }

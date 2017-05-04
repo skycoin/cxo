@@ -1,109 +1,165 @@
 package node
 
 import (
+	"errors"
 	"net"
+	"net/rpc"
+
+	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
 )
 
-// An Event represent RPC event
-type Event func()
+// A RPC is receiver type for net/rpc.
+// It used internally by Server and it's
+// exported because net/rpc requires
+// exported types. You don't need to
+// use the RPC manually
+type RPC struct {
+	l  net.Listener
+	rs *rpc.Server
+	ns *Server
+}
 
-// enqueue rpc event
-func (n *Node) enqueueEvent(done <-chan struct{}, evt Event) (err error) {
-	// enquue
-	select {
-	case n.rpce <- evt:
-	case <-n.quit:
-		err = ErrClosed
+func newRPC(s *Server) (r *RPC) {
+	r = new(RPC)
+	r.ns = s
+	r.rs = rpc.NewServer()
+	return
+}
+
+func (r *RPC) Start(address string) (err error) {
+	r.rs.RegisterName("cxo", r)
+	if r.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
-	// wait
-	select {
-	case <-done:
-	case <-n.quit:
-		err = ErrClosed
+	r.ns.await.Add(1)
+	go func(l net.Listener) {
+		defer r.ns.await.Done()
+		r.rs.Accept(l)
+	}(r.l)
+	return
+}
+
+func (r *RPC) Address() (address string) {
+	if r.l != nil {
+		address = r.l.Addr().String()
 	}
 	return
 }
 
-// Connect should be called from RPC server. It trying
-// to connect to given address
-func (n *Node) Connect(address string) (err error) {
-	// waiting for skycoin/src/daemon/gnet PR 300
-	_, err = n.pool.Connect(address)
+func (r *RPC) Close() (err error) {
+	if r.l != nil {
+		err = r.l.Close()
+	}
 	return
 }
 
-// Disconnect should be called from RPC server. It trying to
-// disconnect from given address
-func (n *Node) Disconnect(address string) (err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
-		if gc, ok := n.pool.Addresses[address]; ok {
-			n.pool.Disconnect(gc, ErrManualDisconnect)
-			return
+//
+// RPC methods
+//
+
+// - Want
+// - Got
+// - AddFeed
+// - DelFeed
+// - Feeds
+// - Stat
+// - Connections
+// - IncomingConnections
+// - OutgoingConnections
+// - Connect
+// - Disconnect
+// - ListeningAddress
+// - Tree
+// - Terminate
+
+func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
+	*list, err = r.ns.Want(feed)
+	return
+}
+
+func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
+	*list, err = r.ns.Got(feed)
+	return
+}
+
+func (r *RPC) AddFeed(feed cipher.PubKey, ok *bool) (err error) {
+	*ok = r.ns.AddFeed(feed)
+	return
+}
+
+func (r *RPC) DelFeed(feed cipher.PubKey, ok *bool) (err error) {
+	*ok = r.ns.DelFeed(feed)
+	return
+}
+
+func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
+	*list = r.ns.Feeds()
+	return
+}
+
+func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
+	*stat = r.ns.Stat()
+	return
+}
+
+func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
+	*list = r.ns.Connections()
+	return
+}
+
+func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
+	var l []string
+	for _, address := range r.ns.pool.Connections() {
+		c := r.ns.pool.Connection(address)
+		if c.IsIncoming() {
+			l = append(l, address)
 		}
-		err = ErrNotFound
-	})
+	}
+	*list = l
 	return
 }
 
-// List should be called from RPC server. The List returns all
-// connections
-func (n *Node) List() (list []string, err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		close(done)
-		list = make([]string, 0, len(n.pool.Addresses))
-		for a := range n.pool.Addresses {
-			list = append(list, a)
+func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
+	var l []string
+	for _, address := range r.ns.pool.Connections() {
+		c := r.ns.pool.Connection(address)
+		if !c.IsIncoming() {
+			l = append(l, address)
 		}
-	})
+	}
+	*list = l
 	return
 }
 
-// Info is for RPC. It returns all useful inforamtions about the node
-// except statistic. I.e. it returns listening address
-func (n *Node) Info() (address string, err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
-		var a net.Addr
-		if a, err = n.pool.ListeningAddress(); err != nil {
-			return
-		}
-		address = a.String()
-	})
+func (r *RPC) Connect(address string, _ *struct{}) (err error) {
+	err = r.ns.Connect(address)
 	return
 }
 
-// Stat is for RPC. It returns database statistic
-func (n *Node) Stat() (stat data.Stat, err error) {
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
-		stat = n.db.Stat()
-	})
+func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
+	err = r.ns.Disconnect(address)
 	return
 }
 
-// Terminate is the same as Close but designed for RPC
-func (n *Node) Terminate() (err error) {
-	if !n.conf.RemoteClose {
-		err = ErrNotAllowed
+func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
+	*address = r.ns.pool.Address()
+	return
+}
+
+// Tree prints objects tree for given root
+func (r *RPC) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
+	//
+	err = errors.New("not implemented yet")
+	return
+}
+
+func (r *RPC) Terminate(_ struct{}, _ *struct{}) (err error) {
+	if !r.ns.conf.RemoteClose {
+		err = errors.New("not allowed")
 		return
 	}
-	done := make(chan struct{})
-	err = n.enqueueEvent(done, func() {
-		defer close(done)
-		n.close()
-	})
-	// we will have got ErrClosed from enqueueEvent that
-	// is not actual error
-	if err == ErrClosed {
-		err = nil
-	}
+	r.ns.Close()
 	return
 }

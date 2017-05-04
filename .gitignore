@@ -32,3 +32,15 @@ gui/static/dev/
 cmd/cli/cli
 cmd/cxod/cxod
 cmd/*.out
+
+skyobject/cover.out
+skyobject/cover.html
+
+node/cover.out
+node/cover.html
+
+node/gnet/cover.out
+node/gnet/cover.html
+
+bbs/generate/generate
+bbs/receive/receive
