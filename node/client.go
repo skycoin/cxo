@@ -192,10 +192,15 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 				hash := cipher.SumSHA256(x.Data)
 				root := c.so.Root(x.Feed)
 				if root == nil {
+					c.Debug("doesn't have a root of the feed: ",
+						shortHex(x.Feed.Hex()))
 					return // doesn't have a root object of the feed
 				}
+				accept := false
 				err := root.WantFunc(func(ref skyobject.Reference) (_ error) {
 					if ref == skyobject.Reference(hash) {
+						accept = true
+						c.Debug("add data: ", shortHex(hash.Hex()))
 						c.db.Set(hash, x.Data)
 						return skyobject.ErrStopRange // break the itteration
 					}
@@ -204,6 +209,9 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 				if err != nil {
 					c.Print("[ERR] malformed root: ", err)
 					// TODO: reset roo object
+				}
+				if !accept {
+					c.Debug("reject data: ", shortHex(hash.Hex()))
 				}
 			}
 		}

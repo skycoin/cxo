@@ -75,6 +75,11 @@ type Value struct {
 	od []byte
 }
 
+// Data returns []byte of encoded value
+func (v *Value) Data() []byte {
+	return v.od
+}
+
 // Kind returns reflect.Kind of value:
 //  - reflect.Ptr for references
 //  - reflect.Invalid for nil-values
