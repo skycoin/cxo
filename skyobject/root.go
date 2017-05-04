@@ -228,7 +228,7 @@ func gotValueFunc(val *Value, gf GotFunc) (err error) {
 		switch val.s.Name() {
 		case DYNAMIC:
 			var dr Dynamic
-			if dr, err = val.dynamic(); err != nil { // already validated
+			if dr, err = val.Dynamic(); err != nil { // already validated
 				return
 			}
 			if dr.IsBlank() { // nil value
@@ -266,7 +266,7 @@ func gotValueFunc(val *Value, gf GotFunc) (err error) {
 			}
 			//
 			var ref Reference
-			if ref, err = val.static(); err != nil {
+			if ref, err = val.Static(); err != nil {
 				return
 			}
 			if ref.IsBlank() { // nil-value

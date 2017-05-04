@@ -85,7 +85,7 @@ func (v *Value) Data() []byte {
 //  - reflect.Invalid for nil-values
 //  ...and appropriate kinds for other values
 // Use (*Value).Schema().Kind() to get appropriate schema of value if the
-// value is nil. The schema can be nil-schema for nil-dynamic-references.
+// value is nil. The schema can be nil-schema for nil-Dynamic-references.
 // But, be careful, the (*Value).Schema().Kind() returns relfect.Ptr
 // instead of reflect.Slice for array of references
 func (x *Value) Kind() reflect.Kind {
@@ -103,14 +103,14 @@ func (x *Value) Kind() reflect.Kind {
 //                                references                                  //
 // ========================================================================== //
 
-// service method
-func (x *Value) static() (ref Reference, err error) {
+// Static returns the Reference of the value.
+func (x *Value) Static() (ref Reference, err error) {
 	err = encoder.DeserializeRaw(x.od, &ref)
 	return
 }
 
-// service method
-func (x *Value) dynamic() (dr Dynamic, err error) {
+// Dynamic returns the Dynamic of the value.
+func (x *Value) Dynamic() (dr Dynamic, err error) {
 	if err = encoder.DeserializeRaw(x.od, &dr); err != nil {
 		return
 	}
@@ -179,14 +179,14 @@ func (x *Value) Dereference() (v *Value, err error) {
 	switch x.s.Name() {
 	case DYNAMIC:
 		var dr Dynamic
-		if dr, err = x.dynamic(); err != nil {
+		if dr, err = x.Dynamic(); err != nil {
 			return
 		}
 		v, err = x.dereferenceDynamic(dr)
 		return
 	case SINGLE:
 		var ref Reference
-		if ref, err = x.static(); err != nil {
+		if ref, err = x.Static(); err != nil {
 			return
 		}
 		v, err = x.dereferenceStatic(ref)
@@ -537,7 +537,7 @@ func (x *Value) Index(idx int) (v *Value, err error) {
 }
 
 // Schema returns schema of the value. It can be a nil-schema if value got from
-// blank dynamic reference. Check it out using (*Schema).IsNil()
+// blank Dynamic reference. Check it out using (*Schema).IsNil()
 func (x *Value) Schema() *Schema {
 	return x.s
 }
