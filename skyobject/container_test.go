@@ -140,3 +140,31 @@ func TestContainer_Register(t *testing.T) {
 		)
 	})
 }
+
+func TestContainer_EncodedSchemas(t *testing.T) {
+	sender := getCont()
+	receiver := getCont()
+	sender.Register(
+		"User", User{},
+		"Group", Group{},
+		"List", List{},
+		"Man", Man{},
+	)
+	for _, s := range []string{"User", "Group", "List", "Man"} {
+		if sr, ok := sender.reg.reg[s]; !ok {
+			t.Error("missing registered schema:", s)
+		} else if _, ok := sender.get(sr); !ok {
+			t.Error("missing encoded, registered schema:", s)
+		}
+	}
+	receiver.AddEncodedSchemas(sender.EncodedSchemas())
+	for _, s := range []string{"User", "Group", "List", "Man"} {
+		if _, ok := receiver.reg.reg[s]; !ok {
+			t.Error("missing received schema:", s)
+		}
+	}
+}
+
+func TestContainer_AddEncodedSchemas(t *testing.T) {
+	// implemented in EncodedSchemas
+}

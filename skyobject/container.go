@@ -149,13 +149,13 @@ func (c *Container) AddEncodedSchemas(p []byte) (err error) {
 
 func (c *Container) addSchemas(re RegistryEntities) (err error) {
 	for _, v := range re {
-		if sck, ae := c.reg.reg[v.K]; ae {
-			if sck != v.V {
+		if sck, ae := c.reg.reg[v.K]; ae { // ae = already exists
+			if sck != v.V { // if reference is not the same
 				err = fmt.Errorf("conflict between registered types %q", v.K)
 				return
 			}
 		} else {
-			c.reg.reg[v.K] = v.V
+			c.reg.reg[v.K] = v.V // add
 		}
 	}
 	return

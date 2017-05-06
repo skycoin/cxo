@@ -37,6 +37,7 @@ func findSchemaName(sr *Registry, ref Reference) (name string, ok bool) {
 }
 
 func TestRoot_WantFunc(t *testing.T) {
+
 	// # registered schemas
 	//
 	// f170128 <- User
@@ -137,7 +138,8 @@ func TestRoot_WantFunc(t *testing.T) {
 		root.Inject(group, sk)
 		encoded := root.Encode()
 		// use anotuer container toreceive the data
-		receiver := getCont() //
+		receiver := getCont()                          //
+		receiver.AddEncodedSchemas(c.EncodedSchemas()) // fill up schemas
 		ok, err := receiver.AddEncodedRoot(encoded, pk, root.Sig)
 		if err != nil {
 			t.Fatal(err)
