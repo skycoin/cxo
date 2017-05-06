@@ -2,7 +2,6 @@ package skyobject
 
 import (
 	"reflect"
-	"sort"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -32,10 +31,10 @@ type RegistryEntity struct {
 
 // rootEncoding is used to encode and decode the Root
 type rootEncoding struct {
-	Time int64
-	Seq  uint64
-	Refs []Dynamic
-	Reg  RegistryEntities // registery
+	Time    int64
+	Seq     uint64
+	Refs    []Dynamic
+	Schemas Reference
 }
 
 // A Root represents wrapper around root object
@@ -47,6 +46,8 @@ type Root struct {
 
 	Sig cipher.Sig    `enc:"-"` // signature
 	Pub cipher.PubKey `enc:"-"` // public key
+
+	Schemas Reference // reference to all related schemas
 
 	reg *Registry  `enc:"-"` // back reference to registery
 	cnt *Container `enc:"-"` // back reference to container
@@ -83,13 +84,12 @@ func (r *Root) Encode() (p []byte) {
 	x.Time = r.Time
 	x.Seq = r.Seq
 	x.Refs = r.Refs
-	if len(r.reg.reg) > 0 {
-		x.Reg = make(RegistryEntities, 0, len(r.reg.reg))
-	}
-	for k, v := range r.reg.reg {
-		x.Reg = append(x.Reg, RegistryEntity{k, v})
-	}
-	sort.Sort(x.Reg)
+
+	// refernce to schemas
+	schemas := r.cnt.db.AddAutoKey(r.cnt.EncodedSchemas())
+	r.Schemas = Reference(schemas)
+	x.Schemas = Reference(schemas)
+
 	p = encoder.Serialize(&x)
 	return
 }
