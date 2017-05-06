@@ -4,6 +4,7 @@ package skyobject
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -23,6 +24,7 @@ var (
 	ErrTypeNameNotFound = errors.New("type name not found")
 	// ErrInvalidReference occurs when some dynamic reference is invalid
 	ErrInvalidReference = errors.New("invalid reference")
+	ErrObjectNotFound   = errors.New("object not found")
 )
 
 // A Container represents type helper to manage root objects
@@ -117,7 +119,36 @@ func (c *Container) AddEncodedRoot(p []byte, // root.Encode()
 	root.Sig = sig
 	root.cnt = c
 	root.reg = c.reg
-	for _, v := range re.Reg {
+	ok = c.addRoot(root)
+	return
+}
+
+// EncodedSchemas returns encoded schemas of the container to
+// send them to remote node
+func (c *Container) EncodedSchemas() []byte {
+	if len(c.reg.reg) > 0 {
+		var reg RegistryEntities = make(RegistryEntities, 0, len(c.reg.reg))
+		for k, v := range c.reg.reg {
+			reg = append(reg, RegistryEntity{k, v})
+		}
+		sort.Sort(reg)
+		return encoder.Serialize(reg)
+	}
+	return encoder.Serialize(RegistryEntities{}) // empty
+}
+
+// AddSchemas used to add schemas from remote node to registery of the node
+func (c *Container) AddEncodedSchemas(p []byte) (err error) {
+	var re RegistryEntities
+	if err = encoder.DeserializeRaw(p, &re); err != nil {
+		return
+	}
+	err = c.addSchemas(re)
+	return
+}
+
+func (c *Container) addSchemas(re RegistryEntities) (err error) {
+	for _, v := range re {
 		if sck, ae := c.reg.reg[v.K]; ae {
 			if sck != v.V {
 				err = fmt.Errorf("conflict between registered types %q", v.K)
@@ -127,7 +158,24 @@ func (c *Container) AddEncodedRoot(p []byte, // root.Encode()
 			c.reg.reg[v.K] = v.V
 		}
 	}
-	ok = c.addRoot(root)
+	return
+}
+
+// GetObject returns Value by schema name
+// and reference to the object
+func (c *Container) GetObject(schemaName string,
+	ref Reference) (val *Value, err error) {
+
+	ev, ok := c.get(ref)
+	if !ok {
+		err = ErrObjectNotFound
+		return
+	}
+	var s *Schema
+	if s, err = c.reg.SchemaByName(schemaName); err != nil {
+		return
+	}
+	val = &Value{c, s, ev}
 	return
 }
 
@@ -170,6 +218,11 @@ func (c *Container) SaveArray(ary ...interface{}) (rs References) {
 		rs = append(rs, c.Save(a))
 	}
 	return
+}
+
+// SchemaByName returns schema by registered name
+func (c *Container) SchemaByName(name string) (*Schema, error) {
+	return c.reg.SchemaByName(name)
 }
 
 // SchemaReference returns reference-key to schema of given vlaue. It panics
