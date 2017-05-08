@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -11,6 +12,8 @@ import (
 )
 
 const TAG = "skyobject"
+
+var ErrInvalidEncodedSchema = errors.New("invalid encoded schema")
 
 // A Registry represents registry of schemas.
 // The Registry is thread safe only after call of
@@ -49,6 +52,27 @@ func NewRegistry() (r *Registry) {
 	r.srf = make(map[SchemaReference]Schema)
 
 	r.rts = make(map[reflect.Type]string)
+	return
+}
+
+// DecodeRegistry decodes registry. It's impossible to
+// use SchemaByInterface of an decoded Registry. A decoded
+// Registry already Done
+func DecodeRegistry(b []byte) (r *Registry, err error) {
+	var (
+		res registryEntities = registryEntities{}
+		s   Schema
+	)
+	if err = encoder.DeserializeRaw(b, &res); err != nil {
+		return
+	}
+	r = NewRegistry()
+	for _, re := range res {
+		s, err = decodeSchema(re.Schema)
+		r.reg[re.Name] = s
+		r.srf[s.Reference()] = s
+	}
+	r.Done() // done it
 	return
 }
 
@@ -367,6 +391,102 @@ func tagReference(tag reflect.StructTag) string {
 
 func typeOf(i interface{}) reflect.Type {
 	return reflect.Indirect(reflect.ValueOf(i)).Type()
+}
+
+// decode schema
+
+func decodeSchema(b []byte) (s Schema, err error) {
+	// type encodedSchema struct {
+	// 	RefTyp uint32
+	// 	Kind   uint32
+	// 	Name   []byte
+	// 	Len    uint32
+	// 	Fields [][]byte
+	// 	Elem   []byte // encoded schema
+	// }
+	//
+	// type encodedField struct {
+	// 	Name   []byte
+	// 	Tag    []byte
+	// 	Schema []byte
+	// }
+
+	var x encodedSchema
+	if err = encoder.DeserializeRaw(b, &x); err != nil {
+		return
+	}
+	// is reference
+	switch ReferenceType(x.RefTyp) {
+	case ReferenceTypeSingle, ReferenceTypeSlice, ReferenceTypeDynamic:
+		// kind, typ, elem
+		rs := referenceSchema{}
+		rs.kind = reflect.Kind(x.Kind)
+		rs.typ = ReferenceType(x.RefTyp)
+		if rs.typ != ReferenceTypeDynamic {
+			if rs.elem, err = decodeSchema(x.Elem); err != nil {
+				return
+			}
+		}
+		s = &rs
+		return
+	case ReferenceTypeNone: // not a reference
+	default:
+		err = ErrInvalidEncodedSchema
+		return
+	}
+
+	sc := schema{
+		kind: reflect.Kind(x.Kind),
+		name: x.Name,
+	}
+
+	switch k := reflect.Kind(x.Kind); k {
+	case reflect.Slice:
+		ss := arraySchema{}
+		ss.schema = sc
+		if ss.elem, err = decodeSchema(x.Elem); err != nil {
+			return
+		}
+		s = &ss
+	case reflect.Array:
+		as := arraySchema{}
+		as.schema = sc
+		as.length = int(x.Len)
+		if as.elem, err = decodeSchema(x.Elem); err != nil {
+			return
+		}
+		s = &as
+	case reflect.Struct:
+		ss := structSchema{}
+		ss.schema = sc
+		var f Field
+		for _, ef := range x.Fields {
+			if f, err = decodeField(ef); err != nil {
+				return
+			}
+			ss.fields = append(ss.fields, f)
+		}
+		s = &ss
+	default:
+		s = &sc
+	}
+
+	return
+}
+
+func decodeField(b []byte) (f Field, err error) {
+	var ef encodedField
+	if err = encoder.DeserializeRaw(b, &ef); err != nil {
+		return
+	}
+	ff := filed{}
+	ff.name = ef.Name
+	ff.tag = ef.Tag
+	if ff.schema, err = decodeSchema(ef.Schema); err != nil {
+		return
+	}
+	f = &ff
+	return
 }
 
 // encode

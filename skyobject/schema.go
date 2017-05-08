@@ -159,11 +159,13 @@ func (r *referenceSchema) encodedSchema() (x encodedSchema) {
 	x.Kind = uint32(r.kind)
 	x.RefTyp = uint32(r.typ)
 	// the schema of the Elem is registered allways
-	x.Elem = (&schema{
-		SchemaReference{},
-		r.elem.Kind(),
-		r.elem.RawName(),
-	}).Encode()
+	if r.typ != ReferenceTypeDynamic {
+		x.Elem = (&schema{
+			SchemaReference{},
+			r.elem.Kind(),
+			r.elem.RawName(),
+		}).Encode()
+	}
 	return
 }
 
@@ -393,5 +395,6 @@ type encodedSchema struct {
 type encodedField struct {
 	Name   []byte
 	Tag    []byte
+	Kind   uint32
 	Schema []byte
 }

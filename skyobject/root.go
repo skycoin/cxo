@@ -8,6 +8,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
 
 var (
@@ -138,6 +140,11 @@ func (r *Root) SaveArray(i ...interface{}) References {
 	return r.cnt.SaveArray(i...)
 }
 
+// DB returns database of related container objec
+func (r *Root) DB() *data.DB {
+	return r.cnt.DB()
+}
+
 // Dynamic created Dynamic objct using Registry related to
 // the Root. If Regsitry doesn't exists or type was not
 // registered then the method panics
@@ -217,6 +224,8 @@ func (r *Root) ValueByStatic(schemaName string, ref Reference) (val *Value,
 	return
 }
 
+// SchemaByReference returns Schema by name or
+// (1) missing registry error, or (2) missing schema error
 func (r *Root) SchemaByName(name string) (s Schema, err error) {
 	var reg *Registry
 	if reg, err = r.Registry(); err != nil {
