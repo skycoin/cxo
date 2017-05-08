@@ -95,6 +95,12 @@ func (d *DB) AddAutoKey(data []byte) (key cipher.SHA256) {
 	return
 }
 
+func (d *DB) Del(key cipher.SHA256) {
+	d.Lock()
+	defer d.Unlock()
+	delete(d.data, key)
+}
+
 // Stat return statistic of the DB
 func (d *DB) Stat() (s Stat) {
 	d.RLock()

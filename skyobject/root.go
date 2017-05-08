@@ -46,7 +46,7 @@ func (r *Root) RegistryReference() RegistryReference {
 
 // Tocuh updates timestapt of the Root (setting it to now)
 // and increments seq number. Touch implicitly called inside
-// Inject method
+// Inject and InjectMany methods
 func (r *Root) Touch() {
 	r.Lock()
 	defer r.Unlock()
@@ -56,6 +56,8 @@ func (r *Root) Touch() {
 func (r *Root) touch() {
 	r.time = time.Now().UnixNano()
 	r.seq++
+	r.encode()       // to update signature
+	r.cnt.addRoot(r) // updated
 }
 
 // Seq returns seq number of the Root
@@ -89,7 +91,25 @@ func (r *Root) Sig() cipher.Sig {
 func (r *Root) IsFull() bool {
 	r.RLock()
 	defer r.RUnlock()
-	return r.full
+	if r.full {
+		return true
+	}
+	if !r.HasRegistry() {
+		return false
+	}
+	var want int
+	err := r.wantFunc(func(Reference) (_ error) {
+		want++
+		return
+	})
+	if err != nil {
+		return false // can't determine
+	}
+	if want == 0 {
+		r.full = true
+		return true
+	}
+	return false
 }
 
 // Encode the Root and get its Signature
@@ -114,7 +134,8 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 	return
 }
 
-// Sign the Root. Sign implicitly called inside Encode and Inject methods
+// Sign the Root. The Sign implicitly called inside
+// Encode, Inject and InjectMany methods
 func (r *Root) Sign() (sig cipher.Sig) {
 	r.Lock()
 	defer r.Unlock()
@@ -122,6 +143,8 @@ func (r *Root) Sign() (sig cipher.Sig) {
 	return
 }
 
+// HasRegistry returns false if Registry of the Root
+// doesn't exist in related Container
 func (r *Root) HasRegistry() bool {
 	reg, _ := r.cnt.Registry(r.reg) // container never changes (no lock/unlock)
 	return reg != nil
@@ -132,15 +155,17 @@ func (r *Root) Get(ref Reference) ([]byte, bool) {
 	return r.cnt.Get(ref)
 }
 
+// Save is sort hand for (*Container).Save()
 func (r *Root) Save(i interface{}) Reference {
 	return r.cnt.Save(i)
 }
 
+// SaveArray is sort hand for (*Container).SaveArray()
 func (r *Root) SaveArray(i ...interface{}) References {
 	return r.cnt.SaveArray(i...)
 }
 
-// DB returns database of related container objec
+// DB returns database of related Container
 func (r *Root) DB() *data.DB {
 	return r.cnt.DB()
 }
@@ -162,13 +187,28 @@ func (r *Root) Dynamic(i interface{}) (dr Dynamic) {
 	return
 }
 
+// Inject an object to the Root updating the seq,
+// timestamp and signature of the Root
 func (r *Root) Inject(i interface{}) (inj Dynamic) {
 	inj = r.Dynamic(i)
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, inj)
 	r.touch()
-	r.encode() // to update signature
+	return
+}
+
+// InjectMany objects to the Root updating the seq,
+// timestamp and signature of the Root
+func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic) {
+	injs = make([]Dynamic, 0, len(i))
+	for _, e := range i {
+		injs = append(injs, r.Dynamic(e))
+	}
+	r.Lock()
+	defer r.Unlock()
+	r.refs = append(r.refs, injs...)
+	r.touch()
 	return
 }
 
@@ -177,7 +217,7 @@ func (r *Root) Inject(i interface{}) (inj Dynamic) {
 // non-nil schema (if dr.Object is blank), or nil-value with nil-schema
 // (if given dr.Object and dr.Schema are blank). Registry by which the
 // dr created must be registry of the Root. One of returned errors can
-// be *MissingObjectError if object the dr refers to doesn't exists
+// be *MissingObjectError if object the dr refers to doesn't exist
 // in database
 func (r *Root) ValueByDynamic(dr Dynamic) (val *Value, err error) {
 	if !dr.IsValid() {
@@ -259,6 +299,11 @@ type WantFunc func(Reference) error
 func (r *Root) WantFunc(wf WantFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+	err = r.wantFunc(wf)
+	return
+}
+
+func (r *Root) wantFunc(wf WantFunc) (err error) {
 	var val *Value
 	for _, dr := range r.refs {
 		if val, err = r.ValueByDynamic(dr); err != nil {
@@ -375,13 +420,6 @@ func gotValue(v *Value, gf GotFunc) (err error) {
 	return
 }
 
-// internal
-func (r *Root) setFull() {
-	r.Lock()
-	defer r.Unlock()
-	r.full = true
-}
-
 // encoding
 
 type rootEncoding struct {
@@ -391,6 +429,5 @@ type rootEncoding struct {
 	Seq  uint64
 	Pub  cipher.PubKey
 	// don't send secret key, because it's a secret
-	// don't send signature, because signaure is
-	// signature of encoded root
+	// don't send signature, because signaure is signature of encoded root
 }
