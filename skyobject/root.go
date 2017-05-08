@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -196,6 +197,35 @@ func (r *Root) ValueByDynamic(dr Dynamic) (val *Value, err error) {
 	return
 }
 
+// ValueByStatic return value by Reference and schema name
+func (r *Root) ValueByStatic(schemaName string, ref Reference) (val *Value,
+	err error) {
+
+	var s Schema
+	if s, err = r.SchemaByName(schemaName); err != nil {
+		return
+	}
+	if ref.IsBlank() {
+		val = &Value{nil, s, r}
+		return // nil-value with schema
+	}
+	if data, ok := r.Get(ref); !ok {
+		err = &MissingObjectError{ref}
+	} else {
+		val = &Value{data, s, r}
+	}
+	return
+}
+
+func (r *Root) SchemaByName(name string) (s Schema, err error) {
+	var reg *Registry
+	if reg, err = r.Registry(); err != nil {
+		return
+	}
+	s, err = reg.SchemaByName(name)
+	return
+}
+
 // SchemaByReference returns Schema by reference or
 // (1) missing registry error, or (2) missing schema error
 func (r *Root) SchemaByReference(sr SchemaReference) (s Schema, err error) {
@@ -207,21 +237,132 @@ func (r *Root) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 	return
 }
 
+// A WantFunc represents function for (*Root).WantFunc method
+// Impossible to manipulate Root object using the
+// function because of locks
 type WantFunc func(Reference) error
 
+// WantFunc ranges over the Root calling given WantFunc
+// every time an object missing in database. An error
+// returned by the WantFunc stops itteration. It the error
+// is ErrStopRange then WantFunc returns nil. Otherwise
+// it returns the error
 func (r *Root) WantFunc(wf WantFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
-	// TODO
+	var val *Value
+	for _, dr := range r.refs {
+		if val, err = r.ValueByDynamic(dr); err != nil {
+			if mo, ok := err.(*MissingObjectError); ok {
+				if err = wf(mo.Reference()); err != nil {
+					break // range loop
+				}
+				continue // range loop
+			} // else
+			return // the error
+		}
+		if err = wantValue(val); err != nil {
+			if mo, ok := err.(*MissingObjectError); ok {
+				if err = wf(mo.Reference()); err != nil {
+					break // range loop
+				}
+				continue // range loop
+			} // else
+			return // the error
+		}
+	}
+	if err == ErrStopRange {
+		err = nil
+	}
 	return
 }
 
+func wantValue(v *Value) (err error) {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		err = v.RangeIndex(func(_ int, d *Value) error {
+			return wantValue(d)
+		})
+	case reflect.Struct:
+		err = v.RangeFields(func(name string, d *Value) error {
+			return wantValue(d)
+		})
+	case reflect.Ptr:
+		var d *Value
+		if d, err = v.Dereference(); err != nil {
+			return
+		}
+		err = wantValue(d)
+	}
+	return
+}
+
+// A GotFunc represents function for (*Root).GotFunc method
+// Impossible to manipulate Root object using the
+// function because of locks
 type GotFunc func(Reference) error
 
+// GotFunc ranges over the Root calling given GotFunc
+// every time it has got a Reference that exists in
+// database
 func (r *Root) GotFunc(gf GotFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
-	// TODO
+	var val *Value
+	for _, dr := range r.refs {
+		if val, err = r.ValueByDynamic(dr); err != nil {
+			if _, ok := err.(*MissingObjectError); ok {
+				continue // range loop
+			} // else
+			return // the error
+		}
+		if err = gotValue(val, gf); err != nil {
+			if _, ok := err.(*MissingObjectError); ok {
+				continue // range loop
+			} // else
+			break // range loop
+		}
+	}
+	if err == ErrStopRange {
+		err = nil
+	}
+	return
+}
+
+func gotValue(v *Value, gf GotFunc) (err error) {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		err = v.RangeIndex(func(_ int, d *Value) error {
+			return gotValue(d, gf)
+		})
+	case reflect.Struct:
+		err = v.RangeFields(func(name string, d *Value) error {
+			return gotValue(d, gf)
+		})
+	case reflect.Ptr:
+		var d *Value
+		if d, err = v.Dereference(); err != nil {
+			return
+		}
+		if d.IsNil() {
+			return
+		}
+		switch v.Schema().ReferenceType() {
+		case ReferenceTypeSlice:
+			var ref Reference      //
+			copy(ref[:], v.Data()) // v.Static()
+			err = gf(ref)
+		case ReferenceTypeDynamic:
+			var dr Dynamic
+			if dr, err = v.Dynamic(); err != nil {
+				return // never happens
+			}
+			err = gf(dr.Object)
+		}
+		if err != nil {
+			err = gotValue(d, gf)
+		}
+	}
 	return
 }
 
