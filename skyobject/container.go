@@ -82,30 +82,23 @@ func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
 	return
 }
 
-// WantRegistryFunc is for (*Container).WantRegistry.
-// The function called for every registry the Container
-// hasn't got but knows about. If the fucntions returns
-// false itteration stops
-type WantRegistryFunc func(RegistryReference) (stop bool)
-
-// WantRegistry
-func (c *Container) WantRegistry(wrf WantRegistryFunc) {
+// WantRegistry reports true if given registry wanted by the
+// Container
+func (c *Container) WantRegistry(rr RegistryReference) bool {
 	c.RLock()
 	defer c.RUnlock()
-	alreadyCalled := make(map[RegistryReference]struct{})
 	for _, rs := range c.roots {
 		for _, r := range *rs {
-			rr := r.RegistryReference()
-			if _, ok := c.registries[rr]; !ok {
-				if _, ok := alreadyCalled[rr]; !ok {
-					if wrf(rr) {
-						return
-					}
-					alreadyCalled[rr] = struct{}{}
+			if rr == r.RegistryReference() {
+				if _, ok := c.registries[rr]; !ok {
+					return true // want
+				} else {
+					return false // already have
 				}
 			}
 		}
 	}
+	return false // don't want
 }
 
 // Registries returns registries that the Container has got
@@ -133,6 +126,11 @@ func (c *Container) DB() *data.DB {
 func (c *Container) Get(ref Reference) (data []byte, ok bool) {
 	data, ok = c.db.Get(cipher.SHA256(ref))
 	return
+}
+
+// Set is shotr hand for c.DB().Det(cipher.SHA256(ref), data)
+func (c *Container) Set(ref Reference, p []byte) {
+	c.db.Set(cipher.SHA256(ref), p)
 }
 
 // save objects
@@ -298,6 +296,46 @@ func (c *Container) Feeds() (feeds []cipher.PubKey) {
 		feeds = append(feeds, f)
 	}
 	return
+}
+
+// WantFeed calls (*Root).WantFunc with given WantFunc
+// for every Root of the feed starting from older
+func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
+	c.RLock()
+	defer c.RUnlock()
+	for _, r := range *c.roots[pk] {
+		if err = r.WantFunc(wf); err != nil {
+			if err == ErrStopRange {
+				err = nil
+			}
+			return
+		}
+	}
+	return // nil
+}
+
+// GotFeed calls (*Root).GotFunc with given GotFunc
+// for every Root of the feed starting from older
+func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
+	c.RLock()
+	defer c.RUnlock()
+	for _, r := range *c.roots[pk] {
+		if err = r.GotFunc(gf); err != nil {
+			if err == ErrStopRange {
+				err = nil
+			}
+			return
+		}
+	}
+	return // nil
+}
+
+// DelFeed deletes all root object of given feed. The
+// method doesn't perform GC
+func (c *Container) DelFeed(pk cipher.PubKey) {
+	c.Lock()
+	defer c.Unlock()
+	delete(c.roots, pk)
 }
 
 // GC

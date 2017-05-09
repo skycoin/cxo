@@ -414,6 +414,28 @@ func (r *Root) GotFunc(gf GotFunc) (err error) {
 	return
 }
 
+// GotOfFunc is like GotFunc but for particular
+// Dynamic reference of the Root
+func (r *Root) GotOfFunc(dr Dynamic, gf GotFunc) (err error) {
+	r.RLock()
+	defer r.RUnlock()
+	var val *Value
+	if val, err = r.ValueByDynamic(dr); err != nil {
+		if _, ok := err.(*MissingObjectError); ok {
+			err = nil // never return MissingObjectError
+		} // else
+		return // the error
+	} else if err = gotValue(val, gf); err != nil {
+		if _, ok := err.(*MissingObjectError); ok {
+			err = nil // never return MissingObjectError
+		}
+	}
+	if err == ErrStopRange {
+		err = nil
+	}
+	return
+}
+
 func gotValue(v *Value, gf GotFunc) (err error) {
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:

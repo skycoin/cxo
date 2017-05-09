@@ -17,6 +17,10 @@ type feed struct {
 	conns []*gnet.Conn // connections of the feed
 }
 
+//
+// TODO: GC for skyobject.Container
+//
+
 // A Server represents CXO server
 // that includes RPC server if enabled
 // by configs
@@ -31,8 +35,7 @@ type Server struct {
 	db *data.DB
 
 	// skyobject
-	somx sync.RWMutex
-	so   *skyobject.Container
+	so *skyobject.Container
 
 	// feeds
 	fmx   sync.RWMutex
@@ -53,7 +56,7 @@ type Server struct {
 // Container of skyobject instances internally
 func NewServer(sc ServerConfig) (s *Server, err error) {
 	var db *data.DB = data.NewDB()
-	s, err = NewServerSoDB(sc, db, skyobject.NewContainer(db))
+	s, err = NewServerSoDB(sc, db, skyobject.NewContainer(nil))
 	return
 }
 
@@ -268,42 +271,6 @@ func (s *Server) handleConnection(c *gnet.Conn) {
 
 }
 
-func (s *Server) root(pk cipher.PubKey) *skyobject.Root {
-	s.somx.RLock()
-	defer s.somx.RUnlock()
-	return s.so.Root(pk)
-}
-
-func (s *Server) wantFunc(pk cipher.PubKey, wf skyobject.WantFunc) (err error) {
-	s.somx.RLock()
-	defer s.somx.RUnlock()
-	root := s.so.Root(pk)
-	if root == nil {
-		return
-	}
-	err = root.WantFunc(wf)
-	return
-}
-
-func (s *Server) gotFunc(pk cipher.PubKey, gf skyobject.GotFunc) (err error) {
-	s.somx.RLock()
-	defer s.somx.RUnlock()
-	root := s.so.Root(pk)
-	if root == nil {
-		return
-	}
-	err = root.GotFunc(gf)
-	return
-}
-
-func (s *Server) addRoot(rm *RootMsg) (ok bool, err error) {
-
-	s.somx.Lock()
-	defer s.somx.Unlock()
-	ok, err = s.so.AddEncodedRoot(rm.Root, rm.Feed, rm.Sig)
-	return
-}
-
 func shortHex(a string) string {
 	return string([]byte(a)[:7])
 }
@@ -327,13 +294,14 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 			s.Debug("add connection to requested feed list ", ca)
 			f.conns = append(f.conns, c)
 			// send root to the connectiosn if we have the root
-			root := s.root(x.Feed)
+			root := s.so.LastRoot(x.Feed)
 			if root == nil {
 				s.Debug("don't have a root of the feed, ", ca)
 				return
 			}
 			s.Debug("send root of the feed, ", ca)
-			s.sendMessage(c, &RootMsg{x.Feed, root.Sig, root.Encode()})
+			p, sig := root.Encode()
+			s.sendMessage(c, &RootMsg{x.Feed, sig, p})
 			return
 		}
 		s.Debug("don't share the feed connection request for, ", ca)
@@ -350,19 +318,19 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 				}
 			}
 		}
-		s.Debug("don't share the feed to delete from ", ca)
+		s.Debug("don't share the feed to delete ", ca)
 	case *RootMsg:
 		ca := c.Address()
 		s.fmx.RLock()
 		defer s.fmx.RUnlock()
 		if f, ok := s.feeds[x.Feed]; ok {
-			ok, err := s.addRoot(x)
+			root, err := s.so.AddEncodedRoot(x.Root, x.Sig)
 			if err != nil {
 				s.Print("[ERR] %s error decoding root: %v", ca, err)
 				c.Close() // fatal
 				return
 			}
-			if !ok {
+			if root == nil {
 				s.Debug("older root received, ", ca)
 				return // older root object received
 			}
@@ -379,6 +347,38 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 			return
 		}
 		s.Debug("don't share the feed root received for, ", ca)
+	case *RequestRegistryMsg:
+		if reg, _ := s.so.Registry(x.Ref); reg != nil {
+			s.sendMessage(c, &RegistryMsg{
+				Ref: x.Ref,
+				Reg: reg.Encode(),
+			})
+		}
+	case *RegistryMsg:
+		if s.so.WantRegistry(x.Ref) {
+			if reg, err := skyobject.DecodeRegistry(x.Reg); err != nil {
+				s.Print("[ERR] error decoding registry: ", err)
+				return
+			} else if reg.Reference() != x.Ref {
+				// reference not match registry
+				s.Print("[ERR] received registry key-body missmatch")
+				return
+			} else {
+				s.so.AddRegistry(reg)
+			}
+			// TODO: optimisation?
+			// broadcast the Registry to all peers
+			s.fmx.RLock()
+			defer s.fmx.RUnlock()
+			for _, f := range s.feeds {
+				for _, cx := range f.conns {
+					if cx == c {
+						continue // skip this connection
+					}
+					s.sendMessage(cx, x)
+				}
+			}
+		}
 	case *DataMsg:
 		ca := c.Address() // for debug logs
 		s.fmx.RLock()
@@ -386,7 +386,7 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 		if f, ok := s.feeds[x.Feed]; ok {
 			hash := skyobject.Reference(cipher.SumSHA256(x.Data))
 			sent := false
-			err := s.wantFunc(x.Feed, func(k skyobject.Reference) error {
+			err := s.so.WantFeed(x.Feed, func(k skyobject.Reference) error {
 				if k == hash {
 					s.Debugf("add data [%s] %s",
 						shortHex(hash.String()),
@@ -467,6 +467,7 @@ func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
 		delete(s.feeds, f)
 		deleted = true
 	}
+	s.so.DelFeed(f) // delete from skyobject
 	return
 }
 
@@ -474,7 +475,7 @@ func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
 // feed that the server hasn't but knows about
 func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 	set := make(map[skyobject.Reference]struct{})
-	err = s.wantFunc(feed, func(k skyobject.Reference) error {
+	err = s.so.WantFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
 		return nil
 	})
@@ -495,7 +496,7 @@ func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 // feed that the server has got
 func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
 	set := make(map[skyobject.Reference]struct{})
-	err = s.gotFunc(feed, func(k skyobject.Reference) error {
+	err = s.so.GotFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
 		return nil
 	})

@@ -7,6 +7,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/skyobject"
 )
 
 // be sure that all messages implements Msg interface
@@ -15,6 +17,7 @@ var (
 	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
 	_ Msg = &DataMsg{}
+	_ Msg = &RequestRegistryMsg{}
 	_ Msg = &RegistryMsg{}
 )
 
@@ -64,8 +67,15 @@ type DataMsg struct {
 // MsgType implements Msg interface
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
+type RequestRegistryMsg struct {
+	Ref skyobject.RegistryReference // registry reference
+}
+
+// MsgType implements Msg interface
+func (*RequestRegistryMsg) MsgType() MsgType { return RequestRegistryMsgType }
+
 type RegistryMsg struct {
-	Ref cipher.SHA256 // registry reference
+	Ref skyobject.RegistryReference // registry reference
 	Reg []byte
 }
 
@@ -76,20 +86,22 @@ func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
 type MsgType uint8
 
 const (
-	AddFeedMsgType  MsgType = 1 + iota // AddFeedMsg 1
-	DelFeedMsgType                     // DelFeedMsg 2
-	RootMsgType                        // RootMsg 3
-	DataMsgType                        // DataMsg 4
-	RegistryMsgType                    // RegistryMsg 5
+	AddFeedMsgType         MsgType = 1 + iota // AddFeedMsg 1
+	DelFeedMsgType                            // DelFeedMsg 2
+	RootMsgType                               // RootMsg 3
+	DataMsgType                               // DataMsg 4
+	RequestRegistryMsgType                    // RequestRegistryMsg 5
+	RegistryMsgType                           // RegistryMsg 6
 )
 
 // MsgType to string mapping
 var msgTypeString = [...]string{
-	AddFeedMsgType:  "ADD",
-	DelFeedMsgType:  "DEL",
-	RootMsgType:     "ROOT",
-	DataMsgType:     "DATA",
-	RegistryMsgType: "REG",
+	AddFeedMsgType:         "ADD",
+	DelFeedMsgType:         "DEL",
+	RootMsgType:            "ROOT",
+	DataMsgType:            "DATA",
+	RequestRegistryMsgType: "RQREG",
+	RegistryMsgType:        "REG",
 }
 
 // String implements fmt.Stringer interface
@@ -101,11 +113,12 @@ func (m MsgType) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
-	AddFeedMsgType:  reflect.TypeOf(AddFeedMsg{}),
-	DelFeedMsgType:  reflect.TypeOf(DelFeedMsg{}),
-	RootMsgType:     reflect.TypeOf(RootMsg{}),
-	DataMsgType:     reflect.TypeOf(DataMsg{}),
-	RegistryMsgType: reflect.TypeOf(RegistryMsg{}),
+	AddFeedMsgType:         reflect.TypeOf(AddFeedMsg{}),
+	DelFeedMsgType:         reflect.TypeOf(DelFeedMsg{}),
+	RootMsgType:            reflect.TypeOf(RootMsg{}),
+	DataMsgType:            reflect.TypeOf(DataMsg{}),
+	RequestRegistryMsgType: reflect.TypeOf(RequestRegistryMsg{}),
+	RegistryMsgType:        reflect.TypeOf(RegistryMsg{}),
 }
 
 // An ErrInvalidMsgType represents decoding error when
