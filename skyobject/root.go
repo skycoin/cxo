@@ -126,7 +126,7 @@ func (r *Root) Encode() (sig cipher.Sig, b []byte) {
 }
 
 func (r *Root) encode() (sig cipher.Sig, b []byte) {
-	var x rootEncoding
+	var x encodedRoot
 	x.Refs = r.refs
 	x.Reg = r.reg
 	x.Time = r.time
@@ -447,7 +447,7 @@ func gotValue(v *Value, gf GotFunc) (err error) {
 
 // encoding
 
-type rootEncoding struct {
+type encodedRoot struct {
 	Refs []Dynamic
 	Reg  RegistryReference
 	Time int64

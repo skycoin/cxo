@@ -53,6 +53,12 @@ func NewContainerDB(db *data.DB, reg *Registry) (c *Container) {
 
 // registry
 
+func (c *Container) AddRegistry(r *Registry) {
+	c.Lock()
+	defer c.Unlock()
+	c.registries[r.Reference()] = r
+}
+
 // CoreRegistry returns registry witch wich the Container
 // was created. It can returns nil
 func (c *Container) CoreRegistry() *Registry {
@@ -140,8 +146,14 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	if c.coreRegistry == nil {
 		panic("unable to create Root, Container created without registry")
 	}
+	if pk == (cipher.PubKey{}) {
+		panic("empty public key")
+	}
+	if sk == (cipher.SecKey{}) {
+		panic("empty secret key")
+	}
 	// checking for existing root objects
-	if r = c.LastRoot(pk); r != nil {
+	if r = c.lastRoot(pk); r != nil {
 		if r.sec != sk {
 			panic("secret key missmatch")
 		}
@@ -153,6 +165,39 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	r.pub = pk
 	r.sec = sk
 	r.cnt = c
+	return
+}
+
+// AddEncodedRoot used to add a received root object to the
+// Container. It returns an error if given data can't be decoded
+// or signature is wrong. It returns nil (r) if decoded root
+// is older then first existsing root object of the feed. It
+// also returns nil (r) if root with the same seq/pk/sig already
+// exists in the Container. The nil means that the root was not
+// added
+func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
+	err error) {
+
+	var x encodedRoot
+	if err = encoder.DeserializeRaw(b, &x); err != nil {
+		return
+	}
+	r = new(Root)
+	r.refs = x.Refs
+	r.reg = x.Reg
+	r.time = x.Time
+	r.seq = x.Seq
+	r.pub = x.Pub
+
+	err = cipher.VerifySignature(r.pub, sig, cipher.SumSHA256(b))
+	if err != nil {
+		r = nil
+		return
+	}
+
+	if !c.addRoot(r) {
+		r = nil
+	}
 	return
 }
 
@@ -285,7 +330,7 @@ func (c *Container) regsitryGC() {
 	}
 }
 
-func (c *Container) addRoot(r *Root) {
+func (c *Container) addRoot(r *Root) (ok bool) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -295,7 +340,8 @@ func (c *Container) addRoot(r *Root) {
 		rs = &rsd
 		c.roots[r.Pub()] = rs
 	}
-	rs.add(r)
+	ok = rs.add(r)
+	return
 }
 
 // roots is list of root object of a feed sorted by Seq number
@@ -307,9 +353,20 @@ func (r roots) Len() int           { return len(r) }
 func (r roots) Less(i, j int) bool { return r[i].Seq() < r[j].Seq() }
 func (r roots) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 
-func (r *roots) add(t *Root) {
+func (r *roots) add(t *Root) bool {
+	for i, e := range *r {
+		if i == 0 {
+			if t.Seq() < e.Seq() {
+				return false // older then first (fuck it)
+			}
+		}
+		if t.Seq() == e.Seq() {
+			return false // already have a root with the same seq
+		}
+	}
 	*r = append(*r, t)
 	r.sort()
+	return true
 }
 
 func (r roots) latest() (t *Root) {
