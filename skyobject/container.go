@@ -240,6 +240,25 @@ func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) *Root {
 	return nil
 }
 
+// Feeds returns public keys of feeds
+// have at least one Root object
+func (c *Container) Feeds() (feeds []cipher.PubKey) {
+	c.RLock()
+	defer c.RUnlock()
+
+	if len(c.roots) == 0 {
+		return // nil
+	}
+	feeds = make([]cipher.PubKey, 0, len(c.roots))
+	for f, rs := range c.roots {
+		if len(*rs) == 0 {
+			continue
+		}
+		feeds = append(feeds, f)
+	}
+	return
+}
+
 // GC
 
 // GC removes all unused objects, including Root objects and Registries
