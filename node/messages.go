@@ -15,6 +15,7 @@ var (
 	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
 	_ Msg = &DataMsg{}
+	_ Msg = &RegistryMsg{}
 )
 
 // A Msg is ommon interface for CXO messages
@@ -63,22 +64,32 @@ type DataMsg struct {
 // MsgType implements Msg interface
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
+type RegistryMsg struct {
+	Ref cipher.SHA256 // registry reference
+	Reg []byte
+}
+
+// MsgType implements Msg interface
+func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
+
 // A MsgType represent msg prefix
 type MsgType uint8
 
 const (
-	AddFeedMsgType MsgType = 1 + iota // AddFeedMsg 1
-	DelFeedMsgType                    // DelFeedMsg 2
-	RootMsgType                       // RootMsg 3
-	DataMsgType                       // DataMsg 4
+	AddFeedMsgType  MsgType = 1 + iota // AddFeedMsg 1
+	DelFeedMsgType                     // DelFeedMsg 2
+	RootMsgType                        // RootMsg 3
+	DataMsgType                        // DataMsg 4
+	RegistryMsgType                    // RegistryMsg 5
 )
 
 // MsgType to string mapping
 var msgTypeString = [...]string{
-	AddFeedMsgType: "ADD",
-	DelFeedMsgType: "DEL",
-	RootMsgType:    "ROOT",
-	DataMsgType:    "DATA",
+	AddFeedMsgType:  "ADD",
+	DelFeedMsgType:  "DEL",
+	RootMsgType:     "ROOT",
+	DataMsgType:     "DATA",
+	RegistryMsgType: "REG",
 }
 
 // String implements fmt.Stringer interface
@@ -90,10 +101,11 @@ func (m MsgType) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
-	AddFeedMsgType: reflect.TypeOf(AddFeedMsg{}),
-	DelFeedMsgType: reflect.TypeOf(DelFeedMsg{}),
-	RootMsgType:    reflect.TypeOf(RootMsg{}),
-	DataMsgType:    reflect.TypeOf(DataMsg{}),
+	AddFeedMsgType:  reflect.TypeOf(AddFeedMsg{}),
+	DelFeedMsgType:  reflect.TypeOf(DelFeedMsg{}),
+	RootMsgType:     reflect.TypeOf(RootMsg{}),
+	DataMsgType:     reflect.TypeOf(DataMsg{}),
+	RegistryMsgType: reflect.TypeOf(RegistryMsg{}),
 }
 
 // An ErrInvalidMsgType represents decoding error when

@@ -77,6 +77,10 @@ func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
 	return
 }
 
+func (c *Container) WantRegistry() {
+	//
+}
+
 // database
 
 // DB of the Container
