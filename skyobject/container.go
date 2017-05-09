@@ -123,11 +123,48 @@ func (c *Container) Dynamic(i interface{}) (dr Dynamic) {
 
 // roots
 
+// NewRoot creates feed and first associated root object.
+// If feed already exists and has a Root object then the
+// NewRoot returns last root object. In this case the NewRoot
+// can panincs if secret key of existsing root doesn't match
+// given secret key. The Container must be created with a
+// Registry, otherwise the method panics. Freshly created
+// Root object will be associated with Registry with which
+// the Container was created. The NewRoot never append
+// created root to the Container. Call Inject, InjectMany,
+// Touch or Replace methods of the Root to add it to the
+// Container
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
+	c.Lock()
+	defer c.Unlock()
+	if c.coreRegistry == nil {
+		panic("unable to create Root, Container created without registry")
+	}
+	// checking for existing root objects
+	if r = c.LastRoot(pk); r != nil {
+		if r.sec != sk {
+			panic("secret key missmatch")
+		}
+		return
+	}
+	// create
+	r = new(Root)
+	r.reg = c.coreRegistry.Reference()
+	r.pub = pk
+	r.sec = sk
+	r.cnt = c
+	return
+}
+
 // LastRoot returns latest root object of the feed (pk).
 // It can return nil
 func (c *Container) LastRoot(pk cipher.PubKey) *Root {
 	c.RLock()
 	defer c.RUnlock()
+	return c.lastRoot(pk)
+}
+
+func (c *Container) lastRoot(pk cipher.PubKey) *Root {
 	if rs := c.roots[pk]; rs != nil {
 		return rs.latest()
 	}

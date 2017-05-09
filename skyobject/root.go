@@ -45,8 +45,8 @@ func (r *Root) RegistryReference() RegistryReference {
 }
 
 // Tocuh updates timestapt of the Root (setting it to now)
-// and increments seq number. Touch implicitly called inside
-// Inject and InjectMany methods
+// and increments seq number. The Touch implicitly called
+// inside Inject, InjectMany and Replace methods
 func (r *Root) Touch() {
 	r.Lock()
 	defer r.Unlock()
@@ -87,7 +87,9 @@ func (r *Root) Sig() cipher.Sig {
 }
 
 // IsFull reports true if the Root is full
-// (has all related schemas and objects)
+// (has all related schemas and objects).
+// The IsFull always retruns false for freshly
+// created root objects
 func (r *Root) IsFull() bool {
 	r.RLock()
 	defer r.RUnlock()
@@ -95,6 +97,9 @@ func (r *Root) IsFull() bool {
 		return true
 	}
 	if !r.HasRegistry() {
+		return false
+	}
+	if r.sig == (cipher.Sig{}) { // fresh
 		return false
 	}
 	var want int
@@ -135,7 +140,7 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 }
 
 // Sign the Root. The Sign implicitly called inside
-// Encode, Inject and InjectMany methods
+// Encode, Inject, InjectMany and Replace methods
 func (r *Root) Sign() (sig cipher.Sig) {
 	r.Lock()
 	defer r.Unlock()
@@ -208,6 +213,26 @@ func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic) {
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, injs...)
+	r.touch()
+	return
+}
+
+// Refs returns references of the Root
+func (r *Root) Refs() []Dynamic {
+	r.RLock()
+	defer r.RUnlock()
+	return r.refs
+}
+
+// Replace all references of the Root with given references.
+// All Dynamic objects must be created by the Root (or, at
+// least, by a Root that uses the same Registry). The Replace
+// implicitly updates seq, timestamp and signature of the Root.
+// The method returns list of previous references of the Root
+func (r *Root) Replace(refs []Dynamic) (prev []Dynamic) {
+	r.Lock()
+	defer r.Unlock()
+	prev, r.refs = r.refs, refs
 	r.touch()
 	return
 }
