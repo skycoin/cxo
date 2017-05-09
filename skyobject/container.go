@@ -53,10 +53,15 @@ func NewContainerDB(db *data.DB, reg *Registry) (c *Container) {
 
 // registry
 
+// AddRegistry to the Container. A registry can be removed
+// by GC() or RegistiesGC() if no root refers it
 func (c *Container) AddRegistry(r *Registry) {
 	c.Lock()
 	defer c.Unlock()
-	c.registries[r.Reference()] = r
+	// don't replace
+	if _, ok := c.registries[r.Reference()]; !ok {
+		c.registries[r.Reference()] = r
+	}
 }
 
 // CoreRegistry returns registry witch wich the Container
@@ -77,8 +82,44 @@ func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
 	return
 }
 
-func (c *Container) WantRegistry() {
-	//
+// WantRegistryFunc is for (*Container).WantRegistry.
+// The function called for every registry the Container
+// hasn't got but knows about. If the fucntions returns
+// false itteration stops
+type WantRegistryFunc func(RegistryReference) (stop bool)
+
+// WantRegistry
+func (c *Container) WantRegistry(wrf WantRegistryFunc) {
+	c.RLock()
+	defer c.RUnlock()
+	alreadyCalled := make(map[RegistryReference]struct{})
+	for _, rs := range c.roots {
+		for _, r := range *rs {
+			rr := r.RegistryReference()
+			if _, ok := c.registries[rr]; !ok {
+				if _, ok := alreadyCalled[rr]; !ok {
+					if wfr(rr) {
+						return
+					}
+					alreadyCalled[rr] = struct{}{}
+				}
+			}
+		}
+	}
+}
+
+// Registries returns registries that the Container has got
+func (c *Container) Registries() (rrs []RegistryReference) {
+	c.RLock()
+	defer c.RUnlock()
+	if len(c.registries) == 0 {
+		return // nil
+	}
+	rrs = make([]RegistryReference, 0, len(c.registries))
+	for rr := range c.registries {
+		rrs = append(rrs, rr)
+	}
+	return
 }
 
 // database
