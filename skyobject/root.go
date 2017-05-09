@@ -118,7 +118,7 @@ func (r *Root) IsFull() bool {
 }
 
 // Encode the Root and get its Signature
-func (r *Root) Encode() (sig cipher.Sig, b []byte) {
+func (r *Root) Encode() (b []byte, sig cipher.Sig) {
 	r.RLock()
 	defer r.RUnlock()
 	sig, b = r.encode()

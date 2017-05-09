@@ -101,7 +101,33 @@ func TestContainer_NewRoot(t *testing.T) {
 }
 
 func TestContainer_AddEncodedRoot(t *testing.T) {
-	// high
+	pk, sk := cipher.GenerateKeyPair()
+
+	reg := NewRegistry()
+	reg.Regsiter("cxo.User", User{})
+	reg.Regsiter("cxo.Group", Group{})
+	reg.Done()
+
+	c1 := NewContainer(reg)
+	r1 := c1.NewRoot(pk, sk)
+
+	r1.Inject(User{Name: "motherfucker"})
+
+	c2 := NewContainer(nil)
+
+	r2, err := c2.AddEncodedRoot(r1.Encode()) // []byte, sig
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r2.Refs()[0] != r1.Refs()[0] {
+		t.Error("missmatch")
+	}
+
+	if r2.RegistryReference() != r1.RegistryReference() {
+		t.Error("missmatch")
+	}
+
 }
 
 func TestContainer_LastRoot(t *testing.T) {
