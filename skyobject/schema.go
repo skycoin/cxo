@@ -283,6 +283,20 @@ func (s *structSchema) Encode() (b []byte) {
 	return
 }
 
+//
+// TODO:
+//  (1) rid out of simpleField
+//  (2) merge coreField and field
+//  (3) make Field (interface) to be *Field (struct)
+//
+// Because simpleField can't be created from encodedField.
+// And (Field).Kind() never used to be a big advantag of
+// permormance and memory
+//
+// And, creating Schema from simpleField adds some memory
+// and GC pressure
+//
+
 // filed
 
 type Field interface {
