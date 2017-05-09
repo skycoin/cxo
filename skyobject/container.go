@@ -98,7 +98,7 @@ func (c *Container) WantRegistry(wrf WantRegistryFunc) {
 			rr := r.RegistryReference()
 			if _, ok := c.registries[rr]; !ok {
 				if _, ok := alreadyCalled[rr]; !ok {
-					if wfr(rr) {
+					if wrf(rr) {
 						return
 					}
 					alreadyCalled[rr] = struct{}{}

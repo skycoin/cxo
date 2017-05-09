@@ -67,6 +67,12 @@ func (r *Root) Seq() uint64 {
 	return r.seq
 }
 
+func (r *Root) SetSeq(seq uint64) {
+	r.Lock()
+	defer r.Unlock()
+	r.seq = seq
+}
+
 // Time returns unix nano timestamp of the Root
 func (r *Root) Time() int64 {
 	r.RLock()

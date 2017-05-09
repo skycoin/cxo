@@ -358,9 +358,10 @@ func (v *Value) String() (s string, err error) {
 
 // For []byte and string
 func (v *Value) Bytes() (p []byte, err error) {
-	if v.Kind() == reflect.Slice && v.Schema().Kind() == reflect.Uint8 {
+	sch := v.Schema()
+	if sch.Kind() == reflect.Slice && sch.Elem().Kind() == reflect.Uint8 {
 		err = encoder.DeserializeRaw(v.data, &p)
-	} else if v.Kind() == reflect.String {
+	} else if sch.Kind() == reflect.String {
 		var s string
 		if err = encoder.DeserializeRaw(v.data, &s); err != nil {
 			return
