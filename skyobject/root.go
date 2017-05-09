@@ -47,17 +47,18 @@ func (r *Root) RegistryReference() RegistryReference {
 // Tocuh updates timestapt of the Root (setting it to now)
 // and increments seq number. The Touch implicitly called
 // inside Inject, InjectMany and Replace methods
-func (r *Root) Touch() {
+func (r *Root) Touch() (sig cipher.Sig, p []byte) {
 	r.Lock()
 	defer r.Unlock()
-	r.touch()
+	return r.touch()
 }
 
-func (r *Root) touch() {
+func (r *Root) touch() (sig cipher.Sig, p []byte) {
 	r.time = time.Now().UnixNano()
 	r.seq++
-	r.encode()       // to update signature
-	r.cnt.addRoot(r) // updated
+	sig, p = r.encode() // to update signature
+	r.cnt.addRoot(r)    // updated
+	return
 }
 
 // Seq returns seq number of the Root
@@ -200,18 +201,20 @@ func (r *Root) Dynamic(i interface{}) (dr Dynamic) {
 
 // Inject an object to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) Inject(i interface{}) (inj Dynamic) {
+func (r *Root) Inject(i interface{}) (inj Dynamic, sig cipher.Sig, p []byte) {
 	inj = r.Dynamic(i)
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, inj)
-	r.touch()
+	sig, p = r.touch()
 	return
 }
 
 // InjectMany objects to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic) {
+func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic,
+	sig cipher.Sig, p []byte) {
+
 	injs = make([]Dynamic, 0, len(i))
 	for _, e := range i {
 		injs = append(injs, r.Dynamic(e))
@@ -219,7 +222,7 @@ func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic) {
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, injs...)
-	r.touch()
+	sig, p = r.touch()
 	return
 }
 
@@ -235,11 +238,13 @@ func (r *Root) Refs() []Dynamic {
 // least, by a Root that uses the same Registry). The Replace
 // implicitly updates seq, timestamp and signature of the Root.
 // The method returns list of previous references of the Root
-func (r *Root) Replace(refs []Dynamic) (prev []Dynamic) {
+func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, sig cipher.Sig,
+	p []byte) {
+
 	r.Lock()
 	defer r.Unlock()
 	prev, r.refs = r.refs, refs
-	r.touch()
+	sig, p = r.touch()
 	return
 }
 

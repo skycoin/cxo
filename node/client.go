@@ -373,31 +373,28 @@ type Root struct {
 	c *Container
 }
 
-func (r *Root) Touch() {
+func (r *Root) Touch() (sig cipher.Sig, p []byte) {
 	// just send the root
-	// TODO: lock-unlock-...
 	// TODO: sending never see the (*Client).feeds
-	r.Root.Touch()
-	// lock-unlock (+possible changes between Touch and Encode)
-	b, sig := r.Encode()
+	sig, p = r.Root.Touch()
 	r.c.client.sendMessage(&RootMsg{
 		Feed: r.Pub(),
 		Sig:  sig,
-		Root: b,
+		Root: p,
 	})
+	return
 }
 
-func (r *Root) Inject(i interface{}) (inj skyobject.Dynamic) {
+func (r *Root) Inject(i interface{}) (inj skyobject.Dynamic, sig cipher.Sig,
+	p []byte) {
+
 	// send root and objects related to injected object
-	// TODO: lock-unlock-...
 	// TODO: sending never see the (*Client).feeds
-	inj = r.Root.Inject(i)
-	// lock-unlock (+possible changes between Touch and Encode)
-	b, sig := r.Encode()
+	inj, sig, p = r.Root.Inject(i)
 	r.c.client.sendMessage(&RootMsg{
 		Feed: r.Pub(),
 		Sig:  sig,
-		Root: b,
+		Root: p,
 	})
 	sent := make(map[skyobject.Reference]struct{})
 	r.GotOfFunc(inj, func(ref skyobject.Reference) (_ error) {
@@ -420,17 +417,16 @@ func (r *Root) Inject(i interface{}) (inj skyobject.Dynamic) {
 	return
 }
 
-func (r *Root) InjectMany(i ...interface{}) (injs []skyobject.Dynamic) {
+func (r *Root) InjectMany(i ...interface{}) (injs []skyobject.Dynamic,
+	sig cipher.Sig, p []byte) {
+
 	// send the root and objects related to all injected objects
-	// TODO: lock-unlock-...
 	// TODO: sending never see the (*Client).feeds
-	injs = r.Root.InjectMany(i...)
-	// lock-unlock (+possible changes between Touch and Encode)
-	b, sig := r.Encode()
+	injs, sig, p = r.Root.InjectMany(i...)
 	r.c.client.sendMessage(&RootMsg{
 		Feed: r.Pub(),
 		Sig:  sig,
-		Root: b,
+		Root: p,
 	})
 	sent := make(map[skyobject.Reference]struct{}) // already sent
 	for _, inj := range injs {
@@ -455,17 +451,16 @@ func (r *Root) InjectMany(i ...interface{}) (injs []skyobject.Dynamic) {
 	return
 }
 
-func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic) {
+func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
+	sig cipher.Sig, p []byte) {
+
 	// send root and all its got
-	// TODO: lock-unlock-...
 	// TODO: sending never see the (*Client).feeds
-	prev = r.Root.Replace(refs)
-	// lock-unlock (+possible changes between Touch and Encode)
-	b, sig := r.Encode()
+	prev, sig, p = r.Root.Replace(refs)
 	r.c.client.sendMessage(&RootMsg{
 		Feed: r.Pub(),
 		Sig:  sig,
-		Root: b,
+		Root: p,
 	})
 	sent := make(map[skyobject.Reference]struct{}) // already sent
 	r.GotFunc(func(ref skyobject.Reference) (_ error) {
