@@ -1,11 +1,9 @@
-// Package skyobject represents skyobject
 package skyobject
 
 import (
-	"errors"
 	"fmt"
 	"sort"
-	"time"
+	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -13,233 +11,401 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-var (
-	// ErrInvalidSchema occurs any time using the schema that is invalid
-	ErrInvalidSchema = errors.New("invalid schema")
-	// ErrEmptySchemaKey occurs if you want to get schema by its key, but
-	// the key is empty
-	ErrEmptySchemaKey = errors.New("empty schema key")
-	// ErrTypeNameNotFound oocurs if you want to get schema by type name
-	// but the Container knows nothing about the name
-	ErrTypeNameNotFound = errors.New("type name not found")
-	// ErrInvalidReference occurs when some dynamic reference is invalid
-	ErrInvalidReference = errors.New("invalid reference")
-	ErrObjectNotFound   = errors.New("object not found")
-)
-
-// A Container represents type helper to manage root objects
+// A Container represents ...
 type Container struct {
-	roots map[cipher.PubKey]*Root // feed -> root of the feed
-	db    *data.DB
-	reg   *Registry // shared registery
+	sync.RWMutex
+
+	db *data.DB // databse
+
+	coreRegistry *Registry // registry witch which the container was created
+
+	registries map[RegistryReference]*Registry
+	roots      map[cipher.PubKey]*roots // root objects (pointer to slice)
 }
 
-// NewContainer creates container using given db. If the db is nil
-// then the function panics
-func NewContainer(db *data.DB) (c *Container) {
+// NewContainer is like NewContainerDB but database created
+// implicitly. See documentation of NewContainerDB for details
+func NewContainer(reg *Registry) *Container {
+	return NewContainerDB(data.NewDB(), reg)
+}
+
+// NewContainerDB creates new Container using given databse and
+// optional Registry. If Registry is no nil, then the registry
+// will be used to create Dynamic objects. The Registry will be
+// used as registry of all Root objects created by the Container.
+// If Regsitry is nil then the Container can be used server-side.
+// Creating Dynamic and Root objects without Registry causes panic
+func NewContainerDB(db *data.DB, reg *Registry) (c *Container) {
 	if db == nil {
-		panic("missisng db")
+		panic("nil db")
 	}
 	c = new(Container)
 	c.db = db
-	c.roots = make(map[cipher.PubKey]*Root)
-	c.reg = newRegistery(db)
-	return
-}
-
-//
-// root object
-//
-
-// NewRoot creates new empty root object. The method doesn't put the root
-// to the Container. Seq of the root is 0, Timestamp of the root set to now.
-func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (root *Root) {
-	root = new(Root)
-	root.reg = c.reg // shared registery
-	root.cnt = c
-	root.Pub = pk
-	root.Time = time.Now().UnixNano()
-	root.Sign(sk)
-	c.roots[pk] = root
-	return
-}
-
-// Roots retusn list of all public keys of the Container
-func (c *Container) Roots() (list []cipher.PubKey) {
-	if len(c.roots) == 0 {
-		return
+	c.registries = make(map[RegistryReference]*Registry)
+	if reg != nil {
+		reg.Done()
+		c.coreRegistry = reg
+		c.registries[reg.Reference()] = reg
 	}
-	list = make([]cipher.PubKey, 0, len(c.roots))
-	for pub := range c.roots {
-		list = append(list, pub)
-	}
+	c.roots = make(map[cipher.PubKey]*roots)
 	return
 }
 
-// Root returns root object by its public key
-func (c *Container) Root(pk cipher.PubKey) (r *Root) {
-	return c.roots[pk]
+// registry
+
+func (c *Container) AddRegistry(r *Registry) {
+	c.Lock()
+	defer c.Unlock()
+	c.registries[r.Reference()] = r
 }
 
-func (c *Container) addRoot(root *Root) (set bool) {
-	if rt, ex := c.roots[root.Pub]; !ex {
-		c.roots[root.Pub], set = root, true
-	} else if rt.Time < root.Time {
-		c.roots[root.Pub], set = root, true
+// CoreRegistry returns registry witch wich the Container
+// was created. It can returns nil
+func (c *Container) CoreRegistry() *Registry {
+	return c.coreRegistry
+}
+
+// Registry by reference
+func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
+	c.RLock()
+	defer c.RUnlock()
+
+	var ok bool
+	if reg, ok = c.registries[rr]; !ok {
+		err = fmt.Errorf("missing registry %q", rr.String())
 	}
 	return
 }
 
-func decodeRoot(p []byte) (re rootEncoding, err error) {
-	err = encoder.DeserializeRaw(p, &re)
+func (c *Container) WantRegistry() {
+	//
+}
+
+// database
+
+// DB of the Container
+func (c *Container) DB() *data.DB {
+	return c.db
+}
+
+// Get object by Reference
+func (c *Container) Get(ref Reference) (data []byte, ok bool) {
+	data, ok = c.db.Get(cipher.SHA256(ref))
 	return
 }
 
-// AddEncodedRoot set given data as root object of the container.
-// It returns an error if the data can't be encoded. It returns
-// true if the root is set
-func (c *Container) AddEncodedRoot(p []byte, // root.Encode()
-	pub cipher.PubKey, sig cipher.Sig) (ok bool, err error) {
+// save objects
 
-	err = cipher.VerifySignature(pub, sig, cipher.SumSHA256(p))
-	if err != nil {
-		return
-	}
-
-	var re rootEncoding
-	if re, err = decodeRoot(p); err != nil {
-		return
-	}
-	var root *Root = &Root{
-		Time: re.Time,
-		Seq:  re.Seq,
-		Refs: re.Refs,
-	}
-	root.Pub = pub
-	root.Sig = sig
-	root.cnt = c
-	root.reg = c.reg
-	ok = c.addRoot(root)
-	return
-}
-
-// EncodedSchemas returns encoded schemas of the container to
-// send them to remote node
-func (c *Container) EncodedSchemas() []byte {
-	if len(c.reg.reg) > 0 {
-		var reg RegistryEntities = make(RegistryEntities, 0, len(c.reg.reg))
-		for k, v := range c.reg.reg {
-			reg = append(reg, RegistryEntity{k, v})
-		}
-		sort.Sort(reg)
-		return encoder.Serialize(reg)
-	}
-	return encoder.Serialize(RegistryEntities{}) // empty
-}
-
-// AddSchemas used to add schemas from remote node to registery of the node
-func (c *Container) AddEncodedSchemas(p []byte) (err error) {
-	var re RegistryEntities
-	if err = encoder.DeserializeRaw(p, &re); err != nil {
-		return
-	}
-	err = c.addSchemas(re)
-	return
-}
-
-func (c *Container) addSchemas(re RegistryEntities) (err error) {
-	for _, v := range re {
-		if sck, ae := c.reg.reg[v.K]; ae {
-			if sck != v.V {
-				err = fmt.Errorf("conflict between registered types %q", v.K)
-				return
-			}
-		} else {
-			c.reg.reg[v.K] = v.V
-		}
-	}
-	return
-}
-
-// GetObject returns Value by schema name
-// and reference to the object
-func (c *Container) GetObject(schemaName string,
-	ref Reference) (val *Value, err error) {
-
-	ev, ok := c.get(ref)
-	if !ok {
-		err = ErrObjectNotFound
-		return
-	}
-	var s *Schema
-	if s, err = c.reg.SchemaByName(schemaName); err != nil {
-		return
-	}
-	val = &Value{c, s, ev}
-	return
-}
-
-//
-// database wrappers (Reference <-> cipher.SHA256)
-//
-
-func (c *Container) get(r Reference) (v []byte, ok bool) {
-	v, ok = c.db.Get(cipher.SHA256(r))
-	return
-}
-
-//
-// schemas and objects
-//
-
-// SchemaByReference returns *Schema by reference if the Container know
-// about the schema
-func (c *Container) SchemaByReference(sr Reference) (s *Schema, err error) {
-	if sr.IsBlank() {
-		err = ErrEmptySchemaKey
-		return
-	}
-	s, err = c.reg.SchemaByReference(sr)
-	return
-}
-
-// Save an object to db and get reference-key to it
-func (c *Container) Save(i interface{}) Reference {
+func (c *Container) save(i interface{}) Reference {
 	return Reference(c.db.AddAutoKey(encoder.Serialize(i)))
 }
 
-// SaveArray of objects and get array of references-keys to them
-func (c *Container) SaveArray(ary ...interface{}) (rs References) {
-	if len(ary) == 0 {
+func (c *Container) Save(i interface{}) Reference {
+	c.RLock()
+	defer c.RUnlock() // locks required for GC
+	return c.save(i)
+}
+
+func (c *Container) SaveArray(i ...interface{}) (refs References) {
+	c.RLock()
+	defer c.RUnlock() // locks required for GC
+	refs = make(References, 0, len(i))
+	for _, e := range i {
+		refs = append(refs, c.save(e))
+	}
+	return
+}
+
+func (c *Container) Dynamic(i interface{}) (dr Dynamic) {
+	if c.coreRegistry == nil {
+		panic("unable to create Dynamic, Container created without registry")
+	}
+	c.RLock()
+	defer c.RUnlock() // locks required for GC
+	s, err := c.coreRegistry.SchemaByInterface(i)
+	if err != nil {
+		panic(err)
+	}
+	dr.Schema = s.Reference()
+	dr.Object = c.save(i)
+	return
+}
+
+// roots
+
+// NewRoot creates feed and first associated root object.
+// If feed already exists and has a Root object then the
+// NewRoot returns last root object. In this case the NewRoot
+// can panincs if secret key of existsing root doesn't match
+// given secret key. The Container must be created with a
+// Registry, otherwise the method panics. Freshly created
+// Root object will be associated with Registry with which
+// the Container was created. The NewRoot never append
+// created root to the Container. Call Inject, InjectMany,
+// Touch or Replace methods of the Root to add it to the
+// Container
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
+	c.Lock()
+	defer c.Unlock()
+	if c.coreRegistry == nil {
+		panic("unable to create Root, Container created without registry")
+	}
+	if pk == (cipher.PubKey{}) {
+		panic("empty public key")
+	}
+	if sk == (cipher.SecKey{}) {
+		panic("empty secret key")
+	}
+	// checking for existing root objects
+	if r = c.lastRoot(pk); r != nil {
+		if r.sec != sk {
+			panic("secret key missmatch")
+		}
 		return
 	}
-	rs = make(References, 0, len(ary))
-	for _, a := range ary {
-		rs = append(rs, c.Save(a))
+	// create
+	r = new(Root)
+	r.reg = c.coreRegistry.Reference()
+	r.pub = pk
+	r.sec = sk
+	r.cnt = c
+	return
+}
+
+// AddEncodedRoot used to add a received root object to the
+// Container. It returns an error if given data can't be decoded
+// or signature is wrong. It returns nil (r) if decoded root
+// is older then first existsing root object of the feed. It
+// also returns nil (r) if root with the same seq/pk/sig already
+// exists in the Container. The nil means that the root was not
+// added
+func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
+	err error) {
+
+	var x encodedRoot
+	if err = encoder.DeserializeRaw(b, &x); err != nil {
+		return
+	}
+	r = new(Root)
+	r.refs = x.Refs
+	r.reg = x.Reg
+	r.time = x.Time
+	r.seq = x.Seq
+	r.pub = x.Pub
+
+	err = cipher.VerifySignature(r.pub, sig, cipher.SumSHA256(b))
+	if err != nil {
+		r = nil
+		return
+	}
+
+	if !c.addRoot(r) {
+		r = nil
 	}
 	return
 }
 
-// SchemaByName returns schema by registered name
-func (c *Container) SchemaByName(name string) (*Schema, error) {
-	return c.reg.SchemaByName(name)
+// LastRoot returns latest root object of the feed (pk).
+// It can return nil
+func (c *Container) LastRoot(pk cipher.PubKey) *Root {
+	c.RLock()
+	defer c.RUnlock()
+	return c.lastRoot(pk)
 }
 
-// SchemaReference returns reference-key to schema of given vlaue. It panics
-// if the schema is not registered
-func (c *Container) SchemaReference(i interface{}) (ref Reference) {
-	return c.reg.SchemaReference(i)
+func (c *Container) lastRoot(pk cipher.PubKey) *Root {
+	if rs := c.roots[pk]; rs != nil {
+		return rs.latest()
+	}
+	return nil
 }
 
-// Dynamic saves object and its schema in db and returns dynamic reference,
-// that points to the object and the schema
-func (c *Container) Dynamic(i interface{}) (dn Dynamic) {
-	dn.Object = c.Save(i)
-	dn.Schema = c.SchemaReference(i)
+// LastFullRoot returns latest root object of the feed (pk) that is full.
+// It can return nil
+func (c *Container) LastFullRoot(pk cipher.PubKey) *Root {
+	c.RLock()
+	defer c.RUnlock()
+	if rs := c.roots[pk]; rs != nil {
+		return rs.latestFull()
+	}
+	return nil
+}
+
+func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) *Root {
+	c.RLock()
+	defer c.RUnlock()
+	if rs := c.roots[pk]; rs != nil {
+		return rs.bySeq(seq)
+	}
+	return nil
+}
+
+// GC
+
+// GC removes all unused objects, including Root objects and Registries
+func (c *Container) GC() {
+	c.Lock()
+	defer c.Unlock()
+	c.rootsGC()
+	c.regsitryGC()
+	c.objectsGC()
+}
+
+// RootsGC removes all root objects up to
+// last full Root object the feed has got.
+// If no full objects of a feed found then
+// no Root objects removed from the feed
+func (c *Container) RootsGC() {
+	c.Lock()
+	defer c.Unlock()
+	c.rootsGC()
+}
+
+// RegsitryGC removes all unused registries
+func (c *Container) RegsitryGC() {
+	c.Lock()
+	defer c.Unlock()
+	c.regsitryGC()
+}
+
+// ObjectsGC removes all unused objects from database
+func (c *Container) ObjectsGC() {
+	c.Lock()
+	defer c.Unlock()
+	c.objectsGC()
+}
+
+// internal
+
+func (c *Container) objectsGC() {
+	gc := make(map[Reference]int)
+	// fill
+	c.db.Range(func(ok cipher.SHA256) {
+		gc[Reference(ok)] = 0
+	})
+	// calculate references
+	for _, rs := range c.roots {
+		if rs == nil {
+			continue
+		}
+		for _, r := range *rs {
+			r.GotFunc(func(r Reference) (_ error) {
+				gc[r] = gc[r] + 1
+				return
+			})
+		}
+	}
+	// remove unused objects
+	for ref, i := range gc {
+		if i != 0 {
+			continue
+		}
+		c.db.Del(cipher.SHA256(ref))
+	}
+}
+
+func (c *Container) rootsGC() {
+	for _, rs := range c.roots {
+		if rs == nil {
+			continue
+		}
+		rs.gc()
+	}
+}
+
+func (c *Container) regsitryGC() {
+	gc := make(map[RegistryReference]int)
+	// calculate
+	for _, rs := range c.roots {
+		if rs == nil {
+			continue
+		}
+		for _, r := range *rs {
+			rr := r.RegistryReference()
+			gc[rr] = gc[rr] + 1
+		}
+	}
+	// remove
+	for rr, i := range gc {
+		if i != 0 {
+			continue
+		}
+		delete(c.registries, rr)
+	}
+}
+
+func (c *Container) addRoot(r *Root) (ok bool) {
+	c.Lock()
+	defer c.Unlock()
+
+	var rs *roots
+	if rs = c.roots[r.Pub()]; rs == nil {
+		rsd := make(roots, 0)
+		rs = &rsd
+		c.roots[r.Pub()] = rs
+	}
+	ok = rs.add(r)
 	return
 }
 
-// Register schema of given object with given name
-func (c *Container) Register(ni ...interface{}) {
-	c.reg.Register(ni...)
+// roots is list of root object of a feed sorted by Seq number
+type roots []*Root
+
+// sorting
+func (r roots) sort()              { sort.Sort(r) }
+func (r roots) Len() int           { return len(r) }
+func (r roots) Less(i, j int) bool { return r[i].Seq() < r[j].Seq() }
+func (r roots) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+
+func (r *roots) add(t *Root) bool {
+	for i, e := range *r {
+		if i == 0 {
+			if t.Seq() < e.Seq() {
+				return false // older then first (fuck it)
+			}
+		}
+		if t.Seq() == e.Seq() {
+			return false // already have a root with the same seq
+		}
+	}
+	*r = append(*r, t)
+	r.sort()
+	return true
+}
+
+func (r roots) latest() (t *Root) {
+	if len(r) > 0 {
+		t = r[len(r)-1]
+	}
+	return
+}
+
+func (r roots) latestFull() *Root {
+	for i := len(r); i >= 0; i-- { // from tail
+		if x := r[i]; x.IsFull() {
+			return x
+		}
+	}
+	return nil
+}
+
+func (r roots) bySeq(seq uint64) *Root {
+	// TODO: make it faster using sort.Search
+	for _, x := range r {
+		if x.Seq() == seq {
+			return x
+		}
+	}
+	return nil // not found
+}
+
+func (r *roots) gc() {
+	for i := len(*r); i >= 0; i-- { // from tail
+		if x := (*r)[i]; x.IsFull() {
+			if i > 0 { // avoid recreating slice
+				(*r) = (*r)[i:]
+			}
+			return
+		}
+	}
 }

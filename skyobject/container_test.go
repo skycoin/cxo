@@ -4,139 +4,156 @@ import (
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/data"
 )
 
-func getCont() *Container {
-	return NewContainer(data.NewDB())
-}
-
 func TestNewContainer(t *testing.T) {
-	t.Run("nil db", func(t *testing.T) {
-		defer shouldPanic(t)
-		NewContainer(nil)
+	t.Run("with registry", func(t *testing.T) {
+		r := NewRegistry()
+		c := NewContainer(r)
+		if c.db == nil {
+			t.Error("misisng database")
+		}
+		if c.coreRegistry != r {
+			t.Error("wrong core registry")
+		}
+		if len(c.registries) == 0 {
+			t.Error("registry missing in map")
+		} else if c.registries[r.Reference()] != r {
+			t.Error("wrong registry in map")
+		} else if r.done != true {
+			t.Error("Done wasn't called")
+		}
 	})
-	t.Run("norm", func(t *testing.T) {
-		db := data.NewDB()
-		c := NewContainer(db)
-		if c.roots == nil {
-			t.Error("nil roots map")
+	t.Run("wihtout registry", func(t *testing.T) {
+		c := NewContainer(nil)
+		if c.db == nil {
+			t.Error("misisng database")
 		}
-		if c.reg == nil {
-			t.Error("nil regitry")
+		if c.coreRegistry != nil {
+			t.Error("wrong core registry")
 		}
-		if c.db != db {
-			t.Error("wrong db")
+		if len(c.registries) != 0 {
+			t.Error("unexpected registries in map")
 		}
 	})
 }
 
-func TestContainer_NewRoot(t *testing.T) {
-	c := getCont()
-	pk, sk := cipher.GenerateKeyPair()
-	root := c.NewRoot(pk, sk)
-	if root.cnt != c {
-		t.Error("wrong back reference")
-	}
-	if root.reg != c.reg {
-		t.Error("wrong registry reference")
-	}
-	if root.Pub != pk {
-		t.Error("wrong pub key")
-	}
-	hash := cipher.SumSHA256(root.Encode())
-	err := cipher.VerifySignature(root.Pub, root.Sig, hash)
-	if err != nil {
-		t.Error("signaure error:", err)
-	}
+func TestNewContainerDB(t *testing.T) {
+	//
 }
 
-func TestContainer_Roots(t *testing.T) {
-	c := getCont()
-	if list := c.Roots(); len(list) != 0 {
-		t.Error("wron root objects length: want 0, got", len(list))
-	}
-	pk, sk := cipher.GenerateKeyPair()
-	c.NewRoot(pk, sk)
-	if list := c.Roots(); len(list) != 1 {
-		t.Error("wron root objects length: want 1, got", len(list))
-	} else if list[0] != pk {
-		t.Errorf("unexpected root in list: want %q, got %q",
-			shortHex(pk.Hex()),
-			shortHex(list[0].Hex()))
-	}
+func TestContainer_CoreRegistry(t *testing.T) {
+	//
 }
 
-func TestContainer_Root(t *testing.T) {
-	c := getCont()
-	pub, sec := cipher.GenerateKeyPair()
-	if c.Root(pub) != nil {
-		t.Error("unexpected root")
-	}
-	root := c.NewRoot(pub, sec)
-	if c.Root(pub) != root {
-		t.Error("wrong root by pk")
-	}
-	if pk := pubKey(); pk != pub && c.Root(pk) != nil {
-		t.Error("expected nil, got a root")
-	}
+func TestContainer_Registry(t *testing.T) {
+	//
 }
 
-func TestContainer_AddEncodedRoot(t *testing.T) {
-	c1 := getCont()
-	pub, sec := cipher.GenerateKeyPair()
-	root := c1.NewRoot(pub, sec)
-	root.Touch()
-	root.Sign(sec)
-	p := root.Encode()
-	c2 := getCont()
-	ok, err := c2.AddEncodedRoot(p, root.Pub, root.Sig)
-	if err != nil {
-		t.Error(err)
-	}
-	if !ok {
-		t.Error("don't set")
-	}
+func TestContainer_DB(t *testing.T) {
+	//
 }
 
-func TestContainer_SchemaByReference(t *testing.T) {
-	// TODO: low priority
+func TestContainer_Get(t *testing.T) {
+	//
 }
 
 func TestContainer_Save(t *testing.T) {
-	// TODO: low priority
+	//
 }
 
 func TestContainer_SaveArray(t *testing.T) {
-	// TODO: low priority
-}
-
-func TestContainer_SaveSchema(t *testing.T) {
-	// TODO: low priority
+	//
 }
 
 func TestContainer_Dynamic(t *testing.T) {
-	// TODO: low priority
+	//
 }
 
-func TestContainer_Register(t *testing.T) {
-	t.Run("complex recursive", func(t *testing.T) {
-		type W struct {
-			Z Reference `skyobject:"schema=X"`
-		}
-		type G struct {
-			W W
-		}
-		type X struct {
-			G G
-		}
-		cnt := getCont()
-		defer shouldNotPanic(t)
-		cnt.Register(
-			"W", W{},
-			"G", G{},
-			"X", X{},
-		)
+func TestContainer_NewRoot(t *testing.T) {
+	t.Run("nil reg", func(t *testing.T) {
+		c := NewContainer(nil)
+		pk, sk := cipher.GenerateKeyPair()
+		defer shouldPanic(t)
+		c.NewRoot(pk, sk)
 	})
+	t.Run("empty pk", func(t *testing.T) {
+		c := NewContainer(NewRegistry())
+		_, sk := cipher.GenerateKeyPair()
+		defer shouldPanic(t)
+		c.NewRoot(cipher.PubKey{}, sk)
+	})
+	t.Run("empty sk", func(t *testing.T) {
+		c := NewContainer(NewRegistry())
+		pk, _ := cipher.GenerateKeyPair()
+		defer shouldPanic(t)
+		c.NewRoot(pk, cipher.SecKey{})
+	})
+	t.Run("different sk", func(t *testing.T) {
+		c := NewContainer(NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		r := c.NewRoot(pk, sk)
+		r.Touch() // save
+		_, sn := cipher.GenerateKeyPair()
+		defer shouldPanic(t)
+		c.NewRoot(pk, sn)
+	})
+}
+
+func TestContainer_AddEncodedRoot(t *testing.T) {
+	pk, sk := cipher.GenerateKeyPair()
+
+	reg := NewRegistry()
+	reg.Regsiter("cxo.User", User{})
+	reg.Regsiter("cxo.Group", Group{})
+	reg.Done()
+
+	c1 := NewContainer(reg)
+	r1 := c1.NewRoot(pk, sk)
+
+	r1.Inject(User{Name: "motherfucker"})
+
+	c2 := NewContainer(nil)
+
+	r2, err := c2.AddEncodedRoot(r1.Encode()) // []byte, sig
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r2.Refs()[0] != r1.Refs()[0] {
+		t.Error("missmatch")
+	}
+
+	if r2.RegistryReference() != r1.RegistryReference() {
+		t.Error("missmatch")
+	}
+
+}
+
+func TestContainer_LastRoot(t *testing.T) {
+	// high
+}
+
+func TestContainer_LastFullRoot(t *testing.T) {
+	// high
+}
+
+func TestContainer_RootBySeq(t *testing.T) {
+	// mid.
+}
+
+func TestContainer_GC(t *testing.T) {
+	// mid.
+}
+
+func TestContainer_RootsGC(t *testing.T) {
+	// mid.
+}
+
+func TestContainer_RegsitryGC(t *testing.T) {
+	// mid.
+}
+
+func TestContainer_ObjectsGC(t *testing.T) {
+	// mid.
 }

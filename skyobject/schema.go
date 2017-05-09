@@ -1,568 +1,383 @@
 package skyobject
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/data"
 )
+
+var (
+	ErrInvalidType = errors.New("invalid type")
+)
+
+var (
+	singleRef  = typeOf(Reference{})
+	sliceRef   = typeOf(References{})
+	dynamicRef = typeOf(Dynamic{})
+)
+
+type ReferenceType int
 
 const (
-	TAG = "skyobject"
-
-	SINGLE  = "-S" // Reference
-	ARRAY   = "-A" // References
-	DYNAMIC = "-D" // Dynamic
+	ReferenceTypeNone    ReferenceType = iota
+	ReferenceTypeSingle                // Reference (cipher.SHA256)
+	ReferenceTypeSlice                 // References ([]Reference)
+	ReferenceTypeDynamic               // Dynamic (struct{Object, Schema Ref.})
 )
 
-// ========================================================================== //
-//                                                                            //
-//                               registry                                     //
-//                                                                            //
-// ========================================================================== //
+type Schema interface {
+	// Reference of the Schema. The reference is valid after call of Done of
+	// Registry by which the Schema created
+	Reference() SchemaReference
 
-type Registry struct {
-	db  *data.DB
-	nnm map[reflect.Type]string // internal
-	reg map[string]Reference    // shared
+	IsReference() bool            // is the schema is reference
+	ReferenceType() ReferenceType // type of the reference if it is a reference
+
+	IsNil() bool // is the schema a nil
+
+	Kind() reflect.Kind // Kind of the Schema
+	Name() string       // Name of the Schema if named
+	Len() int           // Length if array
+	Fields() []Field    // Fields if struct
+	// Elem if array, slice or pointer (reference). The Elem returns nil
+	// for other types and if it's Dynamic reference (because schema of
+	// element is not specified by schema)
+	Elem() (s Schema)
+
+	RawName() []byte    // raw name if named
+	IsRegistered() bool // is registered or not
+
+	Encode() (b []byte) // encode the schema
+
+	fmt.Stringer // String() string
 }
 
-func newRegistery(db *data.DB) (r *Registry) {
-	if db == nil {
-		panic("nil db")
-	}
-	r = &Registry{
-		db:  db,
-		nnm: make(map[reflect.Type]string),
-		reg: make(map[string]Reference),
-	}
-	return
+var nilSchema Schema = &schema{kind: reflect.Invalid}
+
+// schema core
+
+type schema struct {
+	ref SchemaReference
+
+	kind reflect.Kind
+	name []byte
 }
 
-// name restrictions
-func (r *Registry) validateName(name string) {
-	if name == "" {
-		panicf("empty name")
-	} else if strings.HasPrefix(name, "-") {
-		panicf("'-'-prefixed names are for internal types")
-	}
-	return
+func (s *schema) IsNil() bool {
+	return s.kind == reflect.Invalid
 }
 
-// Register batch of types. It receive key-value pair where key is name of
-// a type and value is the type. Order does not matter. For example:
-//
-//    type Group struct {
-//    	Members References `skyobject:"schema=User"`
-//    }
-//
-//    type User struct {
-//    	Name string
-//    }
-//
-//    type List struct {
-//    	List  References `skyobject:"schema=User"`
-//    	Group []Group
-//    }
-//
-//    type Man struct {
-//    	Name    string
-//    	Owner   Group
-//    	Friends List
-//    }
-//
-//    cnt.Register(
-//    	"Group", Group{},
-//     	"User", User{},
-//    	"List", List{},
-//    	"Man", Man{},
-//    )
-//
-// This approach was introduced to verify dependencies. The Group requires the
-// User, the List requires the User and the Group etc. I.e. there are many
-// complex recursive dependencies. It's possible to register any type without
-// dependencies separate. For example
-//
-//    cnt.Register("User", User{})
-//    cnt.Register(
-//    	"Group", Group{},
-//    	"List", List{},
-//    	"Man", Man{},
-//    )
-//
-func (r *Registry) Register(ni ...interface{}) {
-	if len(ni)%2 != 0 {
-		panicf("invalid arguments count: %d", len(ni))
-	}
-	type nameType struct {
-		name string
-		typ  reflect.Type
-	}
-	nts := make([]nameType, 0, len(ni)/2)
-	// check arguments
-	for i := 0; i < len(ni); i += 2 {
-		name, ok := ni[i].(string)
-		if !ok {
-			panicf("invalid argument type %T (expected string)", ni[i])
-		}
-		r.validateName(name)
-		typ := typeOf(ni[i+1])
-		if _, ok := r.isSpecial(typ); ok {
-			panicf("can't register special type: %s", typ.String())
-		}
-		if hn, ok := r.nnm[typ]; ok {
-			if hn != name {
-				panicf("repetative registration of %s"+
-					" with different name: %s (prefious name: %s)",
-					typ.String(), name, hn)
-			}
-		} else {
-			r.nnm[typ] = name // hold the place
-		}
-		if _, ok := r.reg[name]; !ok {
-			r.reg[name] = Reference{} // hold the place
-		}
-		nts = append(nts, nameType{name, typ})
-	}
-	for _, nt := range nts {
-		sck := r.registerSchema(nt.name, nt.typ)
-		// check existing type with the same name and its hash
-		if hash := r.reg[nt.name]; hash != (Reference{}) && hash != sck {
-			panicf("a different type already registered"+
-				" with the name %s", nt.name)
-		}
-		r.reg[nt.name] = sck // register
-	}
+func (s *schema) IsReference() bool {
+	return false
 }
 
-func (r *Registry) SchemaReference(i interface{}) (sck Reference) {
-	var typ reflect.Type = typeOf(i)
-	if name, ok := r.nnm[typ]; !ok {
-		panic("no schema for: " + typ.String())
-	} else if sck, ok = r.reg[name]; !ok {
-		panic("no reference for: " + name)
-	}
-	return
+func (s *schema) ReferenceType() ReferenceType {
+	return ReferenceTypeNone // not a reference
 }
 
-func (r *Registry) SchemaByName(name string) (s *Schema, err error) {
-	var sck Reference // schema reference
-	var ok bool
-	if sck, ok = r.reg[name]; !ok {
-		err = ErrTypeNameNotFound
-		return
+func (s *schema) Reference() SchemaReference {
+	if s.ref == (SchemaReference{}) {
+		s.ref = SchemaReference(cipher.SumSHA256(s.Encode()))
 	}
-	s, err = r.SchemaByReference(sck)
-	return
+	return s.ref
 }
 
-func (r *Registry) SchemaByReference(sr Reference) (s *Schema, err error) {
-	var sd []byte
-	var ok bool
-	if sd, ok = r.db.Get(cipher.SHA256(sr)); !ok {
-		err = &MissingSchema{sr}
-		return
-	}
-	s = r.newSchema()
-	if err = s.Decode(sd); err != nil {
-		s = nil // gc
-	}
-	return
+func (s *schema) Kind() reflect.Kind {
+	return s.kind
 }
 
-func (r *Registry) newSchema() (s *Schema) {
-	s = new(Schema)
-	s.sr = r
-	return
-}
-
-func (r *Registry) isSpecial(typ reflect.Type) (s *Schema, ok bool) {
-	switch typ {
-	case reflect.TypeOf(Reference{}):
-		s, ok = r.newSchema(), true
-		s.kind, s.name = uint32(reflect.Ptr), []byte(SINGLE)
-	case reflect.TypeOf(References{}):
-		s, ok = r.newSchema(), true
-		s.kind, s.name = uint32(reflect.Ptr), []byte(ARRAY)
-	case reflect.TypeOf(Dynamic{}):
-		s, ok = r.newSchema(), true
-		s.kind, s.name = uint32(reflect.Ptr), []byte(DYNAMIC)
-	}
-	return
-}
-
-func (r *Registry) registerSchema(name string,
-	typ reflect.Type) (sck Reference) {
-
-	var s *Schema = r.newSchema()
-	s.kind = uint32(typ.Kind())
-	if typ.Kind() != reflect.Struct {
-		panic("non-struct type can't be registered: " + typ.String())
-	}
-	s.name = []byte(name)
-	r.getFields(s, typ)
-	sck = Reference(r.db.AddAutoKey(s.Encode()))
-	// don't register
-	return
-}
-
-func (r *Registry) getSchema(typ reflect.Type) (s *Schema) {
-	// special types
-	var ok bool
-	if s, ok = r.isSpecial(typ); ok {
-		return
-	}
-	s = r.newSchema()
-	s.kind = uint32(typ.Kind())
-	if typ.PkgPath() != "" { // non-builtin named type
-		if typ.Kind() == reflect.Struct { // must be registered
-			name, ok := r.nnm[typ]
-			if !ok {
-				panicf("type required but not registered: %s", typ.String())
-			}
-			s.name = []byte(name)
-			return // we done
-		}
-		s.name = []byte(typ.Name()) // a named non-struct type (don't register)
-	} // else -> fuck the name
-	switch typ.Kind() {
-	case reflect.Bool, reflect.Int8, reflect.Uint8,
-		reflect.Int16, reflect.Uint16,
-		reflect.Int32, reflect.Uint32, reflect.Float32,
-		reflect.Int64, reflect.Uint64, reflect.Float64,
-		reflect.String:
-		// do nothing for flat types
-	case reflect.Slice:
-		// get schema of element of the slice
-		s.setElem(r.getSchema(typ.Elem()))
-	case reflect.Array:
-		// get length and schema of element of the array
-		s.length = uint32(typ.Len())
-		s.setElem(r.getSchema(typ.Elem()))
-	case reflect.Struct:
-		r.getFields(s, typ)
-	default:
-		panic("invlaid type: " + typ.String())
-	}
-	return
-}
-
-func (r *Registry) getFields(s *Schema, typ reflect.Type) {
-	var nf int = typ.NumField()
-	if nf == 0 {
-		return
-	}
-	s.fields = make([]Field, 0, nf)
-	for i := 0; i < nf; i++ {
-		fl := typ.Field(i)
-		if fl.Tag.Get("enc") == "-" || fl.Name == "_" || fl.PkgPath != "" {
-			continue
-		}
-		s.fields = append(s.fields, r.getField(fl))
-	}
-}
-
-func (r *Registry) getField(fl reflect.StructField) (sf Field) {
-	sf.schema = *r.getSchema(fl.Type)
-	sf.name = []byte(fl.Name)
-	sf.tag = []byte(fl.Tag)
-	if sf.isReference() && sf.schema.Name() != DYNAMIC {
-		sn := mustGetSchemaOfTag(fl.Tag.Get(TAG))
-		if _, ok := r.reg[sn]; !ok {
-			panic("unregistered schema: " + sn)
-		}
-		sf.ref = []byte(sn)
-	}
-	return
-}
-
-// ========================================================================== //
-//                                                                            //
-//                                 schema                                     //
-//                                                                            //
-// ========================================================================== //
-
-type Schema struct {
-	kind   uint32   // reflect.Kind (relfect.Ptr for references)
-	name   []byte   // type name for named types
-	elem   []Schema // for arrays and slices
-	length uint32   // for arrays
-	fields []Field  // for structs
-
-	sr *Registry `enc:"-"` // back reference
-}
-
-// IsNil reports that the schema is an empty schema.
-func (s *Schema) IsNil() bool {
-	return s.kind == uint32(reflect.Invalid)
-}
-
-// Name returns name for named types
-func (s *Schema) Name() string {
+func (s *schema) Name() string {
 	return string(s.name)
 }
 
-// Kind returns relfect.Kind of the type (that is relfect.Ptr for references)
-func (s *Schema) Kind() reflect.Kind {
-	return reflect.Kind(s.kind)
+func (s *schema) RawName() []byte {
+	return s.name
 }
 
-// Elem returns schema of element
-func (s *Schema) Elem() (es *Schema, err error) {
-	if len(s.elem) != 1 {
-		err = ErrInvalidSchema
-		return
+func (s *schema) IsRegistered() bool {
+	return s.kind == reflect.Struct && len(s.name) > 0
+}
+
+func (s *schema) Len() int {
+	return 0
+}
+
+func (s *schema) Fields() []Field {
+	return nil
+}
+
+func (s *schema) Elem() Schema {
+	return nil
+}
+
+func (s *schema) encodedSchema() (x encodedSchema) {
+	x.Kind = uint32(s.kind)
+	x.Name = s.name
+	return
+}
+
+func (s *schema) Encode() (b []byte) {
+	b = encoder.Serialize(s.encodedSchema())
+	return
+}
+
+func (s *schema) String() string {
+	if s == nil {
+		return "<missing>"
 	}
-	es = &s.elem[0]
-	if es.isRegistered() {
-		if err = es.load(); err != nil {
-			es = nil // gc
-		}
+	if len(s.name) > 0 {
+		return s.Name()
+	}
+	return s.kind.String()
+}
+
+// reference
+
+type referenceSchema struct {
+	schema
+
+	typ  ReferenceType
+	elem Schema
+}
+
+func (r *referenceSchema) IsReference() bool {
+	return true
+}
+
+func (r *referenceSchema) ReferenceType() ReferenceType {
+	return r.typ
+}
+
+func (r *referenceSchema) Elem() Schema {
+	return r.elem
+}
+
+func (r *referenceSchema) encodedSchema() (x encodedSchema) {
+	x.Kind = uint32(r.kind)
+	x.RefTyp = uint32(r.typ)
+	// the schema of the Elem is registered allways
+	if r.typ != ReferenceTypeDynamic {
+		x.Elem = (&schema{
+			SchemaReference{},
+			r.elem.Kind(),
+			r.elem.RawName(),
+		}).Encode()
 	}
 	return
 }
 
-func (s *Schema) Len() int {
-	return int(s.length)
+func (r *referenceSchema) Encode() (b []byte) {
+	b = encoder.Serialize(r.encodedSchema())
+	return
 }
 
-func (s *Schema) Fields() []Field {
+func (r *referenceSchema) String() string {
+	if r == nil {
+		return "<missing>"
+	}
+	switch r.typ {
+	case ReferenceTypeSingle:
+		return fmt.Sprintf("*%s", r.Elem().String())
+	case ReferenceTypeSlice:
+		return fmt.Sprintf("[]*%s", r.Elem().String())
+	case ReferenceTypeDynamic:
+		return "*<dynamic>"
+	}
+	return "<invalid>"
+}
+
+// slice
+
+type sliceSchema struct {
+	schema
+	elem Schema
+}
+
+func (s *sliceSchema) Elem() Schema {
+	return s.elem
+}
+
+func (s *sliceSchema) encodedSchema() (x encodedSchema) {
+	x = s.schema.encodedSchema()
+	if el := s.elem; el.IsRegistered() {
+		x.Elem = (&schema{SchemaReference{}, el.Kind(), el.RawName()}).Encode()
+	} else {
+		x.Elem = s.elem.Encode()
+	}
+	return
+}
+
+func (s *sliceSchema) Encode() (b []byte) {
+	b = encoder.Serialize(s.encodedSchema())
+	return
+}
+
+func (s *sliceSchema) String() string {
+	if s == nil {
+		return "<missing>"
+	}
+	if len(s.name) > 0 {
+		return s.Name()
+	}
+	return "[]" + s.elem.String()
+}
+
+// array
+
+type arraySchema struct {
+	sliceSchema
+	length int
+}
+
+func (a *arraySchema) Len() int {
+	return a.length
+}
+
+func (a *arraySchema) encodedSchema() (x encodedSchema) {
+	x = a.sliceSchema.encodedSchema()
+	x.Len = uint32(a.length)
+	return
+}
+
+func (a *arraySchema) Encode() (b []byte) {
+	b = encoder.Serialize(a.encodedSchema())
+	return
+}
+
+func (a *arraySchema) String() string {
+	if a == nil {
+		return "<missing>"
+	}
+	if len(a.name) > 0 {
+		return a.Name()
+	}
+	return fmt.Sprintf("[%d]%s", a.length, a.elem.String())
+}
+
+// struct
+
+type structSchema struct {
+	schema
+	fields []Field
+}
+
+func (s *structSchema) Fields() []Field {
 	return s.fields
 }
 
-func (s *Schema) setElem(el *Schema) {
-	s.elem = []Schema{*el}
-}
-
-// the type is named
-func (s *Schema) isNamed() bool {
-	return len(s.name) > 0
-}
-
-// is registered or should be registered
-func (s *Schema) isRegistered() bool {
-	return s.Kind() == reflect.Struct && s.isNamed()
-}
-
-// load a registered shema by name
-func (s *Schema) load() (err error) {
-	if len(s.fields) > 0 {
-		return // already loaded
+func (s *structSchema) encodedSchema() (x encodedSchema) {
+	x = s.schema.encodedSchema()
+	if len(s.fields) == 0 {
+		return
 	}
-	var x *Schema
-	if x, err = s.sr.SchemaByName(s.Name()); err == nil {
-		*s = *x
+	x.Fields = make([][]byte, 0, len(s.fields))
+	for _, f := range s.fields {
+		x.Fields = append(x.Fields, f.Encode())
 	}
 	return
 }
 
-func (s *Schema) String() string {
-	if s == nil {
-		return "<Missing>"
-	}
-	if s.isNamed() {
-		return s.Name()
-	}
-	switch s.Kind() {
-	case reflect.Array:
-		el, _ := s.Elem()
-		return fmt.Sprintf("[%d]%s", s.Len(), el.String())
-	case reflect.Slice:
-		el, _ := s.Elem()
-		return "[]" + el.String()
-	case reflect.Struct:
-		x := "struct{"
-		for i, sf := range s.Fields() {
-			x += sf.String()
-			if i < len(s.Fields())-1 {
-				x += ";"
-			}
-		}
-		x += "}"
-		return x
-	}
-	return s.Kind().String()
+func (s *structSchema) Encode() (b []byte) {
+	b = encoder.Serialize(s.encodedSchema())
+	return
 }
 
-// ========================================================================== //
-//                                                                            //
-//                                  field                                     //
-//                                                                            //
-// ========================================================================== //
+//
+// TODO:
+//  (1) rid out of simpleField
+//  (2) merge coreField and field
+//  (3) make Field (interface) to be *Field (struct)
+//
+// Because simpleField can't be created from encodedField.
+// And (Field).Kind() never used to be a big advantag of
+// permormance and memory
+//
+// And, creating Schema from simpleField adds some memory
+// and GC pressure
+//
 
-// A Field represents struct field
-type Field struct {
-	schema Schema
+// field
+
+type Field interface {
+	Schema() Schema     // Schema of the Field
+	Kind() reflect.Kind // kind of the Field (short hand)
+
+	Name() string    // Name of the Filed
+	RawName() []byte // raw name of the Filed
+
+	Tag() reflect.StructTag // Tag of the Filed
+	RawTag() []byte         // raw tag of the Field
+
+	Encode() (b []byte) // Encode field
+
+	fmt.Stringer // String() string
+}
+
+// core
+
+type field struct {
 	name   []byte
 	tag    []byte
-	ref    []byte // name of type the field referes to (for references)
+	schema Schema
 }
 
-// Kind of the field
-func (f *Field) Kind() reflect.Kind { // prevent loading the schema
-	return f.schema.Kind()
-}
-
-// TypeName if the type is named
-func (f *Field) TypeName() string { // prevent loading the schema
-	return f.schema.Name()
-}
-
-// Name of the field
-func (f *Field) Name() string {
+func (f *field) Name() string {
 	return string(f.name)
 }
 
-// Schema of the field
-func (f *Field) Schema() (fs *Schema, err error) {
-	fs = &f.schema
-	if fs.isRegistered() {
-		if err = fs.load(); err != nil {
-			fs = nil // gc
-		}
-		return
-	}
-	if len(f.ref) > 0 { // reference (SINGLE or ARRAY)
-		// elem of SINLGE or ARRAY will be schema of type the reference
-		// points to
-		var el *Schema
-		el, err = f.schema.sr.SchemaByName(f.tagSchemaName())
-		if err != nil {
-			fs = nil
-			return
-		}
-		f.schema.setElem(el)
-	}
-	return
+func (f *field) RawName() []byte {
+	return f.name
 }
 
-func (f *Field) Tag() reflect.StructTag {
+func (f *field) Tag() reflect.StructTag {
 	return reflect.StructTag(f.tag)
 }
 
-func (f *Field) tagSchemaName() string {
-	return string(f.ref)
+func (f *field) RawTag() []byte {
+	return f.tag
 }
 
-func (f *Field) isReference() bool {
-	return f.Kind() == reflect.Ptr
+func (f *field) Schema() Schema {
+	return f.schema
 }
 
-func (f *Field) String() string {
-	return fmt.Sprintf("%s %s `%s`", f.Name(), f.TypeName(), f.Tag())
+func (f *field) Kind() reflect.Kind {
+	return f.schema.Kind()
 }
 
-// ========================================================================== //
-//                                                                            //
-//                            encode / decode                                 //
-//                                                                            //
-// ========================================================================== //
+func (f *field) encodedField() (x encodedField) {
+	x.Name = f.name
+	x.Tag = f.tag
+	x.Schema = f.schema.Encode()
+	return
+}
 
-type encodingSchema struct {
+func (f *field) Encode() (b []byte) {
+	b = encoder.Serialize(f.encodedField())
+	return
+}
+
+func (f *field) String() string {
+	return fmt.Sprintf("%s %s `%s`", f.Name(), f.Schema().String(), f.Tag())
+}
+
+// encoded
+
+type encodedSchema struct {
+	RefTyp uint32
 	Kind   uint32
 	Name   []byte
-	Elem   []encodingSchema
-	Length uint32
-	Fields []encodingField
+	Len    uint32
+	Fields [][]byte
+	Elem   []byte // encoded schema
 }
 
-func (e *encodingSchema) Schema(sr *Registry) (s *Schema) {
-	s = sr.newSchema()
-	s.kind = e.Kind
-	s.name = e.Name
-	s.length = e.Length
-	s.elem = nil // reset
-	if len(e.Elem) == 1 {
-		s.elem = []Schema{*e.Elem[0].Schema(sr)}
-	}
-	s.fields = nil // reset
-	for _, ef := range e.Fields {
-		s.fields = append(s.fields, ef.Field(sr))
-	}
-	return
-}
-
-func newEncodingSchema(s *Schema) (e encodingSchema) {
-	e.Kind = s.kind
-	e.Name = s.name
-	e.Length = s.length
-	if len(s.elem) == 1 {
-		e.Elem = []encodingSchema{newEncodingSchema(&s.elem[0])}
-	}
-	for _, sf := range s.fields {
-		e.Fields = append(e.Fields, newEncodingField(&sf))
-	}
-	return
-}
-
-type encodingField struct {
-	Schema encodingSchema
+type encodedField struct {
 	Name   []byte
 	Tag    []byte
-	Ref    []byte
-}
-
-func newEncodingField(sf *Field) (e encodingField) {
-	e.Schema = newEncodingSchema(&sf.schema)
-	e.Name = sf.name
-	e.Tag = sf.tag
-	e.Ref = sf.ref
-	return
-}
-
-func (e *encodingField) Field(sr *Registry) (sf Field) {
-	sf.name = e.Name
-	sf.tag = e.Tag
-	sf.ref = e.Ref
-	sf.schema = *e.Schema.Schema(sr)
-	return
-}
-
-func (s *Schema) Encode() []byte {
-	return encoder.Serialize(newEncodingSchema(s))
-}
-
-func (s *Schema) Decode(p []byte) (err error) {
-	var es encodingSchema
-	if err = encoder.DeserializeRaw(p, &es); err != nil {
-		return
-	}
-	*s = *es.Schema(s.sr)
-	return
-}
-
-// ========================================================================== //
-//                                                                            //
-//                                helpers                                     //
-//                                                                            //
-// ========================================================================== //
-
-func mustGetSchemaOfTag(tag string) string {
-	for _, part := range strings.Split(tag, ",") {
-		if !strings.HasPrefix(part, "schema=") {
-			continue
-		}
-		ss := strings.Split(part, "=")
-		if len(ss) != 2 {
-			panic("invalid schema tag: " + part)
-		}
-		if ss[1] == "" {
-			panic("empty tag schema name: " + part)
-		}
-		return ss[1]
-	}
-	panic("invalid tag: " + tag)
-	return ""
-}
-
-func typeOf(i interface{}) reflect.Type {
-	return reflect.Indirect(reflect.ValueOf(i)).Type()
-}
-
-func panicf(format string, args ...interface{}) {
-	panic(fmt.Errorf(format, args...))
+	Kind   uint32
+	Schema []byte
 }
