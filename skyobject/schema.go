@@ -169,8 +169,8 @@ func (r *referenceSchema) encodedSchema() (x encodedSchema) {
 	return
 }
 
-func (s *referenceSchema) Encode() (b []byte) {
-	b = encoder.Serialize(s.encodedSchema())
+func (r *referenceSchema) Encode() (b []byte) {
+	b = encoder.Serialize(r.encodedSchema())
 	return
 }
 
@@ -179,10 +179,12 @@ func (r *referenceSchema) String() string {
 		return "<missing>"
 	}
 	switch r.typ {
-	case ReferenceTypeSingle, ReferenceTypeDynamic:
+	case ReferenceTypeSingle:
 		return fmt.Sprintf("*%s", r.Elem().String())
 	case ReferenceTypeSlice:
 		return fmt.Sprintf("[]*%s", r.Elem().String())
+	case ReferenceTypeDynamic:
+		return "*<dynamic>"
 	}
 	return "<invalid>"
 }
@@ -297,7 +299,7 @@ func (s *structSchema) Encode() (b []byte) {
 // and GC pressure
 //
 
-// filed
+// field
 
 type Field interface {
 	Schema() Schema     // Schema of the Field
@@ -309,89 +311,56 @@ type Field interface {
 	Tag() reflect.StructTag // Tag of the Filed
 	RawTag() []byte         // raw tag of the Field
 
-	Encode() (b []byte) // Encode filed
+	Encode() (b []byte) // Encode field
 
 	fmt.Stringer // String() string
 }
 
 // core
 
-type fieldCore struct {
-	name []byte
-	tag  []byte
-}
-
-func (f *fieldCore) Name() string {
-	return string(f.name)
-}
-
-func (f *fieldCore) RawName() []byte {
-	return f.name
-}
-
-func (f *fieldCore) Tag() reflect.StructTag {
-	return reflect.StructTag(f.tag)
-}
-
-func (f *fieldCore) RawTag() []byte {
-	return f.tag
-}
-
-func (f *fieldCore) encodedField() (x encodedField) {
-	x.Name = f.name
-	x.Tag = f.tag
-	return
-}
-
-// core + kind (simple unnamed types like int, uint, float32)
-
-type simpleField struct { // only name, tag and kind
-	fieldCore
-	kind reflect.Kind
-}
-
-func (s *simpleField) Schema() Schema {
-	return &schema{ref: SchemaReference{}, kind: s.kind}
-}
-
-func (s *simpleField) Kind() reflect.Kind {
-	return s.kind
-}
-
-func (s *simpleField) Encode() (b []byte) {
-	var x encodedField = s.fieldCore.encodedField()
-	x.Schema = s.Schema().Encode()
-	b = encoder.Serialize(x)
-	return
-}
-
-func (s *simpleField) String() string {
-	return fmt.Sprintf("%s %s `%s`", s.Name(), s.kind.String(), s.Tag())
-}
-
-// field for complex and named types like struct, array or named int, etc
-
-type filed struct {
-	fieldCore
+type field struct {
+	name   []byte
+	tag    []byte
 	schema Schema
 }
 
-func (f *filed) Schema() Schema {
+func (f *field) Name() string {
+	return string(f.name)
+}
+
+func (f *field) RawName() []byte {
+	return f.name
+}
+
+func (f *field) Tag() reflect.StructTag {
+	return reflect.StructTag(f.tag)
+}
+
+func (f *field) RawTag() []byte {
+	return f.tag
+}
+
+func (f *field) Schema() Schema {
 	return f.schema
 }
 
-func (f *filed) Kind() reflect.Kind {
+func (f *field) Kind() reflect.Kind {
 	return f.schema.Kind()
 }
 
-func (f *filed) Encode() (b []byte) {
-	var x encodedField = f.fieldCore.encodedField()
+func (f *field) encodedField() (x encodedField) {
+	x.Name = f.name
+	x.Tag = f.tag
 	x.Schema = f.schema.Encode()
-	b = encoder.Serialize(x)
 	return
 }
 
-func (f *filed) String() string {
+func (f *field) Encode() (b []byte) {
+	b = encoder.Serialize(f.encodedField())
+	return
+}
+
+func (f *field) String() string {
 	return fmt.Sprintf("%s %s `%s`", f.Name(), f.Schema().String(), f.Tag())
 }
 

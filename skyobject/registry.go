@@ -83,8 +83,8 @@ func (r *Registry) Regsiter(name string, i interface{}) {
 	if name == "" {
 		panic("empty name")
 	}
-	if strings.HasPrefix(name, ":") {
-		panic("name must not be prefixed with ':'")
+	if strings.ContainsAny(name, "=,") {
+		panic("invalid symbols in name (comma or equal-sign")
 	}
 	var typ reflect.Type = typeOf(i)
 	switch typ {
@@ -96,6 +96,8 @@ func (r *Registry) Regsiter(name string, i interface{}) {
 	if !s.IsRegistered() {
 		panic("can't register this type") // only named structures
 	}
+	// set registered name instead of type name (not nessessary)
+	s.(*structSchema).name = []byte(name)
 
 	if rr, ok := r.reg[name]; ok {
 		if rr.Reference() != s.Reference() {
@@ -114,8 +116,9 @@ func (r *Registry) Done() {
 
 	r.done = true
 
+	filled := make(map[Schema]struct{})
 	for _, sch := range r.reg {
-		r.fillSchema(sch, nil)
+		r.fillSchema(sch, filled)
 	}
 
 	// fill up map by SchemaReference
@@ -143,6 +146,7 @@ func (r *Registry) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 }
 
 func (r *Registry) SchemaByInterface(i interface{}) (s Schema, err error) {
+	r.mustBeDone()
 	var typ reflect.Type = typeOf(i)
 	if name, ok := r.rts[typ]; !ok {
 		err = fmt.Errorf("type was not registered: %s", typ)
@@ -175,9 +179,6 @@ func (r *Registry) Reference() RegistryReference {
 // set proper references for schemas that has references to
 // another schemas, such as arrays, slices and structs
 func (r *Registry) fillSchema(s Schema, filled map[Schema]struct{}) {
-	if filled == nil {
-		filled = make(map[Schema]struct{})
-	}
 	if _, ok := filled[s]; ok {
 		return // already
 	}
@@ -201,34 +202,31 @@ func (r *Registry) fillSchema(s Schema, filled map[Schema]struct{}) {
 	}
 	switch s.Kind() {
 	case reflect.Array:
-		if !s.Elem().IsRegistered() {
-			return
-		}
 		x := s.(*arraySchema)
-		x.elem, err = r.schemaByName(s.Elem().Name())
-		if err != nil {
-			panic(err)
+		if s.Elem().IsRegistered() {
+			x.elem, err = r.schemaByName(s.Elem().Name())
+			if err != nil {
+				panic(err)
+			}
 		}
 		r.fillSchema(x.elem, filled)
 	case reflect.Slice:
-		if !s.Elem().IsRegistered() {
-			return
-		}
 		x := s.(*sliceSchema)
-		x.elem, err = r.schemaByName(s.Elem().Name())
-		if err != nil {
-			panic(err)
+		if s.Elem().IsRegistered() {
+			x.elem, err = r.schemaByName(s.Elem().Name())
+			if err != nil {
+				panic(err)
+			}
 		}
 		r.fillSchema(x.elem, filled)
 	case reflect.Struct:
 		for i, f := range s.Fields() {
-			if !f.Schema().IsRegistered() {
-				continue
-			}
-			x := f.(*filed)
-			x.schema, err = r.schemaByName(x.Schema().Name())
-			if err != nil {
-				panic(err)
+			x := f.(*field)
+			if fs := f.Schema(); fs.IsRegistered() {
+				x.schema, err = r.schemaByName(fs.Name())
+				if err != nil {
+					panic(err)
+				}
 			}
 			r.fillSchema(x.schema, filled)
 			s.(*structSchema).fields[i] = x
@@ -303,68 +301,50 @@ func (r *Registry) getSchema(typ reflect.Type) Schema {
 }
 
 func (r *Registry) getField(sf reflect.StructField) Field {
-	f := new(fieldCore)
+	f := new(field)
 	f.name = []byte(sf.Name)
 	f.tag = []byte(sf.Tag)
 	t := sf.Type
 	switch t {
 	case singleRef:
 		tagRef := tagReference(sf.Tag)
-		ff := new(filed)
-		ff.fieldCore = *f
-		ff.schema = &referenceSchema{
+		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaReference{},
 				kind: t.Kind(),
 			},
+			typ:  ReferenceTypeSingle,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
 		}
-		return ff
+		return f
 	case sliceRef:
 		tagRef := tagReference(sf.Tag)
-		ff := new(filed)
-		ff.fieldCore = *f
-		ff.schema = &referenceSchema{
+		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaReference{},
 				kind: t.Kind(),
 			},
+			typ:  ReferenceTypeSlice,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
 		}
-		return ff
+		return f
 	case dynamicRef:
-		ff := new(filed)
-		ff.fieldCore = *f
-		ff.schema = &referenceSchema{
+		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaReference{},
 				kind: t.Kind(),
 			},
+			typ: ReferenceTypeDynamic,
 		}
-		return ff
+		return f
 	default:
 	}
-	if t.Name() == "" { // unnamed
-		switch t.Kind() {
-		case reflect.Bool, reflect.Int8, reflect.Uint8,
-			reflect.Int16, reflect.Uint16,
-			reflect.Int32, reflect.Uint32, reflect.Float32,
-			reflect.Int64, reflect.Uint64, reflect.Float64,
-			reflect.String:
-			ff := new(simpleField)
-			ff.fieldCore = *f
-			ff.kind = t.Kind()
-			return ff // simple unnamed type (field name+tag+kind)
-		}
-	}
-	ff := new(filed) // non-simple or named type
-	ff.fieldCore = *f
 	if s := r.getSchema(sf.Type); s.IsRegistered() {
-		ff.schema = &schema{SchemaReference{}, s.Kind(), s.RawName()}
+		f.schema = &schema{SchemaReference{}, s.Kind(), s.RawName()}
 	} else {
-		ff.schema = s
+		f.schema = s
 	}
-	return ff
+	return f
 }
 
 func tagReference(tag reflect.StructTag) string {
@@ -479,7 +459,7 @@ func decodeField(b []byte) (f Field, err error) {
 	if err = encoder.DeserializeRaw(b, &ef); err != nil {
 		return
 	}
-	ff := filed{}
+	ff := field{}
 	ff.name = ef.Name
 	ff.tag = ef.Tag
 	if ff.schema, err = decodeSchema(ef.Schema); err != nil {
