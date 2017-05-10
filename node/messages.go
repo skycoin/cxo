@@ -16,6 +16,7 @@ var (
 	_ Msg = &AddFeedMsg{}
 	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
+	_ Msg = &RequestDataMsg{}
 	_ Msg = &DataMsg{}
 	_ Msg = &RequestRegistryMsg{}
 	_ Msg = &RegistryMsg{}
@@ -58,6 +59,14 @@ type RootMsg struct {
 // MsgType implements Msg interface
 func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
+type RequestDataMsg struct {
+	Feed cipher.PubKey
+	Ref  skyobject.Reference
+}
+
+// MsgType implements Msg interface
+func (*RequestDataMsg) MsgType() MsgType { return RequestDataMsgType }
+
 // A DataMsg reperesents a data
 type DataMsg struct {
 	Feed cipher.PubKey
@@ -89,9 +98,10 @@ const (
 	AddFeedMsgType         MsgType = 1 + iota // AddFeedMsg 1
 	DelFeedMsgType                            // DelFeedMsg 2
 	RootMsgType                               // RootMsg 3
-	DataMsgType                               // DataMsg 4
-	RequestRegistryMsgType                    // RequestRegistryMsg 5
-	RegistryMsgType                           // RegistryMsg 6
+	RequestDataMsgType                        // RequestDataMsg 4
+	DataMsgType                               // DataMsg 5
+	RequestRegistryMsgType                    // RequestRegistryMsg 6
+	RegistryMsgType                           // RegistryMsg 7
 )
 
 // MsgType to string mapping
@@ -99,6 +109,7 @@ var msgTypeString = [...]string{
 	AddFeedMsgType:         "ADD",
 	DelFeedMsgType:         "DEL",
 	RootMsgType:            "ROOT",
+	RequestDataMsgType:     "RQDT",
 	DataMsgType:            "DATA",
 	RequestRegistryMsgType: "RQREG",
 	RegistryMsgType:        "REG",
@@ -116,6 +127,7 @@ var forwardRegistry = [...]reflect.Type{
 	AddFeedMsgType:         reflect.TypeOf(AddFeedMsg{}),
 	DelFeedMsgType:         reflect.TypeOf(DelFeedMsg{}),
 	RootMsgType:            reflect.TypeOf(RootMsg{}),
+	RequestDataMsgType:     reflect.TypeOf(RequestDataMsg{}),
 	DataMsgType:            reflect.TypeOf(DataMsg{}),
 	RequestRegistryMsgType: reflect.TypeOf(RequestRegistryMsg{}),
 	RegistryMsgType:        reflect.TypeOf(RegistryMsg{}),

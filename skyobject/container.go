@@ -236,6 +236,7 @@ func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
 	r.seq = x.Seq
 	r.pub = x.Pub
 	r.sig = sig
+	r.cnt = c
 
 	err = cipher.VerifySignature(r.pub, sig, cipher.SumSHA256(b))
 	if err != nil {

@@ -27,6 +27,9 @@ type Client struct {
 	smx   sync.Mutex
 	srvfs []cipher.PubKey // server feeds
 
+	rqmx sync.Mutex
+	rqdt []*skyobject.Root // request data for the roots
+
 	conf ClientConfig
 	pool *gnet.Pool
 
@@ -186,9 +189,11 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 			return // too old, or already have
 		}
 		// request Registry if need
-		if rr := r.RegistryReference(); c.so.WantRegistry(rr) {
-			c.sendMessage(&RequestRegistryMsg{Ref: rr})
+		if !r.HasRegistry() {
+			c.sendMessage(&RequestRegistryMsg{Ref: RegistryReference})
 		}
+		// request all data need
+		//
 	case *RequestRegistryMsg:
 		if reg, _ := c.so.Registry(x.Ref); reg != nil {
 			c.sendMessage(&RegistryMsg{
@@ -209,6 +214,15 @@ func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
 				c.so.AddRegistry(reg)
 			}
 		}
+	case *RequestDataMsg:
+		data, ok := c.so.Get(x.Ref)
+		if !ok {
+			return
+		}
+		c.sendMessage(&DataMsg{
+			Feed: x.Feed,
+			Data: data,
+		})
 	case *DataMsg:
 		c.fmx.Lock()
 		defer c.fmx.Unlock()
@@ -374,7 +388,6 @@ type Root struct {
 }
 
 func (r *Root) Touch() (sig cipher.Sig, p []byte) {
-	// just send the root
 	// TODO: sending never see the (*Client).feeds
 	sig, p = r.Root.Touch()
 	r.c.client.sendMessage(&RootMsg{
@@ -388,31 +401,12 @@ func (r *Root) Touch() (sig cipher.Sig, p []byte) {
 func (r *Root) Inject(i interface{}) (inj skyobject.Dynamic, sig cipher.Sig,
 	p []byte) {
 
-	// send root and objects related to injected object
 	// TODO: sending never see the (*Client).feeds
 	inj, sig, p = r.Root.Inject(i)
 	r.c.client.sendMessage(&RootMsg{
 		Feed: r.Pub(),
 		Sig:  sig,
 		Root: p,
-	})
-	sent := make(map[skyobject.Reference]struct{})
-	r.GotOfFunc(inj, func(ref skyobject.Reference) (_ error) {
-		if _, ok := sent[ref]; !ok {
-			data, ok := r.Get(ref)
-			if !ok {
-				panic("misisng object: " + ref.String())
-			}
-			ok = r.c.client.sendMessage(&DataMsg{
-				Feed: r.Pub(),
-				Data: data,
-			})
-			if !ok { // error sending
-				return skyobject.ErrStopRange
-			}
-			sent[ref] = struct{}{}
-		}
-		return
 	})
 	return
 }
@@ -428,26 +422,6 @@ func (r *Root) InjectMany(i ...interface{}) (injs []skyobject.Dynamic,
 		Sig:  sig,
 		Root: p,
 	})
-	sent := make(map[skyobject.Reference]struct{}) // already sent
-	for _, inj := range injs {
-		r.GotOfFunc(inj, func(ref skyobject.Reference) (_ error) {
-			if _, ok := sent[ref]; !ok {
-				data, ok := r.Get(ref)
-				if !ok {
-					panic("misisng object: " + ref.String())
-				}
-				ok = r.c.client.sendMessage(&DataMsg{
-					Feed: r.Pub(),
-					Data: data,
-				})
-				if !ok { // error sending
-					return skyobject.ErrStopRange
-				}
-				sent[ref] = struct{}{}
-			}
-			return
-		})
-	}
 	return
 }
 
@@ -461,24 +435,6 @@ func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
 		Feed: r.Pub(),
 		Sig:  sig,
 		Root: p,
-	})
-	sent := make(map[skyobject.Reference]struct{}) // already sent
-	r.GotFunc(func(ref skyobject.Reference) (_ error) {
-		if _, ok := sent[ref]; !ok {
-			data, ok := r.Get(ref)
-			if !ok {
-				panic("misisng object: " + ref.String())
-			}
-			ok = r.c.client.sendMessage(&DataMsg{
-				Feed: r.Pub(),
-				Data: data,
-			})
-			if !ok { // error sending
-				return skyobject.ErrStopRange
-			}
-			sent[ref] = struct{}{}
-		}
-		return
 	})
 	return
 }

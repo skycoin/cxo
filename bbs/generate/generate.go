@@ -18,10 +18,16 @@ import (
 // public: 03517b80b2889e4de80aae0fa2a4b2a408490f3178857df5b756e690b4524e1e61
 // secret: 3cd98cc9385225f9af47e5ff0dfc073253aa410076cf5f426c19460a1d0de976
 
+type User struct {
+	Name string
+	Age  uint32
+}
+
 // A Board
 type Board struct {
 	Header  string
 	Threads skyobject.References `skyobject:"schema=bbs.Thread"` // []Thread
+	Owner   skyobject.Dynamic
 }
 
 // A Thread
@@ -75,6 +81,7 @@ func main() {
 	reg.Regsiter("bbs.Board", Board{})
 	reg.Regsiter("bbs.Thread", Thread{})
 	reg.Regsiter("bbs.Post", Post{})
+	reg.Regsiter("bbs.User", User{})
 
 	c, err := node.NewClient(conf, skyobject.NewContainer(reg))
 	if err != nil {
@@ -134,6 +141,7 @@ func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
 	root.Inject(Board{
 		Header:  fmt.Sprintf("Board #%d", i),
 		Threads: generateThreads(c, i),
+		Owner:   root.Dynamic(User{"Alice Cooper", 16}),
 	})
 }
 

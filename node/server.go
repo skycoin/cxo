@@ -334,6 +334,12 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 				s.Debug("older root received, ", ca)
 				return // older root object received
 			}
+			if !root.HasRegistry() {
+				// request registry
+				s.sendMessage(c, &RequestRegistryMsg{
+					Ref: root.RegistryReference(),
+				})
+			}
 			s.Debugf("root of [%s] was updated by %s",
 				shortHex(x.Feed.Hex()),
 				ca)
@@ -379,6 +385,15 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 				}
 			}
 		}
+	case *RequestDataMsg:
+		data, ok := c.so.Get(x.Ref)
+		if !ok {
+			return
+		}
+		c.sendMessage(&DataMsg{
+			Feed: x.Feed,
+			Data: data,
+		})
 	case *DataMsg:
 		ca := c.Address() // for debug logs
 		s.fmx.RLock()

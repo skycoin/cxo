@@ -54,6 +54,7 @@ func (r *Root) Touch() (sig cipher.Sig, p []byte) {
 }
 
 func (r *Root) touch() (sig cipher.Sig, p []byte) {
+	r.mustHaveSecretKey()
 	r.time = time.Now().UnixNano()
 	r.seq++
 	sig, p = r.encode() // to update signature
@@ -140,11 +141,14 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 	x.Seq = r.seq
 	x.Pub = r.pub
 	b = encoder.Serialize(x) // b
-	hash := cipher.SumSHA256(b)
-	// sign if need
 	if r.sec != (cipher.SecKey{}) {
+		// sign if need
+		hash := cipher.SumSHA256(b)
 		sig = cipher.SignHash(hash, r.sec) // sig
 		r.sig = sig
+	} else {
+		// or use existing signature
+		sig = r.sig
 	}
 	return
 }
@@ -200,6 +204,12 @@ func (r *Root) Dynamic(i interface{}) (dr Dynamic) {
 	dr.Schema = s.Reference()
 	dr.Object = r.cnt.Save(i)
 	return
+}
+
+func (r *Root) mustHaveSecretKey() {
+	if r.sec == (cipher.SecKey{}) {
+		panic("unable to modify received root")
+	}
 }
 
 // Inject an object to the Root updating the seq,
