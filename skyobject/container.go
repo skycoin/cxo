@@ -485,7 +485,7 @@ func (r roots) latest() (t *Root) {
 }
 
 func (r roots) latestFull() *Root {
-	for i := len(r); i >= 0; i-- { // from tail
+	for i := len(r) - 1; i >= 0; i-- { // from tail
 		if x := r[i]; x.IsFull() {
 			return x
 		}

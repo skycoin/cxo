@@ -374,10 +374,13 @@ func (c *Client) Subscribe(feed cipher.PubKey) (ok bool) {
 	c.fmx.Lock()
 	defer c.fmx.Unlock()
 
-	if c.hasFeed(feed) {
+	if _, has := c.feeds[feed]; has {
 		return // false (already subscribed)
 	}
 	c.feeds[feed] = struct{}{}
+	if c.cn == nil {
+		return
+	}
 	if ok = c.sendMessage(&AddFeedMsg{feed}); ok {
 		if full := c.so.LastFullRoot(feed); full != nil {
 			p, sig := full.Encode()
@@ -396,7 +399,9 @@ func (c *Client) Unsubscribe(feed cipher.PubKey) (ok bool) {
 		return // not subscribed
 	}
 	delete(c.feeds, feed)
-	ok = c.sendMessage(&DelFeedMsg{feed})
+	if c.cn != nil {
+		ok = c.sendMessage(&DelFeedMsg{feed})
+	}
 	c.so.DelFeed(feed) // remove from skyobject
 	return
 }

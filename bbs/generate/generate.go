@@ -87,6 +87,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	if err = c.Start(serverAddress); err != nil {
 		log.Fatal(err)
 	}
