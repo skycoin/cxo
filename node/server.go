@@ -268,7 +268,7 @@ func shortHex(a string) string {
 func (s *Server) addFeedOfConn(c *gnet.Conn, feed cipher.PubKey) (added bool) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
-	if cs, ok := s.feeds[msg.Feed]; ok {
+	if cs, ok := s.feeds[feed]; ok {
 		if _, ok := cs[c]; ok {
 			return // already
 		}
@@ -515,26 +515,6 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	}
 }
 
-// without lock
-func (s *Server) broadcastExcept(msg Msg, except *gnet.Conn) {
-	for _, a := range s.pool.Connections() {
-		if c := s.pool.Connection(a); c != nil {
-			if c != except {
-				s.sendMessage(c, msg)
-			}
-		}
-	}
-}
-
-// without lock
-func (s *Server) broadcast(msg Msg) {
-	for _, a := range s.pool.Connections() {
-		if c := s.pool.Connection(a); c != nil {
-			s.sendMessage(c, msg)
-		}
-	}
-}
-
 //
 // Public methods of the Server
 //
@@ -562,13 +542,23 @@ func (s *Server) Connection(address string) *gnet.Conn {
 	return s.pool.Connection(address)
 }
 
+func (s *Server) broadcast(msg Msg) {
+	// todo: modify gnet.(*Pool).Connections() to return *gnet.Conn
+	//       instead of list of addresses
+	for _, a := range s.pool.Connections() {
+		if c := s.pool.Connection(a); c != nil {
+			s.sendMessage(c, msg)
+		}
+	}
+}
+
 // AddFeed adds the feed to list of feeds, the Server share, and
 // sends root object of the feed to subscribers
 func (s *Server) AddFeed(f cipher.PubKey) (added bool) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
-	if _, ok := s.feeds[f]; !ok {
-		s.feeds[f], added = &feed{}, true
+	if cs, ok := s.feeds[f]; !ok {
+		s.feeds[f], added = make(map[*gnet.Conn]struct{}), true
 		s.broadcast(&AddFeedMsg{f})
 	}
 	return
@@ -578,17 +568,32 @@ func (s *Server) AddFeed(f cipher.PubKey) (added bool) {
 func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
-	if cs, ok := s.feeds[f]; ok {
+	if _, ok := s.feeds[f]; ok {
 		delete(s.feeds, f)
-		deleted = true
 		s.broadcast(&DelFeedMsg{f})
-		s.so.DelFeed(f) // delete from skyobject
+		// delete from filling
+		s.rmx.Lock()
+		defer s.rmx.Unlock()
+		var i int = 0
+		for _, fl := range s.roots {
+			if fl.root.Pub() == f {
+				continue // delete
+			}
+			i++
+			s.roots[i] = fl
+		}
+		s.roots = s.roots[:i]
+		// delete from skyobject
+		s.so.DelFeed(f)
+		deleted = true
 	}
 	return
 }
 
+// TODO: + Want per root of a feed
+
 // Want returns lits of objects related to given
-// feed that the server hasn't but knows about
+// feed that the server hasn't got but knows about
 func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 	set := make(map[skyobject.Reference]struct{})
 	err = s.so.WantFeed(feed, func(k skyobject.Reference) error {
@@ -607,6 +612,8 @@ func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 	}
 	return
 }
+
+// TODO: + Got per root of a feed
 
 // Got returns lits of objects related to given
 // feed that the server has got
