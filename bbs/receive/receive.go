@@ -42,10 +42,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	c, err := node.NewClient(cc)
+	c, err := node.NewClient(cc, skyobject.NewContainer(nil))
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	if err = c.Start(serverAddress); err != nil {
 		log.Fatal(err)
 	}
@@ -75,26 +76,23 @@ func waitInterrupt() {
 func printTree(c *node.Client, pk cipher.PubKey) {
 	for {
 		<-time.After(5 * time.Second)
-		c.Execute(func(c *node.Container) (_ error) {
-			fmt.Println("---")
-			fmt.Println("---")
-			fmt.Println("---")
+		fmt.Println("---")
+		fmt.Println("---")
+		fmt.Println("---")
 
-			root := c.Root(pk)
-			if root == nil {
-				fmt.Println("empty root")
-				return
-			}
-			vals, err := root.Values()
-			if err != nil {
-				fmt.Println("error: ", err)
-				return
-			}
-			for _, val := range vals {
-				inspect(val, err, "")
-			}
-			return
-		})
+		root := c.Container().LastRoot(pk)
+		if root == nil {
+			fmt.Println("empty root")
+			continue
+		}
+		vals, err := root.Values()
+		if err != nil {
+			fmt.Println("error: ", err)
+			continue
+		}
+		for _, val := range vals {
+			inspect(val, err, "")
+		}
 	}
 }
 
@@ -113,47 +111,47 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 		d, err := val.Dereference()
 		inspect(d, err, prefix+"  ")
 	case reflect.Bool:
-		if b, err := val.Bool(); err != nil {
+		b, err := val.Bool()
+		if err != nil {
 			fmt.Println(err)
-		} else {
-			fmt.Println(b)
+			return
 		}
+		fmt.Println(b)
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if i, err := val.Int(); err != nil {
+		i, err := val.Int()
+		if err != nil {
 			fmt.Println(err)
-		} else {
-			fmt.Println(i)
+			return
 		}
+		fmt.Println(i)
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if u, err := val.Uint(); err != nil {
+		u, err := val.Uint()
+		if err != nil {
 			fmt.Println(err)
-		} else {
-			fmt.Println(u)
+			return
 		}
+		fmt.Println(u)
 	case reflect.Float32, reflect.Float64:
-		if f, err := val.Float(); err != nil {
+		f, err := val.Float()
+		if err != nil {
 			fmt.Println(err)
-		} else {
-			fmt.Println(f)
+			return
 		}
+		fmt.Println(f)
 	case reflect.String:
-		if s, err := val.String(); err != nil {
+		s, err := val.String()
+		if err != nil {
 			fmt.Println(err)
-		} else {
-			fmt.Printf("%q\n", s)
+			return
 		}
+		fmt.Printf("%q\n", s)
 	case reflect.Array, reflect.Slice:
 		if val.Kind() == reflect.Array {
 			fmt.Printf("<array %s>\n", val.Schema().String())
 		} else {
 			fmt.Printf("<slice %s>\n", val.Schema().String())
 		}
-		el, err := val.Schema().Elem()
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-		if el.Kind() == reflect.Uint8 {
+		if val.Schema().Elem().Kind() == reflect.Uint8 {
 			fmt.Print(prefix)
 			b, err := val.Bytes()
 			if err != nil {
@@ -161,17 +159,15 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 			} else {
 				fmt.Println(hex.EncodeToString(b))
 			}
-			break
-		}
-		ln, err := val.Len()
-		if err != nil {
-			fmt.Println(err)
 			return
 		}
-		for i := 0; i < ln; i++ {
-			iv, err := val.Index(i)
+		err := val.RangeIndex(func(_ int, d *skyobject.Value) (_ error) {
 			fmt.Print(prefix)
-			inspect(iv, err, prefix+"  ")
+			inspect(d, err, prefix+"  ")
+			return
+		})
+		if err != nil {
+			fmt.Println(err)
 		}
 	case reflect.Struct:
 		fmt.Printf("<struct %s>\n", val.Schema().String())
@@ -182,7 +178,6 @@ func inspect(val *skyobject.Value, err error, prefix string) {
 		})
 		if err != nil {
 			fmt.Println(err)
-			return
 		}
 	}
 }

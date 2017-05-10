@@ -34,6 +34,23 @@ type Root struct {
 	cnt  *Container // back reference (ro)
 }
 
+func (r *Root) dup() (d *Root) {
+	d = new(Root)
+	if len(r.refs) > 0 {
+		d.refs = make([]Dynamic, len(r.refs))
+		copy(d.refs, r.refs)
+	}
+	d.reg = r.reg
+	d.time = r.time
+	d.seq = r.seq
+	d.pub = r.pub
+	d.sec = r.sec
+	d.sig = r.sig
+	d.full = r.full
+	d.cnt = r.cnt
+	return
+}
+
 // Registry returns related registry of "missing registry" error
 func (r *Root) Registry() (reg *Registry, err error) {
 	reg, err = r.cnt.Registry(r.reg) // container never changed (no lock/unlock)
@@ -47,17 +64,19 @@ func (r *Root) RegistryReference() RegistryReference {
 // Tocuh updates timestapt of the Root (setting it to now)
 // and increments seq number. The Touch implicitly called
 // inside Inject, InjectMany and Replace methods
-func (r *Root) Touch() {
+func (r *Root) Touch() (sig cipher.Sig, p []byte) {
 	r.Lock()
 	defer r.Unlock()
-	r.touch()
+	return r.touch()
 }
 
-func (r *Root) touch() {
+func (r *Root) touch() (sig cipher.Sig, p []byte) {
+	r.mustHaveSecretKey()
 	r.time = time.Now().UnixNano()
 	r.seq++
-	r.encode()       // to update signature
-	r.cnt.addRoot(r) // updated
+	sig, p = r.encode() // to update signature
+	r.cnt.addRoot(r)    // updated
+	return
 }
 
 // Seq returns seq number of the Root
@@ -65,6 +84,12 @@ func (r *Root) Seq() uint64 {
 	r.RLock()
 	defer r.RUnlock()
 	return r.seq
+}
+
+func (r *Root) SetSeq(seq uint64) {
+	r.Lock()
+	defer r.Unlock()
+	r.seq = seq
 }
 
 // Time returns unix nano timestamp of the Root
@@ -102,19 +127,19 @@ func (r *Root) IsFull() bool {
 	if r.sig == (cipher.Sig{}) { // fresh
 		return false
 	}
-	var want int
-	err := r.wantFunc(func(Reference) (_ error) {
-		want++
-		return
+	var want bool = false
+	err := r.wantFunc(func(Reference) error {
+		want = true
+		return ErrStopRange
 	})
 	if err != nil {
 		return false // can't determine
 	}
-	if want == 0 {
-		r.full = true
-		return true
+	if want {
+		return false
 	}
-	return false
+	r.full = true
+	return true
 }
 
 // Encode the Root and get its Signature
@@ -133,9 +158,15 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 	x.Seq = r.seq
 	x.Pub = r.pub
 	b = encoder.Serialize(x) // b
-	hash := cipher.SumSHA256(b)
-	sig = cipher.SignHash(hash, r.sec) // sig
-	r.sig = sig
+	if r.sec != (cipher.SecKey{}) {
+		// sign if need
+		hash := cipher.SumSHA256(b)
+		sig = cipher.SignHash(hash, r.sec) // sig
+		r.sig = sig
+	} else {
+		// or use existing signature
+		sig = r.sig
+	}
 	return
 }
 
@@ -192,20 +223,28 @@ func (r *Root) Dynamic(i interface{}) (dr Dynamic) {
 	return
 }
 
+func (r *Root) mustHaveSecretKey() {
+	if r.sec == (cipher.SecKey{}) {
+		panic("unable to modify received root")
+	}
+}
+
 // Inject an object to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) Inject(i interface{}) (inj Dynamic) {
+func (r *Root) Inject(i interface{}) (inj Dynamic, sig cipher.Sig, p []byte) {
 	inj = r.Dynamic(i)
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, inj)
-	r.touch()
+	sig, p = r.touch()
 	return
 }
 
 // InjectMany objects to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic) {
+func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic,
+	sig cipher.Sig, p []byte) {
+
 	injs = make([]Dynamic, 0, len(i))
 	for _, e := range i {
 		injs = append(injs, r.Dynamic(e))
@@ -213,7 +252,7 @@ func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic) {
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, injs...)
-	r.touch()
+	sig, p = r.touch()
 	return
 }
 
@@ -229,11 +268,13 @@ func (r *Root) Refs() []Dynamic {
 // least, by a Root that uses the same Registry). The Replace
 // implicitly updates seq, timestamp and signature of the Root.
 // The method returns list of previous references of the Root
-func (r *Root) Replace(refs []Dynamic) (prev []Dynamic) {
+func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, sig cipher.Sig,
+	p []byte) {
+
 	r.Lock()
 	defer r.Unlock()
 	prev, r.refs = r.refs, refs
-	r.touch()
+	sig, p = r.touch()
 	return
 }
 
@@ -289,6 +330,24 @@ func (r *Root) ValueByStatic(schemaName string, ref Reference) (val *Value,
 	return
 }
 
+func (r *Root) Values() (vals []*Value, err error) {
+	r.RLock()
+	defer r.RUnlock()
+	if len(r.refs) == 0 {
+		return
+	}
+	vals = make([]*Value, 0, len(r.refs))
+	var val *Value
+	for _, dr := range r.refs {
+		if val, err = r.ValueByDynamic(dr); err != nil {
+			vals = nil
+			return // the error
+		}
+		vals = append(vals, val)
+	}
+	return
+}
+
 // SchemaByReference returns Schema by name or
 // (1) missing registry error, or (2) missing schema error
 func (r *Root) SchemaByName(name string) (s Schema, err error) {
@@ -324,6 +383,9 @@ type WantFunc func(Reference) error
 func (r *Root) WantFunc(wf WantFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+	if r.full {
+		return // the Root is full
+	}
 	err = r.wantFunc(wf)
 	return
 }
@@ -400,6 +462,28 @@ func (r *Root) GotFunc(gf GotFunc) (err error) {
 				continue // range loop
 			} // else
 			break // range loop
+		}
+	}
+	if err == ErrStopRange {
+		err = nil
+	}
+	return
+}
+
+// GotOfFunc is like GotFunc but for particular
+// Dynamic reference of the Root
+func (r *Root) GotOfFunc(dr Dynamic, gf GotFunc) (err error) {
+	r.RLock()
+	defer r.RUnlock()
+	var val *Value
+	if val, err = r.ValueByDynamic(dr); err != nil {
+		if _, ok := err.(*MissingObjectError); ok {
+			err = nil // never return MissingObjectError
+		} // else
+		return // the error
+	} else if err = gotValue(val, gf); err != nil {
+		if _, ok := err.(*MissingObjectError); ok {
+			err = nil // never return MissingObjectError
 		}
 	}
 	if err == ErrStopRange {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/node/gnet"
@@ -21,48 +20,38 @@ type Client struct {
 	log.Logger
 
 	so *skyobject.Container
-	db *data.DB
 
-	feeds []cipher.PubKey
-	srvfs []cipher.PubKey // server feeds
+	fmx   sync.Mutex
+	feeds map[cipher.PubKey]struct{} // subscriptions
 
-	eventq chan Event // events
+	smx   sync.Mutex
+	srvfs map[cipher.PubKey]struct{} // server feeds
+
+	rmx   sync.RWMutex
+	roots []*fillRoot // filling up received root objects
 
 	conf ClientConfig
 	pool *gnet.Pool
+
+	cn *gnet.Conn
 
 	quito sync.Once
 	quit  chan struct{}
 	await sync.WaitGroup
 }
 
-// NewClient
-func NewClient(cc ClientConfig) (c *Client, err error) {
+// NewClient cretes Client with given Container
+func NewClient(cc ClientConfig, so *skyobject.Container) (c *Client,
+	err error) {
 
-	var db *data.DB = data.NewDB()
-	return NewClientSoDB(cc, skyobject.NewContainer(db), db)
-}
-
-// NewClient with given database and container
-func NewClientSoDB(cc ClientConfig, so *skyobject.Container,
-	db *data.DB) (c *Client, err error) {
-
-	if db == nil {
-		panic("nil db")
-	}
 	if so == nil {
 		panic("nil so")
 	}
 
 	c = new(Client)
-
-	c.db = db
 	c.so = so
-
-	c.eventq = make(chan Event, 0)
-
-	c.feeds = nil
-
+	c.feeds = make(map[cipher.PubKey]struct{})
+	c.srvfs = make(map[cipher.PubKey]struct{})
 	c.Logger = log.NewLogger(cc.Log.Prefix, cc.Log.Debug)
 	cc.Config.Logger = c.Logger // use the same logger
 
@@ -88,6 +77,7 @@ func (c *Client) Start(address string) (err error) {
 	if cn, err = c.pool.Dial(address); err != nil {
 		return
 	}
+	c.cn = cn // keep connection
 	c.await.Add(1)
 	go c.handle(cn)
 	return
@@ -101,7 +91,6 @@ func (c *Client) Close() (err error) {
 		close(c.quit)
 	})
 	err = c.pool.Close()
-	// TODO: drain events
 	c.await.Wait()
 	return
 }
@@ -121,12 +110,8 @@ func (c *Client) handle(cn *gnet.Conn) {
 		receive <-chan []byte   = cn.ReceiveQueue()
 		closed  <-chan struct{} = cn.Closed()
 
-		events <-chan Event = c.eventq
-
 		data []byte
 		msg  Msg
-
-		evt Event
 
 		err error
 	)
@@ -134,12 +119,6 @@ func (c *Client) handle(cn *gnet.Conn) {
 	// events loop
 	for {
 		select {
-		case evt = <-events:
-			if err = evt(cn); err != nil {
-				c.Print("[ERR] ", err)
-				cn.Close()
-				return
-			}
 		case <-closed:
 			return
 		case data = <-receive:
@@ -154,240 +133,394 @@ func (c *Client) handle(cn *gnet.Conn) {
 
 }
 
-func (c *Client) handleMessage(cn *gnet.Conn, msg Msg) {
-	c.Debugf("handle message %T", msg)
+//
+// ============================================================================
+
+func (s *Client) addServerFeed(feed cipher.PubKey) (added bool) {
+	s.smx.Lock()
+	defer s.smx.Unlock()
+	if _, ok := s.srvfs[feed]; ok {
+		return // already
+	}
+	s.srvfs[feed], added = struct{}{}, true
+	return
+}
+
+func (s *Client) handleAddFeedMsg(msg *AddFeedMsg) {
+	if !s.addServerFeed(msg.Feed) {
+		return
+	}
+	full := s.so.LastFullRoot(msg.Feed)
+	if full == nil {
+		return
+	}
+	p, sig := full.Encode()
+	s.sendMessage(&RootMsg{msg.Feed, sig, p})
+}
+
+func (s *Client) handleDelFeedMsg(msg *DelFeedMsg) {
+	s.smx.Lock()
+	defer s.smx.Unlock()
+	delete(s.srvfs, msg.Feed)
+	return
+}
+
+func (s *Client) hasFeed(pk cipher.PubKey) (yep bool) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+	_, yep = s.feeds[pk]
+	return
+}
+
+func (s *Client) addNonFullRoot(root *skyobject.Root,
+	c *gnet.Conn) (fl *fillRoot) {
+
+	fl = &fillRoot{root, c, skyobject.Reference{}}
+	s.roots = append(s.roots, fl)
+	return
+}
+
+func (s *Client) delNonFullRoot(root *skyobject.Root) {
+	for i, fl := range s.roots {
+		if fl.root == root {
+			copy(s.roots[i:], s.roots[i+1:])
+			s.roots[len(s.roots)-1] = nil // set to nil for golang GC
+			s.roots = s.roots[:len(s.roots)-1]
+			return
+		}
+	}
+	return
+}
+
+func (s *Client) handleRootMsg(msg *RootMsg) {
+	if !s.hasFeed(msg.Feed) {
+		return
+	}
+	root, err := s.so.AddEncodedRoot(msg.Root, msg.Sig)
+	if err != nil {
+		s.Print("[ERR] error decoding root: ", err)
+		return
+	}
+	if root.IsFull() {
+		return
+	}
+
+	s.rmx.Lock()
+	defer s.rmx.Unlock()
+
+	fl := s.addNonFullRoot(root, nil)
+	if !root.HasRegistry() {
+		if !s.sendMessage(&RequestRegistryMsg{root.RegistryReference()}) {
+			s.delNonFullRoot(root) // sending error (connection closed)
+		}
+		return
+	}
+	err = root.WantFunc(func(ref skyobject.Reference) error {
+		if !s.sendMessage(&RequestDataMsg{ref}) {
+			s.delNonFullRoot(root) // sending error (connection closed)
+		} else {
+			fl.await = ref // keep last requested reference
+		}
+		return skyobject.ErrStopRange
+	})
+	if err != nil {
+		s.Print("[ERR] unexpected error: ", err)
+	}
+}
+
+func (s *Client) handleRequestRegistryMsg(msg *RequestRegistryMsg) {
+
+	if reg, _ := s.so.Registry(msg.Ref); reg != nil {
+		s.sendMessage(&RegistryMsg{reg.Encode()})
+	}
+}
+
+func (s *Client) handleRegistryMsg(msg *RegistryMsg) {
+	reg, err := skyobject.DecodeRegistry(msg.Reg)
+	if err != nil {
+		s.Print("[ERR] error decoding received registry:", err)
+		return
+	}
+
+	if !s.so.WantRegistry(reg.Reference()) {
+		return // don't want the registry
+	}
+
+	s.so.AddRegistry(reg)
+
+	s.rmx.Lock()
+	defer s.rmx.Unlock()
+	var i int = 0 // index for deleting
+	for _, fl := range s.roots {
+		if fl.root.RegistryReference() == reg.Reference() {
+			if fl.root.IsFull() {
+				continue // delete
+			}
+			var sent bool
+			err = fl.root.WantFunc(func(ref skyobject.Reference) error {
+				if sent = s.sendMessage(&RequestDataMsg{ref}); sent {
+					fl.await = ref
+				}
+				return skyobject.ErrStopRange
+			})
+			if err != nil {
+				s.Print("[ERR] unexpected error: ", err)
+				continue // delete
+			}
+			if !sent {
+				continue // delete
+			}
+		}
+		s.roots[i] = fl
+		i++
+	}
+	s.roots = s.roots[:i]
+}
+
+func (s *Client) handleRequestDataMsg(msg *RequestDataMsg) {
+	if data, ok := s.so.Get(msg.Ref); ok {
+		s.sendMessage(&DataMsg{data})
+	}
+}
+
+func (s *Client) handleDataMsg(msg *DataMsg) {
+	hash := skyobject.Reference(cipher.SumSHA256(msg.Data))
+
+	s.rmx.Lock()
+	defer s.rmx.Unlock()
+
+	// does the Server really want the data
+	var want bool
+	for _, fl := range s.roots {
+		if fl.await == hash {
+			want = true
+			break
+		}
+	}
+	if !want {
+		return // doesn't want the data
+	}
+	s.so.Set(hash, msg.Data) // save
+
+	// check filling
+	var i int = 0 // index for deleting
+	for _, fl := range s.roots {
+		if fl.await == hash {
+			if fl.root.IsFull() {
+				continue // delete
+			}
+			var sent bool
+			err := fl.root.WantFunc(func(ref skyobject.Reference) error {
+				if sent = s.sendMessage(&RequestDataMsg{ref}); sent {
+					fl.await = ref
+				}
+				return skyobject.ErrStopRange
+			})
+			if err != nil {
+				s.Print("[ERR] unexpected error: ", err)
+				continue // delete
+			}
+			if !sent {
+				continue // delete
+			}
+		}
+		s.roots[i] = fl
+		i++
+	}
+	s.roots = s.roots[:i]
+}
+
+// ============================================================================
+//
+
+func (s *Client) handleMessage(c *gnet.Conn, msg Msg) {
+	s.Debugf("handle message %T from %s", msg, c.Address())
 
 	switch x := msg.(type) {
 	case *AddFeedMsg:
-		for _, f := range c.srvfs {
-			if f == x.Feed {
-				return // already have the feed
-			}
-		}
-		c.srvfs = append(c.srvfs, x.Feed)
+		s.handleAddFeedMsg(x)
 	case *DelFeedMsg:
-		for i, f := range c.srvfs {
-			if f == x.Feed {
-				c.srvfs = append(c.srvfs[:i], c.srvfs[i+1:]...)
-				return
-			}
-		}
+		s.handleDelFeedMsg(x)
 	case *RootMsg:
-		for _, f := range c.feeds {
-			if f == x.Feed {
-				ok, err := c.so.AddEncodedRoot(x.Root, x.Feed, x.Sig)
-				if err != nil {
-					c.Print("[ERR] error decoding root: ", err)
-					return
-				}
-				if !ok {
-					return // older
-				}
-				return
-			}
-		}
+		s.handleRootMsg(x)
+	case *RequestRegistryMsg:
+		s.handleRequestRegistryMsg(x)
+	case *RegistryMsg:
+		s.handleRegistryMsg(x)
+	case *RequestDataMsg:
+		s.handleRequestDataMsg(x)
 	case *DataMsg:
-		for _, f := range c.feeds {
-			if x.Feed == f {
-				hash := cipher.SumSHA256(x.Data)
-				root := c.so.Root(x.Feed)
-				if root == nil {
-					c.Debug("doesn't have a root of the feed: ",
-						shortHex(x.Feed.Hex()))
-					return // doesn't have a root object of the feed
-				}
-				accept := false
-				err := root.WantFunc(func(ref skyobject.Reference) (_ error) {
-					if ref == skyobject.Reference(hash) {
-						accept = true
-						c.Debug("add data: ", shortHex(hash.Hex()))
-						c.db.Set(hash, x.Data)
-						return skyobject.ErrStopRange // break the itteration
-					}
-					return
-				})
-				if err != nil {
-					c.Print("[ERR] malformed root: ", err)
-					// TODO: reset roo object
-				}
-				if !accept {
-					c.Debug("reject data: ", shortHex(hash.Hex()))
-				}
-			}
-		}
+		s.handleDataMsg(x)
+	default:
+		s.Printf("[CRIT] unhandled message type %T", msg)
 	}
 }
 
-func (c *Client) sendMessage(cn *gnet.Conn, msg Msg) (ok bool) {
+func (c *Client) sendMessage(msg Msg) (ok bool) {
 	c.Debugf("send message %T", msg)
 
 	select {
-	case cn.SendQueue() <- Encode(msg):
+	case c.cn.SendQueue() <- Encode(msg):
 		ok = true
-	case <-cn.Closed():
+	case <-c.cn.Closed():
 	default:
 		c.Print("[ERR] write queue full")
-		cn.Close() // fatality
-	}
-	return
-}
-
-func (c *Client) hasServerFeed(feed cipher.PubKey) (has bool) {
-	for _, sf := range c.srvfs {
-		if sf == feed {
-			has = true
-			break
-		}
-	}
-	return
-}
-
-func (c *Client) hasFeed(feed cipher.PubKey) (has bool) {
-	for _, f := range c.feeds {
-		if f == feed {
-			has = true
-			break
-		}
+		c.cn.Close() // fatality
 	}
 	return
 }
 
 func (c *Client) Subscribe(feed cipher.PubKey) (ok bool) {
-	okChan := make(chan bool, 1)
-	select {
-	case c.eventq <- func(cn *gnet.Conn) (terminate error) {
-		if !c.hasServerFeed(feed) {
-			okChan <- false
-			return
-			// can't subscribe if connected server doesn't has the
-			// feed because it doesn't make sence
-		}
-		if c.hasFeed(feed) {
-			okChan <- false // already subscribed
-			return
-		}
-		c.feeds = append(c.feeds, feed)
-		okChan <- c.sendMessage(cn, &AddFeedMsg{feed})
-		return
-	}:
-	case <-c.quit:
-		return // false
+	c.fmx.Lock()
+	defer c.fmx.Unlock()
+
+	if _, has := c.feeds[feed]; has {
+		return // false (already subscribed)
 	}
-	ok = <-okChan
+	c.feeds[feed] = struct{}{}
+	if c.cn == nil {
+		return
+	}
+	if ok = c.sendMessage(&AddFeedMsg{feed}); ok {
+		if full := c.so.LastFullRoot(feed); full != nil {
+			p, sig := full.Encode()
+			ok = c.sendMessage(&RootMsg{full.Pub(), sig, p})
+		}
+	}
 	return
 }
 
+// Unsubscribe from a feed
 func (c *Client) Unsubscribe(feed cipher.PubKey) (ok bool) {
-	okChan := make(chan bool, 1)
-	select {
-	case c.eventq <- func(cn *gnet.Conn) (terminate error) {
-		for i, f := range c.feeds {
-			if f == feed {
-				c.feeds = append(c.feeds[:i], c.feeds[i+1:]...)
-				okChan <- c.sendMessage(cn, &DelFeedMsg{feed})
-				return
-			}
-		}
-		okChan <- false // don't subscribed
-		return
-	}:
-	case <-c.quit:
-		return // false
+	c.fmx.Lock()
+	defer c.fmx.Unlock()
+
+	if _, sub := c.feeds[feed]; !sub {
+		return // not subscribed
 	}
-	ok = <-okChan
+	delete(c.feeds, feed)
+	if c.cn != nil {
+		ok = c.sendMessage(&DelFeedMsg{feed})
+	}
+	c.so.DelFeed(feed) // remove from skyobject
 	return
 }
 
 // Subscribed feeds
-func (c *Client) Feeds() []cipher.PubKey {
-	reply := make(chan []cipher.PubKey, 1)
-	select {
-	case c.eventq <- func(cn *gnet.Conn) (terminate error) {
-		f := make([]cipher.PubKey, 0, len(c.feeds))
-		copy(f, c.feeds)
-		reply <- f
+func (c *Client) Feeds() (feeds []cipher.PubKey) {
+	c.fmx.Lock()
+	defer c.fmx.Unlock()
+	if len(c.feeds) == 0 {
 		return
-	}:
-	case <-c.quit:
-		return nil
 	}
-	return <-reply
+	feeds = make([]cipher.PubKey, 0, len(c.feeds))
+	for f := range c.feeds {
+		feeds = append(feeds, f)
+	}
+	return
 }
 
 var ErrClosed = errors.New("closed")
 
-func (c *Client) Execute(fn func(*Container) error) error {
-	reply := make(chan error, 1)
-	select {
-	case c.eventq <- func(cn *gnet.Conn) (_ error) {
-		reply <- fn(&Container{c.so, c, cn})
-		return
-	}:
-	case <-c.quit:
-		return ErrClosed
-	}
-	return <-reply
+// Container returns wraper around skyobject.Container.
+// The wrapper sends all changes to server
+func (c *Client) Container() *Container {
+	return &Container{c.so, c}
 }
 
 type Container struct {
 	*skyobject.Container
 	client *Client
-	cn     *gnet.Conn
 }
 
-func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (root *Root) {
-	root = &Root{c.Container.NewRoot(pk, sk), c.client, c.cn, c}
-	// send the root
-	c.client.sendMessage(c.cn, &RootMsg{
-		root.Pub,
-		root.Sig,
-		root.Encode(),
-	})
-	// a fresh root hasn't got any references
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
+	sr := c.Container.NewRoot(pk, sk)
+	r = &Root{sr, c} // TODO
 	return
 }
 
-func (c *Container) Root(pk cipher.PubKey) (r *Root) {
-	if root := c.Container.Root(pk); root != nil {
-		r = &Root{root, c.client, c.cn, c}
+func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
+	err error) {
+
+	var sr *skyobject.Root
+	if sr, err = c.Container.AddEncodedRoot(b, sig); err != nil {
+		return
+	} else if sr != nil {
+		r = &Root{sr, c}
+	}
+	return
+
+}
+
+func (c *Container) LastRoot(pk cipher.PubKey) (r *Root) {
+	if sr := c.Container.LastRoot(pk); sr != nil {
+		r = &Root{sr, c}
+	}
+	return
+}
+
+func (c *Container) LastFullRoot(pk cipher.PubKey) (r *Root) {
+	if sr := c.Container.LastFullRoot(pk); sr != nil {
+		r = &Root{sr, c}
+	}
+	return
+}
+
+func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root) {
+	if sr := c.Container.RootBySeq(pk, seq); sr != nil {
+		r = &Root{sr, c}
 	}
 	return
 }
 
 type Root struct {
 	*skyobject.Root
-	client *Client
-	cn     *gnet.Conn
-	cnt    *Container // back reference
+	c *Container
 }
 
-func (r *Root) Inject(i interface{},
-	sk cipher.SecKey) (inj skyobject.Dynamic) {
-
-	inj = r.Root.Inject(i, sk)
-	r.client.sendMessage(r.cn, &RootMsg{
-		r.Pub,
-		r.Sig,
-		r.Encode(),
-	})
-	// drop error, don't sent twice and more times the same object
-	sent := make(map[skyobject.Reference]struct{})
-	// TODO:
-	// r.cnt.GotOfFunc(inj, func(k skyobject.Reference) (_ error) {
-	err := r.GotFunc(func(k skyobject.Reference) (_ error) {
-		if _, ok := sent[k]; ok {
-			return
-		}
-		data, _ := r.client.db.Get(cipher.SHA256(k))
-		r.client.Debug("[][][][] send data ", shortHex(k.String()))
-		if !r.client.sendMessage(r.cn, &DataMsg{r.Pub, data}) {
-			return skyobject.ErrStopRange // sending error
-		}
-		sent[k] = struct{}{}
-		return
-	})
-	if err != nil {
-		r.client.Print("[CRIT] GotFunc error:", err)
+func (r *Root) send(p []byte, sig cipher.Sig) {
+	if !r.c.client.hasFeed(r.Pub()) {
+		return // don't send
 	}
+	r.c.client.sendMessage(&RootMsg{
+		Feed: r.Pub(),
+		Sig:  sig,
+		Root: p,
+	})
+}
+
+func (r *Root) Touch() (sig cipher.Sig, p []byte) {
+	// TODO: sending never see the (*Client).feeds
+	sig, p = r.Root.Touch()
+	r.send(p, sig)
+	return
+}
+
+func (r *Root) Inject(i interface{}) (inj skyobject.Dynamic, sig cipher.Sig,
+	p []byte) {
+
+	// TODO: sending never see the (*Client).feeds
+	inj, sig, p = r.Root.Inject(i)
+	r.send(p, sig)
+	return
+}
+
+func (r *Root) InjectMany(i ...interface{}) (injs []skyobject.Dynamic,
+	sig cipher.Sig, p []byte) {
+
+	// send the root and objects related to all injected objects
+	// TODO: sending never see the (*Client).feeds
+	injs, sig, p = r.Root.InjectMany(i...)
+	r.send(p, sig)
+	return
+}
+
+func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
+	sig cipher.Sig, p []byte) {
+
+	// send root and all its got
+	// TODO: sending never see the (*Client).feeds
+	prev, sig, p = r.Root.Replace(refs)
+	r.send(p, sig)
 	return
 }
