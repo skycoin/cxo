@@ -48,6 +48,7 @@ func (r *Root) dup() (d *Root) {
 	d.sig = r.sig
 	d.full = r.full
 	d.cnt = r.cnt
+	return
 }
 
 // Registry returns related registry of "missing registry" error

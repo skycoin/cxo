@@ -219,7 +219,6 @@ func (s *Server) close(c *gnet.Conn) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
 	c.Close()
-FeedsLoop:
 	for _, cs := range s.feeds {
 		delete(cs, c)
 	}
@@ -329,7 +328,7 @@ func (s *Server) addNonFullRoot(root *skyobject.Root,
 }
 
 func (s *Server) delNonFullRoot(root *skyobject.Root) {
-	for i, fl = range s.roots {
+	for i, fl := range s.roots {
 		if fl.root == root {
 			copy(s.roots[i:], s.roots[i+1:])
 			s.roots[len(s.roots)-1] = nil // set to nil for golang GC
@@ -472,7 +471,7 @@ func (s *Server) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 				continue // delete
 			}
 			var sent bool
-			err = fl.root.WantFunc(func(ref skyobject.Reference) error {
+			err := fl.root.WantFunc(func(ref skyobject.Reference) error {
 				if sent = s.sendMessage(c, &RequestDataMsg{ref}); sent {
 					fl.await = ref
 				}
@@ -507,7 +506,7 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	case *RegistryMsg:
 		s.handleRegistryMsg(c, x)
 	case *RequestDataMsg:
-		s.sendMessage(c, x)
+		s.handleRequestDataMsg(c, x)
 	case *DataMsg:
 		s.handleDataMsg(c, x)
 	default:
@@ -557,7 +556,7 @@ func (s *Server) broadcast(msg Msg) {
 func (s *Server) AddFeed(f cipher.PubKey) (added bool) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
-	if cs, ok := s.feeds[f]; !ok {
+	if _, ok := s.feeds[f]; !ok {
 		s.feeds[f], added = make(map[*gnet.Conn]struct{}), true
 		s.broadcast(&AddFeedMsg{f})
 	}
@@ -652,7 +651,7 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 
 // database satatistic
 func (s *Server) Stat() data.Stat {
-	return s.db.Stat()
+	return s.so.DB().Stat()
 }
 
 func (s *Server) Quiting() <-chan struct{} {

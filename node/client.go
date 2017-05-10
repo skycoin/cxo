@@ -146,7 +146,7 @@ func (s *Client) addServerFeed(feed cipher.PubKey) (added bool) {
 	return
 }
 
-func (s *Client) handleAddFeedMsg(c *gnet.Conn, msg *AddFeedMsg) {
+func (s *Client) handleAddFeedMsg(msg *AddFeedMsg) {
 	if !s.addServerFeed(msg.Feed) {
 		return
 	}
@@ -155,10 +155,10 @@ func (s *Client) handleAddFeedMsg(c *gnet.Conn, msg *AddFeedMsg) {
 		return
 	}
 	p, sig := full.Encode()
-	s.sendMessage(c, &RootMsg{msg.Feed, sig, p})
+	s.sendMessage(&RootMsg{msg.Feed, sig, p})
 }
 
-func (s *Client) handleDelFeedMsg(c *gnet.Conn, msg *DelFeedMsg) {
+func (s *Client) handleDelFeedMsg(msg *DelFeedMsg) {
 	s.smx.Lock()
 	defer s.smx.Unlock()
 	delete(s.srvfs, msg.Feed)
@@ -166,8 +166,8 @@ func (s *Client) handleDelFeedMsg(c *gnet.Conn, msg *DelFeedMsg) {
 }
 
 func (s *Client) hasFeed(pk cipher.PubKey) (yep bool) {
-	s.fmx.RLock()
-	defer s.fmx.RUnlock()
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
 	_, yep = s.feeds[pk]
 	return
 }
@@ -181,7 +181,7 @@ func (s *Client) addNonFullRoot(root *skyobject.Root,
 }
 
 func (s *Client) delNonFullRoot(root *skyobject.Root) {
-	for i, fl = range s.roots {
+	for i, fl := range s.roots {
 		if fl.root == root {
 			copy(s.roots[i:], s.roots[i+1:])
 			s.roots[len(s.roots)-1] = nil // set to nil for golang GC
@@ -192,7 +192,7 @@ func (s *Client) delNonFullRoot(root *skyobject.Root) {
 	return
 }
 
-func (s *Client) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
+func (s *Client) handleRootMsg(msg *RootMsg) {
 	if !s.hasFeed(msg.Feed) {
 		return
 	}
@@ -208,15 +208,15 @@ func (s *Client) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	s.rmx.Lock()
 	defer s.rmx.Unlock()
 
-	fl := s.addNonFullRoot(root, c)
+	fl := s.addNonFullRoot(root, nil)
 	if !root.HasRegistry() {
-		if !s.sendMessage(c, &RequestRegistryMsg{root.RegistryReference()}) {
+		if !s.sendMessage(&RequestRegistryMsg{root.RegistryReference()}) {
 			s.delNonFullRoot(root) // sending error (connection closed)
 		}
 		return
 	}
 	err = root.WantFunc(func(ref skyobject.Reference) error {
-		if !s.sendMessage(c, &RequestDataMsg{ref}) {
+		if !s.sendMessage(&RequestDataMsg{ref}) {
 			s.delNonFullRoot(root) // sending error (connection closed)
 		} else {
 			fl.await = ref // keep last requested reference
@@ -228,15 +228,14 @@ func (s *Client) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	}
 }
 
-func (s *Client) handleRequestRegistryMsg(c *gnet.Conn,
-	msg *RequestRegistryMsg) {
+func (s *Client) handleRequestRegistryMsg(msg *RequestRegistryMsg) {
 
 	if reg, _ := s.so.Registry(msg.Ref); reg != nil {
-		s.sendMessage(c, &RegistryMsg{reg.Encode()})
+		s.sendMessage(&RegistryMsg{reg.Encode()})
 	}
 }
 
-func (s *Client) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
+func (s *Client) handleRegistryMsg(msg *RegistryMsg) {
 	reg, err := skyobject.DecodeRegistry(msg.Reg)
 	if err != nil {
 		s.Print("[ERR] error decoding received registry:", err)
@@ -259,7 +258,7 @@ func (s *Client) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
 			}
 			var sent bool
 			err = fl.root.WantFunc(func(ref skyobject.Reference) error {
-				if sent = s.sendMessage(c, &RequestDataMsg{ref}); sent {
+				if sent = s.sendMessage(&RequestDataMsg{ref}); sent {
 					fl.await = ref
 				}
 				return skyobject.ErrStopRange
@@ -278,13 +277,13 @@ func (s *Client) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
 	s.roots = s.roots[:i]
 }
 
-func (s *Client) handleRequestDataMsg(c *gnet.Conn, msg *RequestDataMsg) {
+func (s *Client) handleRequestDataMsg(msg *RequestDataMsg) {
 	if data, ok := s.so.Get(msg.Ref); ok {
-		s.sendMessage(c, &DataMsg{data})
+		s.sendMessage(&DataMsg{data})
 	}
 }
 
-func (s *Client) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
+func (s *Client) handleDataMsg(msg *DataMsg) {
 	hash := skyobject.Reference(cipher.SumSHA256(msg.Data))
 
 	s.rmx.Lock()
@@ -311,8 +310,8 @@ func (s *Client) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 				continue // delete
 			}
 			var sent bool
-			err = fl.root.WantFunc(func(ref skyobject.Reference) error {
-				if sent = s.sendMessage(c, &RequestDataMsg{ref}); sent {
+			err := fl.root.WantFunc(func(ref skyobject.Reference) error {
+				if sent = s.sendMessage(&RequestDataMsg{ref}); sent {
 					fl.await = ref
 				}
 				return skyobject.ErrStopRange
@@ -339,19 +338,19 @@ func (s *Client) handleMessage(c *gnet.Conn, msg Msg) {
 
 	switch x := msg.(type) {
 	case *AddFeedMsg:
-		s.handleAddFeedMsg(c, x)
+		s.handleAddFeedMsg(x)
 	case *DelFeedMsg:
-		s.handleDelFeedMsg(c, x)
+		s.handleDelFeedMsg(x)
 	case *RootMsg:
-		s.handleRootMsg(c, x)
+		s.handleRootMsg(x)
 	case *RequestRegistryMsg:
-		s.handleRequestRegistryMsg(c, x)
+		s.handleRequestRegistryMsg(x)
 	case *RegistryMsg:
-		s.handleRegistryMsg(c, x)
+		s.handleRegistryMsg(x)
 	case *RequestDataMsg:
-		s.sendMessage(c, x)
+		s.handleRequestDataMsg(x)
 	case *DataMsg:
-		s.handleDataMsg(c, x)
+		s.handleDataMsg(x)
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
 	}
