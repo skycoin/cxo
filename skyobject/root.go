@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -23,7 +24,7 @@ type Root struct {
 	refs []Dynamic         // list of objects (rw)
 	reg  RegistryReference // reference to registry of the root (ro)
 	time int64             // timestamp (rw)
-	seq  uint64            // seq number (rw)
+	seq  uint64            // seq number (rw) atomic
 
 	pub cipher.PubKey // public key (ro)
 	sec cipher.SecKey // secret key (ro)
@@ -42,7 +43,7 @@ func (r *Root) dup() (d *Root) {
 	}
 	d.reg = r.reg
 	d.time = r.time
-	d.seq = r.seq
+	d.seq = r.Seq()
 	d.pub = r.pub
 	d.sec = r.sec
 	d.sig = r.sig
@@ -73,7 +74,7 @@ func (r *Root) Touch() (sig cipher.Sig, p []byte) {
 func (r *Root) touch() (sig cipher.Sig, p []byte) {
 	r.mustHaveSecretKey()
 	r.time = time.Now().UnixNano()
-	r.seq++
+	atomic.AddUint64(&r.seq, 1)
 	sig, p = r.encode() // to update signature
 	r.cnt.addRoot(r)    // updated
 	return
@@ -81,15 +82,11 @@ func (r *Root) touch() (sig cipher.Sig, p []byte) {
 
 // Seq returns seq number of the Root
 func (r *Root) Seq() uint64 {
-	r.RLock()
-	defer r.RUnlock()
-	return r.seq
+	return atomic.LoadUint64(&r.seq)
 }
 
 func (r *Root) SetSeq(seq uint64) {
-	r.Lock()
-	defer r.Unlock()
-	r.seq = seq
+	atomic.StoreUint64(&r.seq, seq)
 }
 
 // Time returns unix nano timestamp of the Root
@@ -155,7 +152,7 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 	x.Refs = r.refs
 	x.Reg = r.reg
 	x.Time = r.time
-	x.Seq = r.seq
+	x.Seq = r.Seq()
 	x.Pub = r.pub
 	b = encoder.Serialize(x) // b
 	if r.sec != (cipher.SecKey{}) {
@@ -257,10 +254,14 @@ func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic,
 }
 
 // Refs returns references of the Root
-func (r *Root) Refs() []Dynamic {
+func (r *Root) Refs() (refs []Dynamic) {
 	r.RLock()
 	defer r.RUnlock()
-	return r.refs
+	if len(r.refs) > 0 {
+		refs = make([]Dynamic, len(r.refs))
+		copy(refs, r.refs)
+	}
+	return
 }
 
 // Replace all references of the Root with given references.
