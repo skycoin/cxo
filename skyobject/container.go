@@ -58,6 +58,8 @@ func NewContainerDB(db *data.DB, reg *Registry) (c *Container) {
 func (c *Container) AddRegistry(r *Registry) {
 	c.Lock()
 	defer c.Unlock()
+	// call Done
+	r.Done()
 	// don't replace
 	if _, ok := c.registries[r.Reference()]; !ok {
 		c.registries[r.Reference()] = r
@@ -203,6 +205,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 		if r.sec != sk {
 			panic("secret key missmatch")
 		}
+		r = r.dup()
 		r.refs = nil // reset references
 		return
 	}
