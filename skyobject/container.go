@@ -58,6 +58,8 @@ func NewContainerDB(db *data.DB, reg *Registry) (c *Container) {
 func (c *Container) AddRegistry(r *Registry) {
 	c.Lock()
 	defer c.Unlock()
+	// call Done
+	r.Done()
 	// don't replace
 	if _, ok := c.registries[r.Reference()]; !ok {
 		c.registries[r.Reference()] = r
