@@ -205,6 +205,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 		if r.sec != sk {
 			panic("secret key missmatch")
 		}
+		r = r.dup()
 		r.refs = nil // reset references
 		return
 	}
