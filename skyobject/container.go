@@ -448,7 +448,7 @@ func (c *Container) addRoot(r *Root) (ok bool) {
 		rs = &rsd
 		c.roots[r.Pub()] = rs
 	}
-	ok = rs.add(r)
+	ok = rs.add(r.dup()) // make a copy
 	return
 }
 

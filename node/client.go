@@ -27,9 +27,6 @@ type Client struct {
 	smx   sync.Mutex
 	srvfs []cipher.PubKey // server feeds
 
-	rqmx sync.Mutex
-	rqdt []*skyobject.Root // request data for the roots
-
 	conf ClientConfig
 	pool *gnet.Pool
 

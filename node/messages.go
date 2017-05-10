@@ -60,8 +60,7 @@ type RootMsg struct {
 func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
 type RequestDataMsg struct {
-	Feed cipher.PubKey
-	Ref  skyobject.Reference
+	Ref skyobject.Reference
 }
 
 // MsgType implements Msg interface
@@ -69,7 +68,6 @@ func (*RequestDataMsg) MsgType() MsgType { return RequestDataMsgType }
 
 // A DataMsg reperesents a data
 type DataMsg struct {
-	Feed cipher.PubKey
 	Data []byte
 }
 
@@ -84,7 +82,6 @@ type RequestRegistryMsg struct {
 func (*RequestRegistryMsg) MsgType() MsgType { return RequestRegistryMsgType }
 
 type RegistryMsg struct {
-	Ref skyobject.RegistryReference // registry reference
 	Reg []byte
 }
 

@@ -34,6 +34,22 @@ type Root struct {
 	cnt  *Container // back reference (ro)
 }
 
+func (r *Root) dup() (d *Root) {
+	d = new(Root)
+	if len(r.refs) > 0 {
+		d.refs = make([]Dynamic, len(r.refs))
+		copy(d.refs, r.refs)
+	}
+	d.reg = r.reg
+	d.time = r.time
+	d.seq = r.seq
+	d.pub = r.pub
+	d.sec = r.sec
+	d.sig = r.sig
+	d.full = r.full
+	d.cnt = r.cnt
+}
+
 // Registry returns related registry of "missing registry" error
 func (r *Root) Registry() (reg *Registry, err error) {
 	reg, err = r.cnt.Registry(r.reg) // container never changed (no lock/unlock)
@@ -110,19 +126,19 @@ func (r *Root) IsFull() bool {
 	if r.sig == (cipher.Sig{}) { // fresh
 		return false
 	}
-	var want int
-	err := r.wantFunc(func(Reference) (_ error) {
-		want++
-		return
+	var want bool = false
+	err := r.wantFunc(func(Reference) error {
+		want = true
+		return ErrStopRange
 	})
 	if err != nil {
 		return false // can't determine
 	}
-	if want == 0 {
-		r.full = true
-		return true
+	if want {
+		return false
 	}
-	return false
+	r.full = true
+	return true
 }
 
 // Encode the Root and get its Signature
@@ -366,6 +382,9 @@ type WantFunc func(Reference) error
 func (r *Root) WantFunc(wf WantFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+	if r.full {
+		return // the Root is full
+	}
 	err = r.wantFunc(wf)
 	return
 }
