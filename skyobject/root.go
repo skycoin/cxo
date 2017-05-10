@@ -141,8 +141,11 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 	x.Pub = r.pub
 	b = encoder.Serialize(x) // b
 	hash := cipher.SumSHA256(b)
-	sig = cipher.SignHash(hash, r.sec) // sig
-	r.sig = sig
+	// sign if need
+	if r.sec != (cipher.SecKey{}) {
+		sig = cipher.SignHash(hash, r.sec) // sig
+		r.sig = sig
+	}
 	return
 }
 
@@ -296,6 +299,24 @@ func (r *Root) ValueByStatic(schemaName string, ref Reference) (val *Value,
 		err = &MissingObjectError{ref}
 	} else {
 		val = &Value{data, s, r}
+	}
+	return
+}
+
+func (r *Root) Values() (vals []*Value, err error) {
+	r.RLock()
+	defer r.RUnlock()
+	if len(r.refs) == 0 {
+		return
+	}
+	vals = make([]*Value, 0, len(r.refs))
+	var val *Value
+	for _, dr := range r.refs {
+		if val, err = r.ValueByDynamic(dr); err != nil {
+			vals = nil
+			return // the error
+		}
+		vals = append(vals, val)
 	}
 	return
 }

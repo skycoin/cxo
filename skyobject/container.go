@@ -174,15 +174,18 @@ func (c *Container) Dynamic(i interface{}) (dr Dynamic) {
 
 // NewRoot creates feed and first associated root object.
 // If feed already exists and has a Root object then the
-// NewRoot returns last root object. In this case the NewRoot
-// can panincs if secret key of existsing root doesn't match
-// given secret key. The Container must be created with a
-// Registry, otherwise the method panics. Freshly created
-// Root object will be associated with Registry with which
-// the Container was created. The NewRoot never append
-// created root to the Container. Call Inject, InjectMany,
-// Touch or Replace methods of the Root to add it to the
-// Container
+// NewRoot returns last root object (with empty list of
+// references, so, you can treat it as next empty Root,
+// because when you call, for example, Inject, seq number,
+// timestamp and signature of the Root will be updated).
+// In this case the NewRoot can panincs if secret key of
+// existsing root doesn't match given secret key. The
+// Container must be created with a Registry, otherwise the
+// method panics. Freshly created Root object will be
+// associated with Registry with which the Container
+// was created. The NewRoot never append created root to the
+// Container. Call Inject, InjectMany, Touch or Replace
+// methods of the Root to add it to the Container
 func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	c.Lock()
 	defer c.Unlock()
@@ -200,6 +203,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 		if r.sec != sk {
 			panic("secret key missmatch")
 		}
+		r.refs = nil // reset references
 		return
 	}
 	// create
@@ -231,6 +235,7 @@ func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
 	r.time = x.Time
 	r.seq = x.Seq
 	r.pub = x.Pub
+	r.sig = sig
 
 	err = cipher.VerifySignature(r.pub, sig, cipher.SumSHA256(b))
 	if err != nil {
