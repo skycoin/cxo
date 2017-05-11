@@ -127,7 +127,6 @@ func (c *Client) handle(cn *gnet.Conn) {
 			c.handleMessage(cn, msg)
 		}
 	}
-
 }
 
 //
@@ -520,4 +519,8 @@ func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
 	prev, sig, p = r.Root.Replace(refs)
 	r.send(p, sig)
 	return
+}
+
+func (r *Root) Walker(sk cipher.SecKey) (w *RootWalker) {
+	return NewRootWalker(r, sk)
 }
