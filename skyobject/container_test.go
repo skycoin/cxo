@@ -61,7 +61,7 @@ func TestContainer_AddRegistry(t *testing.T) {
 	}
 	c := NewContainer(nil)
 	reg := NewRegistry()
-	reg.Regsiter("test.User", User{})
+	reg.Register("test.User", User{})
 	c.AddRegistry(reg)
 	if len(c.registries) != 1 {
 		t.Fatal("misisng reg")
@@ -74,7 +74,7 @@ func TestContainer_AddRegistry(t *testing.T) {
 	}
 	// try to replace with equal
 	rep := NewRegistry()
-	rep.Regsiter("test.User", User{})
+	rep.Register("test.User", User{})
 	rep.Done()
 	if rep.Reference() != reg.Reference() {
 		t.Fatal("missmatch references")
@@ -109,7 +109,7 @@ func TestContainer_Registry(t *testing.T) {
 		Name string
 	}
 	reg := NewRegistry()
-	reg.Regsiter("test.User", User{})
+	reg.Register("test.User", User{})
 	reg.Done()
 	rr := reg.Reference()
 	c := NewContainer(nil)
@@ -133,7 +133,7 @@ func TestContainer_WantRegistry(t *testing.T) {
 		Name string
 	}
 	reg := NewRegistry()
-	reg.Regsiter("test.User", User{})
+	reg.Register("test.User", User{})
 	reg.Done()
 	rr := reg.Reference()
 
@@ -165,14 +165,14 @@ func TestContainer_Registries(t *testing.T) {
 		Name string
 	}
 	r1 := NewRegistry()
-	r1.Regsiter("test.User", User{})
+	r1.Register("test.User", User{})
 	r1.Done()
 
 	type Developer struct {
 		Name string
 	}
 	r2 := NewRegistry()
-	r2.Regsiter("test.Developer", Developer{})
+	r2.Register("test.Developer", Developer{})
 	r2.Done()
 
 	c := NewContainer(r1)
@@ -257,14 +257,23 @@ func TestContainer_NewRoot(t *testing.T) {
 		defer shouldPanic(t)
 		c.NewRoot(pk, sn)
 	})
+	t.Run("keep existsing untouched", func(t *testing.T) {
+		reg := NewRegistry()
+
+		reg.Register("cxo.User", User{})
+		reg.Register("cxo.Group", Group{})
+		reg.Register("cxo.Developer", Developer{})
+
+		//
+	})
 }
 
 func TestContainer_AddEncodedRoot(t *testing.T) {
 	pk, sk := cipher.GenerateKeyPair()
 
 	reg := NewRegistry()
-	reg.Regsiter("cxo.User", User{})
-	reg.Regsiter("cxo.Group", Group{})
+	reg.Register("cxo.User", User{})
+	reg.Register("cxo.Group", Group{})
 	reg.Done()
 
 	c1 := NewContainer(reg)

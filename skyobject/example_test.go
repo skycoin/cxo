@@ -27,9 +27,9 @@ type Developer struct {
 func Example() {
 	reg := skyobject.NewRegistry()
 
-	reg.Regsiter("test.User", User{})
-	reg.Regsiter("test.Group", Group{})
-	reg.Regsiter("test.Developer", Developer{})
+	reg.Register("test.User", User{})
+	reg.Register("test.Group", Group{})
+	reg.Register("test.Developer", Developer{})
 
 	// Create container associated with given
 	// registry. The registry will be used
