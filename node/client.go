@@ -130,7 +130,6 @@ func (c *Client) handle(cn *gnet.Conn) {
 			c.handleMessage(cn, msg)
 		}
 	}
-
 }
 
 //
@@ -471,6 +470,10 @@ func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root) {
 		r = &Root{sr, c}
 	}
 	return
+}
+
+func (c *Container) RootWalker(pk cipher.PubKey, sk cipher.SecKey) (w *RootWalker) {
+	return NewRootWalker(c.LastRoot(pk), sk)
 }
 
 type Root struct {
