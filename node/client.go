@@ -12,9 +12,6 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
-// An Event represents client event
-type Event func(*gnet.Conn) (terminate error)
-
 // A Client represnets CXO client
 type Client struct {
 	log.Logger
