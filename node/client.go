@@ -15,7 +15,7 @@ import (
 // An Event represents client event
 type Event func(*gnet.Conn) (terminate error)
 
-// A Client represnets CXO client
+// A Client represents CXO client
 type Client struct {
 	log.Logger
 
@@ -472,10 +472,6 @@ func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root) {
 	return
 }
 
-func (c *Container) RootWalker(pk cipher.PubKey, sk cipher.SecKey) (w *RootWalker) {
-	return NewRootWalker(c.LastRoot(pk), sk)
-}
-
 type Root struct {
 	*skyobject.Root
 	c *Container
@@ -526,4 +522,8 @@ func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
 	prev, sig, p = r.Root.Replace(refs)
 	r.send(p, sig)
 	return
+}
+
+func (r *Root) Walker(pk cipher.PubKey, sk cipher.SecKey) (w *RootWalker) {
+	return NewRootWalker(r, sk)
 }
