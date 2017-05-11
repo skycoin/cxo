@@ -76,7 +76,7 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 	return
 }
 
-func (r *Registry) Regsiter(name string, i interface{}) {
+func (r *Registry) Register(name string, i interface{}) {
 	if r.done {
 		panic("registration was closed")
 	}

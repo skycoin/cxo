@@ -18,10 +18,9 @@ func shouldNotPanic(t *testing.T) {
 }
 
 type User struct {
-	Name     string
-	Age      uint32
-	Hidden   []byte    `enc:"-"`
-	MemberOf Reference `skyobject:"schema=cxo.Group"`
+	Name   string
+	Age    uint32
+	Hidden []byte `enc:"-"`
 }
 
 type Group struct {
@@ -29,6 +28,11 @@ type Group struct {
 	Leader  Reference  `skyobject:"schema=cxo.User"`
 	Members References `skyobject:"schema=cxo.User"`
 	Curator Dynamic
+}
+
+type Developer struct {
+	Name   string
+	GitHub string
 }
 
 func TestNewRegistry(t *testing.T) {
@@ -43,8 +47,8 @@ func TestNewRegistry(t *testing.T) {
 
 func TestDecodeRegistry(t *testing.T) {
 	e := NewRegistry()
-	e.Regsiter("cxo.User", User{})
-	e.Regsiter("cxo.Group", Group{})
+	e.Register("cxo.User", User{})
+	e.Register("cxo.Group", Group{})
 	e.Done()
 	d, err := DecodeRegistry(e.Encode())
 	if err != nil {
@@ -61,7 +65,7 @@ func TestDecodeRegistry(t *testing.T) {
 	}
 }
 
-func TestRegistry_Regsiter(t *testing.T) {
+func TestRegistry_Register(t *testing.T) {
 	//
 }
 
@@ -95,16 +99,16 @@ func TestRegistry_Done(t *testing.T) {
 	t.Run("panic Done", func(t *testing.T) {
 		defer shouldPanic(t)
 		r := NewRegistry()
-		r.Regsiter("User", User{})
-		r.Regsiter("Group", Group{})
+		r.Register("User", User{})
+		r.Register("Group", Group{})
 		r.Done() // must panic with misisng
 	})
 
 	t.Run("Done", func(t *testing.T) {
 		defer shouldNotPanic(t)
 		r := NewRegistry()
-		r.Regsiter("cxo.User", User{})
-		r.Regsiter("cxo.Group", Group{})
+		r.Register("cxo.User", User{})
+		r.Register("cxo.Group", Group{})
 		r.Done()
 	})
 
@@ -113,7 +117,7 @@ func TestRegistry_Done(t *testing.T) {
 		r.Done()
 		defer shouldPanic(t)
 		type Age struct{}
-		r.Regsiter("internal.Age", Age{})
+		r.Register("internal.Age", Age{})
 	})
 
 	t.Run("reference", func(t *testing.T) {
@@ -126,12 +130,12 @@ func TestRegistry_Done(t *testing.T) {
 
 	t.Run("identity", func(t *testing.T) {
 		r1 := NewRegistry()
-		r1.Regsiter("cxo.User", User{})
-		r1.Regsiter("cxo.Group", Group{})
+		r1.Register("cxo.User", User{})
+		r1.Register("cxo.Group", Group{})
 		r1.Done()
 		r2 := NewRegistry()
-		r2.Regsiter("cxo.User", User{})
-		r2.Regsiter("cxo.Group", Group{})
+		r2.Register("cxo.User", User{})
+		r2.Register("cxo.Group", Group{})
 		r2.Done()
 		if r1.Reference() != r2.Reference() {
 			t.Error("not equal")
@@ -141,8 +145,8 @@ func TestRegistry_Done(t *testing.T) {
 
 func TestRegistry_SchemaByName(t *testing.T) {
 	r := NewRegistry()
-	r.Regsiter("cxo.User", User{})
-	r.Regsiter("cxo.Group", Group{})
+	r.Register("cxo.User", User{})
+	r.Register("cxo.Group", Group{})
 	r.Done()
 	u, err := r.SchemaByName("cxo.User")
 	if err != nil {

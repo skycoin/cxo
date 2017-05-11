@@ -78,10 +78,10 @@ func main() {
 
 	reg := skyobject.NewRegistry()
 
-	reg.Regsiter("bbs.Board", Board{})
-	reg.Regsiter("bbs.Thread", Thread{})
-	reg.Regsiter("bbs.Post", Post{})
-	reg.Regsiter("bbs.User", User{})
+	reg.Register("bbs.Board", Board{})
+	reg.Register("bbs.Thread", Thread{})
+	reg.Register("bbs.Post", Post{})
+	reg.Register("bbs.User", User{})
 
 	c, err := node.NewClient(conf, skyobject.NewContainer(reg))
 	if err != nil {
