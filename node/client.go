@@ -524,6 +524,6 @@ func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
 	return
 }
 
-func (r *Root) Walker(pk cipher.PubKey, sk cipher.SecKey) (w *RootWalker) {
+func (r *Root) Walker(sk cipher.SecKey) (w *RootWalker) {
 	return NewRootWalker(r, sk)
 }
