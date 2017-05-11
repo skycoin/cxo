@@ -200,18 +200,18 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	if sk == (cipher.SecKey{}) {
 		panic("empty secret key")
 	}
+	//
+	// TODO: (high priority) solve timestamp-seq conflicts priority
+	//
+	var seq uint64 = 0
 	// checking for existing root objects
 	if r = c.lastRoot(pk); r != nil {
-		if r.sec != sk {
-			panic("secret key missmatch")
-		}
-		r = r.dup()
-		r.refs = nil // reset references
-		return
+		seq = r.Seq()
 	}
 	// create
 	r = new(Root)
 	r.reg = c.coreRegistry.Reference()
+	r.seq = seq
 	r.pub = pk
 	r.sec = sk
 	r.cnt = c
@@ -299,7 +299,7 @@ func (c *Container) Feeds() (feeds []cipher.PubKey) {
 	}
 	feeds = make([]cipher.PubKey, 0, len(c.roots))
 	for f, rs := range c.roots {
-		if len(*rs) == 0 {
+		if len(rs.store) == 0 { // rs must not be nil
 			continue
 		}
 		feeds = append(feeds, f)
@@ -312,7 +312,8 @@ func (c *Container) Feeds() (feeds []cipher.PubKey) {
 func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
 	c.RLock()
 	defer c.RUnlock()
-	for _, r := range *c.roots[pk] {
+	rs := c.roots[pk]
+	for _, r := range rs.store {
 		if err = r.WantFunc(wf); err != nil {
 			if err == ErrStopRange {
 				err = nil
@@ -328,7 +329,11 @@ func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
 func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
 	c.RLock()
 	defer c.RUnlock()
-	for _, r := range *c.roots[pk] {
+	rs := c.roots[pk]
+	if rs == nil {
+		return
+	}
+	for _, r := range rs.store {
 		if err = r.GotFunc(gf); err != nil {
 			if err == ErrStopRange {
 				err = nil
@@ -395,7 +400,7 @@ func (c *Container) objectsGC() {
 		if rs == nil {
 			continue
 		}
-		for _, r := range *rs {
+		for _, r := range rs.store {
 			r.GotFunc(func(r Reference) (_ error) {
 				gc[r] = gc[r] + 1
 				return
@@ -427,7 +432,7 @@ func (c *Container) regsitryGC() {
 		if rs == nil {
 			continue
 		}
-		for _, r := range *rs {
+		for _, r := range rs.store {
 			rr := r.RegistryReference()
 			gc[rr] = gc[rr] + 1
 		}
@@ -447,70 +452,86 @@ func (c *Container) addRoot(r *Root) (ok bool) {
 
 	var rs *roots
 	if rs = c.roots[r.Pub()]; rs == nil {
-		rsd := make(roots, 0)
-		rs = &rsd
+		rs = new(roots)
 		c.roots[r.Pub()] = rs
 	}
-	ok = rs.add(r.dup()) // make a copy
+	ok = rs.add(r) // make a shadow copy
 	return
 }
 
 // roots is list of root object of a feed sorted by Seq number
-type roots []*Root
+type roots struct {
+	store []*Root // shadow copies
+}
 
 // sorting
-func (r roots) sort()              { sort.Sort(r) }
-func (r roots) Len() int           { return len(r) }
-func (r roots) Less(i, j int) bool { return r[i].Seq() < r[j].Seq() }
-func (r roots) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+func (r *roots) sort() {
+	sort.Sort(r)
+}
 
+func (r *roots) Len() int {
+	return len(r.store)
+}
+
+func (r *roots) Less(i, j int) bool {
+	return r.store[i].Seq() < r.store[j].Seq()
+}
+
+func (r *roots) Swap(i, j int) {
+	r.store[i], r.store[j] = r.store[j], r.store[i]
+}
+
+//
+// TODO: (high priority) solve ttimestamp-seq conflicts and sorting
+//
 func (r *roots) add(t *Root) bool {
-	for i, e := range *r {
+	for i, e := range r.store {
 		if i == 0 {
 			if t.Seq() < e.Seq() {
 				return false // older then first (fuck it)
 			}
 		}
 		if t.Seq() == e.Seq() {
-			return false // already have a root with the same seq
+			return false // already have a root with the same seq (fuck it)
 		}
 	}
-	*r = append(*r, t)
+	t = t.dup() // make a copy
+	r.store = append(r.store, t)
 	r.sort()
 	return true
 }
 
-func (r roots) latest() (t *Root) {
-	if len(r) > 0 {
-		t = r[len(r)-1]
+func (r *roots) latest() (t *Root) {
+	if len(r.store) > 0 {
+		t = r.store[len(r.store)-1]
 	}
 	return
 }
 
-func (r roots) latestFull() *Root {
-	for i := len(r) - 1; i >= 0; i-- { // from tail
-		if x := r[i]; x.IsFull() {
+func (r *roots) latestFull() *Root {
+	for i := len(r.store) - 1; i >= 0; i-- { // from tail
+		if x := r.store[i]; x.IsFull() {
 			return x
 		}
 	}
 	return nil
 }
 
-func (r roots) bySeq(seq uint64) *Root {
-	// TODO: make it faster using sort.Search
-	for _, x := range r {
-		if x.Seq() == seq {
-			return x
-		}
+func (r *roots) bySeq(seq uint64) *Root {
+	i := sort.Search(len(r.store), func(i int) bool {
+		r.store[i].Seq() >= seq
+	})
+	if i < len(r.store) && r.store[i].Seq() == seq {
+		return r.store[i]
 	}
 	return nil // not found
 }
 
 func (r *roots) gc() {
-	for i := len(*r); i >= 0; i-- { // from tail
-		if x := (*r)[i]; x.IsFull() {
+	for i := len(r.store); i >= 0; i-- { // from tail
+		if x := (r.store)[i]; x.IsFull() {
 			if i > 0 { // avoid recreating slice
-				(*r) = (*r)[i:]
+				r.store = r.store[i:]
 			}
 			return
 		}
