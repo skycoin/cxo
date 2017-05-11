@@ -90,7 +90,7 @@ func (c *Container) WantRegistry(rr RegistryReference) bool {
 	c.RLock()
 	defer c.RUnlock()
 	for _, rs := range c.roots {
-		for _, r := range *rs {
+		for _, r := range rs.store {
 			if rr == r.RegistryReference() {
 				if _, ok := c.registries[rr]; !ok {
 					return true // want
@@ -519,7 +519,7 @@ func (r *roots) latestFull() *Root {
 
 func (r *roots) bySeq(seq uint64) *Root {
 	i := sort.Search(len(r.store), func(i int) bool {
-		r.store[i].Seq() >= seq
+		return r.store[i].Seq() >= seq
 	})
 	if i < len(r.store) && r.store[i].Seq() == seq {
 		return r.store[i]
