@@ -117,14 +117,14 @@ func waitInterrupt() {
 func generate(c *node.Container, pk cipher.PubKey, sk cipher.SecKey) {
 	var i int = 0
 	fst, omt := time.Tick(5*time.Second), time.Tick(time.Minute)
+	root, _ := c.NewRoot(pk, sk) // create root object
 	for {
 		select {
 		case <-fst:
-			generateBoards(c, pk, sk, i) // add new board every 5 seconds
+			generateBoards(root, i) // add new board every 5 seconds
 			i++
 		case <-omt:
-			root := c.NewRoot(pk, sk)
-			root.Touch() // reset root every minute
+			root.Replace(nil) // reset root every minute
 
 			// don't reset the i variable keeping incrementing it
 		}
@@ -135,30 +135,28 @@ func shortHex(a string) string {
 	return string([]byte(a)[:7])
 }
 
-func generateBoards(c *node.Container, pk cipher.PubKey, sk cipher.SecKey,
-	i int) {
+func generateBoards(root *node.Root, i int) {
 
-	root := c.NewRoot(pk, sk)
-	root.Inject(Board{
+	root.Inject("bbs.Board", Board{
 		Header:  fmt.Sprintf("Board #%d", i),
-		Threads: generateThreads(c, i),
-		Owner:   root.Dynamic(User{"Alice Cooper", 16}),
+		Threads: generateThreads(root, i),
+		Owner:   root.MustDynamic("cxo.User", User{"Alice Cooper", 16}),
 	})
 }
 
-func generateThreads(c *node.Container, i int) (threads skyobject.References) {
+func generateThreads(root *node.Root, i int) (threads skyobject.References) {
 	for t := 1; t < 4; t++ {
-		ref := c.Save(Thread{
+		ref := root.Save(Thread{
 			Header: fmt.Sprintf("Thread #%d.%d", i, t),
-			Posts:  generatePosts(c, i, t),
+			Posts:  generatePosts(root, i, t),
 		})
 		threads = append(threads, ref)
 	}
 	return
 }
 
-func generatePosts(c *node.Container, i, t int) skyobject.References {
-	return c.SaveArray(
+func generatePosts(root *node.Root, i, t int) skyobject.References {
+	return root.SaveArray(
 		Post{
 			Header: fmt.Sprintf("Post #%d.%d.1", i, t),
 			Body:   fmt.Sprintf("Body #%d.%d.1", i, t),

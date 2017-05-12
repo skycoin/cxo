@@ -1,11 +1,11 @@
 package node
 
 import (
+	"errors"
 	"fmt"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-	"errors"
 	"reflect"
 	"strings"
 )
@@ -20,14 +20,16 @@ var (
 	// ErrFieldNotFound happens when an object's field by name is not found.
 	ErrFieldNotFound = errors.New("field not found")
 
-	//// ErrFieldNotProvided occurs when the field name of a struct is not provided.
+	//// ErrFieldNotProvided occurs when the field name of a struct is not
+	// provided.
 	//ErrFieldNotProvided = errors.New("field not provided")
 
-	// ErrEmptyInternalStack occurs when an action performed on RootWalker requires a non-empty internal stack,
-	// but internal stack is empty.
+	// ErrEmptyInternalStack occurs when an action performed on RootWalker
+	// requires a non-empty internal stack, but internal stack is empty.
 	ErrEmptyInternalStack = errors.New("internal stack of walker is empty")
 
-	// ErrFieldHasWrongType occurs when the field in question has an unexpected type.
+	// ErrFieldHasWrongType occurs when the field in question has an unexpected
+	// type.
 	ErrFieldHasWrongType = errors.New("field has wrong type")
 )
 
@@ -38,7 +40,7 @@ type RootWalker struct {
 	stack []*objWrap
 }
 
-// NewRootWalker creates a new walker with given container and root's public key.
+// NewRootWalker creates a new walker with given container and root's public key
 func NewRootWalker(r *Root, rsk cipher.SecKey) (w *RootWalker) {
 	w = &RootWalker{
 		rsk: rsk,
@@ -68,8 +70,11 @@ func (w *RootWalker) peek() (*objWrap, error) {
 // AdvanceFromRoot advances the walker to a child object of the root.
 // It uses a Finder implementation to find the child to advance to.
 // This function auto-clears the internal stack.
-// Input 'p' should be provided with a pointer to the object in which the chosen root's child should deserialize to.
-func (w *RootWalker) AdvanceFromRoot(p interface{}, finder func(v *skyobject.Value) bool) error {
+// Input 'p' should be provided with a pointer to the object in which the
+// chosen root's child should deserialize to
+func (w *RootWalker) AdvanceFromRoot(p interface{},
+	finder func(v *skyobject.Value) bool) error {
+
 	// Clear the internal stack.
 	w.Clear()
 
@@ -100,10 +105,13 @@ func (w *RootWalker) AdvanceFromRoot(p interface{}, finder func(v *skyobject.Val
 	return ErrObjNotFound
 }
 
-// AdvanceFromRefsField advances from a field of name 'prevFieldName' and of type 'skyobject.References'.
-// It uses a Finder implementation to find the child to advance to.
-// Input 'p' should be provided with a pointer to the object in which the chosen child object should deserialize to.
-func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{}, finder func(v *skyobject.Value) bool) error {
+// AdvanceFromRefsField advances from a field of name 'prevFieldName' and of
+// type 'skyobject.References'. It uses a Finder implementation to find the
+// child to advance to. Input 'p' should be provided with a pointer to the
+// object in which the chosen child object should deserialize to.
+func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{},
+	finder func(v *skyobject.Value) bool) error {
+
 	// Check root.
 	r := w.r
 	if w.r == nil {
@@ -156,10 +164,13 @@ func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{}, finde
 	return ErrObjNotFound
 }
 
-// AdvanceFromRefField advances from a field of name 'prevFieldName' and type 'skyobject.Reference'.
-// No Finder is required as field is a single reference.
-// Input 'p' should be provided with a pointer to the object in which the chosen child object should deserialize to.
-func (w *RootWalker) AdvanceFromRefField(fieldName string, p interface{}) error {
+// AdvanceFromRefField advances from a field of name 'prevFieldName' and type
+// 'skyobject.Reference'. No Finder is required as field is a single reference.
+// Input 'p' should be provided with a pointer to the object in which the
+// chosen child object should deserialize to
+func (w *RootWalker) AdvanceFromRefField(fieldName string,
+	p interface{}) error {
+
 	// Check root.
 	r := w.r
 	if w.r == nil {
@@ -206,10 +217,13 @@ func (w *RootWalker) AdvanceFromRefField(fieldName string, p interface{}) error 
 	return nil
 }
 
-// AdvanceFromDynamicField advances from a field of name 'prevFieldName' and type 'skyobject.Dynamic'.
-// No Finder is required as field is a single reference.
-// Input 'p' should be provided with a pointer to the object in which the chosen child object should deserialize to.
-func (w *RootWalker) AdvanceFromDynamicField(fieldName string, p interface{}) error {
+// AdvanceFromDynamicField advances from a field of name 'prevFieldName' and
+// type 'skyobject.Dynamic'. No Finder is required as field is a single
+// reference. Input 'p' should be provided with a pointer to the object in which
+// the chosen child object should deserialize to
+func (w *RootWalker) AdvanceFromDynamicField(fieldName string,
+	p interface{}) error {
+
 	// Check root.
 	r := w.r
 	if w.r == nil {
@@ -258,8 +272,9 @@ func (w *RootWalker) Retreat() {
 	}
 }
 
-// AppendToRefsField appends a reference to references field 'fieldName' of top-most object. The new reference will be
-// generated automatically by saving the object which 'p' points to. This recursively replaces all the associated
+// AppendToRefsField appends a reference to references field 'fieldName' of
+// top-most object. The new reference will be generated automatically by saving
+// the object which 'p' points to. This recursively replaces all the associated
 // "references" of the object tree and hence, changes the root.
 func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) error {
 	// Obtain top-most object.
@@ -290,8 +305,9 @@ func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) error {
 // ReplaceInRefsField
 // DeleteInRefsField
 //
-// ReplaceInRefField replaces the reference field of the top-most object with a new reference; one that is automatically
-// generated when saving the object 'p' points to, in the container. This recursively replaces all the associated
+// ReplaceInRefField replaces the reference field of the top-most object with a
+// new reference; one that is automatically generated when saving the object
+// 'p' points to, in the container. This recursively replaces all the associated
 // "references" of the object tree and hence, changes the root.
 func (w *RootWalker) ReplaceInRefField(fieldName string, p interface{}) error {
 	// Obtain top-most object.
@@ -311,9 +327,11 @@ func (w *RootWalker) ReplaceInRefField(fieldName string, p interface{}) error {
 	return e
 }
 
-// ReplaceInDynamicField functions the same as 'ReplaceInRefField'. However, it replaces a dynamic reference field other
-// than a static reference field.
-func (w *RootWalker) ReplaceInDynamicField(fieldName string, p interface{}) error {
+// ReplaceInDynamicField functions the same as 'ReplaceInRefField'. However, it
+// replaces a dynamic reference field other than a static reference field.
+func (w *RootWalker) ReplaceInDynamicField(fieldName, schemaName string,
+	p interface{}) error {
+
 	// Obtain top-most object.
 	tObj, e := w.peek()
 	if e != nil {
@@ -321,7 +339,10 @@ func (w *RootWalker) ReplaceInDynamicField(fieldName string, p interface{}) erro
 	}
 
 	// Save new object.
-	nDyn := w.r.Dynamic(p)
+	nDyn, e := w.r.Dynamic(schemaName, p)
+	if e != nil {
+		return e
+	}
 	if e := tObj.replaceDynamicField(fieldName, nDyn); e != nil {
 		return e
 	}
@@ -331,7 +352,7 @@ func (w *RootWalker) ReplaceInDynamicField(fieldName string, p interface{}) erro
 	return e
 }
 
-// String creates a readable string that shows information of the internal stack.
+// String creates a readable string that shows information of the internal stack
 func (w *RootWalker) String() (out string) {
 	tabs := func(n int) {
 		for i := 0; i < n; i++ {
@@ -368,9 +389,9 @@ func (w *RootWalker) String() (out string) {
 	return
 }
 
-/**************************************************************************************************
- *  TYPE: objWrap.                                                                                *
- **************************************************************************************************/
+/******************************************************************************
+ *  TYPE: objWrap.                                                            *
+ ******************************************************************************/
 
 type objWrap struct {
 	prev *objWrap
@@ -380,22 +401,27 @@ type objWrap struct {
 	p interface{}
 
 	prevFieldName    string // Field name of prev obj used to find current.
-	prevInFieldIndex int    // Index of prev obj's field's prevInFieldIndex. -1 if single reference (not array).
+	prevInFieldIndex int    // Index of prev obj's field's prevInFieldIndex. -1
+	// if single reference (not array).
 
 	w *RootWalker // Back reference.
 }
 
-func (w *RootWalker) newObj(s skyobject.SchemaReference, p interface{}, fn string, i int) *objWrap {
+func (w *RootWalker) newObj(s skyobject.SchemaReference, p interface{},
+	fn string, i int) *objWrap {
+
 	return &objWrap{
 		s:                s,
 		p:                p,
 		prevFieldName:    fn,
 		prevInFieldIndex: i,
-		w: w,
+		w:                w,
 	}
 }
 
-func (o *objWrap) generate(s skyobject.SchemaReference, p interface{}, fn string, i int) *objWrap {
+func (o *objWrap) generate(s skyobject.SchemaReference, p interface{},
+	fn string, i int) *objWrap {
+
 	newO := o.w.newObj(s, p, fn, i)
 	newO.prev = o
 	o.next = newO
@@ -491,7 +517,9 @@ func (o *objWrap) getSchema(ct *skyobject.Container) skyobject.Schema {
 	return s
 }
 
-func (o *objWrap) replaceReferencesField(fieldName string, newRefs skyobject.References) (e error) {
+func (o *objWrap) replaceReferencesField(fieldName string,
+	newRefs skyobject.References) (e error) {
+
 	v := o.elem()
 	vt := v.Type()
 
@@ -511,7 +539,9 @@ func (o *objWrap) replaceReferencesField(fieldName string, newRefs skyobject.Ref
 	return
 }
 
-func (o *objWrap) replaceReferenceField(fieldName string, newRef skyobject.Reference) (e error) {
+func (o *objWrap) replaceReferenceField(fieldName string,
+	newRef skyobject.Reference) (e error) {
+
 	v := o.elem()
 	vt := v.Type()
 
@@ -531,7 +561,9 @@ func (o *objWrap) replaceReferenceField(fieldName string, newRef skyobject.Refer
 	return
 }
 
-func (o *objWrap) replaceDynamicField(fieldName string, newDyn skyobject.Dynamic) (e error) {
+func (o *objWrap) replaceDynamicField(fieldName string,
+	newDyn skyobject.Dynamic) (e error) {
+
 	v := o.elem()
 	vt := v.Type()
 

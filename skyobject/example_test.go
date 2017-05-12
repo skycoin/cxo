@@ -42,7 +42,7 @@ func Example() {
 	pk, sk := cipher.GenerateKeyPair()
 
 	// Create empty detached root object
-	root := c.NewRoot(pk, sk)
+	root, _ := c.NewRoot(pk, sk)
 
 	// callings of
 	//  - Touch
@@ -57,7 +57,7 @@ func Example() {
 	// thus every of the callings create new version
 	// of the root
 
-	root.Inject(Group{
+	root.Inject("test.Group", Group{
 		Name: "group #1",
 		Leader: root.Save(User{
 			Name:   "Bob Marley",
@@ -69,7 +69,7 @@ func Example() {
 			User{"Alice", 16, nil},
 			User{"Eva", 21, nil},
 		),
-		Curator: root.Dynamic(Developer{
+		Curator: root.MustDynamic("test.Developer", Developer{
 			Name:   "kostyarin",
 			GitHub: "logrusorgru",
 		}),

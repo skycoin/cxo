@@ -83,7 +83,7 @@ func TestRegistry_Done(t *testing.T) {
 	t.Run("panic SchemaByInterface", func(t *testing.T) {
 		defer shouldPanic(t)
 		r := NewRegistry()
-		r.SchemaByInterface(User{})
+		r.SchemaReferenceByName("cxo.User")
 	})
 	t.Run("panic Encode", func(t *testing.T) {
 		defer shouldPanic(t)

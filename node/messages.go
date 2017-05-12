@@ -51,9 +51,8 @@ func (*DelFeedMsg) MsgType() MsgType { return DelFeedMsgType }
 // to update root object of feed described in
 // Feed filed of the message
 type RootMsg struct {
-	Feed cipher.PubKey
-	Sig  cipher.Sig
-	Root []byte
+	Feed     cipher.PubKey
+	RootPack skyobject.RootPack
 }
 
 // MsgType implements Msg interface
