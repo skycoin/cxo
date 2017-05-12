@@ -230,8 +230,7 @@ func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 // also returns nil (r) if root with the same seq/pk/sig already
 // exists in the Container. The nil means that the root was not
 // added
-func (c *Container) AddRootPack(rp RootPack) (r *Root,
-	err error) {
+func (c *Container) AddRootPack(rp RootPack) (r *Root, err error) {
 
 	var x encodedRoot
 	if err = encoder.DeserializeRaw(rp.Root, &x); err != nil {
