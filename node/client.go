@@ -192,10 +192,11 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 		return
 	}
 	root, err := s.so.AddRootPack(msg.RootPack)
-	//
-	// TODO: handle errors after skyobject will be done
-	//
 	if err != nil {
+		if err == skyobject.ErrAlreadyHaveThisRoot {
+			s.Debug("reject root: alredy have this root")
+			return
+		}
 		s.Print("[ERR] error decoding root: ", err)
 		return
 	}

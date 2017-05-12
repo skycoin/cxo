@@ -343,10 +343,11 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 		return
 	}
 	root, err := s.so.AddRootPack(msg.RootPack)
-	//
-	// TODO: handle errors after skyobject TODO will be done
-	//
 	if err != nil {
+		if err == skyobject.ErrAlreadyHaveThisRoot {
+			s.Debug("reject root: alredy have this root")
+			return
+		}
 		s.Print("[ERR] error decoding root: ", err)
 		return
 	}

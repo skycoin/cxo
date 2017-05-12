@@ -15,6 +15,9 @@ import (
 var (
 	ErrNoCoreRegistry = errors.New(
 		"missing registry, Container created without registry")
+	// ErrAlreadyHaveThisRoot occurs when Container already have
+	// root with the same Seq number
+	ErrAlreadyHaveThisRoot = errors.New("already have the root")
 )
 
 // A Container represents ...
@@ -225,13 +228,8 @@ func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 
 // AddRootPack used to add a received root object to the
 // Container. It returns an error if given data can't be decoded
-// or signature is wrong. It returns nil (r) if decoded root
-// is older then first existsing root object of the feed. It
-// also returns nil (r) if root with the same seq/pk/sig already
-// exists in the Container. The nil means that the root was not
-// added
-func (c *Container) AddRootPack(rp RootPack) (r *Root,
-	err error) {
+// or signature is wrong
+func (c *Container) AddRootPack(rp RootPack) (r *Root, err error) {
 
 	var x encodedRoot
 	if err = encoder.DeserializeRaw(rp.Root, &x); err != nil {
@@ -489,20 +487,18 @@ func (r *roots) Swap(i, j int) {
 	r.store[i], r.store[j] = r.store[j], r.store[i]
 }
 
-//
-// TODO: (high priority) solve ttimestamp-seq conflicts and sorting
-//
 func (r *roots) add(t *Root) error {
-	for i, e := range r.store {
-		if i == 0 {
-			if t.Seq() < e.Seq() {
-				// older then first (fuck it)
-				return errors.New("too old") // TODO
-			}
-		}
+	// TODO: reimplement using sort.Search to be faster
+	for _, e := range r.store {
+		// if i == 0 {
+		// 	if t.Seq() < e.Seq() {
+		// 		// older then first (fuck it)
+		// 		return errors.New("too old") // TODO
+		// 	}
+		// }
 		if t.Seq() == e.Seq() {
 			// already have a root with the same seq (fuck it)
-			return errors.New("already have") // TODO
+			return ErrAlreadyHaveThisRoot
 		}
 	}
 	t = t.dup() // make a copy
