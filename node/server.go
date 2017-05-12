@@ -284,8 +284,7 @@ func (s *Server) handleAddFeedMsg(c *gnet.Conn, msg *AddFeedMsg) {
 	if full == nil {
 		return
 	}
-	p, sig := full.Encode()
-	s.sendMessage(c, &RootMsg{msg.Feed, sig, p})
+	s.sendMessage(c, &RootMsg{msg.Feed, full.Encode()})
 }
 
 func (s *Server) handleDelFeedMsg(c *gnet.Conn, msg *DelFeedMsg) {
@@ -343,8 +342,12 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	if !s.hasFeed(msg.Feed) {
 		return
 	}
-	root, err := s.so.AddEncodedRoot(msg.Root, msg.Sig)
+	root, err := s.so.AddRootPack(msg.RootPack)
 	if err != nil {
+		if err == skyobject.ErrAlreadyHaveThisRoot {
+			s.Debug("reject root: alredy have this root")
+			return
+		}
 		s.Print("[ERR] error decoding root: ", err)
 		return
 	}
@@ -403,11 +406,9 @@ func (s *Server) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
 	for _, fl := range s.roots {
 		if fl.root.RegistryReference() == reg.Reference() {
 			if fl.root.IsFull() {
-				p, sig := fl.root.Encode()
 				s.sendToFeed(fl.root.Pub(), &RootMsg{
-					Feed: fl.root.Pub(),
-					Sig:  sig,
-					Root: p,
+					Feed:     fl.root.Pub(),
+					RootPack: fl.root.Encode(),
 				}, fl.c)
 				continue // delete
 			}
@@ -462,11 +463,9 @@ func (s *Server) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 	for _, fl := range s.roots {
 		if fl.await == hash {
 			if fl.root.IsFull() {
-				p, sig := fl.root.Encode()
 				s.sendToFeed(fl.root.Pub(), &RootMsg{
-					Feed: fl.root.Pub(),
-					Sig:  sig,
-					Root: p,
+					Feed:     fl.root.Pub(),
+					RootPack: fl.root.Encode(),
 				}, fl.c)
 				continue // delete
 			}

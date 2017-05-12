@@ -140,12 +140,12 @@ func TestContainer_WantRegistry(t *testing.T) {
 	c := NewContainer(reg)
 
 	pk, sk := cipher.GenerateKeyPair()
-	root := c.NewRoot(pk, sk)
+	root, _ := c.NewRoot(pk, sk)
 
-	sig, p := root.Touch()
+	rp, _ := root.Touch()
 
 	x := NewContainer(nil)
-	if _, err := x.AddEncodedRoot(p, sig); err != nil {
+	if _, err := x.AddRootPack(rp); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,29 +233,25 @@ func TestContainer_NewRoot(t *testing.T) {
 	t.Run("nil reg", func(t *testing.T) {
 		c := NewContainer(nil)
 		pk, sk := cipher.GenerateKeyPair()
-		defer shouldPanic(t)
-		c.NewRoot(pk, sk)
+		if _, err := c.NewRoot(pk, sk); err == nil {
+			t.Error("mising error")
+		} else if err != ErrNoCoreRegistry {
+			t.Errorf("wrong error: %q, want %q", err, ErrNoCoreRegistry)
+		}
 	})
 	t.Run("empty pk", func(t *testing.T) {
 		c := NewContainer(NewRegistry())
 		_, sk := cipher.GenerateKeyPair()
-		defer shouldPanic(t)
-		c.NewRoot(cipher.PubKey{}, sk)
+		if _, err := c.NewRoot(cipher.PubKey{}, sk); err == nil {
+			t.Error("missing error")
+		}
 	})
 	t.Run("empty sk", func(t *testing.T) {
 		c := NewContainer(NewRegistry())
 		pk, _ := cipher.GenerateKeyPair()
-		defer shouldPanic(t)
-		c.NewRoot(pk, cipher.SecKey{})
-	})
-	t.Run("different sk", func(t *testing.T) {
-		c := NewContainer(NewRegistry())
-		pk, sk := cipher.GenerateKeyPair()
-		r := c.NewRoot(pk, sk)
-		r.Touch() // save
-		_, sn := cipher.GenerateKeyPair()
-		defer shouldPanic(t)
-		c.NewRoot(pk, sn)
+		if _, err := c.NewRoot(pk, cipher.SecKey{}); err == nil {
+			t.Error("missing error")
+		}
 	})
 	t.Run("keep existsing untouched", func(t *testing.T) {
 		reg := NewRegistry()
@@ -277,13 +273,13 @@ func TestContainer_AddEncodedRoot(t *testing.T) {
 	reg.Done()
 
 	c1 := NewContainer(reg)
-	r1 := c1.NewRoot(pk, sk)
+	r1, _ := c1.NewRoot(pk, sk)
 
-	r1.Inject(User{Name: "motherfucker"})
+	r1.Inject("cxo.User", User{Name: "motherfucker"})
 
 	c2 := NewContainer(nil)
 
-	r2, err := c2.AddEncodedRoot(r1.Encode()) // []byte, sig
+	r2, err := c2.AddRootPack(r1.Encode()) // []byte, sig
 	if err != nil {
 		t.Fatal(err)
 	}

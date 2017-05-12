@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	ErrStopRange = errors.New("stop range")
+	ErrStopRange        = errors.New("stop range")
+	ErrMissingSecretKey = errors.New("misisng secret key")
 )
 
 // A Root represents ...
@@ -33,6 +34,8 @@ type Root struct {
 
 	full bool       // is the root full (rw)
 	cnt  *Container // back reference (ro)
+
+	rsh *Registry // short hand for registry
 }
 
 func (r *Root) dup() (d *Root) {
@@ -49,12 +52,26 @@ func (r *Root) dup() (d *Root) {
 	d.sig = r.sig
 	d.full = r.full
 	d.cnt = r.cnt
+	d.rsh = r.rsh
 	return
 }
 
 // Registry returns related registry of "missing registry" error
 func (r *Root) Registry() (reg *Registry, err error) {
-	reg, err = r.cnt.Registry(r.reg) // container never changed (no lock/unlock)
+	r.RLock()
+	defer r.RUnlock()
+	reg, err = r.registry()
+	return
+}
+
+func (r *Root) registry() (reg *Registry, err error) {
+	if r.rsh != nil {
+		reg = r.rsh // use short hand instead of accesing map
+		return
+	}
+	if reg, err = r.cnt.Registry(r.reg); err == nil {
+		r.rsh = reg
+	}
 	return
 }
 
@@ -65,18 +82,21 @@ func (r *Root) RegistryReference() RegistryReference {
 // Tocuh updates timestapt of the Root (setting it to now)
 // and increments seq number. The Touch implicitly called
 // inside Inject, InjectMany and Replace methods
-func (r *Root) Touch() (sig cipher.Sig, p []byte) {
+func (r *Root) Touch() (RootPack, error) {
 	r.Lock()
 	defer r.Unlock()
 	return r.touch()
 }
 
-func (r *Root) touch() (sig cipher.Sig, p []byte) {
-	r.mustHaveSecretKey()
+func (r *Root) touch() (rp RootPack, err error) {
+	if r.sec == (cipher.SecKey{}) {
+		err = ErrMissingSecretKey
+		return
+	}
 	r.time = time.Now().UnixNano()
 	atomic.AddUint64(&r.seq, 1)
-	sig, p = r.encode() // to update signature
-	r.cnt.addRoot(r)    // updated
+	rp = r.encode()        // to update signature
+	err = r.cnt.addRoot(r) // updated
 	return
 }
 
@@ -140,30 +160,33 @@ func (r *Root) IsFull() bool {
 }
 
 // Encode the Root and get its Signature
-func (r *Root) Encode() (b []byte, sig cipher.Sig) {
+func (r *Root) Encode() (rp RootPack) {
 	r.RLock()
 	defer r.RUnlock()
-	sig, b = r.encode()
+	rp = r.encode()
 	return
 }
 
-func (r *Root) encode() (sig cipher.Sig, b []byte) {
+// A RootPack represents encoded root object with signature
+type RootPack struct {
+	Root []byte
+	Sig  cipher.Sig
+}
+
+func (r *Root) encode() (rp RootPack) {
 	var x encodedRoot
 	x.Refs = r.refs
 	x.Reg = r.reg
 	x.Time = r.time
 	x.Seq = r.Seq()
 	x.Pub = r.pub
-	b = encoder.Serialize(x) // b
+	rp.Root = encoder.Serialize(x) // b
 	if r.sec != (cipher.SecKey{}) {
 		// sign if need
-		hash := cipher.SumSHA256(b)
-		sig = cipher.SignHash(hash, r.sec) // sig
-		r.sig = sig
-	} else {
-		// or use existing signature
-		sig = r.sig
+		hash := cipher.SumSHA256(rp.Root)
+		r.sig = cipher.SignHash(hash, r.sec) // sig
 	}
+	rp.Sig = r.sig
 	return
 }
 
@@ -172,14 +195,14 @@ func (r *Root) encode() (sig cipher.Sig, b []byte) {
 func (r *Root) Sign() (sig cipher.Sig) {
 	r.Lock()
 	defer r.Unlock()
-	sig, _ = r.encode()
+	sig = r.encode().Sig
 	return
 }
 
 // HasRegistry returns false if Registry of the Root
 // doesn't exist in related Container
 func (r *Root) HasRegistry() bool {
-	reg, _ := r.cnt.Registry(r.reg) // container never changes (no lock/unlock)
+	reg, _ := r.Registry()
 	return reg != nil
 }
 
@@ -188,68 +211,82 @@ func (r *Root) Get(ref Reference) ([]byte, bool) {
 	return r.cnt.Get(ref)
 }
 
-// Save is sort hand for (*Container).Save()
-func (r *Root) Save(i interface{}) Reference {
-	return r.cnt.Save(i)
-}
-
-// SaveArray is sort hand for (*Container).SaveArray()
-func (r *Root) SaveArray(i ...interface{}) References {
-	return r.cnt.SaveArray(i...)
-}
-
 // DB returns database of related Container
 func (r *Root) DB() *data.DB {
 	return r.cnt.DB()
 }
 
+// Save is sort hand for (*Container).Save()
+func (r *Root) Save(i interface{}) Reference {
+	return r.cnt.save(i)
+}
+
+// SaveArray is sort hand for (*Container).SaveArray()
+func (r *Root) SaveArray(i ...interface{}) References {
+	return r.cnt.saveArray(i...)
+}
+
 // Dynamic created Dynamic objct using Registry related to
 // the Root. If Regsitry doesn't exists or type was not
 // registered then the method panics
-func (r *Root) Dynamic(i interface{}) (dr Dynamic) {
-	reg, err := r.Registry()
-	if err != nil {
-		panic(err)
+func (r *Root) Dynamic(schemaName string, i interface{}) (dr Dynamic,
+	err error) {
+
+	var reg *Registry
+	if reg, err = r.Registry(); err != nil {
+		return
 	}
-	s, err := reg.SchemaByInterface(i)
-	if err != nil {
-		panic(err)
+	var s Schema
+	if s, err = reg.SchemaByName(schemaName); err != nil {
+		return
 	}
 	dr.Schema = s.Reference()
-	dr.Object = r.cnt.Save(i)
+	dr.Object = r.Save(i)
 	return
 }
 
-func (r *Root) mustHaveSecretKey() {
-	if r.sec == (cipher.SecKey{}) {
-		panic("unable to modify received root")
+// MustDynamic panics if registry missing or shcema not registered
+func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
+	var err error
+	if dr, err = r.Dynamic(schemaName, i); err != nil {
+		panic(err)
 	}
+	return
 }
 
 // Inject an object to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) Inject(i interface{}) (inj Dynamic, sig cipher.Sig, p []byte) {
-	inj = r.Dynamic(i)
+func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
+	rp RootPack, err error) {
+
+	if inj, err = r.Dynamic(schemaName, i); err != nil {
+		return
+	}
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, inj)
-	sig, p = r.touch()
+	rp, err = r.touch()
 	return
 }
 
 // InjectMany objects to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) InjectMany(i ...interface{}) (injs []Dynamic,
-	sig cipher.Sig, p []byte) {
+func (r *Root) InjectMany(schemaName string, i ...interface{}) (injs []Dynamic,
+	rp RootPack, err error) {
 
 	injs = make([]Dynamic, 0, len(i))
+	var inj Dynamic
 	for _, e := range i {
-		injs = append(injs, r.Dynamic(e))
+		if inj, err = r.Dynamic(schemaName, e); err != nil {
+			injs = nil
+			return
+		}
+		injs = append(injs, inj)
 	}
 	r.Lock()
 	defer r.Unlock()
 	r.refs = append(r.refs, injs...)
-	sig, p = r.touch()
+	rp, err = r.touch()
 	return
 }
 
@@ -269,13 +306,13 @@ func (r *Root) Refs() (refs []Dynamic) {
 // least, by a Root that uses the same Registry). The Replace
 // implicitly updates seq, timestamp and signature of the Root.
 // The method returns list of previous references of the Root
-func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, sig cipher.Sig,
-	p []byte) {
+func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, rp RootPack,
+	err error) {
 
 	r.Lock()
 	defer r.Unlock()
 	prev, r.refs = r.refs, refs
-	sig, p = r.touch()
+	rp, err = r.touch()
 	return
 }
 
@@ -368,6 +405,18 @@ func (r *Root) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 		return
 	}
 	s, err = reg.SchemaByReference(sr)
+	return
+}
+
+// SchemaReferenceByName returns re
+func (r *Root) SchemaReferenceByName(name string) (sr SchemaReference,
+	err error) {
+
+	var reg *Registry
+	if reg, err = r.Registry(); err != nil {
+		return
+	}
+	sr, err = reg.SchemaReferenceByName(name)
 	return
 }
 
