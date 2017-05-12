@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -9,6 +10,11 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
+)
+
+var (
+	ErrNoCoreRegistry = errors.New(
+		"missing registry, Container created without registry")
 )
 
 // A Container represents ...
@@ -90,7 +96,7 @@ func (c *Container) WantRegistry(rr RegistryReference) bool {
 	c.RLock()
 	defer c.RUnlock()
 	for _, rs := range c.roots {
-		for _, r := range *rs {
+		for _, r := range rs.store {
 			if rr == r.RegistryReference() {
 				if _, ok := c.registries[rr]; !ok {
 					return true // want
@@ -141,15 +147,7 @@ func (c *Container) save(i interface{}) Reference {
 	return Reference(c.db.AddAutoKey(encoder.Serialize(i)))
 }
 
-func (c *Container) Save(i interface{}) Reference {
-	c.RLock()
-	defer c.RUnlock() // locks required for GC
-	return c.save(i)
-}
-
-func (c *Container) SaveArray(i ...interface{}) (refs References) {
-	c.RLock()
-	defer c.RUnlock() // locks required for GC
+func (c *Container) saveArray(i ...interface{}) (refs References) {
 	refs = make(References, 0, len(i))
 	for _, e := range i {
 		refs = append(refs, c.save(e))
@@ -157,48 +155,54 @@ func (c *Container) SaveArray(i ...interface{}) (refs References) {
 	return
 }
 
-func (c *Container) Dynamic(i interface{}) (dr Dynamic) {
+// roots
+
+// NewRoot creates new root associated with registry provided to
+// NewContainer or NewContainerDB
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
+	err error) {
+
 	if c.coreRegistry == nil {
-		panic("unable to create Dynamic, Container created without registry")
+		err = ErrNoCoreRegistry
+		return
 	}
-	c.RLock()
-	defer c.RUnlock() // locks required for GC
-	s, err := c.coreRegistry.SchemaByInterface(i)
-	if err != nil {
-		panic(err)
+
+	if r, err = c.newRoot(pk, sk); err != nil {
+		return
 	}
-	dr.Schema = s.Reference()
-	dr.Object = c.save(i)
+
+	r.reg = c.coreRegistry.Reference()
+	r.rsh = c.coreRegistry
+
 	return
 }
 
-// roots
+// NewRootReg creates new root object with provided registry
+// The method all create root object associated with registry
+// that the container hasn't
+func (c *Container) NewRootReg(pk cipher.PubKey, sk cipher.SecKey,
+	rr RegistryReference) (r *Root, err error) {
 
-// NewRoot creates feed and first associated root object.
-// If feed already exists and has a Root object then the
-// NewRoot returns last root object (with empty list of
-// references, so, you can treat it as next empty Root,
-// because when you call, for example, Inject, seq number,
-// timestamp and signature of the Root will be updated).
-// In this case the NewRoot can panincs if secret key of
-// existsing root doesn't match given secret key. The
-// Container must be created with a Registry, otherwise the
-// method panics. Freshly created Root object will be
-// associated with Registry with which the Container
-// was created. The NewRoot never append created root to the
-// Container. Call Inject, InjectMany, Touch or Replace
-// methods of the Root to add it to the Container
-func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	c.Lock()
 	defer c.Unlock()
-	if c.coreRegistry == nil {
-		panic("unable to create Root, Container created without registry")
+
+	if r, err = c.newRoot(pk, sk); err != nil {
+		return
 	}
-	if pk == (cipher.PubKey{}) {
-		panic("empty public key")
+
+	r.reg = rr
+
+	return
+}
+
+func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
+	err error) {
+
+	if err = pk.Verify(); err != nil {
+		return
 	}
-	if sk == (cipher.SecKey{}) {
-		panic("empty secret key")
+	if err = sk.Verify(); err != nil {
+		return
 	}
 	//
 	// TODO: (high priority) solve timestamp-seq conflicts priority
@@ -210,26 +214,27 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	}
 	// create
 	r = new(Root)
-	r.reg = c.coreRegistry.Reference()
+
 	r.seq = seq
 	r.pub = pk
 	r.sec = sk
 	r.cnt = c
+
 	return
 }
 
-// AddEncodedRoot used to add a received root object to the
+// AddRootPack used to add a received root object to the
 // Container. It returns an error if given data can't be decoded
 // or signature is wrong. It returns nil (r) if decoded root
 // is older then first existsing root object of the feed. It
 // also returns nil (r) if root with the same seq/pk/sig already
 // exists in the Container. The nil means that the root was not
 // added
-func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
+func (c *Container) AddRootPack(rp RootPack) (r *Root,
 	err error) {
 
 	var x encodedRoot
-	if err = encoder.DeserializeRaw(b, &x); err != nil {
+	if err = encoder.DeserializeRaw(rp.Root, &x); err != nil {
 		return
 	}
 	r = new(Root)
@@ -238,23 +243,24 @@ func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
 	r.time = x.Time
 	r.seq = x.Seq
 	r.pub = x.Pub
-	r.sig = sig
+	r.sig = rp.Sig
 	r.cnt = c
 
-	err = cipher.VerifySignature(r.pub, sig, cipher.SumSHA256(b))
+	err = cipher.VerifySignature(r.pub, rp.Sig, cipher.SumSHA256(rp.Root))
 	if err != nil {
 		r = nil
 		return
 	}
 
-	if !c.addRoot(r) {
+	if err = c.addRoot(r); err != nil {
 		r = nil
 	}
 	return
 }
 
 // LastRoot returns latest root object of the feed (pk).
-// It can return nil
+// It can return nil. It can return received root object
+// that doesn't contain secret key
 func (c *Container) LastRoot(pk cipher.PubKey) *Root {
 	c.RLock()
 	defer c.RUnlock()
@@ -269,7 +275,8 @@ func (c *Container) lastRoot(pk cipher.PubKey) *Root {
 }
 
 // LastFullRoot returns latest root object of the feed (pk) that is full.
-// It can return nil
+// It can return nil. It can return received root object that doesn't
+// contain secret key
 func (c *Container) LastFullRoot(pk cipher.PubKey) *Root {
 	c.RLock()
 	defer c.RUnlock()
@@ -279,6 +286,7 @@ func (c *Container) LastFullRoot(pk cipher.PubKey) *Root {
 	return nil
 }
 
+// depricated, should be replaced
 func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) *Root {
 	c.RLock()
 	defer c.RUnlock()
@@ -446,7 +454,7 @@ func (c *Container) regsitryGC() {
 	}
 }
 
-func (c *Container) addRoot(r *Root) (ok bool) {
+func (c *Container) addRoot(r *Root) (err error) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -455,7 +463,7 @@ func (c *Container) addRoot(r *Root) (ok bool) {
 		rs = new(roots)
 		c.roots[r.Pub()] = rs
 	}
-	ok = rs.add(r) // make a shadow copy
+	err = rs.add(r) // make a shadow copy
 	return
 }
 
@@ -484,21 +492,23 @@ func (r *roots) Swap(i, j int) {
 //
 // TODO: (high priority) solve ttimestamp-seq conflicts and sorting
 //
-func (r *roots) add(t *Root) bool {
+func (r *roots) add(t *Root) error {
 	for i, e := range r.store {
 		if i == 0 {
 			if t.Seq() < e.Seq() {
-				return false // older then first (fuck it)
+				// older then first (fuck it)
+				return errors.New("too old") // TODO
 			}
 		}
 		if t.Seq() == e.Seq() {
-			return false // already have a root with the same seq (fuck it)
+			// already have a root with the same seq (fuck it)
+			return errors.New("already have") // TODO
 		}
 	}
 	t = t.dup() // make a copy
 	r.store = append(r.store, t)
 	r.sort()
-	return true
+	return nil
 }
 
 func (r *roots) latest() (t *Root) {
@@ -517,9 +527,10 @@ func (r *roots) latestFull() *Root {
 	return nil
 }
 
+// depricated
 func (r *roots) bySeq(seq uint64) *Root {
 	i := sort.Search(len(r.store), func(i int) bool {
-		r.store[i].Seq() >= seq
+		return r.store[i].Seq() >= seq
 	})
 	if i < len(r.store) && r.store[i].Seq() == seq {
 		return r.store[i]

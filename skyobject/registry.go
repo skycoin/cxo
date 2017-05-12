@@ -39,19 +39,12 @@ type Registry struct {
 	ref  RegistryReference          // reference to the registery
 	reg  map[string]Schema          // by name
 	srf  map[SchemaReference]Schema // by reference (for Dynamic references)
-
-	// local, used by client side code to
-	// create dynamic object getting schema
-	// reference by reflect.Type
-	rts map[reflect.Type]string // reflect.Type -> name -> schema
 }
 
 func NewRegistry() (r *Registry) {
 	r = new(Registry)
 	r.reg = make(map[string]Schema)
 	r.srf = make(map[SchemaReference]Schema)
-
-	r.rts = make(map[reflect.Type]string)
 	return
 }
 
@@ -104,8 +97,7 @@ func (r *Registry) Register(name string, i interface{}) {
 			panic("another type already registered with the name")
 		}
 	} else {
-		r.reg[name] = s   // store: name -> Scehma
-		r.rts[typ] = name // store: reflect.Type -> name (local)
+		r.reg[name] = s // store: name -> Scehma
 	}
 }
 
@@ -145,14 +137,15 @@ func (r *Registry) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 	return
 }
 
-func (r *Registry) SchemaByInterface(i interface{}) (s Schema, err error) {
+func (r *Registry) SchemaReferenceByName(name string) (sr SchemaReference,
+	err error) {
+
 	r.mustBeDone()
-	var typ reflect.Type = typeOf(i)
-	if name, ok := r.rts[typ]; !ok {
-		err = fmt.Errorf("type was not registered: %s", typ)
-	} else if s, ok = r.reg[name]; !ok {
-		err = fmt.Errorf("type %q wan not registered", name)
+	var s Schema
+	if s, err = r.schemaByName(name); err != nil {
+		return
 	}
+	sr = s.Reference()
 	return
 }
 

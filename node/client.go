@@ -150,8 +150,7 @@ func (s *Client) handleAddFeedMsg(msg *AddFeedMsg) {
 	if full == nil {
 		return
 	}
-	p, sig := full.Encode()
-	s.sendMessage(&RootMsg{msg.Feed, sig, p})
+	s.sendMessage(&RootMsg{msg.Feed, full.Encode()})
 }
 
 func (s *Client) handleDelFeedMsg(msg *DelFeedMsg) {
@@ -192,7 +191,10 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 	if !s.hasFeed(msg.Feed) {
 		return
 	}
-	root, err := s.so.AddEncodedRoot(msg.Root, msg.Sig)
+	root, err := s.so.AddRootPack(msg.RootPack)
+	//
+	// TODO: handle errors after skyobject will be done
+	//
 	if err != nil {
 		s.Print("[ERR] error decoding root: ", err)
 		return
@@ -379,8 +381,7 @@ func (c *Client) Subscribe(feed cipher.PubKey) (ok bool) {
 	}
 	if ok = c.sendMessage(&AddFeedMsg{feed}); ok {
 		if full := c.so.LastFullRoot(feed); full != nil {
-			p, sig := full.Encode()
-			ok = c.sendMessage(&RootMsg{full.Pub(), sig, p})
+			ok = c.sendMessage(&RootMsg{full.Pub(), full.Encode()})
 		}
 	}
 	return
@@ -429,17 +430,22 @@ type Container struct {
 	client *Client
 }
 
-func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
-	sr := c.Container.NewRoot(pk, sk)
-	r = &Root{sr, c} // TODO
-	return
-}
-
-func (c *Container) AddEncodedRoot(b []byte, sig cipher.Sig) (r *Root,
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	err error) {
 
 	var sr *skyobject.Root
-	if sr, err = c.Container.AddEncodedRoot(b, sig); err != nil {
+	if sr, err = c.Container.NewRoot(pk, sk); err != nil {
+		return
+	}
+	r = &Root{sr, c}
+	return
+}
+
+func (c *Container) AddRootPack(rp skyobject.RootPack) (r *Root,
+	err error) {
+
+	var sr *skyobject.Root
+	if sr, err = c.Container.AddRootPack(rp); err != nil {
 		return
 	} else if sr != nil {
 		r = &Root{sr, c}
@@ -474,50 +480,52 @@ type Root struct {
 	c *Container
 }
 
-func (r *Root) send(p []byte, sig cipher.Sig) {
+func (r *Root) send(rp skyobject.RootPack) {
 	if !r.c.client.hasFeed(r.Pub()) {
 		return // don't send
 	}
 	r.c.client.sendMessage(&RootMsg{
-		Feed: r.Pub(),
-		Sig:  sig,
-		Root: p,
+		Feed:     r.Pub(),
+		RootPack: rp,
 	})
 }
 
-func (r *Root) Touch() (sig cipher.Sig, p []byte) {
+func (r *Root) Touch() (rp skyobject.RootPack, err error) {
 	// TODO: sending never see the (*Client).feeds
-	sig, p = r.Root.Touch()
-	r.send(p, sig)
+	if rp, err = r.Root.Touch(); err == nil {
+		r.send(rp)
+	}
 	return
 }
 
-func (r *Root) Inject(i interface{}) (inj skyobject.Dynamic, sig cipher.Sig,
-	p []byte) {
+func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
+	rp skyobject.RootPack, err error) {
 
 	// TODO: sending never see the (*Client).feeds
-	inj, sig, p = r.Root.Inject(i)
-	r.send(p, sig)
+	if inj, rp, err = r.Root.Inject(schemName, i); err == nil {
+		r.send(rp)
+	}
 	return
 }
 
-func (r *Root) InjectMany(i ...interface{}) (injs []skyobject.Dynamic,
-	sig cipher.Sig, p []byte) {
+func (r *Root) InjectMany(schemaName string,
+	i ...interface{}) (injs []skyobject.Dynamic, rp skyobject.RootPack,
+	err error) {
 
-	// send the root and objects related to all injected objects
 	// TODO: sending never see the (*Client).feeds
-	injs, sig, p = r.Root.InjectMany(i...)
-	r.send(p, sig)
+	if injs, rp, err = r.Root.InjectMany(schemaName, i...); err == nil {
+		r.send(rp)
+	}
 	return
 }
 
 func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
-	sig cipher.Sig, p []byte) {
+	rp skyobject.RootPack, err error) {
 
-	// send root and all its got
 	// TODO: sending never see the (*Client).feeds
-	prev, sig, p = r.Root.Replace(refs)
-	r.send(p, sig)
+	if prev, rp, err = r.Root.Replace(refs); err == nil {
+		r.send(rp)
+	}
 	return
 }
 
