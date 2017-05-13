@@ -532,7 +532,7 @@ func (s *Server) Disconnect(address string) (err error) {
 	return
 }
 
-func (s *Server) Connections() []string {
+func (s *Server) Connections() []*gnet.Conn {
 	return s.pool.Connections()
 }
 
@@ -543,10 +543,8 @@ func (s *Server) Connection(address string) *gnet.Conn {
 func (s *Server) broadcast(msg Msg) {
 	// todo: modify gnet.(*Pool).Connections() to return *gnet.Conn
 	//       instead of list of addresses
-	for _, a := range s.pool.Connections() {
-		if c := s.pool.Connection(a); c != nil {
-			s.sendMessage(c, msg)
-		}
+	for _, c := range s.pool.Connections() {
+		s.sendMessage(c, msg)
 	}
 }
 
