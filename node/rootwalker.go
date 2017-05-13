@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 	"reflect"
 	"strings"
@@ -35,15 +34,13 @@ var (
 
 // RootWalker represents an object the walks a root's tree.
 type RootWalker struct {
-	rsk   cipher.SecKey
 	r     *Root
 	stack []*objWrap
 }
 
 // NewRootWalker creates a new walker with given container and root's public key
-func NewRootWalker(r *Root, rsk cipher.SecKey) (w *RootWalker) {
+func NewRootWalker(r *Root) (w *RootWalker) {
 	w = &RootWalker{
-		rsk: rsk,
 		r:   r,
 	}
 	return
