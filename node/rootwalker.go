@@ -19,10 +19,6 @@ var (
 	// ErrFieldNotFound happens when an object's field by name is not found.
 	ErrFieldNotFound = errors.New("field not found")
 
-	//// ErrFieldNotProvided occurs when the field name of a struct is not
-	// provided.
-	//ErrFieldNotProvided = errors.New("field not provided")
-
 	// ErrEmptyInternalStack occurs when an action performed on RootWalker
 	// requires a non-empty internal stack, but internal stack is empty.
 	ErrEmptyInternalStack = errors.New("internal stack of walker is empty")
@@ -273,29 +269,30 @@ func (w *RootWalker) Retreat() {
 // top-most object. The new reference will be generated automatically by saving
 // the object which 'p' points to. This recursively replaces all the associated
 // "references" of the object tree and hence, changes the root.
-func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) error {
+func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) (skyobject.Reference, error) {
+	nRef := skyobject.Reference{}
 	// Obtain top-most object.
 	tObj, e := w.peek()
 	if e != nil {
-		return e
+		return nRef, e
 	}
 
 	// Save new obj.
-	nRef := w.r.Save(p)
+	nRef = w.r.Save(p)
 
 	// Edit top-most object.
 	tRefs, _, e := tObj.getFieldAsReferences(fieldName)
 	if e != nil {
-		return e
+		return nRef, e
 	}
 	tRefs = append(tRefs, nRef)
 	if e := tObj.replaceReferencesField(fieldName, tRefs); e != nil {
-		return e
+		return nRef, e
 	}
 
 	// Recursively save.
 	_, e = tObj.save()
-	return e
+	return nRef, e
 }
 
 // TODO: Implement.
@@ -306,47 +303,52 @@ func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) error {
 // new reference; one that is automatically generated when saving the object
 // 'p' points to, in the container. This recursively replaces all the associated
 // "references" of the object tree and hence, changes the root.
-func (w *RootWalker) ReplaceInRefField(fieldName string, p interface{}) error {
+func (w *RootWalker) ReplaceInRefField(fieldName string, p interface{}) (
+	skyobject.Reference, error,
+) {
+	nRef := skyobject.Reference{}
+
 	// Obtain top-most object.
 	tObj, e := w.peek()
 	if e != nil {
-		return e
+		return nRef, e
 	}
 
 	// Save new obj.
-	nRef := w.r.Save(p)
+	nRef = w.r.Save(p)
 	if e := tObj.replaceReferenceField(fieldName, nRef); e != nil {
-		return e
+		return nRef, e
 	}
 
 	// Recursively save.
 	_, e = tObj.save()
-	return e
+	return nRef, e
 }
 
 // ReplaceInDynamicField functions the same as 'ReplaceInRefField'. However, it
 // replaces a dynamic reference field other than a static reference field.
 func (w *RootWalker) ReplaceInDynamicField(fieldName, schemaName string,
-	p interface{}) error {
+	p interface{}) (skyobject.Dynamic, error) {
+	nDyn := skyobject.Dynamic{}
 
 	// Obtain top-most object.
 	tObj, e := w.peek()
 	if e != nil {
-		return e
+		return nDyn, e
 	}
 
 	// Save new object.
-	nDyn, e := w.r.Dynamic(schemaName, p)
+	nDyn, e = w.r.Dynamic(schemaName, p)
 	if e != nil {
-		return e
+		return nDyn, e
 	}
 	if e := tObj.replaceDynamicField(fieldName, nDyn); e != nil {
-		return e
+		return nDyn, e
 	}
 
 	// Recursively save.
 	_, e = tObj.save()
-	return e
+	return nDyn, e
 }
 
 // String creates a readable string that shows information of the internal stack
