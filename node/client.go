@@ -354,6 +354,10 @@ func (s *Client) handleDataMsg(msg *DataMsg) {
 	s.roots = s.roots[:i]
 }
 
+func (c *Client) handlePingMsg() {
+	c.sendMessage(&PongMsg{})
+}
+
 // ============================================================================
 //
 
@@ -375,6 +379,10 @@ func (s *Client) handleMessage(c *gnet.Conn, msg Msg) {
 		s.handleRequestDataMsg(x)
 	case *DataMsg:
 		s.handleDataMsg(x)
+	case *PingMsg:
+		s.handlePingMsg()
+	case *PongMsg:
+		s.Print("[WRN] unexpected Pong message received")
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
 	}

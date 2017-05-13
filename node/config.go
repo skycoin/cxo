@@ -2,6 +2,7 @@ package node
 
 import (
 	"flag"
+	"time"
 
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
@@ -17,6 +18,7 @@ const (
 	RemoteClose bool   = false       // default remote-closing pin
 	RPCAddress  string = "[::]:8878" // default RPC address
 
+	PingInterval time.Duration = 2 * time.Second
 )
 
 // A ServerConfig represnets configurations
@@ -37,6 +39,10 @@ type ServerConfig struct {
 	// RemoteClose allows closing the
 	// server using RPC
 	RemoteClose bool
+
+	// PingInterval used to ping clients
+	// Set to 0 to disable pings
+	PingInterval time.Duration
 }
 
 // NewServerConfig returns ServerConfig
@@ -48,6 +54,7 @@ func NewServerConfig() (sc ServerConfig) {
 	sc.RPCAddress = RPCAddress
 	sc.Listen = Listen
 	sc.RemoteClose = RemoteClose
+	sc.PingInterval = PingInterval
 	return
 }
 
@@ -78,6 +85,10 @@ func (s *ServerConfig) FromFlags() {
 		"remote-close",
 		s.RemoteClose,
 		"allow closing the server using RPC")
+	flag.DurationVar(&s.PingInterval,
+		"ping",
+		s.PingInterval,
+		"interval to send pings (0 = disable)")
 	return
 }
 

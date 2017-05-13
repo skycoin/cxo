@@ -13,6 +13,9 @@ import (
 
 // be sure that all messages implements Msg interface
 var (
+	_ Msg = &PingMsg{}
+	_ Msg = &PongMsg{}
+
 	_ Msg = &AddFeedMsg{}
 	_ Msg = &DelFeedMsg{}
 	_ Msg = &RootMsg{}
@@ -26,6 +29,20 @@ var (
 type Msg interface {
 	MsgType() MsgType
 }
+
+// PingMsg is service message and used
+// by server to ping clients
+type PingMsg struct{}
+
+// MsgType implements Msg interface
+func (*PingMsg) MsgType() MsgType { return PingMsgType }
+
+// PongMsg is service message and used
+// by client to reply for PingMsg
+type PongMsg struct{}
+
+// MsgType implements Msg interface
+func (*PongMsg) MsgType() MsgType { return PongMsgType }
 
 // A AddFeedMsg sent from one node to another one to
 // notify the remote node about new feed the sender
@@ -91,17 +108,21 @@ func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
 type MsgType uint8
 
 const (
-	AddFeedMsgType         MsgType = 1 + iota // AddFeedMsg 1
-	DelFeedMsgType                            // DelFeedMsg 2
-	RootMsgType                               // RootMsg 3
-	RequestDataMsgType                        // RequestDataMsg 4
-	DataMsgType                               // DataMsg 5
-	RequestRegistryMsgType                    // RequestRegistryMsg 6
-	RegistryMsgType                           // RegistryMsg 7
+	PingMsgType            MsgType = 1 + iota // PingMsg 1
+	PongMsgType                               // PongMsg 2
+	AddFeedMsgType                            // AddFeedMsg 3
+	DelFeedMsgType                            // DelFeedMsg 4
+	RootMsgType                               // RootMsg 5
+	RequestDataMsgType                        // RequestDataMsg 6
+	DataMsgType                               // DataMsg 7
+	RequestRegistryMsgType                    // RequestRegistryMsg 8
+	RegistryMsgType                           // RegistryMsg 9
 )
 
 // MsgType to string mapping
 var msgTypeString = [...]string{
+	PingMsgType:            "PING",
+	PongMsgType:            "PONG",
 	AddFeedMsgType:         "ADD",
 	DelFeedMsgType:         "DEL",
 	RootMsgType:            "ROOT",
@@ -120,6 +141,8 @@ func (m MsgType) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
+	PingMsgType:            reflect.TypeOf(PingMsg{}),
+	PongMsgType:            reflect.TypeOf(PongMsg{}),
 	AddFeedMsgType:         reflect.TypeOf(AddFeedMsg{}),
 	DelFeedMsgType:         reflect.TypeOf(DelFeedMsg{}),
 	RootMsgType:            reflect.TypeOf(RootMsg{}),
