@@ -105,16 +105,20 @@ func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
 }
 
 func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
-	*list = r.ns.Connections()
+	cs := r.ns.Connections()
+	l := make([]string, 0, len(cs))
+	for _, c := range cs {
+		l = append(l, c.Address())
+	}
+	*list = l
 	return
 }
 
 func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
 	var l []string
-	for _, address := range r.ns.pool.Connections() {
-		c := r.ns.pool.Connection(address)
+	for _, c := range r.ns.pool.Connections() {
 		if c.IsIncoming() {
-			l = append(l, address)
+			l = append(l, c.Address())
 		}
 	}
 	*list = l
@@ -123,10 +127,9 @@ func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
 
 func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
 	var l []string
-	for _, address := range r.ns.pool.Connections() {
-		c := r.ns.pool.Connection(address)
+	for _, c := range r.ns.pool.Connections() {
 		if !c.IsIncoming() {
-			l = append(l, address)
+			l = append(l, c.Address())
 		}
 	}
 	*list = l

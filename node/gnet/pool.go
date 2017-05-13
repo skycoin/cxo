@@ -222,16 +222,16 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 //                                connections                                 //
 // ========================================================================== //
 
-// Connections returns list of all connections
-func (p *Pool) Connections() (cs []string) {
+// Connections returns all connections
+func (p *Pool) Connections() (cs []*Conn) {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
 	if len(p.conns) == 0 {
 		return
 	}
-	cs = make([]string, 0, len(p.conns))
-	for a := range p.conns {
-		cs = append(cs, a)
+	cs = make([]*Conn, 0, len(p.conns))
+	for _, c := range p.conns {
+		cs = append(cs, c)
 	}
 	return
 }

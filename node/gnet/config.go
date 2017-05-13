@@ -14,9 +14,9 @@ const (
 	MaxConnections int = 10 * 1000 // default connections limit
 	MaxMessageSize int = 16 * 1024 // default message size
 
-	DialTimeout  time.Duration = 5 * time.Second     // default timeout
-	ReadTimeout  time.Duration = 0 * 5 * time.Second // default timeout
-	WriteTimeout time.Duration = 0 * 5 * time.Second // default timeout
+	DialTimeout  time.Duration = 5 * time.Second // default timeout
+	ReadTimeout  time.Duration = 5 * time.Second // default timeout
+	WriteTimeout time.Duration = 5 * time.Second // default timeout
 
 	ReadQueueLen  int = 128 // default
 	WriteQueueLen int = 128 // default

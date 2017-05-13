@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -105,6 +106,8 @@ func (s *Server) Start() (err error) {
     read timeout:         %v
     write timeout:        %v
 
+    ping interval:        %v
+
     read queue:           %d
     write queue:          %d
 
@@ -129,6 +132,8 @@ func (s *Server) Start() (err error) {
 		s.conf.DialTimeout,
 		s.conf.ReadTimeout,
 		s.conf.WriteTimeout,
+		s.conf.PingInterval,
+		s.conf.PingInterval,
 		s.conf.ReadQueueLen,
 		s.conf.WriteQueueLen,
 		s.conf.RedialTimeout,
@@ -159,6 +164,11 @@ func (s *Server) Start() (err error) {
 		s.Print("rpc listen on ", s.rpc.Address())
 	}
 
+	if s.conf.PingInterval > 0 {
+		s.await.Add(1)
+		go s.pingsLoop()
+	}
+
 	return
 }
 
@@ -173,6 +183,36 @@ func (s *Server) Close() (err error) {
 		close(s.quit)
 	})
 	return
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (s *Server) pingsLoop() {
+	defer s.await.Done()
+
+	var tk *time.Ticker = time.NewTicker(s.conf.PingInterval)
+	defer tk.Stop()
+
+	for {
+		select {
+		case <-tk.C:
+			now := time.Now()
+			for _, c := range s.pool.Connections() {
+				md := maxDuration(now.Sub(c.LastRead()), now.Sub(c.LastWrite()))
+				if md < s.conf.PingInterval {
+					continue
+				}
+				s.sendMessage(c, &PingMsg{})
+			}
+		case <-s.quit:
+			return
+		}
+	}
 }
 
 // send a message to given connection
@@ -490,6 +530,10 @@ func (s *Server) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 	s.roots = s.roots[:i]
 }
 
+func (s *Server) handlePingMsg(c *gnet.Conn) {
+	s.sendMessage(c, &PongMsg{})
+}
+
 func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	s.Debugf("handle message %T from %s", msg, c.Address())
 
@@ -508,6 +552,10 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 		s.handleRequestDataMsg(c, x)
 	case *DataMsg:
 		s.handleDataMsg(c, x)
+	case *PingMsg:
+		s.handlePingMsg(c)
+	case *PongMsg:
+		// do nothing
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
 	}
@@ -532,7 +580,7 @@ func (s *Server) Disconnect(address string) (err error) {
 	return
 }
 
-func (s *Server) Connections() []string {
+func (s *Server) Connections() []*gnet.Conn {
 	return s.pool.Connections()
 }
 
@@ -543,10 +591,8 @@ func (s *Server) Connection(address string) *gnet.Conn {
 func (s *Server) broadcast(msg Msg) {
 	// todo: modify gnet.(*Pool).Connections() to return *gnet.Conn
 	//       instead of list of addresses
-	for _, a := range s.pool.Connections() {
-		if c := s.pool.Connection(a); c != nil {
-			s.sendMessage(c, msg)
-		}
+	for _, c := range s.pool.Connections() {
+		s.sendMessage(c, msg)
 	}
 }
 
