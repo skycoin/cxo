@@ -86,6 +86,10 @@ func (s *ServerConfig) FromFlags() {
 type ClientConfig struct {
 	gnet.Config            // pool configurations
 	Log         log.Config // logger configurations
+
+	// handlers
+	OnConnect    func()
+	OnDisconenct func()
 }
 
 // NewClientConfig returns ClientConfig

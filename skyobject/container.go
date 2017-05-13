@@ -93,8 +93,8 @@ func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
 	return
 }
 
-// WantRegistry reports true if given registry wanted by the
-// Container
+// WantRegistry reports true if given registry
+// wanted by the Container
 func (c *Container) WantRegistry(rr RegistryReference) bool {
 	c.RLock()
 	defer c.RUnlock()
