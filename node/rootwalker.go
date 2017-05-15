@@ -265,6 +265,19 @@ func (w *RootWalker) Retreat() {
 	}
 }
 
+// RemoveCurrent removes the current object and retreats.
+// TODO: Implement.
+func (w *RootWalker) RemoveCurrent() error {
+	return errors.New("not implemented")
+}
+
+// ReplaceCurrent replaces the current object with the reference of object pointed
+// to in `p`.
+// TODO: Implement.
+func (w *RootWalker) ReplaceCurrent(p interface{}) error {
+	return errors.New("not implemented")
+}
+
 // AppendToRefsField appends a reference to references field 'fieldName' of
 // top-most object. The new reference will be generated automatically by saving
 // the object which 'p' points to. This recursively replaces all the associated
@@ -295,10 +308,23 @@ func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) (skyobje
 	return nRef, e
 }
 
+// ReplaceInRefsField replaces a reference in a field of type `skyobject.References`
+// with the object that `p` points to. It uses a Finder implementation to find the
+// old reference to replace.
 // TODO: Implement.
-// ReplaceInRefsField
-// DeleteInRefsField
-//
+func (w *RootWalker) ReplaceInRefsField(fieldName string, p interface{},
+	finder func(v *skyobject.Value) bool) error {
+	return errors.New("not implemented")
+}
+
+// RemoveInRefsField removes a reference in a field of type `skyobject.References`.
+// It uses the Finder implementation to find the reference to remove.
+// TODO: Implement.
+func (w *RootWalker) RemoveInRefsField(fieldName string,
+	finder func(v *skyobject.Value) bool) error {
+	return errors.New("not implemented")
+}
+
 // ReplaceInRefField replaces the reference field of the top-most object with a
 // new reference; one that is automatically generated when saving the object
 // 'p' points to, in the container. This recursively replaces all the associated
