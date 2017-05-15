@@ -101,7 +101,6 @@ func fillContainer1(c *Container, pk cipher.PubKey, sk cipher.SecKey) *Root {
 	return r
 }
 
-
 func TestWalker_AdvanceFromRoot(t *testing.T) {
 	pk, sk := genKeyPair()
 	client := newClient()
@@ -384,6 +383,7 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 		}
 	})
 }
+
 func TestWalker_ReplaceCurrent(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
@@ -516,5 +516,77 @@ func TestWalker_ReplaceInDynamicField(t *testing.T) {
 			encoder.DeserializeRaw(data, p)
 			t.Log(p)
 		}
+	})
+}
+
+func TestWalker_RemoveCurrent(t *testing.T) {
+	t.Run("depth of 1", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		t.Log("Got board", board.Name)
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Size:", len(w.r.Refs()))
+		t.Log(w.String())
+		t.Log("Removing...")
+		e = w.RemoveCurrent()
+
+		if e != nil {
+			t.Error("failed to remove:", e)
+		}
+		t.Log("Size:", len(w.r.Refs()))
+		t.Log(w.String())
+	})
+
+	t.Run("depth of 2", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Got board", board.Name)
+
+		thread := &Thread{}
+		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+		if e != nil {
+			t.Error("advance from board to thread failed:", e)
+		}
+		t.Log("Got thread", thread.Name)
+		t.Log(w.String())
+
+		e = w.RemoveCurrent()
+		if e != nil {
+			t.Error("failed to remove:", e)
+		}
+		t.Log(w.String())
 	})
 }

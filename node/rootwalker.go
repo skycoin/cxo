@@ -266,9 +266,17 @@ func (w *RootWalker) Retreat() {
 }
 
 // RemoveCurrent removes the current object and retreats.
-// TODO: Implement.
 func (w *RootWalker) RemoveCurrent() error {
-	return errors.New("not implemented")
+	// Obtain top-most object from internal stack.
+	o, e := w.peek()
+	if e != nil {
+		return e
+	}
+
+	o.remove()
+
+	w.Retreat()
+	return nil
 }
 
 // ReplaceCurrent replaces the current object with the reference of object pointed
@@ -644,6 +652,7 @@ func (o *objWrap) save(dynPtr *skyobject.Dynamic) (skyobject.Dynamic, error) {
 			Schema: o.s,
 		}
 	} else {
+		// Dereference dyn object pointer from replace
 		dyn = *dynPtr
 	}
 
@@ -699,4 +708,41 @@ func (o *objWrap) save(dynPtr *skyobject.Dynamic) (skyobject.Dynamic, error) {
 	}
 
 	return o.prev.save(nil)
+}
+
+func (o *objWrap) remove() error {
+	// If this object is the direct child of root, remove from root and return.
+	if o.prev == nil {
+		r := o.w.r
+		rDyns := r.Refs()
+
+		rDyns = append(rDyns[:o.prevInFieldIndex], rDyns[o.prevInFieldIndex+1:]...)
+		r.Replace(rDyns)
+		return nil
+	}
+
+	// Get previous object's field type.
+	v := o.prev.elem()
+	vt := v.Type()
+
+	sf, has := vt.FieldByName(o.prevFieldName)
+	if has == false {
+		return ErrFieldNotFound
+	}
+
+	switch sf.Type.Kind() {
+	case reflect.Slice: // skyobject.References
+		tRefs, _, e := o.prev.getFieldAsReferences(o.prevFieldName)
+		if e != nil {
+			return e
+		}
+		tRefs = append(tRefs[:o.prevInFieldIndex], tRefs[o.prevInFieldIndex+1:]...)
+		e = o.prev.replaceReferencesField(o.prevFieldName, tRefs)
+		if e != nil {
+			return e
+		}
+	}
+
+	o.prev.save(nil)
+	return nil
 }
