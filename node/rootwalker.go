@@ -28,7 +28,7 @@ var (
 	ErrFieldHasWrongType = errors.New("field has wrong type")
 )
 
-// RootWalker represents an object the walks a root's tree.
+// RootWalker represents an object that walks a root's tree.
 type RootWalker struct {
 	r     *Root
 	stack []*objWrap
@@ -37,7 +37,7 @@ type RootWalker struct {
 // NewRootWalker creates a new walker with given container and root's public key
 func NewRootWalker(r *Root) (w *RootWalker) {
 	w = &RootWalker{
-		r:   r,
+		r: r,
 	}
 	return
 }
@@ -252,7 +252,7 @@ func (w *RootWalker) AdvanceFromDynamicField(fieldName string,
 	return nil
 }
 
-// Retreat retreats one from the internal stack.
+// Retreat retreats one step from the internal stack.
 func (w *RootWalker) Retreat() {
 	switch w.Size() {
 	case 0:
@@ -273,9 +273,36 @@ func (w *RootWalker) RemoveCurrent() error {
 
 // ReplaceCurrent replaces the current object with the reference of object pointed
 // to in `p`.
-// TODO: Implement.
 func (w *RootWalker) ReplaceCurrent(p interface{}) error {
-	return errors.New("not implemented")
+	// Check root.
+	if w.r == nil {
+		return ErrRootNotFound
+	}
+
+	// Obtain top-most object.
+	tObj, e := w.peek()
+	if e != nil {
+		return e
+	}
+
+	dyn := skyobject.Dynamic{
+		Object: w.r.Save(p),
+		Schema: tObj.s,
+	}
+
+	// Recursively save
+	_, e = tObj.save(&dyn)
+	// Remove old object from stack
+	w.Retreat()
+	// Add new object to stack
+	obj := &objWrap{}
+	if tObj.prev == nil {
+		obj = w.newObj(dyn.Schema, p, tObj.prevFieldName, tObj.prevInFieldIndex)
+	} else {
+		obj = tObj.prev.generate(dyn.Schema, p, tObj.prevFieldName, tObj.prevInFieldIndex)
+	}
+	w.stack = append(w.stack, obj)
+	return e
 }
 
 // AppendToRefsField appends a reference to references field 'fieldName' of
@@ -304,7 +331,7 @@ func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) (skyobje
 	}
 
 	// Recursively save.
-	_, e = tObj.save()
+	_, e = tObj.save(nil)
 	return nRef, e
 }
 
@@ -347,7 +374,7 @@ func (w *RootWalker) ReplaceInRefField(fieldName string, p interface{}) (
 	}
 
 	// Recursively save.
-	_, e = tObj.save()
+	_, e = tObj.save(nil)
 	return nRef, e
 }
 
@@ -373,7 +400,7 @@ func (w *RootWalker) ReplaceInDynamicField(fieldName, schemaName string,
 	}
 
 	// Recursively save.
-	_, e = tObj.save()
+	_, e = tObj.save(nil)
 	return nDyn, e
 }
 
@@ -608,19 +635,24 @@ func (o *objWrap) replaceDynamicField(fieldName string,
 	return
 }
 
-func (o *objWrap) save() (skyobject.Dynamic, error) {
-	// Create dynamic reference of current object.
-	dyn := skyobject.Dynamic{
-		Object: o.w.r.Save(o.p),
-		Schema: o.s,
+func (o *objWrap) save(dynPtr *skyobject.Dynamic) (skyobject.Dynamic, error) {
+	var dyn skyobject.Dynamic
+	if dynPtr == nil {
+		// Create dynamic reference of current object.
+		dyn = skyobject.Dynamic{
+			Object: o.w.r.Save(o.p),
+			Schema: o.s,
+		}
+	} else {
+		dyn = *dynPtr
 	}
 
 	// If this object is the direct child of root, save to root and return.
 	if o.prev == nil {
-		r := o.w.r
-		rDyns := r.Refs()
+		rDyns := o.w.r.Refs()
+
 		rDyns[o.prevInFieldIndex] = dyn
-		r.Replace(rDyns)
+		o.w.r.Replace(rDyns)
 		return dyn, nil
 	}
 
@@ -666,5 +698,5 @@ func (o *objWrap) save() (skyobject.Dynamic, error) {
 		}
 	}
 
-	return o.prev.save()
+	return o.prev.save(nil)
 }
