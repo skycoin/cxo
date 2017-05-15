@@ -15,7 +15,7 @@ import (
 
 var (
 	ErrStopRange        = errors.New("stop range")
-	ErrMissingSecretKey = errors.New("misisng secret key")
+	ErrMissingSecretKey = errors.New("missing secret key")
 )
 
 // A Root represents ...
@@ -79,7 +79,7 @@ func (r *Root) RegistryReference() RegistryReference {
 	return r.reg
 }
 
-// Tocuh updates timestapt of the Root (setting it to now)
+// Touch updates timestamp of the Root (setting it to now)
 // and increments seq number. The Touch implicitly called
 // inside Inject, InjectMany and Replace methods
 func (r *Root) Touch() (RootPack, error) {
@@ -216,19 +216,19 @@ func (r *Root) DB() *data.DB {
 	return r.cnt.DB()
 }
 
-// Save is sort hand for (*Container).Save()
+// Save is short hand for (*Container).Save()
 func (r *Root) Save(i interface{}) Reference {
 	return r.cnt.save(i)
 }
 
-// SaveArray is sort hand for (*Container).SaveArray()
+// SaveArray is short hand for (*Container).SaveArray()
 func (r *Root) SaveArray(i ...interface{}) References {
 	return r.cnt.saveArray(i...)
 }
 
-// Dynamic created Dynamic objct using Registry related to
-// the Root. If Regsitry doesn't exists or type was not
-// registered then the method panics
+// Dynamic creates Dynamic object using Registry related to
+// the Root. If Registry doesn't exists or type was not
+// registered then the method returns error
 func (r *Root) Dynamic(schemaName string, i interface{}) (dr Dynamic,
 	err error) {
 
@@ -245,7 +245,7 @@ func (r *Root) Dynamic(schemaName string, i interface{}) (dr Dynamic,
 	return
 }
 
-// MustDynamic panics if registry missing or shcema not registered
+// MustDynamic panics if registry missing or schema not registered
 func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
 	var err error
 	if dr, err = r.Dynamic(schemaName, i); err != nil {

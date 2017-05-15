@@ -98,7 +98,7 @@ func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
 
 // Start the server
 func (s *Server) Start() (err error) {
-	s.Debugf(`strting server:
+	s.Debugf(`starting server:
     max connections:      %d
     max message size:     %d
 
@@ -118,29 +118,34 @@ func (s *Server) Start() (err error) {
     read buffer:          %d
     write buffer:         %d
 
-    TLS:                  %t
+    TLS:                  %v
 
-    enable RPC:           %t
+    enable RPC:           %v
     RPC address:          %s
     lListening address:   %s
     remote close:         %t
 
-    debug:                %t
+    debug:                %#v
 `,
 		s.conf.MaxConnections,
 		s.conf.MaxMessageSize,
+
 		s.conf.DialTimeout,
 		s.conf.ReadTimeout,
 		s.conf.WriteTimeout,
+
 		s.conf.PingInterval,
-		s.conf.PingInterval,
+
 		s.conf.ReadQueueLen,
 		s.conf.WriteQueueLen,
+
 		s.conf.RedialTimeout,
 		s.conf.MaxRedialTimeout,
 		s.conf.RedialsLimit,
+
 		s.conf.ReadBufferSize,
 		s.conf.WriteBufferSize,
+
 		s.conf.TLSConfig != nil,
 
 		s.conf.EnableRPC,
