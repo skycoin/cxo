@@ -4,8 +4,8 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-	"testing"
 	"log"
+	"testing"
 	"time"
 )
 
@@ -93,14 +93,13 @@ func fillContainer1(c *Container, pk cipher.PubKey, sk cipher.SecKey) *Root {
 		Thread{"Expressions", persons[2], posts2},
 		Thread{"Testing", persons[3], posts3},
 	)
-	r.InjectMany( "Board",
+	r.InjectMany("Board",
 		Board{"Test", persons[3], dynPost, threads[2:]},
 		Board{"Talk", persons[1], dynPerson, threads[:2]},
 	)
 
 	return r
 }
-
 
 func TestWalker_AdvanceFromRoot(t *testing.T) {
 	pk, sk := genKeyPair()
@@ -385,6 +384,97 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 	})
 }
 
+func TestWalker_ReplaceCurrent(t *testing.T) {
+	t.Run("depth of 1", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+		r := w.r
+		newPerson, _ := r.Dynamic("Person", Person{"NEW PERSON", 666})
+		newPost, _ := r.Dynamic("Post", Post{"NEW", "POST!", newPerson.Object})
+		posts := r.SaveArray(
+			newPost,
+		)
+		newThread1, _ := r.Dynamic("Thread", Thread{"NEW THREAD!", newPerson.Object, posts})
+		newThread2, _ := r.Dynamic("Thread", Thread{"ANOTHER THREAD!", newPerson.Object, posts})
+		newThreads := r.SaveArray(
+			newThread1,
+			newThread2,
+		)
+		newBoard := Board{"NEW!", newPerson.Object, newPost, newThreads}
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		t.Log("Got board", board.Name)
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log(w.String())
+		t.Log("Replacing...")
+		e = w.ReplaceCurrent(&newBoard)
+
+		if e != nil {
+			t.Error("failed to replace:", e)
+		}
+		t.Log(w.String())
+	})
+
+	t.Run("depth of 2", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		r := w.r
+		newPerson, _ := r.Dynamic("Person", Person{"NEW PERSON", 666})
+		newPost, _ := r.Dynamic("Post", Post{"NEW", "POST!", newPerson.Object})
+		posts := r.SaveArray(
+			newPost,
+		)
+		newThread1 := Thread{"NEW THREAD!", newPerson.Object, posts}
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Got board", board.Name)
+
+		thread := &Thread{}
+		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+		if e != nil {
+			t.Error("advance from board to thread failed:", e)
+		}
+		t.Log("Got thread", thread.Name)
+		t.Log(w.String())
+
+		e = w.ReplaceCurrent(&newThread1)
+		if e != nil {
+			t.Error("failed to replace:", e)
+		}
+		t.Log(w.String())
+	})
+}
+
 func TestWalker_ReplaceInDynamicField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
@@ -426,5 +516,77 @@ func TestWalker_ReplaceInDynamicField(t *testing.T) {
 			encoder.DeserializeRaw(data, p)
 			t.Log(p)
 		}
+	})
+}
+
+func TestWalker_RemoveCurrent(t *testing.T) {
+	t.Run("depth of 1", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		t.Log("Got board", board.Name)
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Size:", len(w.r.Refs()))
+		t.Log(w.String())
+		t.Log("Removing...")
+		e = w.RemoveCurrent()
+
+		if e != nil {
+			t.Error("failed to remove:", e)
+		}
+		t.Log("Size:", len(w.r.Refs()))
+		t.Log(w.String())
+	})
+
+	t.Run("depth of 2", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Got board", board.Name)
+
+		thread := &Thread{}
+		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+		if e != nil {
+			t.Error("advance from board to thread failed:", e)
+		}
+		t.Log("Got thread", thread.Name)
+		t.Log(w.String())
+
+		e = w.RemoveCurrent()
+		if e != nil {
+			t.Error("failed to remove:", e)
+		}
+		t.Log(w.String())
 	})
 }

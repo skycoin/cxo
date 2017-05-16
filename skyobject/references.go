@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
+	"strings"
 )
 
 // registry reference
@@ -15,7 +16,7 @@ func (r *RegistryReference) IsBlank() bool {
 }
 
 func (r *RegistryReference) String() string {
-	return cipher.SHA256(*r).Hex()
+	return strings.Replace(cipher.SHA256(*r).Hex(), " ", "", -1)
 }
 
 // schema reference
@@ -27,7 +28,7 @@ func (s *SchemaReference) IsBlank() bool {
 }
 
 func (s *SchemaReference) String() string {
-	return cipher.SHA256(*s).Hex()
+	return strings.Replace(cipher.SHA256(*s).Hex(), " ", "", -1)
 }
 
 // reference
@@ -39,7 +40,7 @@ func (r *Reference) IsBlank() bool {
 }
 
 func (r *Reference) String() string {
-	return cipher.SHA256(*r).Hex()
+	return strings.Replace(cipher.SHA256(*r).Hex(), " ", "", -1)
 }
 
 // references
