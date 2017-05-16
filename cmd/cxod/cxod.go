@@ -21,7 +21,7 @@ func waitInterrupt(quit <-chan struct{}) {
 	signal.Notify(sig, os.Interrupt)
 	select {
 	case <-sig:
-		os.Exit(1)
+		os.Exit(0)
 	case <-quit:
 	}
 }
