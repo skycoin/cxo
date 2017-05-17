@@ -13,10 +13,12 @@ const (
 
 	// server defaults
 
-	EnableRPC   bool   = true        // default RPC pin
-	Listen      string = ""          // default listening address
-	RemoteClose bool   = false       // default remote-closing pin
-	RPCAddress  string = "[::]:8878" // default RPC address
+	EnableRPC       bool   = true        // default RPC pin
+	Listen          string = ""          // default listening address
+	RemoteClose     bool   = false       // default remote-closing pin
+	RPCAddress      string = "[::]:8878" // default RPC address
+	EnableBlockDB   bool   = true        // default BlockDB pin
+	RandomizeDBPath bool   = false       // default to use regular db path
 
 	PingInterval time.Duration = 2 * time.Second
 )
@@ -43,6 +45,12 @@ type ServerConfig struct {
 	// PingInterval used to ping clients
 	// Set to 0 to disable pings
 	PingInterval time.Duration
+
+	//EnableBlockDB db usage
+	EnableBlockDB bool
+
+	//RandomDB generate random db save location
+	RandomizeDBPath bool
 }
 
 // NewServerConfig returns ServerConfig
@@ -55,6 +63,8 @@ func NewServerConfig() (sc ServerConfig) {
 	sc.Listen = Listen
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
+	sc.EnableBlockDB = EnableBlockDB
+	sc.RandomizeDBPath = RandomizeDBPath
 	return
 }
 
@@ -89,6 +99,14 @@ func (s *ServerConfig) FromFlags() {
 		"ping",
 		s.PingInterval,
 		"interval to send pings (0 = disable)")
+	flag.BoolVar(&s.EnableBlockDB,
+		"db",
+		s.EnableBlockDB,
+		"enable DB")
+	flag.BoolVar(&s.RandomizeDBPath,
+		"randomdb",
+		s.RandomizeDBPath,
+		"generate random DB file name")
 	return
 }
 
