@@ -6,6 +6,10 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/boltdb/bolt"
+
+	"github.com/skycoin/skycoin/src/visor/blockdb"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
@@ -23,6 +27,9 @@ var (
 // A Container represents ...
 type Container struct {
 	sync.RWMutex
+
+	bolt  *bolt.DB           // bolt db instance
+	block *blockdb.BlockTree // save roots here
 
 	db *data.DB // databse
 
