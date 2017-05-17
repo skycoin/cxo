@@ -232,7 +232,7 @@ func (s *Server) Close() (err error) {
 	err = s.pool.Close()
 
 	s.closeDB()
-
+	os.Exit(0)
 	if s.conf.EnableRPC {
 		s.rpc.Close()
 	}
