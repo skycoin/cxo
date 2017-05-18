@@ -46,10 +46,13 @@ type ServerConfig struct {
 	// Set to 0 to disable pings
 	PingInterval time.Duration
 
-	//EnableBlockDB db usage
+	// EnableBlockDB db usage
 	EnableBlockDB bool
 
-	//RandomDB generate random db save location
+	// RandomDB generate random db save location,
+	// and remove the db-file after use. This option
+	// allows to run multiply instances of cxod on the
+	// same machine without conflicts. For tests.
 	RandomizeDBPath bool
 }
 
