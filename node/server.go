@@ -12,6 +12,12 @@ import (
 
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
+
+	"github.com/boltdb/bolt"
+	"github.com/skycoin/skycoin/src/util"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
 type fillRoot struct {
@@ -47,6 +53,10 @@ type Server struct {
 	// connections
 	pool *gnet.Pool
 	rpc  *RPC // rpc server
+
+	// db
+	db     *bolt.DB
+	dbFile string
 
 	// closing
 	quit  chan struct{}
@@ -87,8 +97,13 @@ func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
 		return
 	}
 
-	if sc.EnableRPC == true {
+	if sc.EnableRPC {
 		s.rpc = newRPC(s)
+	}
+
+	util.InitDataDir(".skycoin")
+	if sc.EnableBlockDB {
+		s.openDB()
 	}
 
 	s.quit = make(chan struct{})
@@ -99,6 +114,7 @@ func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
 // Start the server
 func (s *Server) Start() (err error) {
 	s.Debugf(`starting server:
+    data dir:             %s
     max connections:      %d
     max message size:     %d
 
@@ -125,8 +141,12 @@ func (s *Server) Start() (err error) {
     lListening address:   %s
     remote close:         %t
 
+    enable DB:            %v
+    DB location:          %s
+
     debug:                %#v
 `,
+		util.DataDir,
 		s.conf.MaxConnections,
 		s.conf.MaxMessageSize,
 
@@ -153,6 +173,9 @@ func (s *Server) Start() (err error) {
 		s.conf.Listen,
 		s.conf.RemoteClose,
 
+		s.conf.EnableBlockDB,
+		s.dbFile,
+
 		s.conf.Log.Debug,
 	)
 	// start listener
@@ -177,10 +200,40 @@ func (s *Server) Start() (err error) {
 	return
 }
 
+func (s *Server) openDB() (err error) {
+	s.dbFile = filepath.Join(util.DataDir, "cxod.db")
+	if s.conf.RandomizeDBPath {
+		file, err := ioutil.TempFile("", "blockdb_")
+		if err != nil {
+			return err
+		}
+		s.dbFile = file.Name()
+		file.Close()
+	}
+	s.db, err = bolt.Open(s.dbFile, 0600, &bolt.Options{
+		Timeout: 500 * time.Millisecond,
+	})
+	if err != nil {
+		return fmt.Errorf("Open boltdb failed, err:%v", err)
+	}
+	return err
+}
+
+func (s *Server) closeDB() error {
+	s.db.Close()
+	if s.conf.RandomizeDBPath {
+		return os.Remove(s.dbFile)
+	}
+	return nil
+}
+
 // Close the server
 func (s *Server) Close() (err error) {
 	err = s.pool.Close()
-	if s.conf.EnableRPC == true {
+
+	s.closeDB()
+	os.Exit(0)
+	if s.conf.EnableRPC {
 		s.rpc.Close()
 	}
 	s.await.Wait()
