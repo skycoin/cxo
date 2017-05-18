@@ -8,11 +8,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-type DB struct {
-	sync.RWMutex
-	data map[cipher.SHA256][]byte
-}
-
 type Stat struct {
 	Total  int `json:"total"`
 	Memory int `json:"memory"`
@@ -49,65 +44,57 @@ func HumanMemory(bytes int) string {
 		".") + ms
 }
 
-func NewDB() *DB {
-	return &DB{
-		data: make(map[cipher.SHA256][]byte),
-	}
+// A DB is common database interface
+type DB interface {
+
+	//
+	// Data related methods
+	//
+
+	// Has the DB an object with the key
+	Has(key cipher.SHA256) (ok bool)
+	// Get an object by its key
+	Get(key cipher.SHA256) (v []byte, ok bool)
+	// Set object using it pre-calculated key
+	Set(key cipher.SHA256, data []byte)
+	// Range over data objects (read-only)
+	Range(fn func(key cipher.SHA256))
+	// AddAutoKey add an object ot DB and get its key
+	AddAutoKey(data []byte) (key cipher.SHA256)
+	// Del deletes and object by its key
+	Del(key cipher.SHA256)
+
+	//
+	// Root objects related methods
+	//
+
+	// Root by hash
+	Root(hash cipher.SHA256) (rp RootPack, ok bool)
+	// Roots returns key of all roots of a feed
+	Roots(pk cipher.PubKey) (keys []cipher.SHA256)
+	// AddRoot to the feed
+	AddRoot(pk cipher.PubKey, rp RootPack)
+	// RangeFeed
+	RangeFeed(pk cipher.PubKey, fn func(hash cipher.SHA256, rp RootPack))
+
+	//
+	// Other methods
+	//
+
+	// Stat of the DB
+	Stat() (s Stat)
+	// Close the DB
+	Close() (err error)
 }
 
-//
-func (d *DB) Has(key cipher.SHA256) (ok bool) {
-	d.RLock()
-	defer d.RUnlock()
-	_, ok = d.data[key]
-	return
-}
+// A RootPack represents encoded root object with signature,
+// seq number, and next/prev/this hashes
+type RootPack struct {
+	Root []byte
+	Sig  cipher.Sig
+	Seq  uint64
 
-// Get value by key
-func (d *DB) Get(key cipher.SHA256) (v []byte, ok bool) {
-	d.RLock()
-	defer d.RUnlock()
-	v, ok = d.data[key]
-	return
-}
-
-// Set or overwrite key-value pair
-func (d *DB) Set(key cipher.SHA256, data []byte) {
-	d.Lock()
-	defer d.Unlock()
-	d.data[key] = data
-}
-
-// Range over keys of DB, fn must not be nil (read only)
-func (d *DB) Range(fn func(key cipher.SHA256)) {
-	d.RLock()
-	defer d.RUnlock()
-	for k := range d.data {
-		fn(k)
-	}
-}
-
-func (d *DB) AddAutoKey(data []byte) (key cipher.SHA256) {
-	key = cipher.SumSHA256(data)
-	d.Lock()
-	defer d.Unlock()
-	d.data[key] = data
-	return
-}
-
-func (d *DB) Del(key cipher.SHA256) {
-	d.Lock()
-	defer d.Unlock()
-	delete(d.data, key)
-}
-
-// Stat return statistic of the DB
-func (d *DB) Stat() (s Stat) {
-	d.RLock()
-	defer d.RUnlock()
-	s.Total = len(d.data)
-	for _, v := range d.data {
-		s.Memory += len(v)
-	}
-	return
+	Hash RootReference
+	Prev RootReference
+	Next RootReference
 }

@@ -763,16 +763,6 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 	return
 }
 
-// BoltStat returns statistiv of boltdb or empty
-// bolt.Stats if bolt disabled
-func (s *Server) BoltStat() (boltStat bolt.Stats, ok bool) {
-	if s.db != nil {
-		ok = true
-		boltStat = s.db.Stats()
-	}
-	return
-}
-
 // Stat returns satatistic of database
 func (s *Server) Stat() data.Stat {
 	return s.so.DB().Stat()

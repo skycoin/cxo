@@ -6,10 +6,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/boltdb/bolt"
-
-	"github.com/skycoin/skycoin/src/visor/blockdb"
-
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
@@ -28,9 +24,6 @@ var (
 type Container struct {
 	sync.RWMutex
 
-	bolt  *bolt.DB           // bolt db instance
-	block *blockdb.BlockTree // save roots here
-
 	db *data.DB // databse
 
 	coreRegistry *Registry // registry witch which the container was created
@@ -47,23 +40,28 @@ func NewContainer(reg *Registry) *Container {
 
 // NewContainerDB creates new Container using given databse and
 // optional Registry. If Registry is no nil, then the registry
-// will be used to create Dynamic objects. The Registry will be
-// used as registry of all Root objects created by the Container.
-// If Regsitry is nil then the Container can be used server-side.
-// Creating Dynamic and Root objects without Registry causes panic
+// will be used to create Root objects by NewRoot. The registry
+// is just usablility trick. You can create a Container without
+// registry, add a Registry using AddRegistry method and
+// create a Root using NewRootReg method
 func NewContainerDB(db *data.DB, reg *Registry) (c *Container) {
 	if db == nil {
-		panic("nil db")
+		panic("missing *data.DB")
 	}
 	c = new(Container)
 	c.db = db
 	c.registries = make(map[RegistryReference]*Registry)
 	if reg != nil {
 		reg.Done()
+		// sstore registry in database
+		c.db.Set(cipher.SHA256(reg.Reference()), reg.Encode())
 		c.coreRegistry = reg
 		c.registries[reg.Reference()] = reg
 	}
 	c.roots = make(map[cipher.PubKey]*roots)
+
+	// TODO: load roots from database
+
 	return
 }
 
@@ -76,6 +74,7 @@ func (c *Container) AddRegistry(r *Registry) {
 	defer c.Unlock()
 	// call Done
 	r.Done()
+	c.db.Set(cipher.SHA256(reg.Reference()), reg.Encode()) // store
 	// don't replace
 	if _, ok := c.registries[r.Reference()]; !ok {
 		c.registries[r.Reference()] = r
@@ -90,18 +89,23 @@ func (c *Container) CoreRegistry() *Registry {
 
 // Registry by reference
 func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
+	// c.coreRegistry is read-only and we don't need to lock/inlock
+	if c.coreRegistry != nil && rr == c.coreRegistry.Reference() {
+		reg = c.coreRegistry
+		return
+	}
 	c.RLock()
 	defer c.RUnlock()
-
-	var ok bool
+	// never lookup database keeping all registries as a hot-list,
+	// because registries are slow to unpack, and a Root object
+	// has short-hand reference to related Registry
 	if reg, ok = c.registries[rr]; !ok {
-		err = fmt.Errorf("missing registry %q", rr.String())
+		err = &MissingRegistryError{rr}
 	}
 	return
 }
 
-// WantRegistry reports true if given registry
-// wanted by the Container
+// WantRegistry returns true if given registry wanted by the Container
 func (c *Container) WantRegistry(rr RegistryReference) bool {
 	c.RLock()
 	defer c.RUnlock()
@@ -211,17 +215,22 @@ func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	if err = pk.Verify(); err != nil {
 		return
 	}
+
 	if err = sk.Verify(); err != nil {
 		return
 	}
+
 	//
 	// TODO: (high priority) solve timestamp-seq conflicts priority
 	//
+
 	var seq uint64 = 0
+
 	// checking for existing root objects
 	if r = c.lastRoot(pk); r != nil {
 		seq = r.Seq()
 	}
+
 	// create
 	r = new(Root)
 
@@ -463,6 +472,11 @@ func (c *Container) addRoot(r *Root) (err error) {
 	c.Lock()
 	defer c.Unlock()
 
+	// the Root locked, we can access all its fields
+
+	// encode, sign and update hash of the root
+	var rp data.RootPack = r.encode()
+
 	var rs *roots
 	if rs = c.roots[r.Pub()]; rs == nil {
 		rs = new(roots)
@@ -470,84 +484,4 @@ func (c *Container) addRoot(r *Root) (err error) {
 	}
 	err = rs.add(r) // make a shadow copy
 	return
-}
-
-// roots is list of root object of a feed sorted by Seq number
-type roots struct {
-	store []*Root // shadow copies
-}
-
-// sorting
-func (r *roots) sort() {
-	sort.Sort(r)
-}
-
-func (r *roots) Len() int {
-	return len(r.store)
-}
-
-func (r *roots) Less(i, j int) bool {
-	return r.store[i].Seq() < r.store[j].Seq()
-}
-
-func (r *roots) Swap(i, j int) {
-	r.store[i], r.store[j] = r.store[j], r.store[i]
-}
-
-func (r *roots) add(t *Root) error {
-	// TODO: reimplement using sort.Search to be faster
-	for _, e := range r.store {
-		// if i == 0 {
-		// 	if t.Seq() < e.Seq() {
-		// 		// older then first (fuck it)
-		// 		return errors.New("too old") // TODO
-		// 	}
-		// }
-		if t.Seq() == e.Seq() {
-			// already have a root with the same seq (fuck it)
-			return ErrAlreadyHaveThisRoot
-		}
-	}
-	t = t.dup() // make a copy
-	r.store = append(r.store, t)
-	r.sort()
-	return nil
-}
-
-func (r *roots) latest() (t *Root) {
-	if len(r.store) > 0 {
-		t = r.store[len(r.store)-1]
-	}
-	return
-}
-
-func (r *roots) latestFull() *Root {
-	for i := len(r.store) - 1; i >= 0; i-- { // from tail
-		if x := r.store[i]; x.IsFull() {
-			return x
-		}
-	}
-	return nil
-}
-
-// depricated
-func (r *roots) bySeq(seq uint64) *Root {
-	i := sort.Search(len(r.store), func(i int) bool {
-		return r.store[i].Seq() >= seq
-	})
-	if i < len(r.store) && r.store[i].Seq() == seq {
-		return r.store[i]
-	}
-	return nil // not found
-}
-
-func (r *roots) gc() {
-	for i := len(r.store); i >= 0; i-- { // from tail
-		if x := (r.store)[i]; x.IsFull() {
-			if i > 0 { // avoid recreating slice
-				r.store = r.store[i:]
-			}
-			return
-		}
-	}
 }

@@ -14,11 +14,22 @@ import (
 )
 
 var (
-	ErrStopRange        = errors.New("stop range")
+	// ErrStopRange is special service error used
+	// to stop WantFunc, etc itteratings
+	ErrStopRange = errors.New("stop range")
+	// ErrMissingSecretKey occurs when you want to
+	// modify a root that hassn't been created by
+	// NewRoot or NewRootReg methods of a Container
 	ErrMissingSecretKey = errors.New("missing secret key")
 )
 
-// A Root represents ...
+// A Root represents root object of a feed.
+// A Root can be detached and can be read-only.
+// If a Root created by (*Container).NewRoot
+// then you can modify it, otherwise can not.
+// When you cann Touch, Inject, InjectMany or
+// Replace methods the root stores itself in
+// database of related container
 type Root struct {
 	sync.RWMutex
 
@@ -28,35 +39,53 @@ type Root struct {
 	seq  uint64            // seq number (rw) atomic
 
 	pub cipher.PubKey // public key (ro)
-	sec cipher.SecKey // secret key (ro)
+	sec cipher.SecKey // secret key (rw)
 
 	sig cipher.Sig // signature (rw)
 
 	full bool       // is the root full (rw)
 	cnt  *Container // back reference (ro)
 
+	hash cipher.SHA256 // hash of the Root
+	next cipher.SHA256 // hash of next root
+	prev cipher.SHA256 // hash of previous root
+
+	attached bool // is attached
+
 	rsh *Registry // short hand for registry
 }
 
-func (r *Root) dup() (d *Root) {
-	d = new(Root)
-	if len(r.refs) > 0 {
-		d.refs = make([]Dynamic, len(r.refs))
-		copy(d.refs, r.refs)
-	}
-	d.reg = r.reg
-	d.time = r.time
-	d.seq = r.Seq()
-	d.pub = r.pub
-	d.sec = r.sec
-	d.sig = r.sig
-	d.full = r.full
-	d.cnt = r.cnt
-	d.rsh = r.rsh
+// ReadOnly returns true if you can't modify the root
+func (r *Root) ReadOnly() (yep bool) {
+	r.RLock()
+	defer r.RUnlock()
+	yep = r.sec == (cipher.SecKey{})
 	return
 }
 
-// Registry returns related registry of "missing registry" error
+// IsAttached returns true if the Root has been
+// stored in related Container and its values like
+// Seq, Hash, PrevHash (and possible NextHash),
+// Sig and Time are actual
+func (r *Root) IsAttached() (yep bool) {
+	r.RLock()
+	defer r.RUnlock()
+	yep = r.attached
+	return
+}
+
+// Edit turns read-only Root to read-write
+// adding secret key to it. Developer must
+// be sure that the secre key (s)he provide
+// related to the feed of the root
+func (r *Root) Edit(sk cipher.SecKey) {
+	r.Lock()
+	defer r.Unlock()
+	r.sec = sk
+}
+
+// Registry returns related Registry. If Registry of the Root
+// not found in database the mthod returns Missing registry error
 func (r *Root) Registry() (reg *Registry, err error) {
 	r.RLock()
 	defer r.RUnlock()
@@ -75,6 +104,8 @@ func (r *Root) registry() (reg *Registry, err error) {
 	return
 }
 
+// RegistryReference returns reference to Registry
+// related to the Root
 func (r *Root) RegistryReference() RegistryReference {
 	return r.reg
 }
@@ -82,31 +113,30 @@ func (r *Root) RegistryReference() RegistryReference {
 // Touch updates timestamp of the Root (setting it to now)
 // and increments seq number. The Touch implicitly called
 // inside Inject, InjectMany and Replace methods
-func (r *Root) Touch() (RootPack, error) {
+func (r *Root) Touch() (data.RootPack, error) {
 	r.Lock()
 	defer r.Unlock()
 	return r.touch()
 }
 
-func (r *Root) touch() (rp RootPack, err error) {
+// call under lock
+func (r *Root) touch() (rp data.RootPack, err error) {
 	if r.sec == (cipher.SecKey{}) {
 		err = ErrMissingSecretKey
 		return
 	}
 	r.time = time.Now().UnixNano()
-	atomic.AddUint64(&r.seq, 1)
-	rp = r.encode()        // to update signature
-	err = r.cnt.addRoot(r) // updated
+	err = r.cnt.addRoot(r)
 	return
 }
 
-// Seq returns seq number of the Root
+// Seq returns seq number of the Root.
+// It can returns 0 if the root is detached
+// or first =) Cheese
 func (r *Root) Seq() uint64 {
-	return atomic.LoadUint64(&r.seq)
-}
-
-func (r *Root) SetSeq(seq uint64) {
-	atomic.StoreUint64(&r.seq, seq)
+	r.RLock()
+	defer r.RUnlock()
+	return r.seq
 }
 
 // Time returns unix nano timestamp of the Root
@@ -128,6 +158,34 @@ func (r *Root) Sig() cipher.Sig {
 	return r.sig
 }
 
+// Hash returns RootReference to the Root
+func (r *Root) Hash() RootReference {
+	r.RLock()
+	defer r.RUnlock()
+	return r.hash
+}
+
+// PrevHash returns RootReference to previous
+// Root of the Root. It can be empty if Seq is
+// 0. But, be carefull, any detached root
+// returns seq = 0. For all attached roots
+// (except first (seq=0)) has valid non-blank
+// reference to previous root
+func (r *Root) PrevHash() RootReference {
+	r.RLock()
+	defer r.RUnlock()
+	return r.prev
+}
+
+// NextHash returns RootReference to next
+// Root of the Root. It can be empty even
+// next Root exists
+func (r *Root) NextHash() RootReference {
+	r.RLock()
+	defer r.RUnlock()
+	return r.next
+}
+
 // IsFull reports true if the Root is full
 // (has all related schemas and objects).
 // The IsFull always retruns false for freshly
@@ -141,7 +199,7 @@ func (r *Root) IsFull() bool {
 	if !r.HasRegistry() {
 		return false
 	}
-	if r.sig == (cipher.Sig{}) { // fresh
+	if !r.attached { // fresh (detached root can't be full)
 		return false
 	}
 	var want bool = false
@@ -160,33 +218,36 @@ func (r *Root) IsFull() bool {
 }
 
 // Encode the Root and get its Signature
-func (r *Root) Encode() (rp RootPack) {
+func (r *Root) Encode() (rp data.RootPack) {
 	r.RLock()
 	defer r.RUnlock()
 	rp = r.encode()
 	return
 }
 
-// A RootPack represents encoded root object with signature
-type RootPack struct {
-	Root []byte
-	Sig  cipher.Sig
-}
-
-func (r *Root) encode() (rp RootPack) {
+func (r *Root) encode() (rp data.RootPack) {
 	var x encodedRoot
 	x.Refs = r.refs
 	x.Reg = r.reg
 	x.Time = r.time
 	x.Seq = r.Seq()
 	x.Pub = r.pub
-	rp.Root = encoder.Serialize(x) // b
-	if r.sec != (cipher.SecKey{}) {
-		// sign if need
-		hash := cipher.SumSHA256(rp.Root)
-		r.sig = cipher.SignHash(hash, r.sec) // sig
+
+	rp.Root = encoder.Serialize(x) // []byte
+
+	r.hash = cipher.SumSHA256(rp.Root)
+	rp.Hash = r.hash
+
+	if r.sec != (cipher.SecKey{}) { // sign if need
+		r.sig = cipher.SignHash(r.hash, r.sec)
 	}
 	rp.Sig = r.sig
+
+	rp.Prev = r.prev
+	rp.Next = r.next
+
+	rp.Seq = r.seq
+
 	return
 }
 
@@ -257,7 +318,7 @@ func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
 // Inject an object to the Root updating the seq,
 // timestamp and signature of the Root
 func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
-	rp RootPack, err error) {
+	rp data.RootPack, err error) {
 
 	if inj, err = r.Dynamic(schemaName, i); err != nil {
 		return
@@ -272,7 +333,7 @@ func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
 // InjectMany objects to the Root updating the seq,
 // timestamp and signature of the Root
 func (r *Root) InjectMany(schemaName string, i ...interface{}) (injs []Dynamic,
-	rp RootPack, err error) {
+	rp data.RootPack, err error) {
 
 	injs = make([]Dynamic, 0, len(i))
 	var inj Dynamic
@@ -306,7 +367,7 @@ func (r *Root) Refs() (refs []Dynamic) {
 // least, by a Root that uses the same Registry). The Replace
 // implicitly updates seq, timestamp and signature of the Root.
 // The method returns list of previous references of the Root
-func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, rp RootPack,
+func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, rp data.RootPack,
 	err error) {
 
 	r.Lock()
@@ -368,6 +429,8 @@ func (r *Root) ValueByStatic(schemaName string, ref Reference) (val *Value,
 	return
 }
 
+// Values returns root vlaues of the root. It can returns
+// errors if related Registry, Schemas or Objects are misisng
 func (r *Root) Values() (vals []*Value, err error) {
 	r.RLock()
 	defer r.RUnlock()
