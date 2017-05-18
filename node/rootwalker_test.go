@@ -439,16 +439,18 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 		s, _ := fv.String()
 		return s == "Talk"
 	})
+
 	if e != nil {
 		t.Error("advance from root failed:", e)
 	}
-	t.Log(w.String())
+
+	t.Log("\n Before:", w.String())
 
 	_, e = w.AppendToRefsField("Threads", Thread{Name: "New Thread"})
 	if e != nil {
 		t.Error("append thread to board failed:", e)
 	}
-	t.Log(w.String())
+	t.Log("\n After:", w.String())
 
 	thread := &Thread{}
 	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
@@ -460,6 +462,155 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 		t.Error("advance from board to thread failed:", e)
 	}
 	t.Log(w.String())
+}
+
+func TestWalker_ReplaceInRefsField(t *testing.T) {
+	pk, sk := genKeyPair()
+	client := newClient()
+	defer client.Close()
+	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+	board := &Board{}
+	e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+		if v.Schema().Name() != "Board" {
+			return false
+		}
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "Talk"
+	})
+
+	if e != nil {
+		t.Error("advance from root failed:", e)
+	}
+
+	t.Log("\n Before:", w.String())
+
+	e = w.ReplaceInRefsField("Threads", &Thread{Name: "New Thread"}, func(v *skyobject.Value) (chosen bool) {
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "Greetings"
+	})
+	if e != nil {
+		t.Error("replace board thread failed:", e)
+	}
+	t.Log("\n After:", w.String())
+
+	thread := &Thread{}
+	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "New Thread"
+	})
+	if e != nil {
+		t.Error("advance from board to the new thread failed:", e)
+	}
+	t.Log(w.String())
+}
+
+func TestWalker_RemoveInRefsField(t *testing.T) {
+	t.Run("depth of 1", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+
+		t.Log("\n Before:", w.String())
+
+		e = w.RemoveInRefsField("Threads", func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+
+		if e != nil {
+			t.Error("replace board thread failed:", e)
+		}
+
+		t.Log("\n After:", w.String())
+
+		thread := &Thread{}
+		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+
+		if e != nil {
+			t.Log("Removed thread: Greetings")
+		} else {
+			t.Error("removing thread failed")
+		}
+
+		t.Log(w.String())
+	})
+	t.Run("depth of 2", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+
+		thread := &Thread{}
+		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+		if e != nil {
+			t.Error("advance from board to thread failed:", e)
+		}
+		t.Log("\n Before:", w.String())
+
+		e = w.RemoveInRefsField("Posts", func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Title")
+			s, _ := fv.String()
+			return s == "Bye"
+		})
+
+		t.Log("\n After:", w.String())
+
+		e = w.AdvanceFromRefsField("Posts", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Title")
+			s, _ := fv.String()
+			return s == "Bye"
+		})
+
+		if e != nil {
+			t.Log("Removed post: Bye")
+		} else {
+			t.Error("removing post failed")
+		}
+		//Write another test for deeper level
+		t.Log(w.String())
+	})
 }
 
 func TestWalker_ReplaceInRefField(t *testing.T) {

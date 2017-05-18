@@ -329,6 +329,7 @@ func (w *RootWalker) ReplaceCurrent(p interface{}) error {
 		return e
 	}
 
+	// Create dynamic reference from replacement
 	dyn := skyobject.Dynamic{
 		Object: w.r.Save(p),
 		Schema: tObj.s,
@@ -369,6 +370,7 @@ func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) (skyobje
 	if e != nil {
 		return nRef, e
 	}
+
 	tRefs = append(tRefs, nRef)
 	if e := tObj.replaceReferencesField(fieldName, tRefs); e != nil {
 		return nRef, e
@@ -382,18 +384,110 @@ func (w *RootWalker) AppendToRefsField(fieldName string, p interface{}) (skyobje
 // ReplaceInRefsField replaces a reference in a field of type `skyobject.References`
 // with the object that `p` points to. It uses a Finder implementation to find the
 // old reference to replace.
-// TODO: Implement.
-func (w *RootWalker) ReplaceInRefsField(fieldName string, p interface{},
-	finder func(v *skyobject.Value) bool) error {
-	return errors.New("not implemented")
+func (w *RootWalker) ReplaceInRefsField(fieldName string, p interface{}, finder func(v *skyobject.Value) bool) error {
+	// Check root.
+	r := w.r
+	if w.r == nil {
+		return ErrRootNotFound
+	}
+
+	// Obtain top-most object from internal stack.
+	obj, e := w.peek()
+	if e != nil {
+		return e
+	}
+
+	// Obtain data from top-most object.
+	// Obtain field's value and schema name.
+	fRefs, fSchemaName, e := obj.getFieldAsReferences(fieldName)
+	if e != nil {
+		return e
+	}
+
+	// Get Schema of field references.
+	schema, e := r.SchemaByName(fSchemaName)
+	if e != nil {
+		return e
+	}
+
+	// Save new obj.
+	nRef := w.r.Save(p)
+
+	// Loop through References and apply Finder.
+	for i, ref := range fRefs {
+		// Create dynamic reference.
+		dynamic := skyobject.Dynamic{
+			Object: ref,
+			Schema: schema.Reference(),
+		}
+		// Obtain value from root.
+		v, e := r.ValueByDynamic(dynamic)
+		if e != nil {
+			return e
+		}
+		// See if it's the object with Finder.
+		if finder(v) {
+			// Deserialize.
+			if e := encoder.DeserializeRaw(v.Data(), p); e != nil {
+				return e
+			}
+			fRefs[i] = nRef
+			_, e = obj.save(nil)
+			return e
+		}
+	}
+	return ErrObjNotFound
 }
 
 // RemoveInRefsField removes a reference in a field of type `skyobject.References`.
 // It uses the Finder implementation to find the reference to remove.
-// TODO: Implement.
-func (w *RootWalker) RemoveInRefsField(fieldName string,
-	finder func(v *skyobject.Value) bool) error {
-	return errors.New("not implemented")
+func (w *RootWalker) RemoveInRefsField(fieldName string, finder func(v *skyobject.Value) bool) error {
+	// Check root.
+	r := w.r
+	if w.r == nil {
+		return ErrRootNotFound
+	}
+
+	// Obtain top-most object from internal stack.
+	obj, e := w.peek()
+	if e != nil {
+		return e
+	}
+
+	// Obtain data from top-most object.
+	// Obtain field's value and schema name.
+	fRefs, fSchemaName, e := obj.getFieldAsReferences(fieldName)
+	if e != nil {
+		return e
+	}
+
+	// Get Schema of field references.
+	schema, e := r.SchemaByName(fSchemaName)
+	if e != nil {
+		return e
+	}
+
+	// Loop through References and apply Finder.
+	for i, ref := range fRefs {
+		// Create dynamic reference.
+		dynamic := skyobject.Dynamic{
+			Object: ref,
+			Schema: schema.Reference(),
+		}
+		// Obtain value from root.
+		v, e := r.ValueByDynamic(dynamic)
+		if e != nil {
+			return e
+		}
+		// See if it's the object with Finder.
+		if finder(v) {
+			fRefs = append(fRefs[:i], fRefs[i+1:]...)
+			e = obj.replaceReferencesField(fieldName, fRefs) //forcing refs replacement
+			_, e = obj.save(nil)
+			return e
+		}
+	}
+	return ErrObjNotFound
 }
 
 // ReplaceInRefField replaces the reference field of the top-most object with a
@@ -530,9 +624,7 @@ func (o *objWrap) elem() reflect.Value {
 	return reflect.ValueOf(o.p).Elem()
 }
 
-func (o *objWrap) getFieldAsReferences(fieldName string) (
-	refs skyobject.References, schemaName string, e error,
-) {
+func (o *objWrap) getFieldAsReferences(fieldName string) (refs skyobject.References, schemaName string, e error) {
 	v := o.elem()
 	vt := v.Type()
 
@@ -558,9 +650,7 @@ func (o *objWrap) getFieldAsReferences(fieldName string) (
 	return
 }
 
-func (o *objWrap) getFieldAsReference(fieldName string) (
-	ref skyobject.Reference, schemaName string, e error,
-) {
+func (o *objWrap) getFieldAsReference(fieldName string) (ref skyobject.Reference, schemaName string, e error) {
 	v := o.elem()
 	vt := v.Type()
 
@@ -586,9 +676,7 @@ func (o *objWrap) getFieldAsReference(fieldName string) (
 	return
 }
 
-func (o *objWrap) getFieldAsDynamic(fieldName string) (
-	dyn skyobject.Dynamic, e error,
-) {
+func (o *objWrap) getFieldAsDynamic(fieldName string) (dyn skyobject.Dynamic, e error) {
 	v := o.elem()
 	vt := v.Type()
 
@@ -615,8 +703,8 @@ func (o *objWrap) getSchema(ct *skyobject.Container) skyobject.Schema {
 	return s
 }
 
-func (o *objWrap) replaceReferencesField(fieldName string,
-	newRefs skyobject.References) (e error) {
+// replaceReferencesField replaces currrent object.fieldName references with new references
+func (o *objWrap) replaceReferencesField(fieldName string, newRefs skyobject.References) (e error) {
 
 	v := o.elem()
 	vt := v.Type()
@@ -637,8 +725,7 @@ func (o *objWrap) replaceReferencesField(fieldName string,
 	return
 }
 
-func (o *objWrap) replaceReferenceField(fieldName string,
-	newRef skyobject.Reference) (e error) {
+func (o *objWrap) replaceReferenceField(fieldName string, newRef skyobject.Reference) (e error) {
 
 	v := o.elem()
 	vt := v.Type()
@@ -659,8 +746,7 @@ func (o *objWrap) replaceReferenceField(fieldName string,
 	return
 }
 
-func (o *objWrap) replaceDynamicField(fieldName string,
-	newDyn skyobject.Dynamic) (e error) {
+func (o *objWrap) replaceDynamicField(fieldName string, newDyn skyobject.Dynamic) (e error) {
 
 	v := o.elem()
 	vt := v.Type()
