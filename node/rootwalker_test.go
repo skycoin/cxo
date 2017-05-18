@@ -157,6 +157,7 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 		t.Error("advance from board to thread failed:", e)
 	}
 
+	t.Log(len(thread.Posts))
 	e = w.AdvanceFromRefsField("Posts", post, func(v *skyobject.Value) (chosen bool) {
 		fv, _ := v.FieldByName("Title")
 		s, _ := fv.String()
@@ -208,7 +209,7 @@ func TestWalker_GetFromRefsField(t *testing.T) {
 		s, _ := fv.String()
 		return s == "Hi"
 	})
-	t.Log("\n", post)
+	t.Log("\nPost = ", post)
 	if e != nil {
 		t.Error("get posts from thread failed:", e)
 	}
@@ -252,6 +253,50 @@ func TestWalker_AdvanceFromRefField(t *testing.T) {
 	if e != nil {
 		t.Error("advance from thread to person failed:", e)
 	}
+	t.Log("\n", w.String())
+}
+
+func TestWalker_GetFromRefField(t *testing.T) {
+	pk, sk := genKeyPair()
+	client := newClient()
+	defer client.Close()
+	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+	board := &Board{}
+	thread := &Thread{}
+	person := &Person{}
+
+	var e error
+
+	e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+		if v.Schema().Name() != "Board" {
+			return false
+		}
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "Talk"
+	})
+
+	if e != nil {
+		t.Error("advance from root to board failed:", e)
+	}
+
+	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "Greetings"
+	})
+
+	if e != nil {
+		t.Error("advance from board to thread failed:", e)
+	}
+
+	_, e = w.GetFromRefField("Creator", person)
+	if e != nil {
+		t.Error("advance from thread to person failed:", e)
+	}
+
+	t.Log("\nCreator = ", person)
 	t.Log("\n", w.String())
 }
 
@@ -312,6 +357,69 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 		if e != nil {
 			t.Error("advance from board to dynamic person failed:", e)
 		}
+		t.Log("\n", w.String())
+	})
+}
+
+func TestWalker_GetFromDynamicField(t *testing.T) {
+	t.Run("dynamic post", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		post := &Post{}
+
+		var e error
+
+		e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Test"
+		})
+		if e != nil {
+			t.Error("advance from root to board failed:", e)
+		}
+
+		_, e = w.GetFromDynamicField("Featured", post)
+		if e != nil {
+			t.Error("advance from board to dynamic post failed:", e)
+		}
+		t.Log("\nFeatured = ", post)
+		t.Log("\n", w.String())
+	})
+	t.Run("dynamic person", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		person := &Person{}
+
+		var e error
+
+		e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		if e != nil {
+			t.Error("advance from root to board failed:", e)
+		}
+
+		_, e = w.GetFromDynamicField("Featured", person)
+		if e != nil {
+			t.Error("advance from board to dynamic person failed:", e)
+		}
+		t.Log("\nFeatured = ", person)
 		t.Log("\n", w.String())
 	})
 }

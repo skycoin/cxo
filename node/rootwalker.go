@@ -106,6 +106,7 @@ func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{}, finde
 	if newObj, err = w.GetFromRefsField(fieldName, p, finder); err == nil {
 		// saving pointer of this new generated object to the previous on the stack
 		newObj.prev.next = newObj
+		// Add to internal stack.
 		w.stack = append(w.stack, newObj)
 	}
 	return err
@@ -171,31 +172,46 @@ func (w *RootWalker) GetFromRefsField(fieldName string, p interface{}, finder fu
 // 'skyobject.Reference'. No Finder is required as field is a single reference.
 // Input 'p' should be provided with a pointer to the object in which the
 // chosen child object should deserialize to
-func (w *RootWalker) AdvanceFromRefField(fieldName string, p interface{}) error {
+func (w *RootWalker) AdvanceFromRefField(fieldName string, p interface{}) (err error) {
+	newObj := &objWrap{}
+	if newObj, err = w.GetFromRefField(fieldName, p); err == nil {
+		// saving pointer of this new generated object to the previous on the stack
+		newObj.prev.next = newObj
+		// Add to internal stack.
+		w.stack = append(w.stack, newObj)
+	}
+	return err
+}
 
+// GetFromRefField get child from a field of name 'prevFieldName' and type
+// 'skyobject.Reference'. No Finder is required as field is a single reference.
+// Input 'p' should be provided with a pointer to the object in which the
+// chosen child object should deserialize to.
+func (w *RootWalker) GetFromRefField(fieldName string, p interface{}) (*objWrap, error) {
+	newObj := &objWrap{}
 	// Check root.
 	r := w.r
 	if w.r == nil {
-		return ErrRootNotFound
+		return newObj, ErrRootNotFound
 	}
 
 	// Obtain top-most object from internal stack.
 	obj, e := w.peek()
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Obtain data from top-most object.
 	// Obtain field's value and schema name.
 	fRef, fSchemaName, e := obj.getFieldAsReference(fieldName)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Get Schema of field reference.
 	schema, e := r.SchemaByName(fSchemaName)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Create dynamic reference.
@@ -203,61 +219,73 @@ func (w *RootWalker) AdvanceFromRefField(fieldName string, p interface{}) error 
 		Object: fRef,
 		Schema: schema.Reference(),
 	}
+
 	// Obtain value from root.
 	v, e := r.ValueByDynamic(dynamic)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Deserialize.
 	if e := encoder.DeserializeRaw(v.Data(), p); e != nil {
-		return e
+		return newObj, e
 	}
-	// Add to internal stack.
-	newObj := obj.advance(v.Schema().Reference(), p, fieldName, -1)
-	w.stack = append(w.stack, newObj)
-	return nil
+
+	return obj.generate(v.Schema().Reference(), p, fieldName, -1), nil
 }
 
 // AdvanceFromDynamicField advances from a field of name 'prevFieldName' and
 // type 'skyobject.Dynamic'. No Finder is required as field is a single
 // reference. Input 'p' should be provided with a pointer to the object in which
 // the chosen child object should deserialize to
-func (w *RootWalker) AdvanceFromDynamicField(fieldName string, p interface{}) error {
+func (w *RootWalker) AdvanceFromDynamicField(fieldName string, p interface{}) (err error) {
+	newObj := &objWrap{}
+	if newObj, err = w.GetFromDynamicField(fieldName, p); err == nil {
+		// saving pointer of this new generated object to the previous on the stack
+		newObj.prev.next = newObj
+		// Add to internal stack.
+		w.stack = append(w.stack, newObj)
+	}
+	return err
+}
 
+// GetFromDynamicField starts from a field of name 'prevFieldName' and
+// type 'skyobject.Dynamic'. No Finder is required as field is a single
+// reference. Input 'p' should be provided with a pointer to the object in which
+// the chosen child object should deserialize to
+func (w *RootWalker) GetFromDynamicField(fieldName string, p interface{}) (*objWrap, error) {
+	newObj := &objWrap{}
 	// Check root.
 	r := w.r
 	if w.r == nil {
-		return ErrRootNotFound
+		return newObj, ErrRootNotFound
 	}
 
 	// Obtain top-most object from internal stack.
 	obj, e := w.peek()
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Obtain data from top-most object.
 	// Obtain field's value and schema name.
 	fDyn, e := obj.getFieldAsDynamic(fieldName)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Obtain value from root.
 	v, e := r.ValueByDynamic(fDyn)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Deserialize.
 	if e := encoder.DeserializeRaw(v.Data(), p); e != nil {
-		return e
+		return newObj, e
 	}
-	// Add to internal stack.
-	newObj := obj.advance(v.Schema().Reference(), p, fieldName, -1)
-	w.stack = append(w.stack, newObj)
-	return nil
+
+	return obj.generate(v.Schema().Reference(), p, fieldName, -1), nil
 }
 
 // Retreat retreats one step from the internal stack.
