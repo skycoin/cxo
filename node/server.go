@@ -55,12 +55,15 @@ type Server struct {
 	rpc  *RPC // rpc server
 
 	// db
-	db     *bolt.DB
-	dbFile string
+	db *bolt.DB
 
 	// closing
 	quit  chan struct{}
 	quito sync.Once
+
+	done  chan struct{} // when quit done
+	doneo sync.Once
+
 	await sync.WaitGroup
 }
 
@@ -107,12 +110,17 @@ func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
 	}
 
 	s.quit = make(chan struct{})
+	s.done = make(chan struct{})
 
 	return
 }
 
 // Start the server
 func (s *Server) Start() (err error) {
+	var dbFile string
+	if s.db != nil {
+		dbFile = s.db.Path()
+	}
 	s.Debugf(`starting server:
     data dir:             %s
     max connections:      %d
@@ -174,7 +182,7 @@ func (s *Server) Start() (err error) {
 		s.conf.RemoteClose,
 
 		s.conf.EnableBlockDB,
-		s.dbFile,
+		dbFile,
 
 		s.conf.Log.Debug,
 	)
@@ -201,44 +209,47 @@ func (s *Server) Start() (err error) {
 }
 
 func (s *Server) openDB() (err error) {
-	s.dbFile = filepath.Join(util.DataDir, "cxod.db")
+	dbFile := filepath.Join(util.DataDir, "cxod.db")
 	if s.conf.RandomizeDBPath {
-		file, err := ioutil.TempFile("", "blockdb_")
-		if err != nil {
-			return err
+		var file *os.File
+		if file, err = ioutil.TempFile("", "blockdb_"); err != nil {
+			return
 		}
-		s.dbFile = file.Name()
+		dbFile = file.Name()
 		file.Close()
 	}
-	s.db, err = bolt.Open(s.dbFile, 0600, &bolt.Options{
+	s.db, err = bolt.Open(dbFile, 0600, &bolt.Options{
 		Timeout: 500 * time.Millisecond,
 	})
 	if err != nil {
 		return fmt.Errorf("Open boltdb failed, err:%v", err)
 	}
-	return err
+	return
 }
 
 func (s *Server) closeDB() error {
+	dbFile := s.db.Path()
 	s.db.Close()
 	if s.conf.RandomizeDBPath {
-		return os.Remove(s.dbFile)
+		return os.Remove(dbFile)
 	}
 	return nil
 }
 
 // Close the server
 func (s *Server) Close() (err error) {
+	s.quito.Do(func() {
+		close(s.quit)
+	})
 	err = s.pool.Close()
 
 	s.closeDB()
-	os.Exit(0)
 	if s.conf.EnableRPC {
 		s.rpc.Close()
 	}
 	s.await.Wait()
-	s.quito.Do(func() {
-		close(s.quit)
+	s.doneo.Do(func() {
+		close(s.done)
 	})
 	return
 }
@@ -752,11 +763,23 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 	return
 }
 
-// database satatistic
+// BoltStat returns statistiv of boltdb or empty
+// bolt.Stats if bolt disabled
+func (s *Server) BoltStat() (boltStat bolt.Stats, ok bool) {
+	if s.db != nil {
+		ok = true
+		boltStat = s.db.Stats()
+	}
+	return
+}
+
+// Stat returns satatistic of database
 func (s *Server) Stat() data.Stat {
 	return s.so.DB().Stat()
 }
 
+// Quititng returns cahnnel that closed
+// when the Server closed
 func (s *Server) Quiting() <-chan struct{} {
-	return s.quit
+	return s.done // when quit done
 }
