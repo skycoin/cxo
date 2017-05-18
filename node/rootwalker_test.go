@@ -142,6 +142,7 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 		s, _ := fv.String()
 		return s == "Talk"
 	})
+
 	if e != nil {
 		t.Error("advance from root to board failed:", e)
 	}
@@ -151,6 +152,7 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 		s, _ := fv.String()
 		return s == "Greetings"
 	})
+
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
@@ -162,6 +164,53 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 	})
 	if e != nil {
 		t.Error("advance from thread to post failed:", e)
+	}
+	t.Log("\n", w.String())
+}
+
+func TestWalker_GetFromRefsField(t *testing.T) {
+	pk, sk := genKeyPair()
+	client := newClient()
+	defer client.Close()
+	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+	board := &Board{}
+	thread := &Thread{}
+	post := &Post{}
+
+	var e error
+
+	e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+		if v.Schema().Name() != "Board" {
+			return false
+		}
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "Talk"
+	})
+
+	if e != nil {
+		t.Error("advance from root to board failed:", e)
+	}
+
+	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+		fv, _ := v.FieldByName("Name")
+		s, _ := fv.String()
+		return s == "Greetings"
+	})
+
+	if e != nil {
+		t.Error("advance from board to thread failed:", e)
+	}
+
+	_, e = w.GetFromRefsField("Posts", post, func(v *skyobject.Value) (chosen bool) {
+		fv, _ := v.FieldByName("Title")
+		s, _ := fv.String()
+		return s == "Hi"
+	})
+	t.Log("\n", post)
+	if e != nil {
+		t.Error("get posts from thread failed:", e)
 	}
 	t.Log("\n", w.String())
 }

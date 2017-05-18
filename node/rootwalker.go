@@ -65,8 +65,7 @@ func (w *RootWalker) peek() (*objWrap, error) {
 // This function auto-clears the internal stack.
 // Input 'p' should be provided with a pointer to the object in which the
 // chosen root's child should deserialize to
-func (w *RootWalker) AdvanceFromRoot(p interface{},
-	finder func(v *skyobject.Value) bool) error {
+func (w *RootWalker) AdvanceFromRoot(p interface{}, finder func(v *skyobject.Value) bool) error {
 
 	// Clear the internal stack.
 	w.Clear()
@@ -102,32 +101,45 @@ func (w *RootWalker) AdvanceFromRoot(p interface{},
 // type 'skyobject.References'. It uses a Finder implementation to find the
 // child to advance to. Input 'p' should be provided with a pointer to the
 // object in which the chosen child object should deserialize to.
-func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{},
-	finder func(v *skyobject.Value) bool) error {
+func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{}, finder func(v *skyobject.Value) bool) (err error) {
+	newObj := &objWrap{}
+	if newObj, err = w.GetFromRefsField(fieldName, p, finder); err == nil {
+		// saving pointer of this new generated object to the previous on the stack
+		newObj.prev.next = newObj
+		w.stack = append(w.stack, newObj)
+	}
+	return err
+}
 
+// GetFromRefsField starts from a field of name 'prevFieldName' and of
+// type 'skyobject.References'. It uses a Finder implementation to find
+// and deserialize the child into input 'p'. Returns the new object wrapper,
+// ready to be added to the stack
+func (w *RootWalker) GetFromRefsField(fieldName string, p interface{}, finder func(v *skyobject.Value) bool) (*objWrap, error) {
+	newObj := &objWrap{}
 	// Check root.
 	r := w.r
 	if w.r == nil {
-		return ErrRootNotFound
+		return newObj, ErrRootNotFound
 	}
 
 	// Obtain top-most object from internal stack.
 	obj, e := w.peek()
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Obtain data from top-most object.
 	// Obtain field's value and schema name.
 	fRefs, fSchemaName, e := obj.getFieldAsReferences(fieldName)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Get Schema of field references.
 	schema, e := r.SchemaByName(fSchemaName)
 	if e != nil {
-		return e
+		return newObj, e
 	}
 
 	// Loop through References and apply Finder.
@@ -140,29 +152,26 @@ func (w *RootWalker) AdvanceFromRefsField(fieldName string, p interface{},
 		// Obtain value from root.
 		v, e := r.ValueByDynamic(dynamic)
 		if e != nil {
-			return e
+			return newObj, e
 		}
 		// See if it's the object with Finder.
 		if finder(v) {
 			// Deserialize.
 			if e := encoder.DeserializeRaw(v.Data(), p); e != nil {
-				return e
+				return newObj, e
 			}
-			// Add to stack.
-			newObj := obj.generate(v.Schema().Reference(), p, fieldName, i)
-			w.stack = append(w.stack, newObj)
-			return nil
+
+			return obj.generate(v.Schema().Reference(), p, fieldName, i), nil
 		}
 	}
-	return ErrObjNotFound
+	return newObj, ErrObjNotFound
 }
 
 // AdvanceFromRefField advances from a field of name 'prevFieldName' and type
 // 'skyobject.Reference'. No Finder is required as field is a single reference.
 // Input 'p' should be provided with a pointer to the object in which the
 // chosen child object should deserialize to
-func (w *RootWalker) AdvanceFromRefField(fieldName string,
-	p interface{}) error {
+func (w *RootWalker) AdvanceFromRefField(fieldName string, p interface{}) error {
 
 	// Check root.
 	r := w.r
@@ -205,7 +214,7 @@ func (w *RootWalker) AdvanceFromRefField(fieldName string,
 		return e
 	}
 	// Add to internal stack.
-	newObj := obj.generate(v.Schema().Reference(), p, fieldName, -1)
+	newObj := obj.advance(v.Schema().Reference(), p, fieldName, -1)
 	w.stack = append(w.stack, newObj)
 	return nil
 }
@@ -214,8 +223,7 @@ func (w *RootWalker) AdvanceFromRefField(fieldName string,
 // type 'skyobject.Dynamic'. No Finder is required as field is a single
 // reference. Input 'p' should be provided with a pointer to the object in which
 // the chosen child object should deserialize to
-func (w *RootWalker) AdvanceFromDynamicField(fieldName string,
-	p interface{}) error {
+func (w *RootWalker) AdvanceFromDynamicField(fieldName string, p interface{}) error {
 
 	// Check root.
 	r := w.r
@@ -247,7 +255,7 @@ func (w *RootWalker) AdvanceFromDynamicField(fieldName string,
 		return e
 	}
 	// Add to internal stack.
-	newObj := obj.generate(v.Schema().Reference(), p, fieldName, -1)
+	newObj := obj.advance(v.Schema().Reference(), p, fieldName, -1)
 	w.stack = append(w.stack, newObj)
 	return nil
 }
@@ -307,7 +315,7 @@ func (w *RootWalker) ReplaceCurrent(p interface{}) error {
 	if tObj.prev == nil {
 		obj = w.newObj(dyn.Schema, p, tObj.prevFieldName, tObj.prevInFieldIndex)
 	} else {
-		obj = tObj.prev.generate(dyn.Schema, p, tObj.prevFieldName, tObj.prevInFieldIndex)
+		obj = tObj.prev.advance(dyn.Schema, p, tObj.prevFieldName, tObj.prevInFieldIndex)
 	}
 	w.stack = append(w.stack, obj)
 	return e
@@ -467,9 +475,7 @@ type objWrap struct {
 	w *RootWalker // Back reference.
 }
 
-func (w *RootWalker) newObj(s skyobject.SchemaReference, p interface{},
-	fn string, i int) *objWrap {
-
+func (w *RootWalker) newObj(s skyobject.SchemaReference, p interface{}, fn string, i int) *objWrap {
 	return &objWrap{
 		s:                s,
 		p:                p,
@@ -479,11 +485,15 @@ func (w *RootWalker) newObj(s skyobject.SchemaReference, p interface{},
 	}
 }
 
-func (o *objWrap) generate(s skyobject.SchemaReference, p interface{},
-	fn string, i int) *objWrap {
-
+func (o *objWrap) generate(s skyobject.SchemaReference, p interface{}, fn string, i int) *objWrap {
 	newO := o.w.newObj(s, p, fn, i)
 	newO.prev = o
+	return newO
+}
+
+// advance generates new object wrapper and saves it as next of the current object
+func (o *objWrap) advance(s skyobject.SchemaReference, p interface{}, fn string, i int) *objWrap {
+	newO := o.generate(s, p, fn, i)
 	o.next = newO
 	return newO
 }
