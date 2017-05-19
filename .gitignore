@@ -44,3 +44,5 @@ node/gnet/cover.html
 
 bbs/generate/generate
 bbs/receive/receive
+
+*.go.ignore

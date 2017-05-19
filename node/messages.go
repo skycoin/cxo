@@ -8,6 +8,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -69,7 +70,7 @@ func (*DelFeedMsg) MsgType() MsgType { return DelFeedMsgType }
 // Feed filed of the message
 type RootMsg struct {
 	Feed     cipher.PubKey
-	RootPack skyobject.RootPack
+	RootPack data.RootPack
 }
 
 // MsgType implements Msg interface

@@ -137,14 +137,21 @@ func shortHex(a string) string {
 
 func generateBoards(root *node.Root, i int) {
 
-	root.Inject("bbs.Board", Board{
+	log.Print("GENERATE BOARDS")
+	_, _, err := root.Inject("bbs.Board", Board{
 		Header:  fmt.Sprintf("Board #%d", i),
 		Threads: generateThreads(root, i),
-		Owner:   root.MustDynamic("cxo.User", User{"Alice Cooper", 16}),
+		Owner:   root.MustDynamic("bbs.User", User{"Alice Cooper", 16}),
 	})
+	if err != nil {
+		log.Print("[ERROR GENERATING BOARDS] ", err)
+	} else {
+		log.Print("BOARDS HAVE BEEN GENERATED")
+	}
 }
 
 func generateThreads(root *node.Root, i int) (threads skyobject.References) {
+	log.Print("GENERATE THREADS")
 	for t := 1; t < 4; t++ {
 		ref := root.Save(Thread{
 			Header: fmt.Sprintf("Thread #%d.%d", i, t),
@@ -152,11 +159,13 @@ func generateThreads(root *node.Root, i int) (threads skyobject.References) {
 		})
 		threads = append(threads, ref)
 	}
+	log.Print("THREADS HAVE BEEN GENERATED")
 	return
 }
 
-func generatePosts(root *node.Root, i, t int) skyobject.References {
-	return root.SaveArray(
+func generatePosts(root *node.Root, i, t int) (posts skyobject.References) {
+	log.Print("GENERATE POSTS")
+	posts = root.SaveArray(
 		Post{
 			Header: fmt.Sprintf("Post #%d.%d.1", i, t),
 			Body:   fmt.Sprintf("Body #%d.%d.1", i, t),
@@ -170,6 +179,8 @@ func generatePosts(root *node.Root, i, t int) skyobject.References {
 			Body:   fmt.Sprintf("Body #%d.%d.3", i, t),
 		},
 	)
+	log.Print("POSTS HAVE BEEN GENERATED")
+	return
 }
 
 func hashTree(r *node.Root) {

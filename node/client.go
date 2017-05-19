@@ -6,6 +6,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/node/gnet"
@@ -45,7 +46,7 @@ func NewClient(cc ClientConfig, so *skyobject.Container) (c *Client,
 	err error) {
 
 	if so == nil {
-		panic("nil so")
+		panic("missing *skyobject.Container")
 	}
 
 	c = new(Client)
@@ -218,6 +219,7 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 	}
 	root, err := s.so.AddRootPack(msg.RootPack)
 	if err != nil {
+		// TOOD: high priority after data
 		if err == skyobject.ErrAlreadyHaveThisRoot {
 			s.Debug("reject root: alredy have this root")
 			return
@@ -475,7 +477,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	return
 }
 
-func (c *Container) AddRootPack(rp skyobject.RootPack) (r *Root,
+func (c *Container) AddRootPack(rp data.RootPack) (r *Root,
 	err error) {
 
 	var sr *skyobject.Root
@@ -502,29 +504,23 @@ func (c *Container) LastFullRoot(pk cipher.PubKey) (r *Root) {
 	return
 }
 
-func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root) {
-	if sr := c.Container.RootBySeq(pk, seq); sr != nil {
-		r = &Root{sr, c}
-	}
-	return
-}
-
 type Root struct {
 	*skyobject.Root
 	c *Container
 }
 
-func (r *Root) send(rp skyobject.RootPack) {
-	if !r.c.client.hasFeed(r.Pub()) {
-		return // don't send
-	}
+func (r *Root) send(rp data.RootPack) {
+	// TODO: high priority after data and ErrAlreadyHave (above)
+	// if !r.c.client.hasFeed(r.Pub()) {
+	// 	return // don't send
+	// }
 	r.c.client.sendMessage(&RootMsg{
 		Feed:     r.Pub(),
 		RootPack: rp,
 	})
 }
 
-func (r *Root) Touch() (rp skyobject.RootPack, err error) {
+func (r *Root) Touch() (rp data.RootPack, err error) {
 	// TODO: sending never see the (*Client).feeds
 	if rp, err = r.Root.Touch(); err == nil {
 		r.send(rp)
@@ -533,7 +529,7 @@ func (r *Root) Touch() (rp skyobject.RootPack, err error) {
 }
 
 func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
-	rp skyobject.RootPack, err error) {
+	rp data.RootPack, err error) {
 
 	// TODO: sending never see the (*Client).feeds
 	if inj, rp, err = r.Root.Inject(schemName, i); err == nil {
@@ -543,7 +539,7 @@ func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
 }
 
 func (r *Root) InjectMany(schemaName string,
-	i ...interface{}) (injs []skyobject.Dynamic, rp skyobject.RootPack,
+	i ...interface{}) (injs []skyobject.Dynamic, rp data.RootPack,
 	err error) {
 
 	// TODO: sending never see the (*Client).feeds
@@ -554,7 +550,7 @@ func (r *Root) InjectMany(schemaName string,
 }
 
 func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
-	rp skyobject.RootPack, err error) {
+	rp data.RootPack, err error) {
 
 	// TODO: sending never see the (*Client).feeds
 	if prev, rp, err = r.Root.Replace(refs); err == nil {
