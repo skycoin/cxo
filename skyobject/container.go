@@ -8,9 +8,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
-
-	// DEBUG + TEMORARY
-	"log"
 )
 
 var (
@@ -520,7 +517,6 @@ func (c *Container) regsitryGC() {
 // attached then we need to increase seq number
 // and shift next/prev/hash references
 func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
-	log.Print("[SKYOBJECT] addRoot called")
 	c.Lock()
 	defer c.Unlock()
 
@@ -534,10 +530,7 @@ func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
 		// actual seq and prev, and cleared next
 		r.attached = true // make it attached
 	}
-	log.Print("[SKYOBJECT] addRoot before r.encode")
 	rp = r.encode()
-	log.Print("[SKYOBJECT] addRoot before adding to database")
 	err = c.db.AddRoot(r.pub, rp)
-	log.Print("[SKYOBJECT] addRoot finished")
 	return
 }

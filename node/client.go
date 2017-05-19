@@ -46,7 +46,7 @@ func NewClient(cc ClientConfig, so *skyobject.Container) (c *Client,
 	err error) {
 
 	if so == nil {
-		panic("nil so")
+		panic("missing *skyobject.Container")
 	}
 
 	c = new(Client)
@@ -219,6 +219,7 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 	}
 	root, err := s.so.AddRootPack(msg.RootPack)
 	if err != nil {
+		// TOOD: high priority after data
 		if err == skyobject.ErrAlreadyHaveThisRoot {
 			s.Debug("reject root: alredy have this root")
 			return
@@ -387,8 +388,6 @@ func (s *Client) handleMessage(c *gnet.Conn, msg Msg) {
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
 	}
-
-	s.Debugf("the message %T was handled", msg)
 }
 
 func (c *Client) sendMessage(msg Msg) (ok bool) {
@@ -511,7 +510,7 @@ type Root struct {
 }
 
 func (r *Root) send(rp data.RootPack) {
-	r.c.client.Debug("sending root")
+	// TODO: high priority after data and ErrAlreadyHave (above)
 	// if !r.c.client.hasFeed(r.Pub()) {
 	// 	return // don't send
 	// }
@@ -532,16 +531,10 @@ func (r *Root) Touch() (rp data.RootPack, err error) {
 func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
 	rp data.RootPack, err error) {
 
-	r.c.client.Debug("[*node.Root] start Inject")
-
 	// TODO: sending never see the (*Client).feeds
 	if inj, rp, err = r.Root.Inject(schemName, i); err == nil {
-		r.c.client.Debug("[*node.Root] Inject: sending")
 		r.send(rp)
-	} else {
-		r.c.client.Debug("[*node.Root] Inject-ing error: ", err)
 	}
-	r.c.client.Debug("[*node.Root] Inject-ing done")
 	return
 }
 

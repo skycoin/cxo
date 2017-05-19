@@ -456,6 +456,7 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	}
 	root, err := s.so.AddRootPack(msg.RootPack)
 	if err != nil {
+		// TODO: high priority after database
 		if err == skyobject.ErrAlreadyHaveThisRoot {
 			s.Debug("reject root: alredy have this root")
 			return
@@ -631,8 +632,6 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
 	}
-
-	s.Debugf("the message %T was handled", msg)
 }
 
 //
