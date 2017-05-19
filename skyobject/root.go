@@ -54,8 +54,8 @@ type Root struct {
 	rsh *Registry // short hand for registry
 }
 
-// ReadOnly returns true if you can't modify the root
-func (r *Root) ReadOnly() (yep bool) {
+// IsReadOnly returns true if you can't modify the root
+func (r *Root) IsReadOnly() (yep bool) {
 	r.RLock()
 	defer r.RUnlock()
 	yep = r.sec == (cipher.SecKey{})
