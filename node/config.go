@@ -17,7 +17,7 @@ const (
 	Listen          string = ""          // default listening address
 	RemoteClose     bool   = false       // default remote-closing pin
 	RPCAddress      string = "[::]:8878" // default RPC address
-	EnableBlockDB   bool   = true        // default BlockDB pin
+	EnableBlockDB   bool   = false       // default BlockDB pin
 	RandomizeDBPath bool   = false       // default to use regular db path
 
 	PingInterval time.Duration = 2 * time.Second

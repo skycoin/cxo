@@ -227,11 +227,14 @@ func (s *Server) openDB() (err error) {
 	return
 }
 
-func (s *Server) closeDB() error {
+func (s *Server) closeDB() (err error) {
+	if !s.conf.EnableBlockDB {
+		return
+	}
 	dbFile := s.db.Path()
-	s.db.Close()
+	s.db.Close() // drop closing error
 	if s.conf.RandomizeDBPath {
-		return os.Remove(dbFile)
+		err = os.Remove(dbFile)
 	}
 	return nil
 }
@@ -453,6 +456,7 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	}
 	root, err := s.so.AddRootPack(msg.RootPack)
 	if err != nil {
+		// TODO: high priority after database
 		if err == skyobject.ErrAlreadyHaveThisRoot {
 			s.Debug("reject root: alredy have this root")
 			return
@@ -759,16 +763,6 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 	fs = make([]cipher.PubKey, 0, len(s.feeds))
 	for f := range s.feeds {
 		fs = append(fs, f)
-	}
-	return
-}
-
-// BoltStat returns statistiv of boltdb or empty
-// bolt.Stats if bolt disabled
-func (s *Server) BoltStat() (boltStat bolt.Stats, ok bool) {
-	if s.db != nil {
-		ok = true
-		boltStat = s.db.Stats()
 	}
 	return
 }
