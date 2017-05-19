@@ -3,22 +3,25 @@ package data
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
 type Stat struct {
-	Total  int `json:"total"`
-	Memory int `json:"memory"`
+	Total  int `json:"total"`  // total objects and schemas
+	Memory int `json:"memory"` // all objects and roots
+	Roots  int `json:"roots"`  // count of all root object
+	Feeds  int `json:"feeds"`  // count of all non-empty feeds
 }
 
 // String implemets fmt.Stringer interface and returns
 // human readable string
 func (s Stat) String() string {
-	return fmt.Sprintf("{total: %d, memory: %s}",
+	return fmt.Sprintf("{total: %d, memory: %s, roots: %d, feeds: %d}",
 		s.Total,
-		HumanMemory(s.Memory))
+		HumanMemory(s.Memory),
+		s.Roots,
+		s.Feeds)
 }
 
 // HumanMemory returns human readable memory string
@@ -48,34 +51,49 @@ func HumanMemory(bytes int) string {
 type DB interface {
 
 	//
-	// Data related methods
+	// Objects and Schemas
 	//
 
-	// Has the DB an object with the key
-	Has(key cipher.SHA256) (ok bool)
-	// Get an object by its key
-	Get(key cipher.SHA256) (v []byte, ok bool)
-	// Set object using it pre-calculated key
-	Set(key cipher.SHA256, data []byte)
-	// Range over data objects (read-only)
-	Range(fn func(key cipher.SHA256))
-	// AddAutoKey add an object ot DB and get its key
-	AddAutoKey(data []byte) (key cipher.SHA256)
-	// Del deletes and object by its key
+	// Del deletes vlaue by key
 	Del(key cipher.SHA256)
+	// Find value by key and value
+	Find(filter func(key cipher.SHA256, value []byte) bool) []byte
+	// ForEach key-value pair (read-only)
+	ForEach(f func(k cipher.SHA256, v []byte))
+	// Get by key (nil is not found)
+	Get(key cipher.SHA256) (data []byte, ok bool)
+	// Get all key-value pairs
+	GetAll() map[cipher.SHA256][]byte
+	// GetSlice of values by slice of keys
+	GetSlice(keys []cipher.SHA256) [][]byte
+	// IsExist an object with provided key
+	IsExist(k cipher.SHA256) bool
+	// Len of the database (all objects and schemas)
+	Len() (ln int)
+	// Set value with provided key overwriting exist
+	Set(key cipher.SHA256, value []byte)
 
 	//
-	// Root objects related methods
+	// Root objects
 	//
 
-	// Root by hash
-	Root(hash cipher.SHA256) (rp RootPack, ok bool)
-	// Roots returns key of all roots of a feed
-	Roots(pk cipher.PubKey) (keys []cipher.SHA256)
-	// AddRoot to the feed
-	AddRoot(pk cipher.PubKey, rp RootPack)
-	// RangeFeed
-	RangeFeed(pk cipher.PubKey, fn func(hash cipher.SHA256, rp RootPack))
+	// DelFeed deletes entire feed with all root objects.
+	// The method doesn't remove related objects and schemas
+	DelFeed(pk cipher.PubKey)
+	// AddRoot to pk-feed
+	AddRoot(pk cipher.PubKey, rp RootPack) (err error)
+	// LastRoot returns last root of a feed
+	LastRoot(pk cipher.PubKey) (rp RootPack, ok bool)
+	// ForEachRoot of a feed by seq order (read only)
+	ForEachRoot(pk cipher.PubKey,
+		fn func(hash cipher.SHA256, rp RootPack) (stop bool))
+	// Feeds returns all feeds that has at least
+	// one root object
+	Feeds() []cipher.PubKey
+	// GetRoot by hash
+	GetRoot(hash cipher.SHA256) (rp RootPack, ok bool)
+	// DelRoot deletes root object by hash
+	DelRoot(hash cipher.SHA256)
 
 	//
 	// Other methods
@@ -94,7 +112,46 @@ type RootPack struct {
 	Sig  cipher.Sig
 	Seq  uint64
 
-	Hash RootReference
-	Prev RootReference
-	Next RootReference
+	Hash cipher.SHA256 // skyobject.RootReference
+	Prev cipher.SHA256 // skyobject.RootReference
+	Next cipher.SHA256 // skyobject.RootReference
+}
+
+// A RootError represents error that can be returned by AddRoot method
+type RootError struct {
+	feed  cipher.PubKey // feed of root
+	hash  cipher.SHA256 // hash of root
+	seq   uint64        // seq of root
+	descr string        // description
+}
+
+func shortHex(a string) string {
+	return string([]byte(a)[:7])
+}
+
+// Error implements error interface
+func (r *RootError) Error() string {
+	return fmt.Sprintf("[%s:%s:%d] %s",
+		shortHex(r.feed.Hex()),
+		shortHex(r.hash.Hex()),
+		r.seq,
+		r.descr)
+}
+
+// Feed of erroneous Root
+func (r *RootError) Feed() cipher.PubKey { return r.feed }
+
+// Hash of erroneous Root
+func (r *RootError) Hash() cipher.SHA256 { return r.hash }
+
+// Seq of erroneous Root
+func (r *RootError) Seq() uint64 { return r.seq }
+
+func newRootError(pk cipher.PubKey, rp *RootPack, descr string) (r *RootError) {
+	return &RootError{
+		feed:  pk,
+		hash:  rp.Hash,
+		seq:   rp.Seq,
+		descr: descr,
+	}
 }

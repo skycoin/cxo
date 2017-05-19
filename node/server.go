@@ -227,11 +227,14 @@ func (s *Server) openDB() (err error) {
 	return
 }
 
-func (s *Server) closeDB() error {
+func (s *Server) closeDB() (err error) {
+	if !s.conf.EnableBlockDB {
+		return
+	}
 	dbFile := s.db.Path()
-	s.db.Close()
+	s.db.Close() // drop closing error
 	if s.conf.RandomizeDBPath {
-		return os.Remove(dbFile)
+		err = os.Remove(dbFile)
 	}
 	return nil
 }
@@ -628,6 +631,8 @@ func (s *Server) handleMsg(c *gnet.Conn, msg Msg) {
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
 	}
+
+	s.Debugf("the message %T was handled", msg)
 }
 
 //

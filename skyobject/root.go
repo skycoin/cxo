@@ -4,7 +4,6 @@ import (
 	"errors"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -126,7 +125,7 @@ func (r *Root) touch() (rp data.RootPack, err error) {
 		return
 	}
 	r.time = time.Now().UnixNano()
-	err = r.cnt.addRoot(r)
+	rp, err = r.cnt.addRoot(r)
 	return
 }
 
@@ -162,7 +161,7 @@ func (r *Root) Sig() cipher.Sig {
 func (r *Root) Hash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
-	return r.hash
+	return RootReference(r.hash)
 }
 
 // PrevHash returns RootReference to previous
@@ -174,7 +173,7 @@ func (r *Root) Hash() RootReference {
 func (r *Root) PrevHash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
-	return r.prev
+	return RootReference(r.prev)
 }
 
 // NextHash returns RootReference to next
@@ -183,7 +182,7 @@ func (r *Root) PrevHash() RootReference {
 func (r *Root) NextHash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
-	return r.next
+	return RootReference(r.next)
 }
 
 // IsFull reports true if the Root is full
@@ -225,12 +224,13 @@ func (r *Root) Encode() (rp data.RootPack) {
 	return
 }
 
+// call under lock
 func (r *Root) encode() (rp data.RootPack) {
 	var x encodedRoot
 	x.Refs = r.refs
 	x.Reg = r.reg
 	x.Time = r.time
-	x.Seq = r.Seq()
+	x.Seq = r.seq
 	x.Pub = r.pub
 
 	rp.Root = encoder.Serialize(x) // []byte
@@ -273,7 +273,7 @@ func (r *Root) Get(ref Reference) ([]byte, bool) {
 }
 
 // DB returns database of related Container
-func (r *Root) DB() *data.DB {
+func (r *Root) DB() data.DB {
 	return r.cnt.DB()
 }
 

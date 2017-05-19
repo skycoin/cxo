@@ -22,10 +22,10 @@ type MissingRegistryError struct {
 
 // Error implements error interface
 func (m *MissingRegistryError) Error() string {
-	return "missing registry " + m.ref.String()
+	return "missing registry " + m.rr.String()
 }
 
 // Reference returns reference of missing registry
-func (m *MissingRegistryError) Reference() Reference {
-	return m.ref
+func (m *MissingRegistryError) Reference() RegistryReference {
+	return m.rr
 }
