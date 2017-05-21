@@ -128,6 +128,24 @@ func (d *driveDB) Range(fn func(key cipher.SHA256, value []byte) (stop bool)) {
 // Feeds
 //
 
+func (d *driveDB) Feeds() (fs []cipher.PubKey) {
+	d.view(func(t *bolt.Tx) (_ error) {
+		f := t.Bucket(feedsBucket)
+		ln := f.Stats().KeyN
+		if ln == 0 {
+			return // no feeds
+		}
+		fs = make([]cipher.PubKey, 0, ln)
+		return f.ForEach(func(pkb, _ []byte) (_ error) {
+			var pk cipher.PubKey
+			copy(pk[:], pkb)
+			fs = append(fs, pk)
+			return
+		})
+	})
+	return
+}
+
 func (d *driveDB) DelFeed(pk cipher.PubKey) {
 	d.update(func(t *bolt.Tx) (_ error) {
 		f := t.Bucket(feedsBucket).Bucket(pk[:])
@@ -142,33 +160,34 @@ func (d *driveDB) DelFeed(pk cipher.PubKey) {
 			panic(err) // critical
 		}
 		if e := f.Delete(pk[:]); e != nil {
-			panci(e) // critical
+			panic(e) // critical
 		}
 		return
 	})
 }
 
-func (d *driveDB) AddRoot(pk cipher.PubKey, rp RootPack) (err error) {
+func (d *driveDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
 	// test given rp
 	if rp.Seq != 0 && rp.Prev != (cipher.SHA256{}) {
-		err = newRootError(pk, &rp, "unexpected prev. reference")
+		err = newRootError(pk, rp, "unexpected prev. reference")
 		return
 	}
 	data := encoder.Serialize(&rp)
 	hash := cipher.SumSHA256(rp.Root)
 	if hash != rp.Hash {
-		err = newRootError(pk, &rp, "wrong hash of the root")
+		err = newRootError(pk, rp, "wrong hash of the root")
 		return
 	}
 	seqb := utob(rp.Seq)
-	//
+	// let's go
 	d.update(func(t *bolt.Tx) (_ error) {
-		f := t.Bucket(feedsBucket).Bucket(pk[:])
-		if f == nil {
-			var e error
-			if f, e = t.CreateBucket(pk[:]); e != nil {
-				panic(e) // critical
-			}
+		f, e := t.Bucket(feedsBucket).CreateBucketIfNotExists(pk[:])
+		if e != nil {
+			panic(e) // critical
+		}
+		sseq, _ := f.Cursor().Seek(seqb)
+		if sseq == nil || bytes.Compare(sseq, seqb) != 0 {
+			// not found
 			if e = f.Put(utob(rp.Seq), hash[:]); e != nil {
 				panic(e) // critical
 			}
@@ -177,97 +196,14 @@ func (d *driveDB) AddRoot(pk cipher.PubKey, rp RootPack) (err error) {
 			}
 			return
 		}
-		// else => f already exists
-		// is given rp older then first
-		c := f.Cursor()
-		fseq, fhash := c.First()
-		if fseq == nil {
-			// not found (critical):
-			//   a feed must contains at least one root object
-			//   (or must be removed from database)
-			panic("broken database: feed doesn't contains a root object")
-		}
-		if cmp := bytes.Compare(fseq, seqb); cmp == +1 {
-			// seq number of first rp is greater then seq of given rp
-			err = ErrRootIsOld // special error
-			return
-		} else if cmp == 0 {
-			// equal
-			err = ErrRootAlreadyExists // special error
-			return
-		}
-		// find the seq (or next if not found)
-		sseq, shash := c.Seek(seqb)
-		// from godoc: https://godoc.org/github.com/boltdb/bolt#Cursor.Seek
-		// > Seek moves the cursor to a given key and returns it.
-		// > If the key does not exist then the next key is used.
-		// > If no keys follow, a nil key is returned. The returned
-		// > key and value are only valid for the life of the transaction.
-		if sseq == nil {
-			// not found, and there are no next rp
-			pseq, phash := c.Prev()
-			if pseq == nil {
-				// not found (critical):
-				//   a feed must contains at least one root object
-				//   (or must be removed from database)
-				panic("broken database: missing previous object")
-			}
-			r := t.Bucket(rootsBucket)
-			pdata := r.Get(phash)
-			if pdata == nil {
-				// not found (critical)
-				// feed -> { seq -> hash } is just another way
-				// to find a root object that must be present in roots
-				// bucket
-				panic("feeds refers to root doesn't exist")
-			}
-			var prev RootPack
-			var e error
-			if e = encoder.DeserializeRaw(pdata, &prev); e != nil {
-				panic(err) // critical
-			}
-			// check rp.prev reference
-			if rp.Prev != prev.Hash {
-				err = newRootError(pk,
-					&rp,
-					"previous root points to another next-root")
-				return
-			}
-			// set next reference to prev if it's clear (and update the prev)
-			if prev.Next == (cipher.SHA256{}) {
-				prev.Next = rp.Hash
-				if e = r.Put(phash, encoder.Serialize(&prev)); e != nil {
-					panic(err) // critical
-				}
-			}
-			// save the given rp
-			if e = f.Put(seqb, hash[:]); e != nil {
-				panic(e) // critical
-			}
-			if e = t.Bucket(rootsBucket).Put(hash[:], data); e != nil {
-				panic(e) // critical
-			}
-			return
-		}
-		// else => sseq != nil
-		// found or next
-		switch bytes.Compare(sseq, seqb) {
-		// case -1: never happens
-		case 0:
-			// sseq == seqb (found)
-			err = ErrRootAlreadyExists
-			return
-		case +1:
-			// sseq > seqb (next, i.e. we have next but don't have this)
-			// databse can only "add next root" or "add first"
-			panic("broken database: broken roots chain")
-		}
+		// else => already exists
+		err = ErrRootAlreadyExists
 		return
 	})
 	return
 }
 
-func (d *driveDB) LastRoot(pk cipher.PubKey) (rp RootPack, ok bool) {
+func (d *driveDB) LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool) {
 	d.view(func(t *bolt.Tx) (_ error) {
 		f := t.Bucket(feedsBucket).Bucket(pk[:])
 		if f == nil {
@@ -279,7 +215,7 @@ func (d *driveDB) LastRoot(pk cipher.PubKey) (rp RootPack, ok bool) {
 		}
 		value := t.Bucket(rootsBucket).Get(last)
 		if value == nil {
-			panic("missing root") // critical
+			panic("broken database: missing root") // critical
 		}
 		if err := encoder.DeserializeRaw(value, &rp); err != nil {
 			panic(err) // critical
@@ -291,7 +227,7 @@ func (d *driveDB) LastRoot(pk cipher.PubKey) (rp RootPack, ok bool) {
 }
 
 func (d *driveDB) RangeFeed(pk cipher.PubKey,
-	fn func(rp RootPack) (stop bool)) {
+	fn func(rp *RootPack) (stop bool)) {
 
 	d.view(func(t *bolt.Tx) (_ error) {
 		f := t.Bucket(feedsBucket).Bucket(pk[:])
@@ -309,7 +245,7 @@ func (d *driveDB) RangeFeed(pk cipher.PubKey,
 			if err := encoder.DeserializeRaw(value, &rp); err != nil {
 				panic(err) // critical
 			}
-			if fn(rp) {
+			if fn(&rp) {
 				break // stop
 			}
 		}
@@ -318,7 +254,7 @@ func (d *driveDB) RangeFeed(pk cipher.PubKey,
 }
 
 func (d *driveDB) RangeFeedReverse(pk cipher.PubKey,
-	fn func(rp RootPack) (stop bool)) {
+	fn func(rp *RootPack) (stop bool)) {
 
 	d.view(func(t *bolt.Tx) (_ error) {
 		f := t.Bucket(feedsBucket).Bucket(pk[:])
@@ -336,7 +272,7 @@ func (d *driveDB) RangeFeedReverse(pk cipher.PubKey,
 			if err := encoder.DeserializeRaw(value, &rp); err != nil {
 				panic(err) // critical
 			}
-			if fn(rp) {
+			if fn(&rp) {
 				break // stop
 			}
 		}
@@ -348,14 +284,14 @@ func (d *driveDB) RangeFeedReverse(pk cipher.PubKey,
 // Roots
 //
 
-func (d *driveDB) GetRoot(hash cipher.SHA256) (rp RootPack, ok bool) {
+func (d *driveDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
 	d.view(func(t *bolt.Tx) (_ error) {
 		var temp []byte
 		if temp = t.Bucket(rootsBucket).Get(hash[:]); temp == nil {
 			return
 		}
 		var err error
-		if err = encoder.DeserializeRaw(temp, &rp); err != nil {
+		if err = encoder.DeserializeRaw(temp, rp); err != nil {
 			return
 		}
 		ok = true
@@ -366,29 +302,101 @@ func (d *driveDB) GetRoot(hash cipher.SHA256) (rp RootPack, ok bool) {
 
 func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	d.update(func(t *bolt.Tx) (_ error) {
-		f := t.Bucket(feedsBucket).Bucket(pk[:])
+		fb := t.Bucket(feedsBucket)
+		f := fb.Bucket(pk[:])
 		if f == nil {
 			return
 		}
-		r := t.Bucket(rootsBucket)
+
+		// collect
+
+		type sh struct{ s, h []byte }
+
+		del := []sh{}
 		err := f.ForEach(func(seqb, hashb []byte) error {
 			if btou(seqb) < seq {
-				return r.Delete(hashb)
+				del = append(del, sh{seqb, hashb})
 			}
 			return nil
 		})
 		if err != nil {
 			panic(err) // critical
 		}
+
+		// delete
+
+		r := t.Bucket(rootsBucket)
+		for _, x := range del {
+			if e := f.Delete(x.s); e != nil {
+				panic(e) // critical
+			}
+			if e := r.Delete(x.h); e != nil {
+				panic(e) // critical
+			}
+		}
+
+		// delete feed if its empty
+		if f.Stats().KeyN == 0 {
+			return fb.DeleteBucket(pk[:])
+		}
+
 		return
 	})
 }
 
 func (d *driveDB) Stat() (s stat.Stat) {
+	// Objects int
+	// Space   Space
+	// Feeds   map[cipher.PubKey]struct {
+	//     Roots int
+	//     Space Space
+	// }
 	d.view(func(t *bolt.Tx) (_ error) {
-		os := t.Bucket(objectsBucket).Stats()
-		s.Objects = os.KeyN
-		// s.Space = os.
+		// objects
+		o := t.Bucket(objectsBucket)
+		s.Objects = o.Stats().KeyN
+		e := o.ForEach(func(_, val []byte) (_ error) {
+			s.Space += stat.Space(len(val))
+			return
+		})
+		if e != nil {
+			panic(e) // critical
+		}
+		// feeds
+		f := t.Bucket(feedsBucket)
+		r := t.Bucket(rootsBucket)
+		if feeds := f.Stats().KeyN; feeds == 0 {
+			return // no feeds
+		} else {
+			s.Feeds = make(map[cipher.PubKey]stat.FeedStat, feeds)
+		}
+		var pk cipher.PubKey
+		// for each feed
+		e = f.ForEach(func(pkb, _ []byte) (_ error) {
+			// pkb is bucket name
+			var fs stat.FeedStat
+
+			fpk := f.Bucket(pkb)
+			fs.Roots = fpk.Stats().KeyN
+
+			// for each seq->hash
+			e := fpk.ForEach(func(_, hashb []byte) (_ error) {
+				// size of encoded RootPack
+				fs.Space += stat.Space(len(r.Get(hashb)))
+				return
+			})
+			if e != nil {
+				panic(e) // critical
+			}
+
+			copy(pk[:], pkb)
+			s.Feeds[pk] = fs // store in stat
+			return
+		})
+		if e != nil {
+			panic(e) // critical
+		}
+		return
 	})
 	return
 }

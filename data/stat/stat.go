@@ -23,11 +23,14 @@ func (s Space) Strign() string {
 // A Stat represents database statistic
 type Stat struct {
 	Objects int   `json:"objects"` // amount of objects and schemas
-	Space   Space `json:"space"`   // full space taken by database
-	Feeds   map[cipher.PubKey]struct {
-		Roots int   `json:"roots"` // amount of root objects of this feed
-		Space Space `json:"space"` // space taken by root objects of this feed
-	} `json:"feeds"`
+	Space   Space `json:"space"`   // space taken by objects
+
+	Feeds map[cipher.PubKey]FeedStat `json:"feeds"` // feeds
+}
+
+type FeedStat struct {
+	Roots int   `json:"roots"` // amount of root objects of this feed
+	Space Space `json:"space"` // space taken by root objects of this feed
 }
 
 func shortHex(a string) string {

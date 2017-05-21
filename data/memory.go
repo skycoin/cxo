@@ -1,16 +1,13 @@
 package data
 
 import (
-	"bytes"
-	"encoding/binary"
 	"sort"
 	"sync"
-	"time"
-
-	"github.com/boltdb/bolt"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data/stat"
 )
 
 // buckets:
@@ -18,9 +15,9 @@ import (
 //  - roots   hash -> encoded RootPack
 //  - feeds   pubkey -> { seq -> hash of root }
 type memoryDB struct {
-	mx      sync.Mutex
+	mx      sync.RWMutex
 	objects map[cipher.SHA256][]byte
-	roots   map[cipher.SHA256][]byte
+	roots   map[cipher.SHA256]*RootPack
 	feeds   map[cipher.PubKey]map[uint64]cipher.SHA256
 }
 
@@ -28,7 +25,7 @@ type memoryDB struct {
 func NewMemoryDB() (db DB) {
 	db = &memoryDB{
 		objects: make(map[cipher.SHA256][]byte),
-		roots:   make(map[cipher.SHA256][]byte),
+		roots:   make(map[cipher.SHA256]*RootPack),
 		feeds:   make(map[cipher.PubKey]map[uint64]cipher.SHA256),
 	}
 	return
@@ -70,14 +67,6 @@ func (d *memoryDB) IsExist(key cipher.SHA256) (ok bool) {
 	return
 }
 
-func (d *memoryDB) Len() (ln int) {
-	d.mx.RLock()
-	defer d.mx.RUnlock()
-
-	ln = len(d.objects)
-	return
-}
-
 func (d *memoryDB) Range(fn func(key cipher.SHA256, value []byte) (stop bool)) {
 	d.mx.RLock()
 	defer d.mx.RUnlock()
@@ -94,6 +83,20 @@ func (d *memoryDB) Range(fn func(key cipher.SHA256, value []byte) (stop bool)) {
 // Feeds
 //
 
+func (m *memoryDB) Feeds() (fs []cipher.PubKey) {
+	m.mx.RLock()
+	defer m.mx.RUnlock()
+
+	if len(m.feeds) == 0 {
+		return
+	}
+	fs = make([]cipher.PubKey, 0, len(m.feeds))
+	for pk := range m.feeds {
+		fs = append(fs, pk)
+	}
+	return
+}
+
 func (d *memoryDB) DelFeed(pk cipher.PubKey) {
 	d.mx.Lock()
 	defer d.mx.Unlock()
@@ -104,136 +107,46 @@ func (d *memoryDB) DelFeed(pk cipher.PubKey) {
 	delete(d.feeds, pk)
 }
 
-func (d *memoryDB) AddRoot(pk cipher.PubKey, rp RootPack) (err error) {
+func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	// test given rp
 	if rp.Seq != 0 && rp.Prev != (cipher.SHA256{}) {
-		err = newRootError(pk, &rp, "unexpected prev. reference")
+		err = newRootError(pk, rp, "unexpected prev. reference")
 		return
 	}
-	data := encoder.Serialize(&rp)
-	hash := cipher.SumSHA256(rp.Root)
-	if hash != rp.Hash {
-		err = newRootError(pk, &rp, "wrong hash of the root")
+	if rp.Hash != cipher.SumSHA256(encoder.Serialize(&rp.Root)) {
+		err = newRootError(pk, rp, "wrong hash of the root")
 		return
 	}
-	//////
-	//////
-	//////
-	///////////
-	////
-	f := t.Bucket(feedsBucket).Bucket(pk[:])
-	if f == nil {
-		var e error
-		if f, e = t.CreateBucket(pk[:]); e != nil {
-			panic(e) // critical
+	//
+	var ok bool
+	var roots map[uint64]cipher.SHA256
+	if roots, ok = d.feeds[pk]; !ok {
+		d.feeds[pk] = map[uint64]cipher.SHA256{
+			rp.Seq: rp.Hash,
 		}
-		if e = f.Put(utob(rp.Seq), hash[:]); e != nil {
-			panic(e) // critical
-		}
-		if e = t.Bucket(rootsBucket).Put(hash[:], data); e != nil {
-			panic(e) // critical
-		}
+		d.roots[rp.Hash] = rp
 		return
 	}
-	// else => f already exists
-	// is given rp older then first
-	c := f.Cursor()
-	fseq, fhash := c.First()
-	if fseq == nil {
-		// not found (critical):
-		//   a feed must contains at least one root object
-		//   (or must be removed from database)
-		panic("broken database: feed doesn't contains a root object")
-	}
-	if cmp := bytes.Compare(fseq, seqb); cmp == +1 {
-		// seq number of first rp is greater then seq of given rp
-		err = ErrRootIsOld // special error
-		return
-	} else if cmp == 0 {
-		// equal
-		err = ErrRootAlreadyExists // special error
-		return
-	}
-	// find the seq (or next if not found)
-	sseq, shash := c.Seek(seqb)
-	// from godoc: https://godoc.org/github.com/boltdb/bolt#Cursor.Seek
-	// > Seek moves the cursor to a given key and returns it.
-	// > If the key does not exist then the next key is used.
-	// > If no keys follow, a nil key is returned. The returned
-	// > key and value are only valid for the life of the transaction.
-	if sseq == nil {
-		// not found, and there are no next rp
-		pseq, phash := c.Prev()
-		if pseq == nil {
-			// not found (critical):
-			//   a feed must contains at least one root object
-			//   (or must be removed from database)
-			panic("broken database: missing previous object")
-		}
-		r := t.Bucket(rootsBucket)
-		pdata := r.Get(phash)
-		if pdata == nil {
-			// not found (critical)
-			// feed -> { seq -> hash } is just another way
-			// to find a root object that must be present in roots
-			// bucket
-			panic("feeds refers to root doesn't exist")
-		}
-		var prev RootPack
-		var e error
-		if e = encoder.DeserializeRaw(pdata, &prev); e != nil {
-			panic(err) // critical
-		}
-		// check rp.prev reference
-		if rp.Prev != prev.Hash {
-			err = newRootError(pk,
-				&rp,
-				"previous root points to another next-root")
-			return
-		}
-		// set next reference to prev if it's clear (and update the prev)
-		if prev.Next == (cipher.SHA256{}) {
-			prev.Next = rp.Hash
-			if e = r.Put(phash, encoder.Serialize(&prev)); e != nil {
-				panic(err) // critical
-			}
-		}
-		// save the given rp
-		if e = f.Put(seqb, hash[:]); e != nil {
-			panic(e) // critical
-		}
-		if e = t.Bucket(rootsBucket).Put(hash[:], data); e != nil {
-			panic(e) // critical
-		}
-		return
-	}
-	// else => sseq != nil
-	// found or next
-	switch bytes.Compare(sseq, seqb) {
-	// case -1: never happens
-	case 0:
-		// sseq == seqb (found)
+	// ok
+	if _, ok = roots[rp.Seq]; ok {
 		err = ErrRootAlreadyExists
 		return
-	case +1:
-		// sseq > seqb (next, i.e. we have next but don't have this)
-		// databse can only "add next root" or "add first"
-		panic("broken database: broken roots chain")
 	}
-	//////////////////
-	////////////
-	//////////
-	////////////
+	roots[rp.Seq] = rp.Hash
+	d.roots[rp.Hash] = rp
 	return
 }
 
-func (d *memoryDB) LastRoot(pk cipher.PubKey) (rp RootPack, ok bool) {
+func (d *memoryDB) LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool) {
 	d.mx.RLock()
 	defer d.mx.RUnlock()
 
 	roots := d.feeds[pk]
 	if len(roots) == 0 {
-		return // not found
+		return // bo roots
 	}
 	var max uint64 = 0
 	for seq := range roots {
@@ -241,24 +154,19 @@ func (d *memoryDB) LastRoot(pk cipher.PubKey) (rp RootPack, ok bool) {
 			max = seq
 		}
 	}
-	data, exists := d.roots[roots[max]]
-	if !exists {
+	if rp, ok = d.roots[roots[max]]; !ok {
 		panic("broken db: misisng root") // critical
 	}
-	if err := encoder.DeserializeRaw(data, &rp); err != nil {
-		panic(err) // critical
-	}
-	ok = true // found
 	return
 }
 
 func (d *memoryDB) RangeFeed(pk cipher.PubKey,
-	fn func(rp RootPack) (stop bool)) {
+	fn func(rp *RootPack) (stop bool)) {
 
 	d.mx.RLock()
 	defer d.mx.RUnlock()
 
-	roots := d.feeds
+	roots := d.feeds[pk]
 	if len(roots) == 0 {
 		return // empty feed
 	}
@@ -269,16 +177,12 @@ func (d *memoryDB) RangeFeed(pk cipher.PubKey,
 	}
 	sort.Sort(o)
 
-	var rp RootPack
+	var rp *RootPack
+	var ok bool
 
 	for _, seq := range o {
-		hash := roots[seq]
-		data, ok := d.roots[hash]
-		if !ok {
+		if rp, ok = d.roots[roots[seq]]; !ok {
 			panic("broken database: misisng root") // critical
-		}
-		if err := encoder.DeserializeRaw(data, &rp); err != nil {
-			panic(err) // critical
 		}
 		if fn(rp) {
 			return // break
@@ -287,12 +191,12 @@ func (d *memoryDB) RangeFeed(pk cipher.PubKey,
 }
 
 func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
-	fn func(rp RootPack) (stop bool)) {
+	fn func(rp *RootPack) (stop bool)) {
 
 	d.mx.RLock()
 	defer d.mx.RUnlock()
 
-	roots := d.feeds
+	roots := d.feeds[pk]
 	if len(roots) == 0 {
 		return // empty feed
 	}
@@ -303,15 +207,12 @@ func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
 	}
 	sort.Reverse(o)
 
-	var rp RootPack
+	var rp *RootPack
+	var ok bool
 
 	for _, seq := range o {
-		data, ok := d.roots[roots[seq]]
-		if !ok {
+		if rp, ok = d.roots[roots[seq]]; !ok {
 			panic("broken database: misisng root") // critical
-		}
-		if err := encoder.DeserializeRaw(data, &rp); err != nil {
-			panic(err) // critical
 		}
 		if fn(rp) {
 			return // break
@@ -319,69 +220,71 @@ func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
 	}
 }
 
-func (d *memoryDB) FeedsLen() (ln int) {
-	d.mx.RLock()
-	defer d.mx.RUnlock()
-
-	ln = len(d.feeds)
-	return
-}
-
-func (d *memoryDB) FeedLen(pk cipher.PubKey) (ln int) {
-	d.mx.RLock()
-	defer d.mx.RUnlock()
-
-	ln = len(d.feeds[pk])
-	return
-}
-
 //
 // Roots
 //
 
-func (d *memoryDB) GetRoot(hash cipher.SHA256) (rp RootPack, ok bool) {
+func (d *memoryDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
 	d.mx.RLock()
 	defer d.mx.RUnlock()
 
-	var data []byte
-	if data, ok = d.roots[hash]; !ok {
-		return
-	}
-	if err := encoder.DeserializeRaw(data, &rp); err != nil {
-		panic(err) // critical
-	}
-	return
-}
-
-func (d *memoryDB) RootsLen() (ln int) {
-	d.mx.RLock()
-	defer d.mx.RUnlock()
-	ln = len(d.roots)
+	rp, ok = d.roots[hash]
 	return
 }
 
 func (d *memoryDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
-	d.update(func(t *bolt.Tx) (_ error) {
-		f := t.Bucket(feedsBucket).Bucket(pk[:])
-		if f == nil {
-			return
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	roots := d.feeds[pk]
+	if len(roots) == 0 {
+		return // empty feed
+	}
+
+	var o order = make(order, 0, len(roots))
+	for s := range roots {
+		if s < seq {
+			o = append(o, s)
 		}
-		r := t.Bucket(rootsBucket)
-		err := f.ForEach(func(seqb, hashb []byte) error {
-			if btou(seqb) < seq {
-				return r.Delete(hashb)
-			}
-			return nil
-		})
-		if err != nil {
-			panic(err) // critical
-		}
+	}
+	if len(o) == 0 {
 		return
-	})
+	}
+	sort.Sort(o)
+
+	for _, s := range o {
+		delete(d.roots, roots[s])
+		delete(roots, s)
+	}
+
+	if len(roots) == 0 {
+		delete(d.feeds, pk)
+	}
 }
 
-func (d *memoryDB) Stat() (s Stat) {
-	//
+func (d *memoryDB) Stat() (s stat.Stat) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	s.Objects = len(d.objects)
+	for _, v := range d.objects {
+		s.Space += stat.Space(len(v))
+	}
+
+	if len(d.feeds) == 0 {
+		return
+	}
+	s.Feeds = make(map[cipher.PubKey]stat.FeedStat, len(d.feeds))
+	// lengths of Prev, Hash, Sig and Seq (8 byte)
+	var add int = len(cipher.SHA256{})*2 + len(cipher.Sig{}) + 8
+	for pk, rs := range d.feeds {
+		var fs stat.FeedStat
+		for _, hash := range rs {
+			fs.Space += stat.Space(len(d.roots[hash].Root) + add)
+		}
+		fs.Roots = len(rs)
+		s.Feeds[pk] = fs
+	}
 	return
 }
 

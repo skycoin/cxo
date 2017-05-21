@@ -3,28 +3,16 @@ package data
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data/stat"
 )
 
-// special cases
-var (
-	// ErrRootAlreadyExists oocurs when you try to save root object
-	// that already exist in database. The error required for
-	// networking to omit unnessesary work
-	ErrRootAlreadyExists = errors.New("root already exists")
-	// ErrRootIsOld occurs when you try to save an old root
-	// object. The database reject all old root objects
-	// and collect only new roots. Thus, it's impossible
-	// to save a root object older than first root of a
-	// feed. For example if seq of first root in db is 55,
-	// then database reject all roots with seq leser then 55.
-	// This way, it's easy to set min seq threshold
-	ErrRootIsOld = errors.New("root is older then newest one")
-)
+// ErrRootAlreadyExists oocurs when you try to save root object
+// that already exist in database. The error required for
+// networking to omit unnessesary work
+var ErrRootAlreadyExists = errors.New("root already exists")
 
 // A DB is common database interface
 type DB interface {
@@ -50,27 +38,29 @@ type DB interface {
 	// Feeds
 	//
 
+	// Feeds returns list of feeds
+	Feeds() []cipher.PubKey
 	// DelFeed deletes feed and all related root objects.
 	// The method doesn't remove related objects and schemas
 	DelFeed(pk cipher.PubKey)
 	// AddRoot to feed, rejecting all roots older then
 	// oldest the feed has got
-	AddRoot(pk cipher.PubKey, rp RootPack) (err error)
+	AddRoot(pk cipher.PubKey, rp *RootPack) (err error)
 	// LastRoot returns last root of a feed
-	LastRoot(pk cipher.PubKey) (rp RootPack, ok bool)
+	LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool)
 	// RangeFeed itterate root objects of tgiven feed
 	// ordered by seq from oldest to newest
-	RangeFeed(pk cipher.PubKey, fn func(rp RootPack) (stop bool))
+	RangeFeed(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
 	// RangeFeedReverse is same as RangeFeed, but order
-	// is inversed
-	RangeFeedReverse(pk cipher.PubKey, fn func(rp RootPack) (stop bool))
+	// is reversed
+	RangeFeedReverse(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
 
 	//
 	// Roots
 	//
 
 	// GetRoot by hash
-	GetRoot(hash cipher.SHA256) (rp RootPack, ok bool)
+	GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool)
 	// DelRootsBefore deletes root objects of given feed
 	// before given seq number (exclusive)
 	DelRootsBefore(pk cipher.PubKey, seq uint64)
@@ -89,12 +79,15 @@ type DB interface {
 // seq number, and next/prev/this hashes
 type RootPack struct {
 	Root []byte
-	Sig  cipher.Sig
-	Seq  uint64
 
-	Hash cipher.SHA256 // skyobject.RootReference
-	Prev cipher.SHA256 // skyobject.RootReference
-	Next cipher.SHA256 // skyobject.RootReference
+	// both Seq and Prev are encoded inside Root filed above
+	// but we need them for database
+
+	Seq  uint64        // seq number of this Root
+	Prev cipher.SHA256 // previous Root or empty if seq == 0
+
+	Hash cipher.SHA256 // hash of the Root filed
+	Sig  cipher.Sig    // signature of the Hash field
 }
 
 // A RootError represents error that can be returned by AddRoot method

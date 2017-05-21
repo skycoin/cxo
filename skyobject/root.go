@@ -46,7 +46,6 @@ type Root struct {
 	cnt  *Container // back reference (ro)
 
 	hash cipher.SHA256 // hash of the Root
-	next cipher.SHA256 // hash of next root
 	prev cipher.SHA256 // hash of previous root
 
 	attached bool // is attached
@@ -174,15 +173,6 @@ func (r *Root) PrevHash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
 	return RootReference(r.prev)
-}
-
-// NextHash returns RootReference to next
-// Root of the Root. It can be empty even
-// next Root exists
-func (r *Root) NextHash() RootReference {
-	r.RLock()
-	defer r.RUnlock()
-	return RootReference(r.next)
 }
 
 // IsFull reports true if the Root is full
@@ -650,6 +640,7 @@ type encodedRoot struct {
 	Time int64
 	Seq  uint64
 	Pub  cipher.PubKey
+	Prev cipher.SHA256 // hash of previous root
 	// don't send secret key, because it's a secret
 	// don't send signature, because signaure is signature of encoded root
 }

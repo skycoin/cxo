@@ -523,8 +523,7 @@ func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
 	// the Root locked, we can access all its fields
 	if r.attached {
 		r.seq++
-		r.prev = r.hash            // must have valid hash
-		r.next = (cipher.SHA256{}) // clear
+		r.prev = r.hash // must have valid hash
 		// encode, sign and update hash of the root
 	} else {
 		// actual seq and prev, and cleared next
