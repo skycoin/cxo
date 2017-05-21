@@ -14,7 +14,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/stat"
 	"github.com/skycoin/cxo/node"
 )
 
@@ -397,12 +397,17 @@ func feeds(rpc *node.RPCClient) (err error) {
 }
 
 func stat(rpc *node.RPCClient) (err error) {
-	var stat data.Stat
+	var stat stat.Stat
 	if stat, err = rpc.Stat(); err != nil {
 		return
 	}
-	fmt.Println("  Total objects:", stat.Total)
-	fmt.Println("  Memory:", data.HumanMemory(stat.Memory))
+	fmt.Println("  Objects:", stat.Objects)
+	fmt.Println("  Space:  ", stat.Space.Strign())
+	for pk, fs := range stat.Feeds {
+		fmt.Println(" ", pk.Hex())
+		fmt.Println("    Root Objects: ", fs.Roots)
+		fmt.Println("    Space:        ", fs.Space.Strign())
+	}
 	return
 }
 

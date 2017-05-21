@@ -2,7 +2,10 @@ package node
 
 import (
 	"flag"
+	"path/filepath"
 	"time"
+
+	"github.com/skycoin/skycoin/src/util"
 
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
@@ -13,15 +16,36 @@ const (
 
 	// server defaults
 
-	EnableRPC       bool   = true        // default RPC pin
-	Listen          string = ""          // default listening address
-	RemoteClose     bool   = false       // default remote-closing pin
-	RPCAddress      string = "[::]:8878" // default RPC address
-	EnableBlockDB   bool   = false       // default BlockDB pin
-	RandomizeDBPath bool   = false       // default to use regular db path
+	EnableRPC   bool   = true        // default RPC pin
+	Listen      string = ""          // default listening address
+	RemoteClose bool   = false       // default remote-closing pin
+	RPCAddress  string = "[::]:8878" // default RPC address
+	InMemoryDB  bool   = false       // default database placement pin
 
+	// PingInterval is default interval by which server send pings
+	// to connections that doesn't communicate. Actually, the
+	// interval can be increased x2
 	PingInterval time.Duration = 2 * time.Second
+
+	// default tree is
+	//   server: ~/.skycoin/cxo/server/bolt.db
+	//   client: ~/.skycoin/cxo/client/bolt.db
+	// todo:
+	//   server should be system wide and its
+	//   directory should be like /var/cache/cxo/bolt.db
+
+	skycoinDataDir = ".skycoin"
+	cxoSubDir      = "cxo"
+
+	serverSubDir = "server"
+	clientSubDir = "client"
+
+	dbFile = "bolt.db"
 )
+
+func init() {
+	util.InitDataDir(filepath.Join(skycoinDataDir, cxoSubDir))
+}
 
 // A ServerConfig represnets configurations
 // of a Server
@@ -46,14 +70,13 @@ type ServerConfig struct {
 	// Set to 0 to disable pings
 	PingInterval time.Duration
 
-	// EnableBlockDB db usage
-	EnableBlockDB bool
+	// InMemoryDB uses database in memory
+	InMemoryDB bool
 
-	// RandomDB generate random db save location,
-	// and remove the db-file after use. This option
-	// allows to run multiply instances of cxod on the
-	// same machine without conflicts. For tests.
-	RandomizeDBPath bool
+	// DBPath is path to database if InMemeoryDB is
+	// false. If the DBPath is empty then
+	// default database path used
+	DBPath string
 }
 
 // NewServerConfig returns ServerConfig
@@ -66,8 +89,8 @@ func NewServerConfig() (sc ServerConfig) {
 	sc.Listen = Listen
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
-	sc.EnableBlockDB = EnableBlockDB
-	sc.RandomizeDBPath = RandomizeDBPath
+	sc.InMemoryDB = InMemoryDB
+	sc.DBPath = filepath.Join(util.DataDir, serverSubDir, dbFile)
 	return
 }
 
@@ -102,14 +125,14 @@ func (s *ServerConfig) FromFlags() {
 		"ping",
 		s.PingInterval,
 		"interval to send pings (0 = disable)")
-	flag.BoolVar(&s.EnableBlockDB,
-		"db",
-		s.EnableBlockDB,
-		"enable DB")
-	flag.BoolVar(&s.RandomizeDBPath,
-		"randomdb",
-		s.RandomizeDBPath,
-		"generate random DB file name")
+	flag.BoolVar(&s.InMemoryDB,
+		"mem-db",
+		s.InMemoryDB,
+		"use in-memory database")
+	flag.BoolVar(&s.DBPath,
+		"db-path",
+		s.DBPath,
+		"path to database")
 	return
 }
 
@@ -118,6 +141,14 @@ func (s *ServerConfig) FromFlags() {
 type ClientConfig struct {
 	gnet.Config            // pool configurations
 	Log         log.Config // logger configurations
+
+	// InMemoryDB uses database in memory
+	InMemoryDB bool
+
+	// DBPath is path to database if InMemeoryDB is
+	// false. If the DBPath is empty then
+	// default database path used
+	DBPath string
 
 	// handlers
 	OnConnect    func()
@@ -129,6 +160,8 @@ type ClientConfig struct {
 func NewClientConfig() (cc ClientConfig) {
 	cc.Config = gnet.NewConfig()
 	cc.Log = log.NewConfig()
+	cc.InMemoryDB = InMemoryDB
+	cc.DBPath = filepath.Join(util.DataDir, clientSubDir, dbFile)
 	return
 }
 
@@ -142,4 +175,12 @@ func NewClientConfig() (cc ClientConfig) {
 func (c *ClientConfig) FromFlags() {
 	c.Config.FromFlags()
 	c.Log.FromFlags()
+	flag.BoolVar(&c.InMemoryDB,
+		"mem-db",
+		c.InMemoryDB,
+		"use in-memory database")
+	flag.BoolVar(&c.DBPath,
+		"db-path",
+		c.DBPath,
+		"path to database")
 }

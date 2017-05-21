@@ -222,6 +222,7 @@ func (r *Root) encode() (rp data.RootPack) {
 	x.Time = r.time
 	x.Seq = r.seq
 	x.Pub = r.pub
+	x.Prev = r.prev
 
 	rp.Root = encoder.Serialize(x) // []byte
 
@@ -234,8 +235,6 @@ func (r *Root) encode() (rp data.RootPack) {
 	rp.Sig = r.sig
 
 	rp.Prev = r.prev
-	rp.Next = r.next
-
 	rp.Seq = r.seq
 
 	return

@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -12,12 +13,6 @@ import (
 
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
-
-	"github.com/boltdb/bolt"
-	"github.com/skycoin/skycoin/src/util"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 )
 
 type fillRoot struct {
@@ -40,6 +35,9 @@ type Server struct {
 	// configuratios
 	conf ServerConfig
 
+	// database
+	db data.DB
+
 	// skyobject
 	so *skyobject.Container
 
@@ -53,9 +51,6 @@ type Server struct {
 	// connections
 	pool *gnet.Pool
 	rpc  *RPC // rpc server
-
-	// db
-	db *bolt.DB
 
 	// closing
 	quit  chan struct{}
@@ -71,23 +66,37 @@ type Server struct {
 // configurations. The functions creates database and
 // Container of skyobject instances internally
 func NewServer(sc ServerConfig) (s *Server, err error) {
-	s, err = NewServerSoDB(sc, skyobject.NewContainer(nil))
+	var db data.DB
+	if sc.InMemoryDB {
+		db = data.NewMemoryDB()
+	} else {
+		if db, err = data.NewDriveDB(sc.DBPath); err != nil {
+			return
+		}
+	}
+	s, err = NewServerSoDB(sc, db, skyobject.NewContainer(db, nil))
 	return
 }
 
 // NewServerSoDB creates new Server instance using given
-// configurations and Container
-func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
-	err error) {
+// configurations, databse and Container
+func NewServerSoDB(sc ServerConfig, db data.DB,
+	so *skyobject.Container) (s *Server, err error) {
+
+	if db == nil {
+		panic("missing data.DB")
+	}
 
 	if so == nil {
-		panic("nil db")
+		panic("missing *skyobject.Container")
 	}
 
 	s = new(Server)
 
 	s.Logger = log.NewLogger(sc.Log.Prefix, sc.Log.Debug)
 	s.conf = sc
+
+	s.db = db
 
 	s.so = so
 	s.feeds = make(map[cipher.PubKey]map[*gnet.Conn]struct{})
@@ -104,11 +113,6 @@ func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
 		s.rpc = newRPC(s)
 	}
 
-	util.InitDataDir(".skycoin")
-	if sc.EnableBlockDB {
-		s.openDB()
-	}
-
 	s.quit = make(chan struct{})
 	s.done = make(chan struct{})
 
@@ -117,10 +121,6 @@ func NewServerSoDB(sc ServerConfig, so *skyobject.Container) (s *Server,
 
 // Start the server
 func (s *Server) Start() (err error) {
-	var dbFile string
-	if s.db != nil {
-		dbFile = s.db.Path()
-	}
 	s.Debugf(`starting server:
     data dir:             %s
     max connections:      %d
@@ -149,8 +149,8 @@ func (s *Server) Start() (err error) {
     lListening address:   %s
     remote close:         %t
 
-    enable DB:            %v
-    DB location:          %s
+    in-memory DB:         %v
+    DB path:              %s
 
     debug:                %#v
 `,
@@ -181,8 +181,8 @@ func (s *Server) Start() (err error) {
 		s.conf.Listen,
 		s.conf.RemoteClose,
 
-		s.conf.EnableBlockDB,
-		dbFile,
+		s.conf.InMemoryDB,
+		s.conf.DBPath,
 
 		s.conf.Log.Debug,
 	)
@@ -208,37 +208,6 @@ func (s *Server) Start() (err error) {
 	return
 }
 
-func (s *Server) openDB() (err error) {
-	dbFile := filepath.Join(util.DataDir, "cxod.db")
-	if s.conf.RandomizeDBPath {
-		var file *os.File
-		if file, err = ioutil.TempFile("", "blockdb_"); err != nil {
-			return
-		}
-		dbFile = file.Name()
-		file.Close()
-	}
-	s.db, err = bolt.Open(dbFile, 0600, &bolt.Options{
-		Timeout: 500 * time.Millisecond,
-	})
-	if err != nil {
-		return fmt.Errorf("Open boltdb failed, err:%v", err)
-	}
-	return
-}
-
-func (s *Server) closeDB() (err error) {
-	if !s.conf.EnableBlockDB {
-		return
-	}
-	dbFile := s.db.Path()
-	s.db.Close() // drop closing error
-	if s.conf.RandomizeDBPath {
-		err = os.Remove(dbFile)
-	}
-	return nil
-}
-
 // Close the server
 func (s *Server) Close() (err error) {
 	s.quito.Do(func() {
@@ -246,11 +215,11 @@ func (s *Server) Close() (err error) {
 	})
 	err = s.pool.Close()
 
-	s.closeDB()
 	if s.conf.EnableRPC {
 		s.rpc.Close()
 	}
 	s.await.Wait()
+	s.db.Close() // <- close database after all (otherwise, it causes panicing)
 	s.doneo.Do(func() {
 		close(s.done)
 	})
