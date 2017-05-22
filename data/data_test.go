@@ -141,7 +141,16 @@ func TestData_Add(t *testing.T) {
 		db := NewMemoryDB()
 		// Add
 		//
-		_ = db
+		val := []byte("hey ho")
+		key := db.Add(val)
+		if key != cipher.SumSHA256(val) {
+			t.Error("wrong key calculated")
+		}
+		if got, ok := db.Get(key); !ok {
+			t.Error("not added")
+		} else if string(got) != string(val) {
+			t.Error("wrong value returned", string(got))
+		}
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -154,7 +163,16 @@ func TestData_Add(t *testing.T) {
 		defer db.Close()
 		// Add
 		//
-		_ = db
+		val := []byte("hey ho")
+		key := db.Add(val)
+		if key != cipher.SumSHA256(val) {
+			t.Error("wrong key calculated")
+		}
+		if got, ok := db.Get(key); !ok {
+			t.Error("not added")
+		} else if string(got) != string(val) {
+			t.Error("wrong value returned", string(got))
+		}
 		//
 	})
 }
