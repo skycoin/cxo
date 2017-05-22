@@ -338,7 +338,7 @@ func (c *Container) LastFullRoot(pk cipher.PubKey) (lastFull *Root) {
 		r.attached = true
 		// first full from tail
 		if r.IsFull() {
-			stop = true
+			lastFull, stop = r, true
 			return // break
 		}
 		return // false (continue)
