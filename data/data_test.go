@@ -321,12 +321,31 @@ func TestData_Feeds(t *testing.T) {
 	})
 }
 
+func testDataDelFeed(t *testing.T, db DB) {
+	// prepare
+	var rp RootPack
+	rp.Hash = cipher.SumSHA256(rp.Root) // nil
+	pk, _ := cipher.GenerateKeyPair()
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err) // fatal
+		return
+	}
+	// go
+	db.DelFeed(pk)
+	if len(db.Feeds()) != 0 {
+		t.Error("feed is not deleted")
+	}
+	if _, ok := db.GetRoot(rp.Hash); ok {
+		t.Error("root is not deleted")
+	}
+}
+
 func TestData_DelFeed(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// DelFeed
 		//
-		_ = db
+		testDataDelFeed(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -339,7 +358,7 @@ func TestData_DelFeed(t *testing.T) {
 		defer db.Close()
 		// DelFeed
 		//
-		_ = db
+		testDataDelFeed(t, db)
 		//
 	})
 }

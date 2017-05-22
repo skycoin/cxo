@@ -148,7 +148,8 @@ func (d *driveDB) Feeds() (fs []cipher.PubKey) {
 
 func (d *driveDB) DelFeed(pk cipher.PubKey) {
 	d.update(func(t *bolt.Tx) (_ error) {
-		f := t.Bucket(feedsBucket).Bucket(pk[:])
+		fb := t.Bucket(feedsBucket)
+		f := fb.Bucket(pk[:])
 		if f == nil {
 			return
 		}
@@ -159,17 +160,23 @@ func (d *driveDB) DelFeed(pk cipher.PubKey) {
 		if err != nil {
 			panic(err) // critical
 		}
-		if e := f.Delete(pk[:]); e != nil {
-			panic(e) // critical
-		}
+		// godoc: https://godoc.org/github.com/boltdb/bolt#Bucket.DeleteBucket
+		// > [...] Returns an error if the bucket does not exists, or if
+		// > the key represents a non-bucket value.
+		fb.DeleteBucket(pk[:]) // ignore error
 		return
 	})
 }
 
 func (d *driveDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
 	// test given rp
-	if rp.Seq == 0 && rp.Prev != (cipher.SHA256{}) {
-		err = newRootError(pk, rp, "unexpected prev. reference")
+	if rp.Seq == 0 {
+		if rp.Prev != (cipher.SHA256{}) {
+			err = newRootError(pk, rp, "unexpected prev. reference")
+			return
+		}
+	} else if rp.Prev == (cipher.SHA256{}) {
+		err = newRootError(pk, rp, "missing prev. reference")
 		return
 	}
 	hash := cipher.SumSHA256(rp.Root)
