@@ -515,6 +515,13 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root) {
 	return
 }
 
+func (c *Container) LastRootSk(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
+	if sr := c.Container.LastRootSk(pk, sk); sr != nil {
+		r = &Root{sr, c}
+	}
+	return
+}
+
 func (c *Container) LastFullRoot(pk cipher.PubKey) (r *Root) {
 	if sr := c.Container.LastFullRoot(pk); sr != nil {
 		r = &Root{sr, c}
