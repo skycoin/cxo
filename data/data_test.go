@@ -624,12 +624,65 @@ func TestData_RangeFeed(t *testing.T) {
 	})
 }
 
+func testRangeFeedReverese(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+	// no feed
+	var i int = 0
+	db.RangeFeedReverse(pk, func(*RootPack) (stop bool) {
+		i++
+		return
+	})
+	if i != 0 {
+		t.Error("range over feed that is not exists")
+	}
+	// one
+	rp := getRootPack(0, "one")
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	// two
+	rp = getRootPack(1, "two")
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	// three
+	rp = getRootPack(2, "three")
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	// range
+	i = 2
+	db.RangeFeedReverse(pk, func(rp *RootPack) (stop bool) {
+		t.Log(rp.Seq, i)
+		if rp.Seq != uint64(i) {
+			t.Error("wrong range order", rp.Seq, i)
+		}
+		i--
+		return // continue
+	})
+	if i != -1 {
+		t.Error("wrong range rounds")
+	}
+	// stop
+	i = 0 // reset
+	db.RangeFeedReverse(pk, func(rp *RootPack) (stop bool) {
+		i++
+		return true
+	})
+	if i != 1 {
+		t.Error("can't stop")
+	}
+}
+
 func TestData_RangeFeedReverse(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// RangeFeedReverse
 		//
-		_ = db
+		testRangeFeedReverese(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -642,7 +695,7 @@ func TestData_RangeFeedReverse(t *testing.T) {
 		defer db.Close()
 		// RangeFeedReverse
 		//
-		_ = db
+		testRangeFeedReverese(t, db)
 		//
 	})
 }

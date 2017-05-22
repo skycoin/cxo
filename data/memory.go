@@ -212,7 +212,7 @@ func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
 	for seq := range roots {
 		o = append(o, seq)
 	}
-	sort.Reverse(o)
+	sort.Sort(sort.Reverse(o))
 
 	var rp *RootPack
 	var ok bool
