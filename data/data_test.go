@@ -559,7 +559,7 @@ func testRangeFeed(t *testing.T, db DB) {
 		return
 	})
 	if i != 0 {
-		t.Error("range over feed that is not exists")
+		t.Error("range over feed that is not exist")
 	}
 	// one
 	rp := getRootPack(0, "one")
@@ -633,7 +633,7 @@ func testRangeFeedReverese(t *testing.T, db DB) {
 		return
 	})
 	if i != 0 {
-		t.Error("range over feed that is not exists")
+		t.Error("range over feed that is not exist")
 	}
 	// one
 	rp := getRootPack(0, "one")
@@ -704,12 +704,29 @@ func TestData_RangeFeedReverse(t *testing.T) {
 // roots
 //
 
+func testGetRoot(t *testing.T, db DB) {
+	if _, ok := db.GetRoot(cipher.SumSHA256([]byte("any"))); ok {
+		t.Error("got root that is not exist")
+	}
+	rp := getRootPack(0, "content")
+	pk, _ := cipher.GenerateKeyPair()
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	if gr, ok := db.GetRoot(rp.Hash); !ok {
+		t.Error("missing root")
+	} else {
+		testRootPack(t, gr, &rp)
+	}
+}
+
 func TestData_GetRoot(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// GetRoot
 		//
-		_ = db
+		testGetRoot(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -722,7 +739,7 @@ func TestData_GetRoot(t *testing.T) {
 		defer db.Close()
 		// GetRoot
 		//
-		_ = db
+		testGetRoot(t, db)
 		//
 	})
 }
