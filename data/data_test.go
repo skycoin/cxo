@@ -363,12 +363,83 @@ func TestData_DelFeed(t *testing.T) {
 	})
 }
 
+func testRootError(t *testing.T, re *RootError, rp *RootPack,
+	pk cipher.PubKey) {
+
+	if re.Hash() != rp.Hash {
+		t.Error("wrong root hash of RootError")
+	} else if re.Feed() != pk {
+		t.Error("wrong feed of RootError")
+	} else if re.Seq() != rp.Seq {
+		t.Error("wrong seq of RootError")
+	}
+}
+
+func testDataAddRoot(t *testing.T, db DB) {
+	// prepare
+	var rp RootPack
+	rp.Hash = cipher.SumSHA256(rp.Root) // nil
+	pk, _ := cipher.GenerateKeyPair()
+	t.Run("seq 0 prev", func(t *testing.T) {
+		rp.Prev = cipher.SumSHA256([]byte("any")) // unexpected prev reference
+		if err := db.AddRoot(pk, &rp); err == nil {
+			t.Error("misisng error")
+		} else if re, ok := err.(*RootError); !ok {
+			t.Error("wroing error type")
+		} else {
+			testRootError(t, re, &rp, pk)
+		}
+	})
+	t.Run("seq 1 no prev", func(t *testing.T) {
+		rp.Seq = 1
+		rp.Prev = cipher.SHA256{} // missing prev. reference
+		if err := db.AddRoot(pk, &rp); err == nil {
+			t.Error("misisng error")
+		} else if re, ok := err.(*RootError); !ok {
+			t.Error("wroing error type")
+		} else {
+			testRootError(t, re, &rp, pk)
+		}
+	})
+	t.Run("wrong hash", func(t *testing.T) {
+		// reset
+		rp.Seq = 0
+		rp.Prev = cipher.SHA256{}
+		// reset hash
+		rp.Hash = cipher.SumSHA256([]byte("any")) // unexpected hash
+		if err := db.AddRoot(pk, &rp); err == nil {
+			t.Error("misisng error")
+		} else if re, ok := err.(*RootError); !ok {
+			t.Error("wroing error type")
+		} else {
+			testRootError(t, re, &rp, pk)
+		}
+	})
+	t.Run("add", func(t *testing.T) {
+		// actual hash
+		rp.Hash = cipher.SumSHA256(rp.Root)
+		if err := db.AddRoot(pk, &rp); err != nil {
+			t.Error(err)
+		}
+	})
+	if t.Failed() {
+		return
+	}
+	t.Run("already exists", func(t *testing.T) {
+		if err := db.AddRoot(pk, &rp); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrRootAlreadyExists {
+			t.Error("wrong error")
+		}
+	})
+}
+
 func TestData_AddRoot(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// AddRoot
 		//
-		_ = db
+		testDataAddRoot(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -381,7 +452,7 @@ func TestData_AddRoot(t *testing.T) {
 		defer db.Close()
 		// AddRoot
 		//
-		_ = db
+		testDataAddRoot(t, db)
 		//
 	})
 }

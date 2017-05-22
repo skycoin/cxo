@@ -107,18 +107,24 @@ func (d *memoryDB) DelFeed(pk cipher.PubKey) {
 }
 
 func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
-	d.mx.Lock()
-	defer d.mx.Unlock()
-
 	// test given rp
-	if rp.Seq == 0 && rp.Prev != (cipher.SHA256{}) {
-		err = newRootError(pk, rp, "unexpected prev. reference")
+	if rp.Seq == 0 {
+		if rp.Prev != (cipher.SHA256{}) {
+			err = newRootError(pk, rp, "unexpected prev. reference")
+			return
+		}
+	} else if rp.Prev == (cipher.SHA256{}) {
+		err = newRootError(pk, rp, "missing prev. reference")
 		return
 	}
 	if rp.Hash != cipher.SumSHA256(rp.Root) {
 		err = newRootError(pk, rp, "wrong hash of the root")
 		return
 	}
+
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	//
 	var ok bool
 	var roots map[uint64]cipher.SHA256
