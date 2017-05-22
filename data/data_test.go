@@ -182,7 +182,14 @@ func TestData_IsExist(t *testing.T) {
 		db := NewMemoryDB()
 		// IsExist
 		//
-		_ = db
+		val := []byte("hey ho")
+		key := db.Add(val)
+		if ok := db.IsExist(key); !ok {
+			t.Error("not added")
+		}
+		if ok := db.IsExist(cipher.SumSHA256([]byte("ho hey"))); ok {
+			t.Error("have unexisting value")
+		}
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -195,7 +202,14 @@ func TestData_IsExist(t *testing.T) {
 		defer db.Close()
 		// IsExist
 		//
-		_ = db
+		val := []byte("hey ho")
+		key := db.Add(val)
+		if ok := db.IsExist(key); !ok {
+			t.Error("not added")
+		}
+		if ok := db.IsExist(cipher.SumSHA256([]byte("ho hey"))); ok {
+			t.Error("have unexisting value")
+		}
 		//
 	})
 }
