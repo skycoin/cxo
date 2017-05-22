@@ -258,12 +258,52 @@ func TestData_Range(t *testing.T) {
 // feeds
 //
 
+func testDataFeeds(t *testing.T, db DB) {
+	// empty
+	if len(db.Feeds()) != 0 {
+		t.Error("wrong feeds length")
+	}
+	// prepare
+	var rp RootPack
+	rp.Hash = cipher.SumSHA256(rp.Root)
+	// one
+	pk1, _ := cipher.GenerateKeyPair()
+	if err := db.AddRoot(pk1, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	if fs := db.Feeds(); len(fs) != 1 {
+		t.Error("wrong feeds length")
+	} else if fs[0] != pk1 {
+		t.Error("wrong feed content")
+	}
+	// two
+	pk2, _ := cipher.GenerateKeyPair()
+	if err := db.AddRoot(pk2, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	if fs := db.Feeds(); len(fs) != 2 {
+		t.Error("wrong feeds length")
+	} else {
+		pks := map[cipher.PubKey]struct{}{
+			pk1: struct{}{},
+			pk2: struct{}{},
+		}
+		for _, pk := range fs {
+			if _, ok := pks[pk]; !ok {
+				t.Error("missing feed")
+			}
+		}
+	}
+}
+
 func TestData_Feeds(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// Feeds
 		//
-		_ = db
+		testDataFeeds(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -276,7 +316,7 @@ func TestData_Feeds(t *testing.T) {
 		defer db.Close()
 		// Feeds
 		//
-		_ = db
+		testDataFeeds(t, db)
 		//
 	})
 }
