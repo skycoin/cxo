@@ -172,12 +172,12 @@ func (d *driveDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
 		err = newRootError(pk, rp, "unexpected prev. reference")
 		return
 	}
-	data := encoder.Serialize(rp)
 	hash := cipher.SumSHA256(rp.Root)
 	if hash != rp.Hash {
 		err = newRootError(pk, rp, "wrong hash of the root")
 		return
 	}
+	data := encoder.Serialize(rp)
 	seqb := utob(rp.Seq)
 	// let's go
 	d.update(func(t *bolt.Tx) (_ error) {

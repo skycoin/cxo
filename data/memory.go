@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data/stat"
 )
@@ -116,7 +115,7 @@ func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
 		err = newRootError(pk, rp, "unexpected prev. reference")
 		return
 	}
-	if rp.Hash != cipher.SumSHA256(encoder.Serialize(&rp.Root)) {
+	if rp.Hash != cipher.SumSHA256(rp.Root) {
 		err = newRootError(pk, rp, "wrong hash of the root")
 		return
 	}

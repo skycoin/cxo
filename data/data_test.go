@@ -18,21 +18,29 @@ func testPath(t *testing.T) string {
 	return fl.Name()
 }
 
+//
+// objects
+//
+
+func testDataDel(t *testing.T, db Db) {
+	key := db.Add([]byte("hey ho"))
+	if got, ok := db.Get(key); !ok {
+		t.Error("not added")
+	} else if string(got) != "hey ho" {
+		t.Error("wrong value returned", string(got))
+	} else {
+		db.Del(key)
+		if _, ok := db.Get(key); ok {
+			t.Error("not deleted")
+		}
+	}
+}
+
 func TestData_Del(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// Del
-		key := db.Add([]byte("hey ho"))
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != "hey ho" {
-			t.Error("wrong value returned", string(got))
-		} else {
-			db.Del(key)
-			if _, ok := db.Get(key); ok {
-				t.Error("not deleted")
-			}
-		}
+		testDataDel(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -45,19 +53,21 @@ func TestData_Del(t *testing.T) {
 		defer db.Close()
 		// Del
 		//
-		key := db.Add([]byte("hey ho"))
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != "hey ho" {
-			t.Error("wrong value returned", string(got))
-		} else {
-			db.Del(key)
-			if _, ok := db.Get(key); ok {
-				t.Error("not deleted")
-			}
-		}
+		testDataDel(t, db)
 		//
 	})
+}
+
+func testDataGet(t *testing.T, db Db) {
+	key := db.Add([]byte("hey ho"))
+	if got, ok := db.Get(key); !ok {
+		t.Error("not added")
+	} else if string(got) != "hey ho" {
+		t.Error("wrong value returned", string(got))
+	}
+	if _, ok := db.Get(cipher.SumSHA256([]byte("ho hey"))); ok {
+		t.Error("got unexisting value")
+	}
 }
 
 func TestData_Get(t *testing.T) {
@@ -65,15 +75,7 @@ func TestData_Get(t *testing.T) {
 		db := NewMemoryDB()
 		// Get
 		//
-		key := db.Add([]byte("hey ho"))
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != "hey ho" {
-			t.Error("wrong value returned", string(got))
-		}
-		if _, ok := db.Get(cipher.SumSHA256([]byte("ho hey"))); ok {
-			t.Error("got unexisting value")
-		}
+		testDataGet(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -86,17 +88,20 @@ func TestData_Get(t *testing.T) {
 		defer db.Close()
 		// Get
 		//
-		key := db.Add([]byte("hey ho"))
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != "hey ho" {
-			t.Error("wrong value returned", string(got))
-		}
-		if _, ok := db.Get(cipher.SumSHA256([]byte("ho hey"))); ok {
-			t.Error("got unexisting value")
-		}
+		testDataGet(t, db)
 		//
 	})
+}
+
+func testDataSet(t *testing.T, db DB) {
+	val := []byte("hey ho")
+	key := cipher.SumSHA256(val)
+	db.Set(key, val)
+	if got, ok := db.Get(key); !ok {
+		t.Error("not added")
+	} else if string(got) != string(val) {
+		t.Error("wrong value returned", string(got))
+	}
 }
 
 func TestData_Set(t *testing.T) {
@@ -104,14 +109,7 @@ func TestData_Set(t *testing.T) {
 		db := NewMemoryDB()
 		// Set
 		//
-		val := []byte("hey ho")
-		key := cipher.SumSHA256(val)
-		db.Set(key, val)
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != string(val) {
-			t.Error("wrong value returned", string(got))
-		}
+		testDataSet(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -124,16 +122,22 @@ func TestData_Set(t *testing.T) {
 		defer db.Close()
 		// Set
 		//
-		val := []byte("hey ho")
-		key := cipher.SumSHA256(val)
-		db.Set(key, val)
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != string(val) {
-			t.Error("wrong value returned", string(got))
-		}
+		testDataSet(t, db)
 		//
 	})
+}
+
+func testDataAdd(t *testing.T, db DB) {
+	val := []byte("hey ho")
+	key := db.Add(val)
+	if key != cipher.SumSHA256(val) {
+		t.Error("wrong key calculated")
+	}
+	if got, ok := db.Get(key); !ok {
+		t.Error("not added")
+	} else if string(got) != string(val) {
+		t.Error("wrong value returned", string(got))
+	}
 }
 
 func TestData_Add(t *testing.T) {
@@ -141,16 +145,7 @@ func TestData_Add(t *testing.T) {
 		db := NewMemoryDB()
 		// Add
 		//
-		val := []byte("hey ho")
-		key := db.Add(val)
-		if key != cipher.SumSHA256(val) {
-			t.Error("wrong key calculated")
-		}
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != string(val) {
-			t.Error("wrong value returned", string(got))
-		}
+		testDataAdd(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -163,18 +158,20 @@ func TestData_Add(t *testing.T) {
 		defer db.Close()
 		// Add
 		//
-		val := []byte("hey ho")
-		key := db.Add(val)
-		if key != cipher.SumSHA256(val) {
-			t.Error("wrong key calculated")
-		}
-		if got, ok := db.Get(key); !ok {
-			t.Error("not added")
-		} else if string(got) != string(val) {
-			t.Error("wrong value returned", string(got))
-		}
+		testDataAdd(t, db)
 		//
 	})
+}
+
+func testDataIsExists(t *testing.T, db DB) {
+	val := []byte("hey ho")
+	key := db.Add(val)
+	if ok := db.IsExist(key); !ok {
+		t.Error("not added")
+	}
+	if ok := db.IsExist(cipher.SumSHA256([]byte("ho hey"))); ok {
+		t.Error("have unexisting value")
+	}
 }
 
 func TestData_IsExist(t *testing.T) {
@@ -182,14 +179,7 @@ func TestData_IsExist(t *testing.T) {
 		db := NewMemoryDB()
 		// IsExist
 		//
-		val := []byte("hey ho")
-		key := db.Add(val)
-		if ok := db.IsExist(key); !ok {
-			t.Error("not added")
-		}
-		if ok := db.IsExist(cipher.SumSHA256([]byte("ho hey"))); ok {
-			t.Error("have unexisting value")
-		}
+		testDataIsExists(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -202,16 +192,31 @@ func TestData_IsExist(t *testing.T) {
 		defer db.Close()
 		// IsExist
 		//
-		val := []byte("hey ho")
-		key := db.Add(val)
-		if ok := db.IsExist(key); !ok {
-			t.Error("not added")
-		}
-		if ok := db.IsExist(cipher.SumSHA256([]byte("ho hey"))); ok {
-			t.Error("have unexisting value")
-		}
+		testDataIsExists(t, db)
 		//
 	})
+}
+
+func testDataRange(t *testing.T, db DB) {
+	var vals [][]byte = [][]byte{
+		[]byte("one"),
+		[]byte("two"),
+		[]byte("othree"),
+		[]byte("four"),
+	}
+	for _, val := range vals {
+		db.Add(val)
+	}
+	var collect map[cipher.SHA256][]byte = make(map[cipher.SHA256][]byte)
+	db.Range(func(key cipher.SHA256, value []byte) (stop bool) {
+		collect[key] = value
+		reutrn
+	})
+	if len(collect) != len(vals) {
+		t.Error("wong amount of values given")
+		return
+	}
+	//
 }
 
 func TestData_Range(t *testing.T) {
@@ -219,7 +224,7 @@ func TestData_Range(t *testing.T) {
 		db := NewMemoryDB()
 		// Range
 		//
-		_ = db
+		testDataRange(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -232,10 +237,14 @@ func TestData_Range(t *testing.T) {
 		defer db.Close()
 		// Range
 		//
-		_ = db
+		testDataRange(t, db)
 		//
 	})
 }
+
+//
+// feeds
+//
 
 func TestData_Feeds(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
@@ -375,6 +384,10 @@ func TestData_RangeFeedReverse(t *testing.T) {
 	})
 }
 
+//
+// roots
+//
+
 func TestData_GetRoot(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
@@ -420,6 +433,10 @@ func TestData_DelRootsBefore(t *testing.T) {
 		//
 	})
 }
+
+//
+// stat and close
+//
 
 func TestData_Stat(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
