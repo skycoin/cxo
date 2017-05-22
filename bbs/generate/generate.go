@@ -83,7 +83,7 @@ func main() {
 	reg.Register("bbs.Post", Post{})
 	reg.Register("bbs.User", User{})
 
-	c, err := node.NewClient(conf, skyobject.NewContainer(reg))
+	c, err := node.NewClient(conf, reg)
 	if err != nil {
 		log.Fatal(err)
 	}

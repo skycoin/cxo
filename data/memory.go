@@ -1,242 +1,299 @@
 package data
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data/stat"
 )
 
-type memDB struct {
-	omx     sync.RWMutex
+// buckets:
+//  - objects hash -> []byte (including schemas)
+//  - roots   hash -> encoded RootPack
+//  - feeds   pubkey -> { seq -> hash of root }
+type memoryDB struct {
+	mx      sync.RWMutex
 	objects map[cipher.SHA256][]byte
-
-	frmx  sync.RWMutex
-	feeds map[cipher.PubKey][]cipher.SHA256
-	roots map[cipher.SHA256]RootPack
+	roots   map[cipher.SHA256]*RootPack
+	feeds   map[cipher.PubKey]map[uint64]cipher.SHA256
 }
 
-func NewMemoryDB() DB {
-	return &memDB{
+// NewMemoryDB creates new database in memory
+func NewMemoryDB() (db DB) {
+	db = &memoryDB{
 		objects: make(map[cipher.SHA256][]byte),
-		feeds:   make(map[cipher.PubKey][]cipher.SHA256),
-		roots:   make(map[cipher.SHA256]RootPack),
-	}
-}
-
-func (m *memDB) Del(key cipher.SHA256) {
-	m.omx.Lock()
-	defer m.omx.Unlock()
-	delete(m.objects, key)
-}
-
-func (m *memDB) Find(filter func(key cipher.SHA256, value []byte) bool) []byte {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	for k, v := range m.objects {
-		if filter(k, v) {
-			return v
-		}
-	}
-	return nil
-}
-
-func (m *memDB) ForEach(fn func(k cipher.SHA256, v []byte)) {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	for k, v := range m.objects {
-		fn(k, v)
-	}
-}
-
-func (m *memDB) Get(key cipher.SHA256) (data []byte, ok bool) {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	data, ok = m.objects[key]
-	return
-}
-
-func (m *memDB) GetAll() (all map[cipher.SHA256][]byte) {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	all = make(map[cipher.SHA256][]byte)
-	for k, v := range m.objects {
-		all[k] = v
+		roots:   make(map[cipher.SHA256]*RootPack),
+		feeds:   make(map[cipher.PubKey]map[uint64]cipher.SHA256),
 	}
 	return
 }
 
-func (m *memDB) GetSlice(keys []cipher.SHA256) (slice [][]byte) {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	if len(m.objects) == 0 {
-		return
-	}
-	slice = make([][]byte, 0, len(m.objects))
-	for _, k := range keys {
-		slice = append(slice, m.objects[k])
-	}
+func (d *memoryDB) Del(key cipher.SHA256) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	delete(d.objects, key)
+}
+
+func (d *memoryDB) Get(key cipher.SHA256) (value []byte, ok bool) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	value, ok = d.objects[key] // unsafe
 	return
 }
 
-func (m *memDB) IsExist(key cipher.SHA256) (ok bool) {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	_, ok = m.objects[key]
+func (d *memoryDB) Set(key cipher.SHA256, value []byte) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	d.objects[key] = value
+}
+
+func (d *memoryDB) Add(value []byte) (key cipher.SHA256) {
+	key = cipher.SumSHA256(value)
+	d.Set(key, value)
 	return
 }
 
-func (m *memDB) Len() (ln int) {
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	ln = len(m.objects)
+func (d *memoryDB) IsExist(key cipher.SHA256) (ok bool) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	_, ok = d.objects[key]
 	return
 }
 
-func (m *memDB) Set(key cipher.SHA256, value []byte) {
-	m.omx.Lock()
-	defer m.omx.Unlock()
-	m.objects[key] = value
-}
+func (d *memoryDB) Range(fn func(key cipher.SHA256, value []byte) (stop bool)) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
 
-func (m *memDB) DelFeed(pk cipher.PubKey) {
-	m.frmx.Lock()
-	defer m.frmx.Unlock()
-	for _, rh := range m.feeds[pk] {
-		delete(m.roots, rh)
-	}
-	delete(m.feeds, pk)
-}
-
-func (m *memDB) AddRoot(pk cipher.PubKey, rp RootPack) (err error) {
-	m.frmx.Lock()
-	defer m.frmx.Unlock()
-	// check hash of the rp
-	if rp.Hash == (cipher.SHA256{}) {
-		err = newRootError(pk, &rp, "empty hash")
-		return
-	}
-	// roots of feeds
-	var rs []cipher.SHA256 = m.feeds[pk]
-	// persistence (check conflicts)
-	for _, rh := range rs {
-		if rh == rp.Hash {
-			err = newRootError(pk, &rp, "already exists")
-			return
-		}
-	}
-	// seq and prev
-	if rp.Seq == 0 {
-		if len(rs) > 0 {
-			err = newRootError(pk, &rp, "given root is not first of the feed")
-			return
-		}
-		if rp.Prev != (cipher.SHA256{}) {
-			err = newRootError(pk, &rp, "unexpected reference to previous Root")
-			return
-		}
-	} else { // seq > 0
-		// must have previous root
-		if len(rs) == 0 {
-			err = newRootError(pk, &rp, "missing previous root")
-			return
-		}
-		if rp.Prev == (cipher.SHA256{}) {
-			err = newRootError(pk, &rp, "missing reference to previous Root")
-			return
-		}
-		// the rp must be latest of the feed
-		if rs[len(rs)-1] != rp.Prev { // may be the rp is not latest
-			err = newRootError(pk, &rp, "unexpected previous root of the feed")
-			return
-		}
-		// we must have hash of previous root to check prev reference
-		if p, ok := m.roots[rp.Prev]; !ok {
-			err = newRootError(pk, &rp, "missing previous root object")
-			return
-		} else if p.Next == (cipher.SHA256{}) {
-			p.Next = rp.Hash // set
-		} else if p.Next != rp.Hash {
-			err = newRootError(pk,
-				&rp,
-				"previous root has another Next reference")
-			return
-		}
-	}
-	m.feeds[pk] = append(rs, rp.Hash) // add to feed
-	m.roots[rp.Hash] = rp             // store
-	return
-}
-
-func (m *memDB) LastRoot(pk cipher.PubKey) (rp RootPack, ok bool) {
-	m.frmx.RLock()
-	defer m.frmx.RUnlock()
-	rs := m.feeds[pk]
-	if len(rs) == 0 {
-		return
-	}
-	rp, ok = m.roots[rs[len(rs)-1]] // must have
-	return
-}
-
-func (m *memDB) ForEachRoot(pk cipher.PubKey,
-	fn func(hash cipher.SHA256, rp RootPack) (stop bool)) {
-
-	m.frmx.RLock()
-	defer m.frmx.RUnlock()
-	for _, rh := range m.feeds[pk] {
-		if fn(rh, m.roots[rh]) {
+	for key, value := range d.objects {
+		if fn(key, value) {
 			return
 		}
 	}
 	return
 }
 
-func (m *memDB) Feeds() (pks []cipher.PubKey) {
-	m.frmx.RLock()
-	defer m.frmx.RUnlock()
+//
+// Feeds
+//
+
+func (m *memoryDB) Feeds() (fs []cipher.PubKey) {
+	m.mx.RLock()
+	defer m.mx.RUnlock()
+
 	if len(m.feeds) == 0 {
 		return
 	}
-	pks = make([]cipher.PubKey, 0, len(m.feeds))
-	for pk, rs := range m.feeds {
-		if len(rs) > 0 {
-			pks = append(pks, pk)
+	fs = make([]cipher.PubKey, 0, len(m.feeds))
+	for pk := range m.feeds {
+		fs = append(fs, pk)
+	}
+	return
+}
+
+func (d *memoryDB) DelFeed(pk cipher.PubKey) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	for _, hash := range d.feeds[pk] {
+		delete(d.roots, hash)
+	}
+	delete(d.feeds, pk)
+}
+
+func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	// test given rp
+	if rp.Seq == 0 && rp.Prev != (cipher.SHA256{}) {
+		err = newRootError(pk, rp, "unexpected prev. reference")
+		return
+	}
+	if rp.Hash != cipher.SumSHA256(encoder.Serialize(&rp.Root)) {
+		err = newRootError(pk, rp, "wrong hash of the root")
+		return
+	}
+	//
+	var ok bool
+	var roots map[uint64]cipher.SHA256
+	if roots, ok = d.feeds[pk]; !ok {
+		d.feeds[pk] = map[uint64]cipher.SHA256{
+			rp.Seq: rp.Hash,
+		}
+		d.roots[rp.Hash] = rp
+		return
+	}
+	// ok
+	if _, ok = roots[rp.Seq]; ok {
+		err = ErrRootAlreadyExists
+		return
+	}
+	roots[rp.Seq] = rp.Hash
+	d.roots[rp.Hash] = rp
+	return
+}
+
+func (d *memoryDB) LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	roots := d.feeds[pk]
+	if len(roots) == 0 {
+		return // bo roots
+	}
+	var max uint64 = 0
+	for seq := range roots {
+		if max < seq {
+			max = seq
 		}
 	}
-	return
-}
-
-func (m *memDB) GetRoot(hash cipher.SHA256) (rp RootPack, ok bool) {
-	m.frmx.RLock()
-	defer m.frmx.RUnlock()
-	rp, ok = m.roots[hash]
-	return
-}
-
-func (m *memDB) DelRoot(hash cipher.SHA256) {
-	m.frmx.Lock()
-	defer m.frmx.RUnlock()
-	// TODO
-}
-
-func (m *memDB) Stat() (s Stat) {
-	m.frmx.RLock()
-	defer m.frmx.RUnlock()
-	m.omx.RLock()
-	defer m.omx.RUnlock()
-	s.Total = len(m.objects)
-	s.Roots = len(m.roots)
-	s.Feeds = len(m.feeds)
-	for _, rp := range m.roots {
-		s.Memory += len(rp.Root) + (len(cipher.SHA256{}) * 3) + 8 +
-			len(cipher.Sig{})
-	}
-	for _, data := range m.objects {
-		s.Memory += len(data)
+	if rp, ok = d.roots[roots[max]]; !ok {
+		panic("broken db: misisng root") // critical
 	}
 	return
 }
 
-func (m *memDB) Close() (_ error) {
+func (d *memoryDB) RangeFeed(pk cipher.PubKey,
+	fn func(rp *RootPack) (stop bool)) {
+
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	roots := d.feeds[pk]
+	if len(roots) == 0 {
+		return // empty feed
+	}
+
+	var o order = make(order, 0, len(roots))
+	for seq := range roots {
+		o = append(o, seq)
+	}
+	sort.Sort(o)
+
+	var rp *RootPack
+	var ok bool
+
+	for _, seq := range o {
+		if rp, ok = d.roots[roots[seq]]; !ok {
+			panic("broken database: misisng root") // critical
+		}
+		if fn(rp) {
+			return // break
+		}
+	}
+}
+
+func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
+	fn func(rp *RootPack) (stop bool)) {
+
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	roots := d.feeds[pk]
+	if len(roots) == 0 {
+		return // empty feed
+	}
+
+	var o order = make(order, 0, len(roots))
+	for seq := range roots {
+		o = append(o, seq)
+	}
+	sort.Reverse(o)
+
+	var rp *RootPack
+	var ok bool
+
+	for _, seq := range o {
+		if rp, ok = d.roots[roots[seq]]; !ok {
+			panic("broken database: misisng root") // critical
+		}
+		if fn(rp) {
+			return // break
+		}
+	}
+}
+
+//
+// Roots
+//
+
+func (d *memoryDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	rp, ok = d.roots[hash]
 	return
 }
+
+func (d *memoryDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	roots := d.feeds[pk]
+	if len(roots) == 0 {
+		return // empty feed
+	}
+
+	var o order = make(order, 0, len(roots))
+	for s := range roots {
+		if s < seq {
+			o = append(o, s)
+		}
+	}
+	if len(o) == 0 {
+		return
+	}
+	sort.Sort(o)
+
+	for _, s := range o {
+		delete(d.roots, roots[s])
+		delete(roots, s)
+	}
+
+	if len(roots) == 0 {
+		delete(d.feeds, pk)
+	}
+}
+
+func (d *memoryDB) Stat() (s stat.Stat) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
+
+	s.Objects = len(d.objects)
+	for _, v := range d.objects {
+		s.Space += stat.Space(len(v))
+	}
+
+	if len(d.feeds) == 0 {
+		return
+	}
+	s.Feeds = make(map[cipher.PubKey]stat.FeedStat, len(d.feeds))
+	// lengths of Prev, Hash, Sig and Seq (8 byte)
+	var add int = len(cipher.SHA256{})*2 + len(cipher.Sig{}) + 8
+	for pk, rs := range d.feeds {
+		var fs stat.FeedStat
+		for _, hash := range rs {
+			fs.Space += stat.Space(len(d.roots[hash].Root) + add)
+		}
+		fs.Roots = len(rs)
+		s.Feeds[pk] = fs
+	}
+	return
+}
+
+func (d *memoryDB) Close() (_ error) {
+	return
+}
+
+type order []uint64
+
+func (o order) Len() int           { return len(o) }
+func (o order) Less(i, j int) bool { return o[i] < o[j] }
+func (o order) Swap(i, j int)      { o[i], o[j] = o[j], o[i] }

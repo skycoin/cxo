@@ -43,6 +43,8 @@ node/gnet/cover.out
 node/gnet/cover.html
 
 bbs/generate/generate
+bbs/generate/generate.db
 bbs/receive/receive
+bbs/receive/receive.db
 
 *.go.ignore

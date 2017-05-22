@@ -16,6 +16,10 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+func init() {
+	log.SetFlags(log.Lshortfile | log.Ltime)
+}
+
 func main() {
 	var (
 		serverAddress string = "[::]:8998"
@@ -42,7 +46,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	c, err := node.NewClient(cc, skyobject.NewContainer(nil))
+	c, err := node.NewClient(cc, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -46,7 +46,6 @@ type Root struct {
 	cnt  *Container // back reference (ro)
 
 	hash cipher.SHA256 // hash of the Root
-	next cipher.SHA256 // hash of next root
 	prev cipher.SHA256 // hash of previous root
 
 	attached bool // is attached
@@ -54,8 +53,8 @@ type Root struct {
 	rsh *Registry // short hand for registry
 }
 
-// ReadOnly returns true if you can't modify the root
-func (r *Root) ReadOnly() (yep bool) {
+// IsReadOnly returns true if you can't modify the root
+func (r *Root) IsReadOnly() (yep bool) {
 	r.RLock()
 	defer r.RUnlock()
 	yep = r.sec == (cipher.SecKey{})
@@ -176,15 +175,6 @@ func (r *Root) PrevHash() RootReference {
 	return RootReference(r.prev)
 }
 
-// NextHash returns RootReference to next
-// Root of the Root. It can be empty even
-// next Root exists
-func (r *Root) NextHash() RootReference {
-	r.RLock()
-	defer r.RUnlock()
-	return RootReference(r.next)
-}
-
 // IsFull reports true if the Root is full
 // (has all related schemas and objects).
 // The IsFull always retruns false for freshly
@@ -232,6 +222,7 @@ func (r *Root) encode() (rp data.RootPack) {
 	x.Time = r.time
 	x.Seq = r.seq
 	x.Pub = r.pub
+	x.Prev = r.prev
 
 	rp.Root = encoder.Serialize(x) // []byte
 
@@ -244,8 +235,6 @@ func (r *Root) encode() (rp data.RootPack) {
 	rp.Sig = r.sig
 
 	rp.Prev = r.prev
-	rp.Next = r.next
-
 	rp.Seq = r.seq
 
 	return
@@ -650,6 +639,7 @@ type encodedRoot struct {
 	Time int64
 	Seq  uint64
 	Pub  cipher.PubKey
+	Prev cipher.SHA256 // hash of previous root
 	// don't send secret key, because it's a secret
 	// don't send signature, because signaure is signature of encoded root
 }

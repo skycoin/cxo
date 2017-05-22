@@ -2,6 +2,9 @@ package node
 
 import (
 	"flag"
+	"os"
+	"os/user"
+	"path/filepath"
 	"time"
 
 	"github.com/skycoin/cxo/node/gnet"
@@ -13,15 +16,49 @@ const (
 
 	// server defaults
 
-	EnableRPC       bool   = true        // default RPC pin
-	Listen          string = ""          // default listening address
-	RemoteClose     bool   = false       // default remote-closing pin
-	RPCAddress      string = "[::]:8878" // default RPC address
-	EnableBlockDB   bool   = false       // default BlockDB pin
-	RandomizeDBPath bool   = false       // default to use regular db path
+	EnableRPC   bool   = true        // default RPC pin
+	Listen      string = ""          // default listening address
+	RemoteClose bool   = false       // default remote-closing pin
+	RPCAddress  string = "[::]:8878" // default RPC address
+	InMemoryDB  bool   = false       // default database placement pin
 
-	PingInterval time.Duration = 2 * time.Second
+	// PingInterval is default interval by which server send pings
+	// to connections that doesn't communicate. Actually, the
+	// interval can be increased x2
+	PingInterval time.Duration = 0 * 2 * time.Second
+
+	// default tree is
+	//   server: ~/.skycoin/cxo/server/bolt.db
+	//   client: ~/.skycoin/cxo/client/bolt.db
+	// todo:
+	//   server should be system wide and its
+	//   directory should be like /var/cache/cxo/bolt.db
+
+	skycoinDataDir = ".skycoin"
+	cxoSubDir      = "cxo"
+
+	serverSubDir = "server"
+	clientSubDir = "client"
+
+	dbFile = "bolt.db"
 )
+
+func dataDir(sub string) string {
+	// TODO: /var/lib/cxo for cxod
+	usr, err := user.Current()
+	if err != nil {
+		panic(err) // fatal
+	}
+	if usr.HomeDir == "" {
+		panic("empty home dir")
+	}
+	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir, sub)
+}
+
+func initDataDir(dir string) error {
+	println("HERE", dir)
+	return os.MkdirAll(dir, 0700)
+}
 
 // A ServerConfig represnets configurations
 // of a Server
@@ -46,14 +83,12 @@ type ServerConfig struct {
 	// Set to 0 to disable pings
 	PingInterval time.Duration
 
-	// EnableBlockDB db usage
-	EnableBlockDB bool
-
-	// RandomDB generate random db save location,
-	// and remove the db-file after use. This option
-	// allows to run multiply instances of cxod on the
-	// same machine without conflicts. For tests.
-	RandomizeDBPath bool
+	// InMemoryDB uses database in memory
+	InMemoryDB bool
+	// DBPath is path to database file
+	DBPath string
+	// DataDir is directory with data files
+	DataDir string
 }
 
 // NewServerConfig returns ServerConfig
@@ -66,8 +101,9 @@ func NewServerConfig() (sc ServerConfig) {
 	sc.Listen = Listen
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
-	sc.EnableBlockDB = EnableBlockDB
-	sc.RandomizeDBPath = RandomizeDBPath
+	sc.InMemoryDB = InMemoryDB
+	sc.DataDir = dataDir(serverSubDir)
+	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
 	return
 }
 
@@ -102,14 +138,18 @@ func (s *ServerConfig) FromFlags() {
 		"ping",
 		s.PingInterval,
 		"interval to send pings (0 = disable)")
-	flag.BoolVar(&s.EnableBlockDB,
-		"db",
-		s.EnableBlockDB,
-		"enable DB")
-	flag.BoolVar(&s.RandomizeDBPath,
-		"randomdb",
-		s.RandomizeDBPath,
-		"generate random DB file name")
+	flag.BoolVar(&s.InMemoryDB,
+		"mem-db",
+		s.InMemoryDB,
+		"use in-memory database")
+	flag.StringVar(&s.DataDir,
+		"data-dir",
+		s.DataDir,
+		"directory with data")
+	flag.StringVar(&s.DBPath,
+		"db-path",
+		s.DBPath,
+		"path to database")
 	return
 }
 
@@ -118,6 +158,13 @@ func (s *ServerConfig) FromFlags() {
 type ClientConfig struct {
 	gnet.Config            // pool configurations
 	Log         log.Config // logger configurations
+
+	// InMemoryDB uses database in memory
+	InMemoryDB bool
+	// DataDir is directory with data
+	DataDir string
+	// DBPath is path to database
+	DBPath string
 
 	// handlers
 	OnConnect    func()
@@ -129,6 +176,9 @@ type ClientConfig struct {
 func NewClientConfig() (cc ClientConfig) {
 	cc.Config = gnet.NewConfig()
 	cc.Log = log.NewConfig()
+	cc.InMemoryDB = InMemoryDB
+	cc.DataDir = dataDir(clientSubDir)
+	cc.DBPath = filepath.Join(cc.DataDir, dbFile)
 	return
 }
 
@@ -142,4 +192,12 @@ func NewClientConfig() (cc ClientConfig) {
 func (c *ClientConfig) FromFlags() {
 	c.Config.FromFlags()
 	c.Log.FromFlags()
+	flag.BoolVar(&c.InMemoryDB,
+		"mem-db",
+		c.InMemoryDB,
+		"use in-memory database")
+	flag.StringVar(&c.DBPath,
+		"db-path",
+		c.DBPath,
+		"path to database")
 }

@@ -17,6 +17,7 @@ import (
 type Client struct {
 	log.Logger
 
+	db data.DB
 	so *skyobject.Container
 
 	fmx   sync.Mutex
@@ -41,16 +42,31 @@ type Client struct {
 	await sync.WaitGroup
 }
 
-// NewClient cretes Client with given Container
-func NewClient(cc ClientConfig, so *skyobject.Container) (c *Client,
+// NewClient cretes Client with given *skyobject.Registry. The Client
+// creates database and *skyobject.Container, then you can get
+// them using Continaer and DB methods. This step required because
+// place of database depends on ClientConfig
+func NewClient(cc ClientConfig, reg *skyobject.Registry) (c *Client,
 	err error) {
 
-	if so == nil {
-		panic("missing *skyobject.Container")
+	var db data.DB
+
+	if cc.InMemoryDB == true {
+		db = data.NewMemoryDB()
+	} else {
+		if cc.DataDir != "" {
+			if err = initDataDir(cc.DataDir); err != nil {
+				println("HERE")
+				return
+			}
+		}
+		if db, err = data.NewDriveDB(cc.DBPath); err != nil {
+			return
+		}
 	}
 
 	c = new(Client)
-	c.so = so
+	c.so = skyobject.NewContainer(db, reg)
 	c.feeds = make(map[cipher.PubKey]struct{})
 	c.srvfs = make(map[cipher.PubKey]struct{})
 	c.Logger = log.NewLogger(cc.Log.Prefix, cc.Log.Debug)
@@ -91,8 +107,9 @@ func (c *Client) Close() (err error) {
 	c.quito.Do(func() {
 		close(c.quit)
 	})
-	err = c.pool.Close()
+	c.pool.Close() // ignore error
 	c.await.Wait()
+	err = c.so.DB().Close()
 	return
 }
 
@@ -103,6 +120,8 @@ func (c *Client) IsConnected() bool {
 	defer c.icmx.Unlock()
 	return c.isConnected
 }
+
+func (c *Client) DB() data.DB { return c.so.DB() }
 
 func (c *Client) setIsConnected(t bool) {
 	c.icmx.Lock()
@@ -217,14 +236,13 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 	if !s.hasFeed(msg.Feed) {
 		return
 	}
-	root, err := s.so.AddRootPack(msg.RootPack)
+	root, err := s.so.AddRootPack(&msg.RootPack)
 	if err != nil {
-		// TOOD: high priority after data
-		if err == skyobject.ErrAlreadyHaveThisRoot {
+		if err == data.ErrRootAlreadyExists {
 			s.Debug("reject root: alredy have this root")
 			return
 		}
-		s.Print("[ERR] error decoding root: ", err)
+		s.Print("[ERR] error appending root: ", err)
 		return
 	}
 	if root.IsFull() {
@@ -477,7 +495,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	return
 }
 
-func (c *Container) AddRootPack(rp data.RootPack) (r *Root,
+func (c *Container) AddRootPack(rp *data.RootPack) (r *Root,
 	err error) {
 
 	var sr *skyobject.Root
@@ -517,10 +535,9 @@ type Root struct {
 }
 
 func (r *Root) send(rp data.RootPack) {
-	// TODO: high priority after data and ErrAlreadyHave (above)
-	// if !r.c.client.hasFeed(r.Pub()) {
-	// 	return // don't send
-	// }
+	if !r.c.client.hasFeed(r.Pub()) {
+		return // don't send
+	}
 	r.c.client.sendMessage(&RootMsg{
 		Feed:     r.Pub(),
 		RootPack: rp,

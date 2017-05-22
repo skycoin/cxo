@@ -1,51 +1,18 @@
 package data
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/data/stat"
 )
 
-type Stat struct {
-	Total  int `json:"total"`  // total objects and schemas
-	Memory int `json:"memory"` // all objects and roots
-	Roots  int `json:"roots"`  // count of all root object
-	Feeds  int `json:"feeds"`  // count of all non-empty feeds
-}
-
-// String implemets fmt.Stringer interface and returns
-// human readable string
-func (s Stat) String() string {
-	return fmt.Sprintf("{total: %d, memory: %s, roots: %d, feeds: %d}",
-		s.Total,
-		HumanMemory(s.Memory),
-		s.Roots,
-		s.Feeds)
-}
-
-// HumanMemory returns human readable memory string
-func HumanMemory(bytes int) string {
-	var fb float64 = float64(bytes)
-	var ms string = "B"
-	for _, m := range []string{"KiB", "MiB", "GiB"} {
-		if fb > 1024.0 {
-			fb = fb / 1024.0
-			ms = m
-			continue
-		}
-		break
-	}
-	if ms == "B" {
-		return fmt.Sprintf("%.0fB", fb)
-	}
-	// 2.00 => 2
-	// 2.10 => 2.1
-	// 2.53 => 2.53
-	return strings.TrimRight(
-		strings.TrimRight(fmt.Sprintf("%.2f", fb), "0"),
-		".") + ms
-}
+// ErrRootAlreadyExists oocurs when you try to save root object
+// that already exist in database. The error required for
+// networking to omit unnessesary work
+var ErrRootAlreadyExists = errors.New("root already exists")
 
 // A DB is common database interface
 type DB interface {
@@ -54,53 +21,56 @@ type DB interface {
 	// Objects and Schemas
 	//
 
-	// Del deletes vlaue by key
+	// Del deletes by key
 	Del(key cipher.SHA256)
-	// Find value by key and value
-	Find(filter func(key cipher.SHA256, value []byte) bool) []byte
-	// ForEach key-value pair (read-only)
-	ForEach(f func(k cipher.SHA256, v []byte))
-	// Get by key (nil is not found)
-	Get(key cipher.SHA256) (data []byte, ok bool)
-	// Get all key-value pairs
-	GetAll() map[cipher.SHA256][]byte
-	// GetSlice of values by slice of keys
-	GetSlice(keys []cipher.SHA256) [][]byte
-	// IsExist an object with provided key
-	IsExist(k cipher.SHA256) bool
-	// Len of the database (all objects and schemas)
-	Len() (ln int)
-	// Set value with provided key overwriting exist
+	// Get by key
+	Get(key cipher.SHA256) (value []byte, ok bool)
+	// Set value using its precalculated key
 	Set(key cipher.SHA256, value []byte)
+	// Add value returning its key
+	Add(value []byte) cipher.SHA256
+	// IsExist check persistence of a value by key
+	IsExist(key cipher.SHA256) (ok bool)
+	// Range over all objects and schemas (read only)
+	Range(func(key cipher.SHA256, value []byte) (stop bool))
 
 	//
-	// Root objects
+	// Feeds
 	//
 
-	// DelFeed deletes entire feed with all root objects.
+	// Feeds returns list of feeds
+	Feeds() []cipher.PubKey
+	// DelFeed deletes feed and all related root objects.
 	// The method doesn't remove related objects and schemas
 	DelFeed(pk cipher.PubKey)
-	// AddRoot to pk-feed
-	AddRoot(pk cipher.PubKey, rp RootPack) (err error)
+	// AddRoot to feed, rejecting all roots older then
+	// oldest the feed has got
+	AddRoot(pk cipher.PubKey, rp *RootPack) (err error)
 	// LastRoot returns last root of a feed
-	LastRoot(pk cipher.PubKey) (rp RootPack, ok bool)
-	// ForEachRoot of a feed by seq order (read only)
-	ForEachRoot(pk cipher.PubKey,
-		fn func(hash cipher.SHA256, rp RootPack) (stop bool))
-	// Feeds returns all feeds that has at least
-	// one root object
-	Feeds() []cipher.PubKey
+	LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool)
+	// RangeFeed itterate root objects of tgiven feed
+	// ordered by seq from oldest to newest
+	RangeFeed(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
+	// RangeFeedReverse is same as RangeFeed, but order
+	// is reversed
+	RangeFeedReverse(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
+
+	//
+	// Roots
+	//
+
 	// GetRoot by hash
-	GetRoot(hash cipher.SHA256) (rp RootPack, ok bool)
-	// DelRoot deletes root object by hash
-	DelRoot(hash cipher.SHA256)
+	GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool)
+	// DelRootsBefore deletes root objects of given feed
+	// before given seq number (exclusive)
+	DelRootsBefore(pk cipher.PubKey, seq uint64)
 
 	//
 	// Other methods
 	//
 
 	// Stat of the DB
-	Stat() (s Stat)
+	Stat() (s stat.Stat)
 	// Close the DB
 	Close() (err error)
 }
@@ -109,12 +79,15 @@ type DB interface {
 // seq number, and next/prev/this hashes
 type RootPack struct {
 	Root []byte
-	Sig  cipher.Sig
-	Seq  uint64
 
-	Hash cipher.SHA256 // skyobject.RootReference
-	Prev cipher.SHA256 // skyobject.RootReference
-	Next cipher.SHA256 // skyobject.RootReference
+	// both Seq and Prev are encoded inside Root filed above
+	// but we need them for database
+
+	Seq  uint64        // seq number of this Root
+	Prev cipher.SHA256 // previous Root or empty if seq == 0
+
+	Hash cipher.SHA256 // hash of the Root filed
+	Sig  cipher.Sig    // signature of the Hash field
 }
 
 // A RootError represents error that can be returned by AddRoot method

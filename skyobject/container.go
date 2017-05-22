@@ -29,19 +29,13 @@ type Container struct {
 	registries map[RegistryReference]*Registry
 }
 
-// NewContainer is like NewContainerDB but database created
-// implicitly. See documentation of NewContainerDB for details
-func NewContainer(reg *Registry) *Container {
-	return NewContainerDB(data.NewMemoryDB(), reg)
-}
-
-// NewContainerDB creates new Container using given databse and
+// NewContainer creates new Container using given databse and
 // optional Registry. If Registry is no nil, then the registry
 // will be used to create Root objects by NewRoot. The registry
 // is just usablility trick. You can create a Container without
 // registry, add a Registry using AddRegistry method and
 // create a Root using NewRootReg method
-func NewContainerDB(db data.DB, reg *Registry) (c *Container) {
+func NewContainer(db data.DB, reg *Registry) (c *Container) {
 	if db == nil {
 		panic("missing data.DB")
 	}
@@ -99,7 +93,7 @@ func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
 	return
 }
 
-func (c *Container) unpackRoot(rp data.RootPack) (r *Root, err error) {
+func (c *Container) unpackRoot(rp *data.RootPack) (r *Root, err error) {
 	var x encodedRoot
 	if err = encoder.DeserializeRaw(rp.Root, &x); err != nil {
 		return
@@ -110,12 +104,12 @@ func (c *Container) unpackRoot(rp data.RootPack) (r *Root, err error) {
 	r.time = x.Time
 	r.seq = x.Seq
 	r.pub = x.Pub
-	r.sig = rp.Sig
 	r.cnt = c
 
-	r.next = rp.Next
+	r.prev = x.Prev
+
+	r.sig = rp.Sig
 	r.hash = rp.Hash
-	r.prev = rp.Prev
 	return
 }
 
@@ -125,21 +119,21 @@ func (c *Container) WantRegistry(rr RegistryReference) (want bool) {
 	defer c.RUnlock()
 	var have bool
 	for _, pk := range c.db.Feeds() {
-		c.db.ForEachRoot(pk, func(hash cipher.SHA256, rp data.RootPack) bool {
+		c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
 			var x encodedRoot
 			if err := encoder.DeserializeRaw(rp.Root, &x); err != nil {
 				panic(err) // critical
 			}
 			if x.Reg == rr {
 				if _, ok := c.registries[rr]; !ok {
-					want = true // want
-					return true // stop
+					want, stop = true, true // want
+					return
 				} else {
-					have = true // already have
-					return true // stop
+					have, stop = true, true // already have
+					return
 				}
 			}
-			return false // continue
+			return // continue
 		})
 		if want || have {
 			return // break feeds loop if we already know all we need
@@ -255,7 +249,7 @@ func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 		return
 	}
 
-	var rp data.RootPack
+	var rp *data.RootPack
 	var ok bool
 
 	if rp, ok = c.db.LastRoot(pk); ok {
@@ -268,7 +262,6 @@ func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 		r.sec = sk               // make it editable
 		r.prev = r.hash          // shift
 		r.hash = cipher.SHA256{} // clear
-		r.next = cipher.SHA256{} // clear
 		r.seq++                  // increase
 		r.refs = nil             // clear
 		r.sig = cipher.Sig{}     // clear
@@ -288,7 +281,7 @@ func (c *Container) newRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 // Container. It returns an error if given data can't be decoded
 // or signature is wrong. It also returns error if
 // something wrong with prev/next/hash or seq
-func (c *Container) AddRootPack(rp data.RootPack) (r *Root, err error) {
+func (c *Container) AddRootPack(rp *data.RootPack) (r *Root, err error) {
 
 	if r, err = c.unpackRoot(rp); err != nil {
 		return
@@ -336,16 +329,17 @@ func (c *Container) LastRootSk(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 // It can return nil. It can return received root object that doesn't
 // contain secret key
 func (c *Container) LastFullRoot(pk cipher.PubKey) (lastFull *Root) {
-	// TODO: data package => ForEachRoot in reverse order
-	c.db.ForEachRoot(pk, func(_ cipher.SHA256, rp data.RootPack) (stop bool) {
+	c.db.RangeFeedReverse(pk, func(rp *data.RootPack) (stop bool) {
 		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
 			panic(err) // ccritical
 		}
-		r.attached = true // it's attached
+		r.attached = true
+		// first full from tail
 		if r.IsFull() {
-			lastFull = r
+			stop = true
+			return // break
 		}
 		return // false (continue)
 	})
@@ -363,7 +357,7 @@ func (c *Container) Feeds() []cipher.PubKey {
 func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
 	c.RLock()
 	defer c.RUnlock()
-	c.db.ForEachRoot(pk, func(_ cipher.SHA256, rp data.RootPack) (stop bool) {
+	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
 		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
@@ -386,7 +380,7 @@ func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
 func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
 	c.RLock()
 	defer c.RUnlock()
-	c.db.ForEachRoot(pk, func(_ cipher.SHA256, rp data.RootPack) (stop bool) {
+	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
 		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
@@ -523,14 +517,13 @@ func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
 	// the Root locked, we can access all its fields
 	if r.attached {
 		r.seq++
-		r.prev = r.hash            // must have valid hash
-		r.next = (cipher.SHA256{}) // clear
+		r.prev = r.hash // must have valid hash
 		// encode, sign and update hash of the root
 	} else {
 		// actual seq and prev, and cleared next
 		r.attached = true // make it attached
 	}
 	rp = r.encode()
-	err = c.db.AddRoot(r.pub, rp)
+	err = c.db.AddRoot(r.pub, &rp)
 	return
 }
