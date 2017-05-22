@@ -22,7 +22,7 @@ func testPath(t *testing.T) string {
 // objects
 //
 
-func testDataDel(t *testing.T, db Db) {
+func testDataDel(t *testing.T, db DB) {
 	key := db.Add([]byte("hey ho"))
 	if got, ok := db.Get(key); !ok {
 		t.Error("not added")
@@ -58,7 +58,7 @@ func TestData_Del(t *testing.T) {
 	})
 }
 
-func testDataGet(t *testing.T, db Db) {
+func testDataGet(t *testing.T, db DB) {
 	key := db.Add([]byte("hey ho"))
 	if got, ok := db.Get(key); !ok {
 		t.Error("not added")
@@ -210,13 +210,25 @@ func testDataRange(t *testing.T, db DB) {
 	var collect map[cipher.SHA256][]byte = make(map[cipher.SHA256][]byte)
 	db.Range(func(key cipher.SHA256, value []byte) (stop bool) {
 		collect[key] = value
-		reutrn
+		return
 	})
 	if len(collect) != len(vals) {
 		t.Error("wong amount of values given")
 		return
 	}
-	//
+	for _, v := range vals {
+		if string(collect[cipher.SumSHA256(v)]) != string(v) {
+			t.Error("wrong value")
+		}
+	}
+	var i int
+	db.Range(func(key cipher.SHA256, value []byte) (stop bool) {
+		i++
+		return true
+	})
+	if i != 1 {
+		t.Error("can't stop")
+	}
 }
 
 func TestData_Range(t *testing.T) {

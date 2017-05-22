@@ -402,11 +402,11 @@ func stat(rpc *node.RPCClient) (err error) {
 		return
 	}
 	fmt.Println("  Objects:", stat.Objects)
-	fmt.Println("  Space:  ", stat.Space.Strign())
+	fmt.Println("  Space:  ", stat.Space.String())
 	for pk, fs := range stat.Feeds {
 		fmt.Println(" ", pk.Hex())
 		fmt.Println("    Root Objects: ", fs.Roots)
-		fmt.Println("    Space:        ", fs.Space.Strign())
+		fmt.Println("    Space:        ", fs.Space.String())
 	}
 	return
 }
