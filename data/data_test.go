@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -457,12 +458,64 @@ func TestData_AddRoot(t *testing.T) {
 	})
 }
 
+func testRootPack(t *testing.T, rp1, rp2 *RootPack) {
+	if bytes.Compare(rp1.Root, rp2.Root) != 0 {
+		t.Error("wrong Root filed")
+	}
+	if rp1.Hash != rp2.Hash {
+		t.Error("wrong Hash field")
+	}
+	if rp1.Sig != rp2.Sig {
+		t.Error("wrong Sig field")
+	}
+	if rp1.Seq != rp2.Seq {
+		t.Error("wrong Seq filed")
+	}
+	if rp1.Prev != rp2.Prev {
+		t.Error("wrong Prev field")
+	}
+}
+
+func testLastRoot(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+	// no feed
+	if _, ok := db.LastRoot(pk); ok {
+		t.Error("unexpected LastRoot")
+	}
+	// add
+	var rp RootPack
+	rp.Hash = cipher.SumSHA256(rp.Root)
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	lr, ok := db.LastRoot(pk)
+	if !ok {
+		t.Error("missing last root")
+		return
+	}
+	testRootPack(t, lr, &rp)
+	// second
+	rp.Seq = 1
+	rp.Prev = rp.Hash // previous
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	lr, ok = db.LastRoot(pk)
+	if !ok {
+		t.Error("missing last root")
+		return
+	}
+	testRootPack(t, lr, &rp)
+}
+
 func TestData_LastRoot(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// LastRoot
 		//
-		_ = db
+		testLastRoot(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -475,7 +528,7 @@ func TestData_LastRoot(t *testing.T) {
 		defer db.Close()
 		// LastRoot
 		//
-		_ = db
+		testLastRoot(t, db)
 		//
 	})
 }
