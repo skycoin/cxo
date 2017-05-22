@@ -422,6 +422,11 @@ func testDataAddRoot(t *testing.T, db DB) {
 		if err := db.AddRoot(pk, &rp); err != nil {
 			t.Error(err)
 		}
+		if gr, ok := db.GetRoot(rp.Hash); !ok {
+			t.Error("misisng root in roots bucket")
+		} else if gr.Hash != rp.Hash {
+			t.Error("wrong root saved by hash")
+		}
 	})
 	if t.Failed() {
 		return
@@ -533,12 +538,75 @@ func TestData_LastRoot(t *testing.T) {
 	})
 }
 
+// returns RootPack that contains dummy Root filed,
+// the field can't be used to encode/decode
+func getRootPack(seq uint64, content string) (rp RootPack) {
+	rp.Seq = seq
+	if seq != 0 {
+		rp.Prev = cipher.SumSHA256([]byte("any"))
+	}
+	rp.Root = []byte(content)
+	rp.Hash = cipher.SumSHA256(rp.Root)
+	return
+}
+
+func testRangeFeed(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+	// no feed
+	var i int = 0
+	db.RangeFeed(pk, func(*RootPack) (stop bool) {
+		i++
+		return
+	})
+	if i != 0 {
+		t.Error("range over feed that is not exists")
+	}
+	// one
+	rp := getRootPack(0, "one")
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	// two
+	rp = getRootPack(1, "two")
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	// three
+	rp = getRootPack(2, "three")
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+	// range
+	db.RangeFeed(pk, func(rp *RootPack) (stop bool) {
+		if rp.Seq != uint64(i) {
+			t.Error("wrong range order")
+		}
+		i++
+		return // continue
+	})
+	if i != 3 {
+		t.Error("wrong range rounds")
+	}
+	// stop
+	i = 0 // reset
+	db.RangeFeed(pk, func(rp *RootPack) (stop bool) {
+		i++
+		return true
+	})
+	if i != 1 {
+		t.Error("can't stop")
+	}
+}
+
 func TestData_RangeFeed(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// RangeFeed
 		//
-		_ = db
+		testRangeFeed(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -551,7 +619,7 @@ func TestData_RangeFeed(t *testing.T) {
 		defer db.Close()
 		// RangeFeed
 		//
-		_ = db
+		testRangeFeed(t, db)
 		//
 	})
 }

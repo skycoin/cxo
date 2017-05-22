@@ -106,7 +106,9 @@ func (d *memoryDB) DelFeed(pk cipher.PubKey) {
 	delete(d.feeds, pk)
 }
 
-func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
+func (d *memoryDB) AddRoot(pk cipher.PubKey, rr *RootPack) (err error) {
+	var rp *RootPack = new(RootPack)
+	*rp = *rr // copy (required)
 	// test given rp
 	if rp.Seq == 0 {
 		if rp.Prev != (cipher.SHA256{}) {
