@@ -151,7 +151,7 @@ func (s *Server) Start() (err error) {
 
     enable RPC:           %v
     RPC address:          %s
-    lListening address:   %s
+    listening address:   %s
     remote close:         %t
 
     in-memory DB:         %v

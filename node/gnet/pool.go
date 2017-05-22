@@ -159,7 +159,7 @@ func (p *Pool) listen(l net.Listener) {
 	}
 }
 
-// Address returns listening addres or empty
+// Address returns listening address or empty
 // string if the Pool doesn't listen
 func (p *Pool) Address() (address string) {
 	p.lmx.Lock()

@@ -43,7 +43,7 @@ type Config struct {
 	// outgoing connections
 	MaxConnections int
 	// MaxMessageSize limits messages to send. If the size is 0
-	// then no limit used. But if the size is set and a conection
+	// then no limit used. But if the size is set and a connection
 	// receive a message greater then the size, the Pool close
 	// this connection. Sending a message greater then the size
 	// causes panic (!)

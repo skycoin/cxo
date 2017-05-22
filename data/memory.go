@@ -106,19 +106,27 @@ func (d *memoryDB) DelFeed(pk cipher.PubKey) {
 	delete(d.feeds, pk)
 }
 
-func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
-	d.mx.Lock()
-	defer d.mx.Unlock()
-
+func (d *memoryDB) AddRoot(pk cipher.PubKey, rr *RootPack) (err error) {
+	var rp *RootPack = new(RootPack)
+	*rp = *rr // copy (required)
 	// test given rp
-	if rp.Seq == 0 && rp.Prev != (cipher.SHA256{}) {
-		err = newRootError(pk, rp, "unexpected prev. reference")
+	if rp.Seq == 0 {
+		if rp.Prev != (cipher.SHA256{}) {
+			err = newRootError(pk, rp, "unexpected prev. reference")
+			return
+		}
+	} else if rp.Prev == (cipher.SHA256{}) {
+		err = newRootError(pk, rp, "missing prev. reference")
 		return
 	}
 	if rp.Hash != cipher.SumSHA256(rp.Root) {
 		err = newRootError(pk, rp, "wrong hash of the root")
 		return
 	}
+
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	//
 	var ok bool
 	var roots map[uint64]cipher.SHA256
@@ -204,7 +212,7 @@ func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
 	for seq := range roots {
 		o = append(o, seq)
 	}
-	sort.Reverse(o)
+	sort.Sort(sort.Reverse(o))
 
 	var rp *RootPack
 	var ok bool

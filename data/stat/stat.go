@@ -16,7 +16,7 @@ import (
 type Space int
 
 // String implements fmt.Stringer interface
-func (s Space) Strign() string {
+func (s Space) String() string {
 	return HumanMemory(int(s))
 }
 
@@ -59,11 +59,11 @@ func (s Stat) String() (x string) {
 		feeds += fmt.Sprintf("<%s>{roots %d, space: %s}",
 			shortHex(k.Hex()),
 			r.Roots,
-			r.Space.Strign())
+			r.Space.String())
 	}
 	x = fmt.Sprintf("{objects: %d, space: %s, feeds: [%s]}",
 		s.Objects,
-		s.Space.Strign(),
+		s.Space.String(),
 		feeds)
 	return
 }
