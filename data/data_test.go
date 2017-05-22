@@ -559,7 +559,7 @@ func testRangeFeed(t *testing.T, db DB) {
 		return
 	})
 	if i != 0 {
-		t.Error("range over feed that is not exist")
+		t.Error("range over feed that doesn't not exist")
 	}
 	// one
 	rp := getRootPack(0, "one")
@@ -633,7 +633,7 @@ func testRangeFeedReverese(t *testing.T, db DB) {
 		return
 	})
 	if i != 0 {
-		t.Error("range over feed that is not exist")
+		t.Error("range over feed that doesn't not exist")
 	}
 	// one
 	rp := getRootPack(0, "one")
@@ -706,7 +706,7 @@ func TestData_RangeFeedReverse(t *testing.T) {
 
 func testGetRoot(t *testing.T, db DB) {
 	if _, ok := db.GetRoot(cipher.SumSHA256([]byte("any"))); ok {
-		t.Error("got root that is not exist")
+		t.Error("got root that doesn't exist")
 	}
 	rp := getRootPack(0, "content")
 	pk, _ := cipher.GenerateKeyPair()
@@ -744,12 +744,45 @@ func TestData_GetRoot(t *testing.T) {
 	})
 }
 
+func testDelRootsBefore(t *testing.T, db DB) {
+	// fill
+	pk, _ := cipher.GenerateKeyPair()
+	rps := []RootPack{
+		getRootPack(0, "one"),
+		getRootPack(1, "two"),
+		getRootPack(2, "three"),
+	}
+	for _, rp := range rps {
+		if err := db.AddRoot(pk, &rp); err != nil {
+			t.Error(err)
+			return
+		}
+	}
+	// del before 2
+	db.DelRootsBefore(pk, 2)
+	if s := db.Stat().Feeds; len(s) != 1 {
+		t.Error("wrong len of feeds")
+	} else if fs, ok := s[pk]; !ok {
+		t.Error("missing feed")
+	} else if fs.Roots != 1 {
+		t.Error("wrong roots count")
+	} else if _, ok := db.GetRoot(rps[2].Hash); !ok {
+		t.Error("missing expected root")
+	}
+	// del all
+	db.DelRootsBefore(pk, 9000)
+	if len(db.Feeds()) != 0 {
+		t.Error("feed was not deleted")
+	}
+
+}
+
 func TestData_DelRootsBefore(t *testing.T) {
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// DelRootsBefore
 		//
-		_ = db
+		testDelRootsBefore(t, db)
 		//
 	})
 	t.Run("drive", func(t *testing.T) {
@@ -762,7 +795,7 @@ func TestData_DelRootsBefore(t *testing.T) {
 		defer db.Close()
 		// DelRootsBefore
 		//
-		_ = db
+		testDelRootsBefore(t, db)
 		//
 	})
 }
@@ -772,6 +805,9 @@ func TestData_DelRootsBefore(t *testing.T) {
 //
 
 func TestData_Stat(t *testing.T) {
+
+	t.Skip("not implemented")
+
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// Stat
@@ -795,6 +831,9 @@ func TestData_Stat(t *testing.T) {
 }
 
 func TestData_Close(t *testing.T) {
+
+	t.Skip("not implemented")
+
 	t.Run("mem", func(t *testing.T) {
 		db := NewMemoryDB()
 		// Close
