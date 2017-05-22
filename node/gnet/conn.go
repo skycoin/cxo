@@ -14,9 +14,9 @@ import (
 // A ConnState represents connection state
 type ConnState int
 
-// there are three possible states of a conenction
+// there are three possible states of a connection
 const (
-	ConnStateConnected ConnState = iota // conncetion works
+	ConnStateConnected ConnState = iota // connection works
 	ConnStateDialing                    // dialing
 	ConnStateClosed                     // closed connection
 )
@@ -230,7 +230,7 @@ func (cn *Conn) updateConnection(c net.Conn) {
 }
 
 // update connection and trigger read and
-// write loops after successfull dialing
+// write loops after successful dialing
 func (c *Conn) triggerReadWrite(conn net.Conn) {
 	c.p.Debug("trigger read/write loops of ", c.address)
 

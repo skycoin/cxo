@@ -68,7 +68,7 @@ func (c *Container) AddRegistry(reg *Registry) {
 	}
 }
 
-// CoreRegistry returns registry witch wich the Container
+// CoreRegistry returns registry with which the Container
 // was created. It can returns nil
 func (c *Container) CoreRegistry() *Registry {
 	return c.coreRegistry

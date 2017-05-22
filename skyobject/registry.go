@@ -36,7 +36,7 @@ var ErrInvalidEncodedSchema = errors.New("invalid encoded schema")
 // if no Root objects refers to the Registry
 type Registry struct {
 	done bool                       // stop registration and use
-	ref  RegistryReference          // reference to the registery
+	ref  RegistryReference          // reference to the registry
 	reg  map[string]Schema          // by name
 	srf  map[SchemaReference]Schema // by reference (for Dynamic references)
 }

@@ -165,7 +165,7 @@ func (r *Root) Hash() RootReference {
 
 // PrevHash returns RootReference to previous
 // Root of the Root. It can be empty if Seq is
-// 0. But, be carefull, any detached root
+// 0. But, be careful, any detached root
 // returns seq = 0. For all attached roots
 // (except first (seq=0)) has valid non-blank
 // reference to previous root
