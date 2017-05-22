@@ -335,9 +335,10 @@ func (c *Container) LastFullRoot(pk cipher.PubKey) (lastFull *Root) {
 		if r, err = c.unpackRoot(rp); err != nil {
 			panic(err) // ccritical
 		}
+		r.attached = true
 		// first full from tail
 		if r.IsFull() {
-			r.attached, stop = true, true
+			stop = true
 			return // break
 		}
 		return // false (continue)

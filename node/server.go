@@ -2,13 +2,13 @@ package node
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/stat"
 	"github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/node/gnet"
@@ -70,6 +70,11 @@ func NewServer(sc ServerConfig) (s *Server, err error) {
 	if sc.InMemoryDB {
 		db = data.NewMemoryDB()
 	} else {
+		if sc.DataDir != "" {
+			if err = initDataDir(sc.DataDir); err != nil {
+				return
+			}
+		}
 		if db, err = data.NewDriveDB(sc.DBPath); err != nil {
 			return
 		}
@@ -154,7 +159,7 @@ func (s *Server) Start() (err error) {
 
     debug:                %#v
 `,
-		util.DataDir,
+		s.conf.DataDir,
 		s.conf.MaxConnections,
 		s.conf.MaxMessageSize,
 
@@ -363,6 +368,8 @@ func (s *Server) handleAddFeedMsg(c *gnet.Conn, msg *AddFeedMsg) {
 	}
 	full := s.so.LastFullRoot(msg.Feed)
 	if full == nil {
+		s.Debug("handleAddFeedMsg: LastFullRoot is nil: ",
+			shortHex(msg.Feed.Hex()))
 		return
 	}
 	s.sendMessage(c, &RootMsg{msg.Feed, full.Encode()})
@@ -423,14 +430,13 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	if !s.hasFeed(msg.Feed) {
 		return
 	}
-	root, err := s.so.AddRootPack(msg.RootPack)
+	root, err := s.so.AddRootPack(&msg.RootPack)
 	if err != nil {
-		// TODO: high priority after database
-		if err == skyobject.ErrAlreadyHaveThisRoot {
+		if err == data.ErrRootAlreadyExists {
 			s.Debug("reject root: alredy have this root")
 			return
 		}
-		s.Print("[ERR] error decoding root: ", err)
+		s.Print("[ERR] error appending root: ", err)
 		return
 	}
 	if root.IsFull() {
@@ -631,8 +637,6 @@ func (s *Server) Connection(address string) *gnet.Conn {
 }
 
 func (s *Server) broadcast(msg Msg) {
-	// todo: modify gnet.(*Pool).Connections() to return *gnet.Conn
-	//       instead of list of addresses
 	for _, c := range s.pool.Connections() {
 		s.sendMessage(c, msg)
 	}
@@ -737,7 +741,7 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 }
 
 // Stat returns satatistic of database
-func (s *Server) Stat() data.Stat {
+func (s *Server) Stat() stat.Stat {
 	return s.so.DB().Stat()
 }
 

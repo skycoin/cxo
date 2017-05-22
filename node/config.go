@@ -2,10 +2,10 @@ package node
 
 import (
 	"flag"
+	"os"
+	"os/user"
 	"path/filepath"
 	"time"
-
-	"github.com/skycoin/skycoin/src/util"
 
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
@@ -25,7 +25,7 @@ const (
 	// PingInterval is default interval by which server send pings
 	// to connections that doesn't communicate. Actually, the
 	// interval can be increased x2
-	PingInterval time.Duration = 2 * time.Second
+	PingInterval time.Duration = 0 * 2 * time.Second
 
 	// default tree is
 	//   server: ~/.skycoin/cxo/server/bolt.db
@@ -43,8 +43,21 @@ const (
 	dbFile = "bolt.db"
 )
 
-func init() {
-	util.InitDataDir(filepath.Join(skycoinDataDir, cxoSubDir))
+func dataDir(sub string) string {
+	// TODO: /var/lib/cxo for cxod
+	usr, err := user.Current()
+	if err != nil {
+		panic(err) // fatal
+	}
+	if usr.HomeDir == "" {
+		panic("empty home dir")
+	}
+	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir, sub)
+}
+
+func initDataDir(dir string) error {
+	println("HERE", dir)
+	return os.MkdirAll(dir, 0700)
 }
 
 // A ServerConfig represnets configurations
@@ -72,11 +85,10 @@ type ServerConfig struct {
 
 	// InMemoryDB uses database in memory
 	InMemoryDB bool
-
-	// DBPath is path to database if InMemeoryDB is
-	// false. If the DBPath is empty then
-	// default database path used
+	// DBPath is path to database file
 	DBPath string
+	// DataDir is directory with data files
+	DataDir string
 }
 
 // NewServerConfig returns ServerConfig
@@ -90,7 +102,8 @@ func NewServerConfig() (sc ServerConfig) {
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
 	sc.InMemoryDB = InMemoryDB
-	sc.DBPath = filepath.Join(util.DataDir, serverSubDir, dbFile)
+	sc.DataDir = dataDir(serverSubDir)
+	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
 	return
 }
 
@@ -129,7 +142,11 @@ func (s *ServerConfig) FromFlags() {
 		"mem-db",
 		s.InMemoryDB,
 		"use in-memory database")
-	flag.BoolVar(&s.DBPath,
+	flag.StringVar(&s.DataDir,
+		"data-dir",
+		s.DataDir,
+		"directory with data")
+	flag.StringVar(&s.DBPath,
 		"db-path",
 		s.DBPath,
 		"path to database")
@@ -144,10 +161,9 @@ type ClientConfig struct {
 
 	// InMemoryDB uses database in memory
 	InMemoryDB bool
-
-	// DBPath is path to database if InMemeoryDB is
-	// false. If the DBPath is empty then
-	// default database path used
+	// DataDir is directory with data
+	DataDir string
+	// DBPath is path to database
 	DBPath string
 
 	// handlers
@@ -161,7 +177,8 @@ func NewClientConfig() (cc ClientConfig) {
 	cc.Config = gnet.NewConfig()
 	cc.Log = log.NewConfig()
 	cc.InMemoryDB = InMemoryDB
-	cc.DBPath = filepath.Join(util.DataDir, clientSubDir, dbFile)
+	cc.DataDir = dataDir(clientSubDir)
+	cc.DBPath = filepath.Join(cc.DataDir, dbFile)
 	return
 }
 
@@ -179,7 +196,7 @@ func (c *ClientConfig) FromFlags() {
 		"mem-db",
 		c.InMemoryDB,
 		"use in-memory database")
-	flag.BoolVar(&c.DBPath,
+	flag.StringVar(&c.DBPath,
 		"db-path",
 		c.DBPath,
 		"path to database")

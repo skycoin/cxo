@@ -112,7 +112,7 @@ func (d *memoryDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
 	defer d.mx.Unlock()
 
 	// test given rp
-	if rp.Seq != 0 && rp.Prev != (cipher.SHA256{}) {
+	if rp.Seq == 0 && rp.Prev != (cipher.SHA256{}) {
 		err = newRootError(pk, rp, "unexpected prev. reference")
 		return
 	}

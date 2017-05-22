@@ -168,11 +168,11 @@ func (d *driveDB) DelFeed(pk cipher.PubKey) {
 
 func (d *driveDB) AddRoot(pk cipher.PubKey, rp *RootPack) (err error) {
 	// test given rp
-	if rp.Seq != 0 && rp.Prev != (cipher.SHA256{}) {
+	if rp.Seq == 0 && rp.Prev != (cipher.SHA256{}) {
 		err = newRootError(pk, rp, "unexpected prev. reference")
 		return
 	}
-	data := encoder.Serialize(&rp)
+	data := encoder.Serialize(rp)
 	hash := cipher.SumSHA256(rp.Root)
 	if hash != rp.Hash {
 		err = newRootError(pk, rp, "wrong hash of the root")
@@ -217,7 +217,8 @@ func (d *driveDB) LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool) {
 		if value == nil {
 			panic("broken database: missing root") // critical
 		}
-		if err := encoder.DeserializeRaw(value, &rp); err != nil {
+		rp = new(RootPack)
+		if err := encoder.DeserializeRaw(value, rp); err != nil {
 			panic(err) // critical
 		}
 		ok = true
@@ -290,6 +291,7 @@ func (d *driveDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
 		if temp = t.Bucket(rootsBucket).Get(hash[:]); temp == nil {
 			return
 		}
+		rp = new(RootPack)
 		var err error
 		if err = encoder.DeserializeRaw(temp, rp); err != nil {
 			return
