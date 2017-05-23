@@ -44,7 +44,7 @@ func NewContainer(db data.DB, reg *Registry) (c *Container) {
 	c.registries = make(map[RegistryReference]*Registry)
 	if reg != nil {
 		reg.Done()
-		// sstore registry in database
+		// store registry in database
 		c.db.Set(cipher.SHA256(reg.Reference()), reg.Encode())
 		c.coreRegistry = reg
 		c.registries[reg.Reference()] = reg
@@ -329,6 +329,13 @@ func (c *Container) LastRootSk(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 // It can return nil. It can return received root object that doesn't
 // contain secret key
 func (c *Container) LastFullRoot(pk cipher.PubKey) (lastFull *Root) {
+	c.RLock()
+	defer c.RUnlock()
+	lastFull = c.lastFullRoot(pk)
+	return
+}
+
+func (c *Container) lastFullRoot(pk cipher.PubKey) (lastFull *Root) {
 	c.db.RangeFeedReverse(pk, func(rp *data.RootPack) (stop bool) {
 		var err error
 		var r *Root
@@ -408,100 +415,63 @@ func (c *Container) DelFeed(pk cipher.PubKey) {
 
 // GC
 
-// GC removes all unused objects, including Root objects and Registries
-func (c *Container) GC() {
+// DelRootsBefore deletes all roots of a feed before given seq
+func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	c.Lock()
 	defer c.Unlock()
-	c.rootsGC()
-	c.regsitryGC()
-	c.objectsGC()
+	c.db.DelRootsBefore(pk, seq)
 }
 
-// RootsGC removes all root objects up to
-// last full Root object the feed has got.
-// If no full objects of a feed found then
-// no Root objects removed from the feed
-func (c *Container) RootsGC() {
+// GC removes all unused objects, including Root objects and Registries.
+// If given argument is false, then GC deletes all root objects before
+// last full root of a feed. If you want to keep all roots, then
+// call the GC with true
+func (c *Container) GC(dontRemoveRoots bool) {
 	c.Lock()
 	defer c.Unlock()
-	c.rootsGC()
-}
-
-// RegsitryGC removes all unused registries
-func (c *Container) RegsitryGC() {
-	c.Lock()
-	defer c.Unlock()
-	c.regsitryGC()
-}
-
-// ObjectsGC removes all unused objects from database
-func (c *Container) ObjectsGC() {
-	c.Lock()
-	defer c.Unlock()
-	c.objectsGC()
-}
-
-// internal
-
-func (c *Container) objectsGC() {
-	// TODO: redo
-	panic("modifications required")
-	// gc := make(map[Reference]int)
-	// // fill
-	// c.db.Range(func(ok cipher.SHA256) {
-	// 	gc[Reference(ok)] = 0
-	// })
-	// // calculate references
-	// for _, rs := range c.roots {
-	// 	if rs == nil {
-	// 		continue
-	// 	}
-	// 	for _, r := range rs.store {
-	// 		r.GotFunc(func(r Reference) (_ error) {
-	// 			gc[r] = gc[r] + 1
-	// 			return
-	// 		})
-	// 	}
-	// }
-	// // remove unused objects
-	// for ref, i := range gc {
-	// 	if i != 0 {
-	// 		continue
-	// 	}
-	// 	c.db.Del(cipher.SHA256(ref))
-	// }
-}
-
-func (c *Container) rootsGC() {
-	panic("modifications required")
-	// for _, rs := range c.roots {
-	// 	if rs == nil {
-	// 		continue
-	// 	}
-	// 	rs.gc()
-	// }
-}
-
-func (c *Container) regsitryGC() {
-	panic("modifications required")
-	// gc := make(map[RegistryReference]int)
-	// // calculate
-	// for _, rs := range c.roots {
-	// 	if rs == nil {
-	// 		continue
-	// 	}
-	// 	for _, r := range rs.store {
-	// 		rr := r.RegistryReference()
-	// 		gc[rr] = gc[rr] + 1
-	// 	}
-	// }
-	// // remove
-	// for rr, i := range gc {
-	// 	if i != 0 {
-	// 		continue
-	// 	}
-	// 	delete(c.registries, rr)
-	// }
+	// objects and schemas
+	gc := make(map[cipher.SHA256]uint)
+	// init
+	c.db.Range(func(key cipher.SHA256, _ []byte) (_ bool) {
+		gc[key] = 0
+		return
+	})
+	// roots
+	var rc map[cipher.PubKey]uint64
+	if !dontRemoveRoots {
+		rc = make(map[cipher.PubKey]uint64)
+	}
+	for _, pk := range c.db.Feeds() {
+		c.db.RangeFeedReverse(pk, func(rp *data.RootPack) (stop bool) {
+			r, err := c.unpackRoot(rp)
+			if err != nil {
+				panic(err) // critical
+			}
+			gc[cipher.SHA256(r.reg)] = gc[cipher.SHA256(r.reg)] + 1
+			// ignore error
+			r.GotFunc(func(r Reference) (_ error) {
+				gc[cipher.SHA256(r)] = gc[cipher.SHA256(r)] + 1
+				return // nil
+			})
+			if !dontRemoveRoots {
+				if r.IsFull() {
+					rc[pk] = r.Seq()
+					return true // stop
+				}
+			}
+			return // continue
+		})
+	}
+	// delete roots
+	for pk, seq := range rc {
+		c.db.DelRootsBefore(pk, seq)
+	}
+	// delte objects
+	for key, cn := range gc {
+		if cn == 0 {
+			c.db.Del(key)
+		}
+	}
 }
 
 // addRoot called by Root after updating to

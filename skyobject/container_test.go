@@ -96,18 +96,10 @@ func TestContainer_DelFeed(t *testing.T) {
 	//
 }
 
+func TestContainer_DelRootsBefore(t *testing.T) {
+	//
+}
+
 func TestContainer_GC(t *testing.T) {
-	//
-}
-
-func TestContainer_RootsGC(t *testing.T) {
-	//
-}
-
-func TestContainer_RegsitryGC(t *testing.T) {
-	//
-}
-
-func TestContainer_ObjectsGC(t *testing.T) {
 	//
 }
