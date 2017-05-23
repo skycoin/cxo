@@ -364,8 +364,7 @@ func TestData_DelFeed(t *testing.T) {
 	})
 }
 
-func testRootError(t *testing.T, re *RootError, rp *RootPack,
-	pk cipher.PubKey) {
+func testRootError(t *testing.T, re *RootError, rp *RootPack,	pk cipher.PubKey) {
 
 	if re.Hash() != rp.Hash {
 		t.Error("wrong root hash of RootError")
