@@ -21,10 +21,6 @@ type fillRoot struct {
 	await skyobject.Reference // waiting for
 }
 
-//
-// TODO: GC for skyobject.Container
-//
-
 // A Server represents CXO server
 // that includes RPC server if enabled
 // by configs
@@ -128,6 +124,7 @@ func NewServerSoDB(sc ServerConfig, db data.DB,
 func (s *Server) Start() (err error) {
 	s.Debugf(`starting server:
     data dir:             %s
+
     max connections:      %d
     max message size:     %d
 
@@ -151,11 +148,13 @@ func (s *Server) Start() (err error) {
 
     enable RPC:           %v
     RPC address:          %s
-    listening address:   %s
+    listening address:    %s
     remote close:         %t
 
     in-memory DB:         %v
     DB path:              %s
+
+    gc interval:          %v
 
     debug:                %#v
 `,
@@ -189,6 +188,8 @@ func (s *Server) Start() (err error) {
 		s.conf.InMemoryDB,
 		s.conf.DBPath,
 
+		s.conf.GCInterval,
+
 		s.conf.Log.Debug,
 	)
 	// start listener
@@ -208,6 +209,11 @@ func (s *Server) Start() (err error) {
 	if s.conf.PingInterval > 0 {
 		s.await.Add(1)
 		go s.pingsLoop()
+	}
+
+	if s.conf.GCInterval > 0 {
+		s.await.Add(1)
+		go s.gcInterval()
 	}
 
 	return
@@ -259,6 +265,27 @@ func (s *Server) pingsLoop() {
 			return
 		}
 	}
+}
+
+func (s *Server) gcInterval() {
+	defer s.await.Done()
+
+	var tk *time.Ticker = time.NewTicker(s.conf.GCInterval)
+	defer tk.Stop()
+
+	s.Debug("start GC loop ", s.conf.GCInterval)
+	for {
+		select {
+		case <-tk.C:
+			tp := time.Now()
+			s.Debug("GC pause")
+			s.so.GC(false)
+			s.Debug("GC done ", time.Now().Sub(tp))
+		case <-s.quit:
+			return
+		}
+	}
+
 }
 
 // send a message to given connection

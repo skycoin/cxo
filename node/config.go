@@ -27,6 +27,10 @@ const (
 	// interval can be increased x2
 	PingInterval time.Duration = 0 * 2 * time.Second
 
+	// GCInterval is default valie for GC
+	// triggering interval
+	GCInterval time.Duration = 5 * time.Second
+
 	// default tree is
 	//   server: ~/.skycoin/cxo/server/bolt.db
 	//   client: ~/.skycoin/cxo/client/bolt.db
@@ -83,6 +87,10 @@ type ServerConfig struct {
 	// Set to 0 to disable pings
 	PingInterval time.Duration
 
+	// GCInterval is interval to trigger GC
+	// Set to 0 to disabel GC
+	GCInterval time.Duration
+
 	// InMemoryDB uses database in memory
 	InMemoryDB bool
 	// DBPath is path to database file
@@ -101,6 +109,7 @@ func NewServerConfig() (sc ServerConfig) {
 	sc.Listen = Listen
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
+	sc.GCInterval = GCInterval
 	sc.InMemoryDB = InMemoryDB
 	sc.DataDir = dataDir(serverSubDir)
 	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
@@ -138,6 +147,10 @@ func (s *ServerConfig) FromFlags() {
 		"ping",
 		s.PingInterval,
 		"interval to send pings (0 = disable)")
+	flag.DurationVar(&s.GCInterval,
+		"gc",
+		s.GCInterval,
+		"garbage collecting interval (0 = disable)")
 	flag.BoolVar(&s.InMemoryDB,
 		"mem-db",
 		s.InMemoryDB,
