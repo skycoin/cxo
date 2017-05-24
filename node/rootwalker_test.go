@@ -47,7 +47,7 @@ func newClient() *Client {
 	r.Register("Thread", Thread{})
 	r.Register("Board", Board{})
 	r.Done()
-	c, e := NewClient(NewClientConfig(), skyobject.NewContainer(r))
+	c, e := NewClient(NewClientConfig(), r)
 	if e != nil {
 		log.Panic(e)
 	}
@@ -99,6 +99,12 @@ func fillContainer1(c *Container, pk cipher.PubKey, sk cipher.SecKey) *Root {
 	)
 
 	return r
+}
+
+// getReference obtains a skyobject reference from hex string.
+func getReference(s string) (skyobject.Reference, error) {
+	h, e := cipher.SHA256FromHex(s)
+	return skyobject.Reference(h), e
 }
 
 func TestWalker_AdvanceFromRoot(t *testing.T) {
@@ -538,7 +544,7 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		})
 
 		if e != nil {
-			t.Error("replace board thread failed:", e)
+			t.Error("remove board thread failed:", e)
 		}
 
 		t.Log("\n After:", w.String())
@@ -894,6 +900,81 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 		e = w.RemoveCurrent()
 		if e != nil {
 			t.Error("failed to remove:", e)
+		}
+		t.Log(w.String())
+	})
+}
+
+func TestWalker_RemoveByRef(t *testing.T) {
+	t.Run("depth of 1", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		t.Log("Got board", board.Name)
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Size:", len(w.r.Refs()))
+		t.Log(w.String())
+		tRef, e := getReference("28950f97f06483f40662ab6cd841d19db40c2453c22cdf2fec2aab893866ae89")
+		t.Log("Removing...", tRef.String(), e)
+		e = w.RemoveInRefsByRef("Threads", tRef)
+
+		if e != nil {
+			t.Error("failed to remove thread:", e)
+		}
+		t.Log("Size:", len(w.r.Refs()))
+		t.Log(w.String())
+	})
+
+	t.Run("depth of 2", func(t *testing.T) {
+		pk, sk := genKeyPair()
+		client := newClient()
+		defer client.Close()
+		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
+
+		board := &Board{}
+		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+			if v.Schema().Name() != "Board" {
+				return false
+			}
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Talk"
+		})
+		if e != nil {
+			t.Error("advance from root failed:", e)
+		}
+		t.Log("Got board", board.Name)
+
+		thread := &Thread{}
+		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
+			fv, _ := v.FieldByName("Name")
+			s, _ := fv.String()
+			return s == "Greetings"
+		})
+		if e != nil {
+			t.Error("advance from board to thread failed:", e)
+		}
+		t.Log("Got thread", thread.Name)
+		t.Log(w.String())
+
+		pRef, e := getReference("bd893dbc1bec38f59a97e103774f279ae1e4f5e8008729dff309ea6c5f169d66")
+		t.Log("Removing...", pRef.String(), e)
+		e = w.RemoveInRefsByRef("Posts", pRef)
+		if e != nil {
+			t.Error("failed to remove post:", e)
 		}
 		t.Log(w.String())
 	})

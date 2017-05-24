@@ -490,6 +490,39 @@ func (w *RootWalker) RemoveInRefsField(fieldName string, finder func(v *skyobjec
 	return ErrObjNotFound
 }
 
+// RemoveByRef removes a reference in a field of type `skyobject.References`.
+// It uses the Finder implementation to find the reference to remove.
+func (w *RootWalker) RemoveInRefsByRef(fieldName string, fRef skyobject.Reference) error {
+	// Check root.
+	if w.r == nil {
+		return ErrRootNotFound
+	}
+
+	// Obtain top-most object from internal stack.
+	obj, e := w.peek()
+	if e != nil {
+		return e
+	}
+
+	// Obtain data from top-most object.
+	// Obtain field's value and schema name.
+	fRefs, _, e := obj.getFieldAsReferences(fieldName)
+	if e != nil {
+		return e
+	}
+
+	// Loop through References and apply Finder.
+	for i, ref := range fRefs {
+		if ref.String() == fRef.String() {
+			fRefs = append(fRefs[:i], fRefs[i+1:]...)
+			e := obj.replaceReferencesField(fieldName, fRefs) //forcing refs replacement
+			_, e = obj.save(nil)
+			return e
+		}
+	}
+	return ErrObjNotFound
+}
+
 // ReplaceInRefField replaces the reference field of the top-most object with a
 // new reference; one that is automatically generated when saving the object
 // 'p' points to, in the container. This recursively replaces all the associated
