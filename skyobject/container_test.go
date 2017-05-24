@@ -609,11 +609,223 @@ func TestContainer_Feeds(t *testing.T) {
 }
 
 func TestContainer_WantFeed(t *testing.T) {
-	// TODO: high priority
+	// WantFunc(wf WantFunc) (err error)
+	reg := getRegisty()
+	// sender
+	sender := NewContainer(data.NewMemoryDB(), reg)
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := sender.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// receiver
+	receiver := NewContainer(data.NewMemoryDB(), nil)
+	if _, err = receiver.AddRootPack(&rp); err != nil {
+		t.Fatal(err)
+	}
+	// missing registry
+	var i int
+	receiver.WantFeed(pk, func(Reference) (_ error) { i++; return })
+	if i != 0 {
+		t.Fatal("called")
+	}
+	// alice, eva, ammy
+	receiver.AddRegistry(reg)
+	var want []Reference
+	receiver.WantFeed(pk, func(ref Reference) (_ error) {
+		want = append(want, ref)
+		return
+	})
+	if len(want) != 3 {
+		t.Fatal("wrong wants")
+	}
+	set := map[Reference]struct{}{
+		alice.Object: struct{}{},
+		eva.Object:   struct{}{},
+		ammy.Object:  struct{}{},
+	}
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// alice
+	if aliceData, ok := sender.Get(alice.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+	}
+	want = []Reference{} // reset
+	receiver.WantFeed(pk, func(ref Reference) (_ error) {
+		want = append(want, ref)
+		return
+	})
+	if len(want) != 2 {
+		t.Fatal("wrong wants")
+	}
+	delete(set, alice.Object)
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// eva
+	if evaData, ok := sender.Get(eva.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+	}
+	want = []Reference{} // reset
+	receiver.WantFeed(pk, func(ref Reference) (_ error) {
+		want = append(want, ref)
+		return
+	})
+	if len(want) != 1 {
+		t.Fatal("wrong wants")
+	}
+	delete(set, eva.Object)
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// ammy
+	if ammyData, ok := sender.Get(ammy.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+	}
+	want = []Reference{} // reset
+	receiver.WantFeed(pk, func(ref Reference) (_ error) {
+		i++
+		return
+	})
+	if i != 0 {
+		t.Fatal("wrong wants")
+	}
 }
 
 func TestContainer_GotFeed(t *testing.T) {
-	// TODO: high priority
+	// GotFunc(gf GotFunc) (err error)
+	reg := getRegisty()
+	// sender
+	sender := NewContainer(data.NewMemoryDB(), reg)
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := sender.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// receiver
+	receiver := NewContainer(data.NewMemoryDB(), nil)
+	if r, err = receiver.AddRootPack(&rp); err != nil {
+		t.Fatal(err)
+	}
+	// alice, eva, ammy
+	var i int
+	receiver.AddRegistry(reg)
+	receiver.GotFeed(pk, func(ref Reference) (_ error) {
+		i++
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i != 0 {
+		t.Fatal("called")
+	}
+	// alice
+	if aliceData, ok := sender.Get(alice.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+	}
+	var got []Reference // reset
+	receiver.GotFeed(pk, func(ref Reference) (_ error) {
+		got = append(got, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatal("wrong gots", got)
+	}
+	set := map[Reference]struct{}{alice.Object: struct{}{}}
+	for _, w := range got {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// eva
+	if evaData, ok := sender.Get(eva.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+	}
+	got = []Reference{} // reset
+	receiver.GotFeed(pk, func(ref Reference) (_ error) {
+		got = append(got, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatal("wrong gots")
+	}
+	set[eva.Object] = struct{}{}
+	for _, w := range got {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// ammy
+	if ammyData, ok := sender.Get(ammy.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+	}
+	got = []Reference{} // reset
+	receiver.GotFeed(pk, func(ref Reference) (_ error) {
+		got = append(got, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatal("wrong gots")
+	}
+	set[ammy.Object] = struct{}{}
+	for _, w := range got {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
 }
 
 func TestContainer_DelFeed(t *testing.T) {
@@ -674,5 +886,46 @@ func TestContainer_DelRootsBefore(t *testing.T) {
 }
 
 func TestContainer_GC(t *testing.T) {
-	// TODO: after GC
+	c := getCont()
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.Inject("cxo.User", User{"Alice", 20, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.Replace([]Dynamic{
+		r.MustDynamic("cxo.User", User{"Eva", 21, nil}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.Replace([]Dynamic{
+		r.MustDynamic("cxo.User", User{"Ammy", 16, nil}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.GC(false)
+	stat := c.DB().Stat()
+	if f := stat.Feeds[pk]; f.Roots != 1 {
+		t.Error("not clear", f.Roots)
+	}
+	// ammy + registry
+	if stat.Objects != 2 {
+		t.Error("not clear", stat.Objects)
+	}
+	// clean up (except core)
+	c.DelRootsBefore(pk, 1005000)
+	c.GC(false)
+	stat = c.DB().Stat()
+	if len(stat.Feeds) != 0 {
+		t.Error("not clear")
+	}
+	// registry
+	if stat.Objects != 1 {
+		t.Error("not clear")
+	}
 }

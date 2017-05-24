@@ -360,31 +360,35 @@ func (c *Container) Feeds() []cipher.PubKey {
 }
 
 // WantFeed calls (*Root).WantFunc with given WantFunc
-// for every Root of the feed starting from older
-func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
+// for every Root of the feed starting from older. Unlike
+// (*Root).WantFunc the WantFeed ingores all errors
+// (except ErrStopRange) trying to find all wanted objects
+// even if some root has not related Registry or contains
+// malformed data
+func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) {
 	c.RLock()
 	defer c.RUnlock()
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
-		var err error
 		var r *Root
+		var err error
 		if r, err = c.unpackRoot(rp); err != nil {
 			panic(err) // ccritical
 		}
 		r.attached = true
-		if err = r.WantFunc(wf); err != nil {
-			if err == ErrStopRange {
-				err = nil
-			}
+		if err = r.WantFunc(wf); err == ErrStopRange {
 			return true // stop
 		}
 		return // false (continue)
 	})
-	return
 }
 
 // GotFeed calls (*Root).GotFunc with given GotFunc
-// for every Root of the feed starting from older
-func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
+// for every Root of the feed starting from older.
+// Unlike (*Root).GotFunc the GotFeed ingores all errors
+// (except ErrStopRange) trying to find all objects even
+// if some root has not related Registry or contains
+// malformed data
+func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) {
 	c.RLock()
 	defer c.RUnlock()
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
@@ -394,15 +398,11 @@ func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
 			panic(err) // ccritical
 		}
 		r.attached = true
-		if err = r.GotFunc(gf); err != nil {
-			if err == ErrStopRange {
-				err = nil
-			}
+		if err = r.GotFunc(gf); err == ErrStopRange {
 			return true // stop
 		}
 		return // false (continue)
 	})
-	return
 }
 
 // DelFeed deletes all root object of given feed. The
@@ -436,6 +436,10 @@ func (c *Container) GC(dontRemoveRoots bool) {
 		gc[key] = 0
 		return
 	})
+	// core
+	if c.coreRegistry != nil {
+		gc[cipher.SHA256(c.coreRegistry.Reference())] = 1
+	}
 	// roots
 	var rc map[cipher.PubKey]uint64
 	if !dontRemoveRoots {
@@ -447,6 +451,7 @@ func (c *Container) GC(dontRemoveRoots bool) {
 			if err != nil {
 				panic(err) // critical
 			}
+			r.attached = true
 			gc[cipher.SHA256(r.reg)] = gc[cipher.SHA256(r.reg)] + 1
 			// ignore error
 			r.GotFunc(func(r Reference) (_ error) {

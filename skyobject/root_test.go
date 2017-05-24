@@ -330,12 +330,245 @@ func TestRoot_SchemaReferenceByName(t *testing.T) {
 
 func TestRoot_WantFunc(t *testing.T) {
 	// WantFunc(wf WantFunc) (err error)
-	//
+	reg := getRegisty()
+	// sender
+	sender := NewContainer(data.NewMemoryDB(), reg)
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := sender.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// receiver
+	receiver := NewContainer(data.NewMemoryDB(), nil)
+	if r, err = receiver.AddRootPack(&rp); err != nil {
+		t.Fatal(err)
+	}
+	// missing registry
+	var i int
+	err = r.WantFunc(func(Reference) (_ error) { i++; return })
+	if err == nil {
+		t.Fatal("missing error")
+	}
+	if i != 0 {
+		t.Fatal("called")
+	}
+	// alice, eva, ammy
+	receiver.AddRegistry(reg)
+	var want []Reference
+	err = r.WantFunc(func(ref Reference) (_ error) {
+		want = append(want, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) != 3 {
+		t.Fatal("wrong wants")
+	}
+	set := map[Reference]struct{}{
+		alice.Object: struct{}{},
+		eva.Object:   struct{}{},
+		ammy.Object:  struct{}{},
+	}
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// alice
+	if aliceData, ok := sender.Get(alice.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+	}
+	want = []Reference{} // reset
+	err = r.WantFunc(func(ref Reference) (_ error) {
+		want = append(want, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) != 2 {
+		t.Fatal("wrong wants")
+	}
+	delete(set, alice.Object)
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// eva
+	if evaData, ok := sender.Get(eva.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+	}
+	want = []Reference{} // reset
+	err = r.WantFunc(func(ref Reference) (_ error) {
+		want = append(want, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) != 1 {
+		t.Fatal("wrong wants")
+	}
+	delete(set, eva.Object)
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// ammy
+	if ammyData, ok := sender.Get(ammy.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+	}
+	want = []Reference{} // reset
+	err = r.WantFunc(func(ref Reference) (_ error) {
+		i++
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i != 0 {
+		t.Fatal("wrong wants")
+	}
 }
 
 func TestRoot_GotFunc(t *testing.T) {
 	// GotFunc(gf GotFunc) (err error)
-	//
+	reg := getRegisty()
+	// sender
+	sender := NewContainer(data.NewMemoryDB(), reg)
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := sender.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// receiver
+	receiver := NewContainer(data.NewMemoryDB(), nil)
+	if r, err = receiver.AddRootPack(&rp); err != nil {
+		t.Fatal(err)
+	}
+	// missing registry
+	var i int
+	err = r.GotFunc(func(Reference) (_ error) { i++; return })
+	if err == nil {
+		t.Fatal("missing error")
+	}
+	if i != 0 {
+		t.Fatal("called")
+	}
+	// alice, eva, ammy
+	receiver.AddRegistry(reg)
+	err = r.GotFunc(func(ref Reference) (_ error) {
+		i++
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i != 0 {
+		t.Fatal("called")
+	}
+	// alice
+	if aliceData, ok := sender.Get(alice.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+	}
+	var got []Reference // reset
+	err = r.GotFunc(func(ref Reference) (_ error) {
+		got = append(got, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatal("wrong gots", got)
+	}
+	set := map[Reference]struct{}{alice.Object: struct{}{}}
+	for _, w := range got {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// eva
+	if evaData, ok := sender.Get(eva.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+	}
+	got = []Reference{} // reset
+	err = r.GotFunc(func(ref Reference) (_ error) {
+		got = append(got, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatal("wrong gots")
+	}
+	set[eva.Object] = struct{}{}
+	for _, w := range got {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
+	// ammy
+	if ammyData, ok := sender.Get(ammy.Object); !ok {
+		t.Fatal("misisng object")
+	} else {
+		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+	}
+	got = []Reference{} // reset
+	err = r.GotFunc(func(ref Reference) (_ error) {
+		got = append(got, ref)
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatal("wrong gots")
+	}
+	set[ammy.Object] = struct{}{}
+	for _, w := range got {
+		if _, ok := set[w]; !ok {
+			t.Fatal("wrong ref")
+		}
+	}
 }
 
 func TestRoot_GotOfFunc(t *testing.T) {

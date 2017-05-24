@@ -555,12 +555,20 @@ func (r *Root) GotFunc(gf GotFunc) (err error) {
 	for _, dr := range r.refs {
 		if val, err = r.ValueByDynamic(dr); err != nil {
 			if _, ok := err.(*MissingObjectError); ok {
+				err = nil
 				continue // range loop
 			} // else
 			return // the error
 		}
+		// if we got ValueByDynamic then we have got
+		// the object
+		if err = gf(dr.Object); err != nil {
+			break // range loop
+		}
+		// go deepper
 		if err = gotValue(val, gf); err != nil {
 			if _, ok := err.(*MissingObjectError); ok {
+				err = nil
 				continue // range loop
 			} // else
 			break // range loop
