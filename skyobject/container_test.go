@@ -155,23 +155,293 @@ func TestContainer_DB(t *testing.T) {
 }
 
 func TestContainer_Get(t *testing.T) {
-	//
+	db := data.NewMemoryDB()
+	c := NewContainer(db, nil)
+	value := []byte("hey ho")
+	key := cipher.SumSHA256(value)
+	db.Set(key, value)
+	data, ok := c.Get(Reference(key))
+	if !ok {
+		t.Error("misisng object")
+	} else if string(data) != string(value) {
+		t.Error("wrong value")
+	}
 }
 
 func TestContainer_Set(t *testing.T) {
-	//
+	db := data.NewMemoryDB()
+	c := NewContainer(db, nil)
+	value := []byte("hey ho")
+	key := cipher.SumSHA256(value)
+	c.Set(Reference(key), value)
+	data, ok := db.Get(key)
+	if !ok {
+		t.Error("misisng object")
+	} else if string(data) != string(value) {
+		t.Error("wrong value")
+	}
 }
 
 func TestContainer_NewRoot(t *testing.T) {
-	//
+	t.Run("no core", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), nil)
+		pk, sk := cipher.GenerateKeyPair()
+		if _, err := c.NewRoot(pk, sk); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrNoCoreRegistry {
+			t.Error("wrong error")
+		}
+	})
+	t.Run("invalid pk sk", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		if _, err := c.NewRoot(cipher.PubKey{}, sk); err == nil {
+			t.Error("misisng error")
+		}
+		if _, err := c.NewRoot(pk, cipher.SecKey{}); err == nil {
+			t.Error("misisng error")
+		}
+	})
+	t.Run("first", func(t *testing.T) {
+		reg := NewRegistry()
+		db := data.NewMemoryDB()
+		c := NewContainer(db, reg)
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.RegistryReference() != reg.Reference() {
+			t.Error("wrong reg ref")
+		}
+		if r.Seq() != 0 {
+			t.Error("wrong seq")
+		}
+		if r.IsReadOnly() {
+			t.Error("read only")
+		}
+		if r.IsAttached() {
+			t.Error("attached")
+		}
+		if r.PrevHash() != (RootReference{}) {
+			t.Error("wrong prev. hash")
+		}
+	})
+	t.Run("non first", func(t *testing.T) {
+		reg := NewRegistry()
+		db := data.NewMemoryDB()
+		c := NewContainer(db, reg)
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp, err := r.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err = c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.RegistryReference() != reg.Reference() {
+			t.Error("wrong reg ref")
+		}
+		if r.Seq() != 1 {
+			t.Error("wrong seq")
+		}
+		if r.IsReadOnly() {
+			t.Error("read only")
+		}
+		if r.IsAttached() {
+			t.Error("attached")
+		}
+		if r.PrevHash() != RootReference(rp.Hash) {
+			t.Error("wrong prev. hash")
+		}
+	})
 }
 
 func TestContainer_NewRootReg(t *testing.T) {
-	//
+	t.Run("invalid pk sk", func(t *testing.T) {
+		reg := NewRegistry()
+		reg.Done()
+		rr := reg.Reference()
+		c := NewContainer(data.NewMemoryDB(), nil)
+		pk, sk := cipher.GenerateKeyPair()
+		if _, err := c.NewRootReg(cipher.PubKey{}, sk, rr); err == nil {
+			t.Error("misisng error")
+		}
+		if _, err := c.NewRootReg(pk, cipher.SecKey{}, rr); err == nil {
+			t.Error("misisng error")
+		}
+	})
+	t.Run("first", func(t *testing.T) {
+		reg := NewRegistry()
+		reg.Done()
+		rr := reg.Reference()
+		db := data.NewMemoryDB()
+		c := NewContainer(db, nil)
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRootReg(pk, sk, rr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.RegistryReference() != rr {
+			t.Error("wrong reg ref")
+		}
+		if r.Seq() != 0 {
+			t.Error("wrong seq")
+		}
+		if r.IsReadOnly() {
+			t.Error("read only")
+		}
+		if r.IsAttached() {
+			t.Error("attached")
+		}
+		if r.PrevHash() != (RootReference{}) {
+			t.Error("wrong prev. hash")
+		}
+	})
+	t.Run("non first", func(t *testing.T) {
+		reg := NewRegistry()
+		reg.Done()
+		rr := reg.Reference()
+		db := data.NewMemoryDB()
+		c := NewContainer(db, nil)
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRootReg(pk, sk, rr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp, err := r.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err = c.NewRootReg(pk, sk, rr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.RegistryReference() != rr {
+			t.Error("wrong reg ref")
+		}
+		if r.Seq() != 1 {
+			t.Error("wrong seq")
+		}
+		if r.IsReadOnly() {
+			t.Error("read only")
+		}
+		if r.IsAttached() {
+			t.Error("attached")
+		}
+		if r.PrevHash() != RootReference(rp.Hash) {
+			t.Error("wrong prev. hash")
+		}
+	})
+}
+
+func isRefsEqual(a, b []Dynamic) (equal bool) {
+	if len(a) != len(b) {
+		return // false
+	}
+	for i, r := range a {
+		if r != b[i] {
+			return // false
+		}
+	}
+	equal = true
+	return
 }
 
 func TestContainer_AddRootPack(t *testing.T) {
-	//
+	t.Run("add", func(t *testing.T) {
+		// create
+		c := NewContainer(data.NewMemoryDB(), NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		cr, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp, err := cr.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// add
+		a := NewContainer(data.NewMemoryDB(), nil)
+		ar, err := a.AddRootPack(&rp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ar.Seq() != cr.Seq() {
+			t.Error("wrong seq")
+		}
+		if ar.Hash() != cr.Hash() {
+			t.Error("wrong hash")
+		}
+		if ar.PrevHash() != cr.PrevHash() {
+			t.Error("wrong prev reference")
+		}
+		if ar.RegistryReference() != cr.RegistryReference() {
+			t.Error("wrong reg. ref")
+		}
+		if !isRefsEqual(ar.Refs(), cr.Refs()) {
+			t.Error("wrong refs")
+		}
+		if !ar.IsAttached() {
+			t.Error("not attached")
+		}
+		if !ar.IsReadOnly() {
+			t.Error("can edit")
+		}
+	})
+	t.Run("deserialize error", func(t *testing.T) {
+		var rp data.RootPack
+		_, err := NewContainer(data.NewMemoryDB(), nil).AddRootPack(&rp)
+		if err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("invalid signature", func(t *testing.T) {
+		// create
+		c := NewContainer(data.NewMemoryDB(), NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		cr, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp, err := cr.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrongHashForSign := cipher.SumSHA256([]byte("hey ho"))
+		rp.Sig = cipher.SignHash(wrongHashForSign, sk)
+		// add
+		a := NewContainer(data.NewMemoryDB(), nil)
+		_, err = a.AddRootPack(&rp)
+		if err == nil {
+			t.Error("missing error")
+		}
+	})
+	t.Run("wrong hash", func(t *testing.T) {
+		// create
+		c := NewContainer(data.NewMemoryDB(), NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		cr, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp, err := cr.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp.Hash = cipher.SumSHA256([]byte("hey ho"))
+		// add
+		a := NewContainer(data.NewMemoryDB(), nil)
+		_, err = a.AddRootPack(&rp)
+		if err == nil {
+			t.Error("missing error")
+		}
+	})
 }
 
 func TestContainer_LastRoot(t *testing.T) {
