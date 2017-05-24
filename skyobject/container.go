@@ -407,7 +407,11 @@ func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 // call the GC with true
 func (c *Container) GC(dontRemoveRoots bool) {
 	gc, sc, rc := c.collect(dontRemoveRoots)
+
 	// remove
+	c.Lock()
+	defer c.Unlock()
+
 	// delete roots
 	for pk, seq := range rc {
 		c.db.DelRootsBefore(pk, seq)
@@ -416,6 +420,7 @@ func (c *Container) GC(dontRemoveRoots bool) {
 	for sr, cn := range sc {
 		if cn != 0 {
 			delete(gc, sr)
+			delete(c.registries, RegistryReference(sr))
 		}
 	}
 	// delte objects
