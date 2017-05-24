@@ -213,7 +213,7 @@ func (s *Server) Start() (err error) {
 
 	if s.conf.GCInterval > 0 {
 		s.await.Add(1)
-		go s.gcInterval()
+		go s.gcLoop()
 	}
 
 	return
@@ -267,7 +267,7 @@ func (s *Server) pingsLoop() {
 	}
 }
 
-func (s *Server) gcInterval() {
+func (s *Server) gcLoop() {
 	defer s.await.Done()
 
 	var tk *time.Ticker = time.NewTicker(s.conf.GCInterval)
@@ -711,15 +711,12 @@ func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
 
 // Want returns lits of objects related to given
 // feed that the server hasn't got but knows about
-func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
+func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
 	set := make(map[skyobject.Reference]struct{})
-	err = s.so.WantFeed(feed, func(k skyobject.Reference) error {
+	s.so.WantFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
 		return nil
 	})
-	if err != nil {
-		return
-	}
 	if len(set) == 0 {
 		return
 	}
@@ -734,15 +731,12 @@ func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 
 // Got returns lits of objects related to given
 // feed that the server has got
-func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
+func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256) {
 	set := make(map[skyobject.Reference]struct{})
-	err = s.so.GotFeed(feed, func(k skyobject.Reference) error {
+	s.so.GotFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
 		return nil
 	})
-	if err != nil {
-		return
-	}
 	if len(set) == 0 {
 		return
 	}

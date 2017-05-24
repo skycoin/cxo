@@ -74,13 +74,13 @@ func (r *RPC) Close() (err error) {
 // - Tree
 // - Terminate
 
-func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
-	*list, err = r.ns.Want(feed)
+func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
+	*list = r.ns.Want(feed)
 	return
 }
 
-func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (err error) {
-	*list, err = r.ns.Got(feed)
+func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
+	*list = r.ns.Got(feed)
 	return
 }
 
