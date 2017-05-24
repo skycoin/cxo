@@ -445,32 +445,167 @@ func TestContainer_AddRootPack(t *testing.T) {
 }
 
 func TestContainer_LastRoot(t *testing.T) {
-	//
+	t.Run("not found", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), nil)
+		pk, _ := cipher.GenerateKeyPair()
+		if c.LastRoot(pk) != nil {
+			t.Error("got root")
+		}
+	})
+	t.Run("found", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = r.Touch(); err != nil {
+			t.Fatal(err)
+		}
+		if lr := c.LastRoot(pk); lr == nil {
+			t.Error("can't get root")
+		} else if lr.Seq() != r.Seq() {
+			t.Error("invalid last root")
+		} else if !lr.IsReadOnly() {
+			t.Error("can edit")
+		}
+		if _, err = r.Touch(); err != nil {
+			t.Fatal(err)
+		}
+		if lr := c.LastRoot(pk); lr == nil {
+			t.Error("can't get root")
+		} else if lr.Seq() != r.Seq() {
+			t.Error("invalid last root")
+		} else if !lr.IsReadOnly() {
+			t.Error("can edit")
+		}
+	})
 }
 
 func TestContainer_LastRootSk(t *testing.T) {
-	//
+	t.Run("not found", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), nil)
+		pk, sk := cipher.GenerateKeyPair()
+		if c.LastRootSk(pk, sk) != nil {
+			t.Error("got root")
+		}
+	})
+	t.Run("found", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), NewRegistry())
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = r.Touch(); err != nil {
+			t.Fatal(err)
+		}
+		if lr := c.LastRootSk(pk, sk); lr == nil {
+			t.Error("can't get root")
+		} else if lr.Seq() != r.Seq() {
+			t.Error("invalid last root")
+		} else if lr.IsReadOnly() {
+			t.Error("can't edit")
+		}
+		if _, err = r.Touch(); err != nil {
+			t.Fatal(err)
+		}
+		if lr := c.LastRootSk(pk, sk); lr == nil {
+			t.Error("can't get root")
+		} else if lr.Seq() != r.Seq() {
+			t.Error("invalid last root")
+		} else if lr.IsReadOnly() {
+			t.Error("can't edit")
+		}
+	})
 }
 
 func TestContainer_LastFullRoot(t *testing.T) {
-	c := getCont()
-	pk, sk := cipher.GenerateKeyPair()
-	r, err := c.NewRoot(pk, sk)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	r.Inject("cxo.User", User{"Alice", 15, nil})
-	r.Inject("cxo.User", User{"Eva", 16, nil})
-	r.Inject("cxo.User", User{"Ammy", 17, nil})
-	full := c.LastFullRoot(pk)
-	if full == nil {
-		t.Error("misisng last full root")
-	}
+	t.Run("not found", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), nil)
+		pk, sk := cipher.GenerateKeyPair()
+		if c.LastRootSk(pk, sk) != nil {
+			t.Error("got root")
+		}
+	})
+	t.Run("found", func(t *testing.T) {
+		c := getCont()
+		pk, sk := cipher.GenerateKeyPair()
+		r, err := c.NewRoot(pk, sk)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		r.Inject("cxo.User", User{"Alice", 15, nil})
+		r.Inject("cxo.User", User{"Eva", 16, nil})
+		r.Inject("cxo.User", User{"Ammy", 17, nil})
+		full := c.LastFullRoot(pk)
+		if full == nil {
+			t.Error("misisng last full root")
+		}
+	})
 }
 
 func TestContainer_Feeds(t *testing.T) {
-	//
+	c := NewContainer(data.NewMemoryDB(), nil)
+	t.Run("no", func(t *testing.T) {
+		if len(c.Feeds()) != 0 {
+			t.Error("got feeds")
+		}
+	})
+	opk, osk := cipher.GenerateKeyPair()
+	t.Run("one", func(t *testing.T) {
+		reg := NewRegistry()
+		reg.Register("cxo.User", User{})
+		c.AddRegistry(reg)
+		r, err := c.NewRootReg(opk, osk, reg.Reference())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Touch(); err != nil {
+			t.Fatal(err)
+		}
+		if fs := c.Feeds(); len(fs) != 1 {
+			t.Fatal("missing feed")
+		} else if fs[0] != opk {
+			t.Fatal("wrong feed")
+		}
+	})
+	tpk, tsk := cipher.GenerateKeyPair()
+	t.Run("two", func(t *testing.T) {
+		reg := NewRegistry()
+		reg.Register("cxo.User", User{})
+		c.AddRegistry(reg)
+		r, err := c.NewRootReg(tpk, tsk, reg.Reference())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Touch(); err != nil {
+			t.Fatal(err)
+		}
+		if fs := c.Feeds(); len(fs) != 2 {
+			t.Fatal("missing feed")
+		} else {
+			if !((fs[0] == opk && fs[1] == tpk) ||
+				(fs[0] == tpk && fs[1] == opk)) {
+				t.Error("wrong feeds")
+			}
+		}
+	})
+	t.Run("delete one", func(t *testing.T) {
+		c.DelRootsBefore(opk, 100500)
+		if fs := c.Feeds(); len(fs) != 1 {
+			t.Fatal("missing feed")
+		} else if fs[0] != tpk {
+			t.Fatal("wrong feed")
+		}
+	})
+	t.Run("delete two", func(t *testing.T) {
+		c.DelRootsBefore(tpk, 100500)
+		if len(c.Feeds()) != 0 {
+			t.Fatal("got feeds")
+		}
+	})
 }
 
 func TestContainer_WantFeed(t *testing.T) {
