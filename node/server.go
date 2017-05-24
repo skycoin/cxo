@@ -497,8 +497,8 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 func (s *Server) handleRequestRegistryMsg(c *gnet.Conn,
 	msg *RequestRegistryMsg) {
 
-	if reg, _ := s.so.Registry(msg.Ref); reg != nil {
-		s.sendMessage(c, &RegistryMsg{reg.Encode()})
+	if encReg, ok := s.db.Get(cipher.SHA256(msg.Ref)); ok {
+		s.sendMessage(c, &RegistryMsg{encReg})
 	}
 }
 

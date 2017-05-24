@@ -609,21 +609,70 @@ func TestContainer_Feeds(t *testing.T) {
 }
 
 func TestContainer_WantFeed(t *testing.T) {
-	//
+	// TODO: high priority
 }
 
 func TestContainer_GotFeed(t *testing.T) {
-	//
+	// TODO: high priority
 }
 
 func TestContainer_DelFeed(t *testing.T) {
-	//
+	c := getCont()
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Touch(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Touch(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Touch(); err != nil {
+		t.Fatal(err)
+	}
+	c.DelFeed(pk)
+	if c.LastRoot(pk) != nil {
+		t.Error("got feed")
+	}
 }
 
 func TestContainer_DelRootsBefore(t *testing.T) {
-	//
+	c := getCont()
+	pk, sk := cipher.GenerateKeyPair()
+	r, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Touch(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Touch(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Touch(); err != nil {
+		t.Fatal(err)
+	}
+	fs, ok := c.DB().Stat().Feeds[pk]
+	if !ok {
+		t.Error("missing feed")
+	} else if fs.Roots != 3 {
+		t.Error("wrong amount of roots")
+	}
+	c.DelRootsBefore(pk, r.Seq())
+	fs, ok = c.DB().Stat().Feeds[pk]
+	if !ok {
+		t.Error("missing feed")
+	} else if fs.Roots != 1 {
+		t.Error("wrong amount of roots")
+	}
+	c.DelRootsBefore(pk, r.Seq()+1)
+	if len(c.DB().Stat().Feeds) != 0 {
+		t.Error("got feeds")
+	}
 }
 
 func TestContainer_GC(t *testing.T) {
-	//
+	// TODO: after GC
 }
