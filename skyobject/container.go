@@ -44,7 +44,7 @@ func NewContainer(db data.DB, reg *Registry) (c *Container) {
 	c.registries = make(map[RegistryReference]*Registry)
 	if reg != nil {
 		reg.Done()
-		// sstore registry in database
+		// store registry in database
 		c.db.Set(cipher.SHA256(reg.Reference()), reg.Encode())
 		c.coreRegistry = reg
 		c.registries[reg.Reference()] = reg
@@ -81,8 +81,10 @@ func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
 		reg = c.coreRegistry
 		return
 	}
+
 	c.RLock()
 	defer c.RUnlock()
+
 	// never lookup database keeping all registries as a hot-list,
 	// because registries are slow to unpack, and a Root object
 	// has short-hand reference to related Registry
@@ -200,9 +202,6 @@ func (c *Container) saveArray(i ...interface{}) (refs References) {
 func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	err error) {
 
-	c.Lock()
-	defer c.Unlock()
-
 	if c.coreRegistry == nil {
 		err = ErrNoCoreRegistry
 		return
@@ -224,9 +223,6 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 // editable and detached. Fields Seq and Prev are actual
 func (c *Container) NewRootReg(pk cipher.PubKey, sk cipher.SecKey,
 	rr RegistryReference) (r *Root, err error) {
-
-	c.Lock()
-	defer c.Unlock()
 
 	if r, err = c.newRoot(pk, sk); err != nil {
 		return
@@ -305,8 +301,6 @@ func (c *Container) AddRootPack(rp *data.RootPack) (r *Root, err error) {
 // It can return nil. It can return received root object
 // that doesn't contain secret key
 func (c *Container) LastRoot(pk cipher.PubKey) (r *Root) {
-	c.RLock()
-	defer c.RUnlock()
 	if rp, ok := c.db.LastRoot(pk); ok {
 		var err error
 		if r, err = c.unpackRoot(rp); err != nil {
@@ -353,33 +347,33 @@ func (c *Container) Feeds() []cipher.PubKey {
 }
 
 // WantFeed calls (*Root).WantFunc with given WantFunc
-// for every Root of the feed starting from older
-func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) (err error) {
-	c.RLock()
-	defer c.RUnlock()
+// for every Root of the feed starting from older. Unlike
+// (*Root).WantFunc the WantFeed ingores all errors
+// (except ErrStopRange) trying to find all wanted objects
+// even if some root has not related Registry or contains
+// malformed data
+func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) {
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
-		var err error
 		var r *Root
+		var err error
 		if r, err = c.unpackRoot(rp); err != nil {
 			panic(err) // ccritical
 		}
 		r.attached = true
-		if err = r.WantFunc(wf); err != nil {
-			if err == ErrStopRange {
-				err = nil
-			}
+		if err = r.WantFunc(wf); err == ErrStopRange {
 			return true // stop
 		}
 		return // false (continue)
 	})
-	return
 }
 
 // GotFeed calls (*Root).GotFunc with given GotFunc
-// for every Root of the feed starting from older
-func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
-	c.RLock()
-	defer c.RUnlock()
+// for every Root of the feed starting from older.
+// Unlike (*Root).GotFunc the GotFeed ingores all errors
+// (except ErrStopRange) trying to find all objects even
+// if some root has not related Registry or contains
+// malformed data
+func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) {
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
 		var err error
 		var r *Root
@@ -387,121 +381,98 @@ func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) (err error) {
 			panic(err) // ccritical
 		}
 		r.attached = true
-		if err = r.GotFunc(gf); err != nil {
-			if err == ErrStopRange {
-				err = nil
-			}
+		if err = r.GotFunc(gf); err == ErrStopRange {
 			return true // stop
 		}
 		return // false (continue)
 	})
-	return
 }
 
 // DelFeed deletes all root object of given feed. The
 // method doesn't perform GC
 func (c *Container) DelFeed(pk cipher.PubKey) {
-	c.Lock()
-	defer c.Unlock() // TODO: continer locks ?
 	c.db.DelFeed(pk)
 }
 
 // GC
 
-// GC removes all unused objects, including Root objects and Registries
-func (c *Container) GC() {
-	c.Lock()
-	defer c.Unlock()
-	c.rootsGC()
-	c.regsitryGC()
-	c.objectsGC()
+// DelRootsBefore deletes all roots of a feed before given seq
+func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
+	c.db.DelRootsBefore(pk, seq)
 }
 
-// RootsGC removes all root objects up to
-// last full Root object the feed has got.
-// If no full objects of a feed found then
-// no Root objects removed from the feed
-func (c *Container) RootsGC() {
-	c.Lock()
-	defer c.Unlock()
-	c.rootsGC()
+// GC removes all unused objects, including Root objects and Registries.
+// If given argument is false, then GC deletes all root objects before
+// last full root of a feed. If you want to keep all roots, then
+// call the GC with true
+func (c *Container) GC(dontRemoveRoots bool) {
+	gc, sc, rc := c.collect(dontRemoveRoots)
+	// remove
+	// delete roots
+	for pk, seq := range rc {
+		c.db.DelRootsBefore(pk, seq)
+	}
+	// delete schemas
+	for sr, cn := range sc {
+		if cn != 0 {
+			delete(gc, sr)
+		}
+	}
+	// delte objects
+	for key, cn := range gc {
+		if cn == 0 {
+			c.db.Del(key)
+		}
+	}
 }
 
-// RegsitryGC removes all unused registries
-func (c *Container) RegsitryGC() {
-	c.Lock()
-	defer c.Unlock()
-	c.regsitryGC()
-}
+// collect garbage (don't remove)
+func (c *Container) collect(dontRemoveRoots bool) (gc,
+	sc map[cipher.SHA256]uint, rc map[cipher.PubKey]uint64) {
 
-// ObjectsGC removes all unused objects from database
-func (c *Container) ObjectsGC() {
-	c.Lock()
-	defer c.Unlock()
-	c.objectsGC()
-}
+	c.RLock()
+	defer c.RUnlock()
 
-// internal
-
-func (c *Container) objectsGC() {
-	// TODO: redo
-	panic("modifications required")
-	// gc := make(map[Reference]int)
-	// // fill
-	// c.db.Range(func(ok cipher.SHA256) {
-	// 	gc[Reference(ok)] = 0
-	// })
-	// // calculate references
-	// for _, rs := range c.roots {
-	// 	if rs == nil {
-	// 		continue
-	// 	}
-	// 	for _, r := range rs.store {
-	// 		r.GotFunc(func(r Reference) (_ error) {
-	// 			gc[r] = gc[r] + 1
-	// 			return
-	// 		})
-	// 	}
-	// }
-	// // remove unused objects
-	// for ref, i := range gc {
-	// 	if i != 0 {
-	// 		continue
-	// 	}
-	// 	c.db.Del(cipher.SHA256(ref))
-	// }
-}
-
-func (c *Container) rootsGC() {
-	panic("modifications required")
-	// for _, rs := range c.roots {
-	// 	if rs == nil {
-	// 		continue
-	// 	}
-	// 	rs.gc()
-	// }
-}
-
-func (c *Container) regsitryGC() {
-	panic("modifications required")
-	// gc := make(map[RegistryReference]int)
-	// // calculate
-	// for _, rs := range c.roots {
-	// 	if rs == nil {
-	// 		continue
-	// 	}
-	// 	for _, r := range rs.store {
-	// 		rr := r.RegistryReference()
-	// 		gc[rr] = gc[rr] + 1
-	// 	}
-	// }
-	// // remove
-	// for rr, i := range gc {
-	// 	if i != 0 {
-	// 		continue
-	// 	}
-	// 	delete(c.registries, rr)
-	// }
+	// objects
+	gc = make(map[cipher.SHA256]uint)
+	// schemas
+	sc = make(map[cipher.SHA256]uint)
+	// init
+	c.db.Range(func(key cipher.SHA256, _ []byte) (_ bool) {
+		gc[key] = 0
+		return
+	})
+	// core
+	if c.coreRegistry != nil {
+		sc[cipher.SHA256(c.coreRegistry.Reference())] = 1
+	}
+	// roots
+	if !dontRemoveRoots {
+		rc = make(map[cipher.PubKey]uint64)
+	}
+	for _, pk := range c.db.Feeds() {
+		c.db.RangeFeedReverse(pk, func(rp *data.RootPack) (stop bool) {
+			r, err := c.unpackRoot(rp)
+			if err != nil {
+				panic(err) // critical
+			}
+			r.attached = true
+			sc[cipher.SHA256(r.reg)] = sc[cipher.SHA256(r.reg)] + 1
+			// ignore error
+			r.GotFunc(func(r Reference) (_ error) {
+				gc[cipher.SHA256(r)] = gc[cipher.SHA256(r)] + 1
+				return // nil
+			})
+			if !dontRemoveRoots {
+				if r.IsFull() {
+					rc[pk] = r.Seq()
+					return true // stop
+				}
+			}
+			return // continue
+		})
+	}
+	return
 }
 
 // addRoot called by Root after updating to

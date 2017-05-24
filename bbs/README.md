@@ -23,7 +23,7 @@ go build
 ```
 cd cxo/bbs/generate
 go build
-./generate -pk 03f4ceb316a5cbdb9e128f965d2622ea2fbe2f66a068747f46c31f2387175929cd -sk df0b49643782ca78befa8d88f2095a0c21fccf0757e7da7201fbb43571b59751 -debug -db-path generate.db
+./generate -pk 03f4ceb316a5cbdb9e128f965d2622ea2fbe2f66a068747f46c31f2387175929cd -sk df0b49643782ca78befa8d88f2095a0c21fccf0757e7da7201fbb43571b59751 -debug -mem-db
 ```
 
 #### bbs/receive
@@ -31,5 +31,5 @@ go build
 ```
 cd cxo/bbs/receive
 go build
-./receive -debug -pk 03f4ceb316a5cbdb9e128f965d2622ea2fbe2f66a068747f46c31f2387175929cd -db-path receive.db
+./receive -debug -pk 03f4ceb316a5cbdb9e128f965d2622ea2fbe2f66a068747f46c31f2387175929cd -mem-db
 ```

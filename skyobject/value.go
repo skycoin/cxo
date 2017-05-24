@@ -27,7 +27,7 @@ func (v *Value) IsNil() bool {
 }
 
 // Kind is Kind of Schema of the Value. But it returns relfect.Prt
-// if the value keeps Reference of Dynamic (it erturns relfect.Slice
+// if the value keeps Reference of Dynamic (it returns relfect.Slice
 // if value is References)
 func (v *Value) Kind() reflect.Kind {
 	if v.schema.IsReference() && v.schema.Kind() != reflect.Slice {

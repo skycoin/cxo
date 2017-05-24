@@ -4,10 +4,14 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-func getCont() *Container {
-	reg := NewRegistry()
+func getRegisty() (reg *Registry) {
+	reg = NewRegistry()
 	reg.Register("cxo.User", User{})
 	reg.Register("cxo.Group", Group{})
 	reg.Register("cxo.Developer", Developer{})
-	return NewContainer(data.NewMemoryDB(), reg)
+	return
+}
+
+func getCont() *Container {
+	return NewContainer(data.NewMemoryDB(), getRegisty())
 }

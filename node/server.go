@@ -21,10 +21,6 @@ type fillRoot struct {
 	await skyobject.Reference // waiting for
 }
 
-//
-// TODO: GC for skyobject.Container
-//
-
 // A Server represents CXO server
 // that includes RPC server if enabled
 // by configs
@@ -128,6 +124,7 @@ func NewServerSoDB(sc ServerConfig, db data.DB,
 func (s *Server) Start() (err error) {
 	s.Debugf(`starting server:
     data dir:             %s
+
     max connections:      %d
     max message size:     %d
 
@@ -151,11 +148,13 @@ func (s *Server) Start() (err error) {
 
     enable RPC:           %v
     RPC address:          %s
-    listening address:   %s
+    listening address:    %s
     remote close:         %t
 
     in-memory DB:         %v
     DB path:              %s
+
+    gc interval:          %v
 
     debug:                %#v
 `,
@@ -189,6 +188,8 @@ func (s *Server) Start() (err error) {
 		s.conf.InMemoryDB,
 		s.conf.DBPath,
 
+		s.conf.GCInterval,
+
 		s.conf.Log.Debug,
 	)
 	// start listener
@@ -208,6 +209,11 @@ func (s *Server) Start() (err error) {
 	if s.conf.PingInterval > 0 {
 		s.await.Add(1)
 		go s.pingsLoop()
+	}
+
+	if s.conf.GCInterval > 0 {
+		s.await.Add(1)
+		go s.gcLoop()
 	}
 
 	return
@@ -259,6 +265,27 @@ func (s *Server) pingsLoop() {
 			return
 		}
 	}
+}
+
+func (s *Server) gcLoop() {
+	defer s.await.Done()
+
+	var tk *time.Ticker = time.NewTicker(s.conf.GCInterval)
+	defer tk.Stop()
+
+	s.Debug("start GC loop ", s.conf.GCInterval)
+	for {
+		select {
+		case <-tk.C:
+			tp := time.Now()
+			s.Debug("GC pause")
+			s.so.GC(false)
+			s.Debug("GC done ", time.Now().Sub(tp))
+		case <-s.quit:
+			return
+		}
+	}
+
 }
 
 // send a message to given connection
@@ -470,8 +497,8 @@ func (s *Server) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 func (s *Server) handleRequestRegistryMsg(c *gnet.Conn,
 	msg *RequestRegistryMsg) {
 
-	if reg, _ := s.so.Registry(msg.Ref); reg != nil {
-		s.sendMessage(c, &RegistryMsg{reg.Encode()})
+	if encReg, ok := s.db.Get(cipher.SHA256(msg.Ref)); ok {
+		s.sendMessage(c, &RegistryMsg{encReg})
 	}
 }
 
@@ -684,15 +711,12 @@ func (s *Server) DelFeed(f cipher.PubKey) (deleted bool) {
 
 // Want returns lits of objects related to given
 // feed that the server hasn't got but knows about
-func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
+func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
 	set := make(map[skyobject.Reference]struct{})
-	err = s.so.WantFeed(feed, func(k skyobject.Reference) error {
+	s.so.WantFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
 		return nil
 	})
-	if err != nil {
-		return
-	}
 	if len(set) == 0 {
 		return
 	}
@@ -707,15 +731,12 @@ func (s *Server) Want(feed cipher.PubKey) (wn []cipher.SHA256, err error) {
 
 // Got returns lits of objects related to given
 // feed that the server has got
-func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256, err error) {
+func (s *Server) Got(feed cipher.PubKey) (gt []cipher.SHA256) {
 	set := make(map[skyobject.Reference]struct{})
-	err = s.so.GotFeed(feed, func(k skyobject.Reference) error {
+	s.so.GotFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
 		return nil
 	})
-	if err != nil {
-		return
-	}
 	if len(set) == 0 {
 		return
 	}
