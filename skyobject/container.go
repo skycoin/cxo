@@ -20,13 +20,14 @@ var (
 
 // A Container represents ...
 type Container struct {
-	sync.RWMutex
+	// lock database (for GC)
+	dbmx sync.RWMutex
+	db   data.DB // databse
 
-	db data.DB // databse
-
+	// lock registries
+	rmx          sync.RWMutex
 	coreRegistry *Registry // registry witch which the container was created
-
-	registries map[RegistryReference]*Registry
+	registries   map[RegistryReference]*Registry
 }
 
 // NewContainer creates new Container using given databse and
@@ -57,11 +58,18 @@ func NewContainer(db data.DB, reg *Registry) (c *Container) {
 // AddRegistry to the Container. A registry can be removed
 // by GC() or RegistiesGC() if no root refers it
 func (c *Container) AddRegistry(reg *Registry) {
-	c.Lock()
-	defer c.Unlock()
-	// call Done
-	reg.Done()
-	c.db.Set(cipher.SHA256(reg.Reference()), reg.Encode()) // store
+	reg.Done() // call Done
+
+	// use Reference instead of RegistryReference to use
+	// Set method (with locks), the Reference will be
+	// converted to cipher.SHA256 and then to []byte
+	// anyway (it doesn't make sense, the Set method
+	// requires it to be type of Reference)
+	c.Set(Reference(reg.Reference()), reg.Encode()) // store
+
+	c.rmx.Lock()
+	defer c.rmx.Unlock()
+
 	// don't replace
 	if _, ok := c.registries[reg.Reference()]; !ok {
 		c.registries[reg.Reference()] = reg
@@ -76,14 +84,14 @@ func (c *Container) CoreRegistry() *Registry {
 
 // Registry by reference
 func (c *Container) Registry(rr RegistryReference) (reg *Registry, err error) {
-	// c.coreRegistry is read-only and we don't need to lock/inlock
+	// c.coreRegistry is read-only and we don't need to lock/unlock
 	if c.coreRegistry != nil && rr == c.coreRegistry.Reference() {
 		reg = c.coreRegistry
 		return
 	}
 
-	c.RLock()
-	defer c.RUnlock()
+	c.rmx.RLock()
+	defer c.rmx.RUnlock()
 
 	// never lookup database keeping all registries as a hot-list,
 	// because registries are slow to unpack, and a Root object
@@ -117,8 +125,9 @@ func (c *Container) unpackRoot(rp *data.RootPack) (r *Root, err error) {
 
 // WantRegistry returns true if given registry wanted by the Container
 func (c *Container) WantRegistry(rr RegistryReference) (want bool) {
-	c.RLock()
-	defer c.RUnlock()
+
+	// don't need to lock database because we don't change it
+
 	var have bool
 	for _, pk := range c.db.Feeds() {
 		c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
@@ -146,8 +155,10 @@ func (c *Container) WantRegistry(rr RegistryReference) (want bool) {
 
 // Registries returns registries that the Container has got
 func (c *Container) Registries() (rrs []RegistryReference) {
-	c.RLock()
-	defer c.RUnlock()
+
+	c.rmx.RLock()
+	defer c.rmx.RUnlock()
+
 	if len(c.registries) == 0 {
 		return // nil
 	}
@@ -158,21 +169,23 @@ func (c *Container) Registries() (rrs []RegistryReference) {
 	return
 }
 
-// database
-
-// DB of the Container
-func (c *Container) DB() data.DB {
-	return c.db
-}
-
 // Get object by Reference
 func (c *Container) Get(ref Reference) (data []byte, ok bool) {
+
+	// don't need to lock database, because we don't change it
+
 	data, ok = c.db.Get(cipher.SHA256(ref))
 	return
 }
 
-// Set is short hand for c.DB().Set(cipher.SHA256(ref), data)
+// Set adds given value to database using given reference
+// as key for the value
 func (c *Container) Set(ref Reference, p []byte) {
+
+	// we need to lock database, because of GC
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
 	c.db.Set(cipher.SHA256(ref), p)
 }
 
@@ -181,15 +194,37 @@ func (c *Container) Set(ref Reference, p []byte) {
 func (c *Container) save(i interface{}) (ref Reference) {
 	data := encoder.Serialize(i)
 	hash := cipher.SumSHA256(data)
+
+	// we need to lock database, because of GC
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
 	c.db.Set(hash, data)
 	ref = Reference(hash)
 	return
 }
 
 func (c *Container) saveArray(i ...interface{}) (refs References) {
-	refs = make(References, 0, len(i))
+	if len(i) == 0 {
+		return // don't create empty slice
+	}
+
+	var data []byte
+	var hash cipher.SHA256
+
+	refs = make(References, 0, len(i)) // prepare
+
+	// we need to lock database, because of GC
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
 	for _, e := range i {
-		refs = append(refs, c.save(e))
+		data = encoder.Serialize(e)
+		hash = cipher.SumSHA256(data)
+
+		c.db.Set(hash, data)
+
+		refs = append(refs, Reference(hash))
 	}
 	return
 }
@@ -288,6 +323,10 @@ func (c *Container) AddRootPack(rp *data.RootPack) (r *Root, err error) {
 		r = nil
 		return
 	}
+
+	// lock database before modifing, because of GC
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
 
 	if err = c.db.AddRoot(r.pub, rp); err != nil {
 		return
@@ -391,6 +430,9 @@ func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) {
 // DelFeed deletes all root object of given feed. The
 // method doesn't perform GC
 func (c *Container) DelFeed(pk cipher.PubKey) {
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
 	c.db.DelFeed(pk)
 }
 
@@ -398,6 +440,9 @@ func (c *Container) DelFeed(pk cipher.PubKey) {
 
 // DelRootsBefore deletes all roots of a feed before given seq
 func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
 	c.db.DelRootsBefore(pk, seq)
 }
 
@@ -406,47 +451,43 @@ func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 // last full root of a feed. If you want to keep all roots, then
 // call the GC with true
 func (c *Container) GC(dontRemoveRoots bool) {
-	gc, sc, rc := c.collect(dontRemoveRoots)
 
-	// remove
-	c.Lock()
-	defer c.Unlock()
+	// gc lock
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
+	gc, sc, rc := c.collect(dontRemoveRoots)
 
 	// delete roots
 	for pk, seq := range rc {
 		c.db.DelRootsBefore(pk, seq)
 	}
+
 	// delete schemas
 	for sr, cn := range sc {
-		if cn != 0 {
-			delete(gc, sr)
-			delete(c.registries, RegistryReference(sr))
-		}
-	}
-	// delte objects
-	for key, cn := range gc {
 		if cn == 0 {
-			c.db.Del(key)
+			// delete registry
+			delete(c.registries, RegistryReference(sr))
+			continue
 		}
+		gc[sr] = 1 // keep encoded registry in database
 	}
+
+	// delte objects
+	c.db.RangeDelete(func(key cipher.SHA256) (del bool) {
+		return gc[key] == 0
+	})
 }
 
 // collect garbage (don't remove)
 func (c *Container) collect(dontRemoveRoots bool) (gc,
 	sc map[cipher.SHA256]uint, rc map[cipher.PubKey]uint64) {
 
-	c.RLock()
-	defer c.RUnlock()
-
 	// objects
 	gc = make(map[cipher.SHA256]uint)
 	// schemas
 	sc = make(map[cipher.SHA256]uint)
-	// init
-	c.db.Range(func(key cipher.SHA256, _ []byte) (_ bool) {
-		gc[key] = 0
-		return
-	})
+
 	// core
 	if c.coreRegistry != nil {
 		sc[cipher.SHA256(c.coreRegistry.Reference())] = 1
@@ -455,6 +496,7 @@ func (c *Container) collect(dontRemoveRoots bool) (gc,
 	if !dontRemoveRoots {
 		rc = make(map[cipher.PubKey]uint64)
 	}
+
 	for _, pk := range c.db.Feeds() {
 		c.db.RangeFeedReverse(pk, func(rp *data.RootPack) (stop bool) {
 			r, err := c.unpackRoot(rp)
@@ -462,11 +504,14 @@ func (c *Container) collect(dontRemoveRoots bool) (gc,
 				panic(err) // critical
 			}
 			r.attached = true
-			sc[cipher.SHA256(r.reg)] = sc[cipher.SHA256(r.reg)] + 1
+			sc[cipher.SHA256(r.reg)] = 1
 			// ignore error
-			r.GotFunc(func(r Reference) (_ error) {
-				gc[cipher.SHA256(r)] = gc[cipher.SHA256(r)] + 1
-				return // nil
+			r.RefsFunc(func(r Reference) (skip bool, _ error) {
+				if _, skip = gc[cipher.SHA256(r)]; skip {
+					return // skip entire branch
+				}
+				gc[cipher.SHA256(r)] = 1
+				return
 			})
 			if !dontRemoveRoots {
 				if r.IsFull() {
@@ -487,8 +532,8 @@ func (c *Container) collect(dontRemoveRoots bool) (gc,
 // attached then we need to increase seq number
 // and shift next/prev/hash references
 func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
-	c.Lock()
-	defer c.Unlock()
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
 
 	// the Root locked, we can access all its fields
 	if r.attached {

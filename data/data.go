@@ -33,6 +33,8 @@ type DB interface {
 	IsExist(key cipher.SHA256) (ok bool)
 	// Range over all objects and schemas (read only)
 	Range(func(key cipher.SHA256, value []byte) (stop bool))
+	// RangeDelete used to delete objects
+	RangeDelete(func(key cipher.SHA256) (del bool))
 
 	//
 	// Feeds

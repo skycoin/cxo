@@ -261,11 +261,6 @@ func (r *Root) Get(ref Reference) ([]byte, bool) {
 	return r.cnt.Get(ref)
 }
 
-// DB returns database of related Container
-func (r *Root) DB() data.DB {
-	return r.cnt.DB()
-}
-
 // Save is short hand for (*Container).Save()
 func (r *Root) Save(i interface{}) Reference {
 	return r.cnt.save(i)
@@ -602,6 +597,53 @@ func (r *Root) GotOfFunc(dr Dynamic, gf GotFunc) (err error) {
 	return
 }
 
+// RefsFunc used to determine references used by a Root.
+// It returns skip to skip a brach by reference
+type RefsFunc func(Reference) (skip bool, err error)
+
+// RefsFunc used to determine possible references
+// of a Root. If the Root is full, then given
+// function will be caleed for every object
+// (ecxept skipped). Given function can be
+// called for objects that is not present
+// in database yet
+func (r *Root) RefsFunc(rf RefsFunc) (err error) {
+	r.RLock()
+	defer r.RUnlock()
+	var val *Value
+	var skip bool
+	for _, dr := range r.refs {
+		if dr.Object.IsBlank() {
+			continue
+		}
+		if skip, err = rf(dr.Object); err != nil {
+			break // range loop
+		}
+		if skip {
+			continue // next value
+		}
+		if val, err = r.ValueByDynamic(dr); err != nil {
+			if _, ok := err.(*MissingObjectError); ok {
+				err = nil
+				continue // range loop
+			} // else
+			return // the error
+		}
+		// go deepper
+		if err = refsValue(val, rf); err != nil {
+			if _, ok := err.(*MissingObjectError); ok {
+				err = nil
+				continue // range loop
+			} // else
+			break // range loop
+		}
+	}
+	if err == ErrStopRange {
+		err = nil
+	}
+	return
+}
+
 func gotValue(v *Value, gf GotFunc) (err error) {
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:
@@ -634,6 +676,61 @@ func gotValue(v *Value, gf GotFunc) (err error) {
 		}
 		if err != nil {
 			err = gotValue(d, gf)
+		}
+	}
+	return
+}
+
+func refsValue(v *Value, rf RefsFunc) (err error) {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		err = v.RangeIndex(func(_ int, d *Value) error {
+			return refsValue(d, rf)
+		})
+	case reflect.Struct:
+		err = v.RangeFields(func(name string, d *Value) error {
+			return refsValue(d, rf)
+		})
+	case reflect.Ptr:
+		switch v.Schema().ReferenceType() {
+		case ReferenceTypeSingle:
+			var ref Reference
+			if ref, err = v.Static(); err != nil {
+				return
+			}
+			if ref.IsBlank() {
+				return // do nothing for empty references
+			}
+			var skip bool
+			if skip, err = rf(ref); err != nil || skip {
+				return
+			}
+			if data, ok := v.root.Get(ref); !ok {
+				return // nil
+			} else {
+				var val *Value
+				val = &Value{data, v.Schema().Elem(), v.root}
+				return refsValue(val, rf)
+			}
+		case ReferenceTypeDynamic:
+			var dr Dynamic
+			if dr, err = v.Dynamic(); err != nil {
+				return
+			}
+			if dr.Object.IsBlank() {
+				return // do nothing for empty references
+			}
+			var skip bool
+			if skip, err = rf(dr.Object); err != nil || skip {
+				return
+			}
+			var val *Value
+			if val, err = v.root.ValueByDynamic(dr); err != nil {
+				return
+			}
+			return refsValue(val, rf)
+		default:
+			err = ErrInvalidType
 		}
 	}
 	return

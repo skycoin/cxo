@@ -109,7 +109,7 @@ func (c *Client) Close() (err error) {
 	})
 	c.pool.Close() // ignore error
 	c.await.Wait()
-	err = c.so.DB().Close()
+	err = c.db.Close()
 	return
 }
 
@@ -120,8 +120,6 @@ func (c *Client) IsConnected() bool {
 	defer c.icmx.Unlock()
 	return c.isConnected
 }
-
-func (c *Client) DB() data.DB { return c.so.DB() }
 
 func (c *Client) setIsConnected(t bool) {
 	c.icmx.Lock()

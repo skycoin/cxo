@@ -124,6 +124,29 @@ func (d *driveDB) Range(fn func(key cipher.SHA256, value []byte) (stop bool)) {
 	})
 }
 
+func (d *driveDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
+	d.update(func(t *bolt.Tx) (e error) {
+		o := t.Bucket(objectsBucket)
+		c := o.Cursor()
+		var key cipher.SHA256
+		for k, _ := c.First(); k != nil; k, _ = c.Seek(key[:]) {
+		Loop:
+			copy(key[:], k)
+			if fn(key) {
+				if e = c.Delete(); e != nil {
+					return
+				}
+				continue
+			}
+			if k, _ = c.Next(); k == nil {
+				break
+			}
+			goto Loop
+		}
+		return
+	})
+}
+
 //
 // Feeds
 //
