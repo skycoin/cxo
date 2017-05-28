@@ -47,7 +47,9 @@ func newClient() *Client {
 	r.Register("Thread", Thread{})
 	r.Register("Board", Board{})
 	r.Done()
-	c, e := NewClient(NewClientConfig(), r)
+	cc := NewClientConfig()
+	cc.InMemoryDB = true
+	c, e := NewClient(cc, r)
 	if e != nil {
 		log.Panic(e)
 	}
@@ -114,7 +116,11 @@ func TestWalker_AdvanceFromRoot(t *testing.T) {
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
-	e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
+	e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		v, e := w.Root().ValueByDynamic(dRef)
+		if e != nil {
+			return false
+		}
 		if v.Schema().Name() != "Board" {
 			return false
 		}
@@ -140,23 +146,20 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 
 	var e error
 
-	e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-		if v.Schema().Name() != "Board" {
-			return false
-		}
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Talk"
+	e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		board := &Board{}
+		w.DeserializeFromRef(dRef.Object, board)
+		return board.Name == "Talk"
 	})
 
 	if e != nil {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Greetings"
+	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "Greetings"
 	})
 
 	if e != nil {
@@ -164,10 +167,10 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 	}
 
 	t.Log(len(thread.Posts))
-	e = w.AdvanceFromRefsField("Posts", post, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Title")
-		s, _ := fv.String()
-		return s == "Hi"
+	e = w.AdvanceFromRefsField("Posts", post, func(i int, ref skyobject.Reference) (chosen bool) {
+		post := &Post{}
+		w.DeserializeFromRef(ref, post)
+		return post.Title == "Hi"
 	})
 	if e != nil {
 		t.Error("advance from thread to post failed:", e)
@@ -187,33 +190,30 @@ func TestWalker_GetFromRefsField(t *testing.T) {
 
 	var e error
 
-	e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-		if v.Schema().Name() != "Board" {
-			return false
-		}
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Talk"
+	e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		board := &Board{}
+		w.DeserializeFromRef(dRef.Object, board)
+		return board.Name == "Talk"
 	})
 
 	if e != nil {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Greetings"
+	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "Greetings"
 	})
 
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
 
-	_, e = w.GetFromRefsField("Posts", post, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Title")
-		s, _ := fv.String()
-		return s == "Hi"
+	e = w.GetFromRefsField("Posts", post, func(i int, ref skyobject.Reference) bool {
+		post := &Post{}
+		w.DeserializeFromRef(ref, post)
+		return post.Title == "Hi"
 	})
 	t.Log("\nPost = ", post)
 	if e != nil {
@@ -234,22 +234,19 @@ func TestWalker_AdvanceFromRefField(t *testing.T) {
 
 	var e error
 
-	e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-		if v.Schema().Name() != "Board" {
-			return false
-		}
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Talk"
+	e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		board := &Board{}
+		w.DeserializeFromRef(dRef.Object, board)
+		return board.Name == "Talk"
 	})
 	if e != nil {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Greetings"
+	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "Greetings"
 	})
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
@@ -274,31 +271,27 @@ func TestWalker_GetFromRefField(t *testing.T) {
 
 	var e error
 
-	e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-		if v.Schema().Name() != "Board" {
-			return false
-		}
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Talk"
+	e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		board := &Board{}
+		w.DeserializeFromRef(dRef.Object, board)
+		return board.Name == "Talk"
 	})
 
 	if e != nil {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Greetings"
+	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "Greetings"
 	})
 
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
 
-	_, e = w.GetFromRefField("Creator", person)
-	if e != nil {
+	if e = w.GetFromRefField("Creator", person); e != nil {
 		t.Error("advance from thread to person failed:", e)
 	}
 
@@ -318,13 +311,10 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 
 		var e error
 
-		e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Test"
+		e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Test"
 		})
 		if e != nil {
 			t.Error("advance from root to board failed:", e)
@@ -347,13 +337,10 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 
 		var e error
 
-		e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root to board failed:", e)
@@ -379,13 +366,10 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 
 		var e error
 
-		e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Test"
+		e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Test"
 		})
 		if e != nil {
 			t.Error("advance from root to board failed:", e)
@@ -409,13 +393,10 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 
 		var e error
 
-		e = w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e = w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root to board failed:", e)
@@ -437,13 +418,10 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
-	e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-		if v.Schema().Name() != "Board" {
-			return false
-		}
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Talk"
+	e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		board := &Board{}
+		w.DeserializeFromRef(dRef.Object, board)
+		return board.Name == "Talk"
 	})
 
 	if e != nil {
@@ -459,10 +437,10 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 	t.Log("\n After:", w.String())
 
 	thread := &Thread{}
-	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "New Thread"
+	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "New Thread"
 	})
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
@@ -477,13 +455,10 @@ func TestWalker_ReplaceInRefsField(t *testing.T) {
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
-	e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-		if v.Schema().Name() != "Board" {
-			return false
-		}
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Talk"
+	e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+		board := &Board{}
+		w.DeserializeFromRef(dRef.Object, board)
+		return board.Name == "Talk"
 	})
 
 	if e != nil {
@@ -492,10 +467,10 @@ func TestWalker_ReplaceInRefsField(t *testing.T) {
 
 	t.Log("\n Before:", w.String())
 
-	e = w.ReplaceInRefsField("Threads", &Thread{Name: "New Thread"}, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "Greetings"
+	e = w.ReplaceInRefsField("Threads", &Thread{Name: "New Thread"}, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "Greetings"
 	})
 	if e != nil {
 		t.Error("replace board thread failed:", e)
@@ -503,10 +478,10 @@ func TestWalker_ReplaceInRefsField(t *testing.T) {
 	t.Log("\n After:", w.String())
 
 	thread := &Thread{}
-	e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-		fv, _ := v.FieldByName("Name")
-		s, _ := fv.String()
-		return s == "New Thread"
+	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+		thread := &Thread{}
+		w.DeserializeFromRef(ref, thread)
+		return thread.Name == "New Thread"
 	})
 	if e != nil {
 		t.Error("advance from board to the new thread failed:", e)
@@ -522,13 +497,10 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 
 		if e != nil {
@@ -537,10 +509,10 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 
 		t.Log("\n Before:", w.String())
 
-		e = w.RemoveInRefsField("Threads", func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.RemoveInRefsField("Threads", func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 
 		if e != nil {
@@ -550,10 +522,10 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		t.Log("\n After:", w.String())
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 
 		if e != nil {
@@ -571,13 +543,10 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 
 		if e != nil {
@@ -585,28 +554,28 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		}
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
 		}
 		t.Log("\n Before:", w.String())
 
-		e = w.RemoveInRefsField("Posts", func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Title")
-			s, _ := fv.String()
-			return s == "Bye"
+		e = w.RemoveInRefsField("Posts", func(i int, ref skyobject.Reference) bool {
+			post := &Post{}
+			w.DeserializeFromRef(ref, post)
+			return post.Title == "Bye"
 		})
 
 		t.Log("\n After:", w.String())
 
-		e = w.AdvanceFromRefsField("Posts", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Title")
-			s, _ := fv.String()
-			return s == "Bye"
+		e = w.AdvanceFromRefsField("Posts", thread, func(i int, ref skyobject.Reference) bool {
+			post := &Post{}
+			w.DeserializeFromRef(ref, post)
+			return post.Title == "Bye"
 		})
 
 		if e != nil {
@@ -627,13 +596,10 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root failed:", e)
@@ -653,23 +619,20 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root failed:", e)
 		}
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
@@ -683,8 +646,7 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 			t.Log(p)
 		}
 
-		_, e = w.ReplaceInRefField("Creator", Person{Name: "Bruce Lee", Age: 77})
-		if e != nil {
+		if _, e = w.ReplaceInRefField("Creator", Person{Name: "Bruce Lee", Age: 77}); e != nil {
 			t.Error("failed to replace", e)
 		}
 
@@ -719,13 +681,10 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 		newBoard := Board{"NEW!", newPerson.Object, newPost, newThreads}
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		t.Log("Got board", board.Name)
 		if e != nil {
@@ -756,13 +715,10 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 		newThread1 := Thread{"NEW THREAD!", newPerson.Object, posts}
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root failed:", e)
@@ -770,10 +726,10 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 		t.Log("Got board", board.Name)
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
@@ -797,13 +753,10 @@ func TestWalker_ReplaceInDynamicField(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root failed:", e)
@@ -841,13 +794,10 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		t.Log("Got board", board.Name)
 		if e != nil {
@@ -872,13 +822,10 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root failed:", e)
@@ -886,10 +833,10 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 		t.Log("Got board", board.Name)
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
@@ -913,13 +860,10 @@ func TestWalker_RemoveByRef(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		t.Log("Got board", board.Name)
 		if e != nil {
@@ -945,13 +889,10 @@ func TestWalker_RemoveByRef(t *testing.T) {
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
-		e := w.AdvanceFromRoot(board, func(v *skyobject.Value) (chosen bool) {
-			if v.Schema().Name() != "Board" {
-				return false
-			}
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Talk"
+		e := w.AdvanceFromRoot(board, func(i int, dRef skyobject.Dynamic) bool {
+			board := &Board{}
+			w.DeserializeFromRef(dRef.Object, board)
+			return board.Name == "Talk"
 		})
 		if e != nil {
 			t.Error("advance from root failed:", e)
@@ -959,10 +900,10 @@ func TestWalker_RemoveByRef(t *testing.T) {
 		t.Log("Got board", board.Name)
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(v *skyobject.Value) (chosen bool) {
-			fv, _ := v.FieldByName("Name")
-			s, _ := fv.String()
-			return s == "Greetings"
+		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
 		})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
