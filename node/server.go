@@ -763,7 +763,7 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 
 // Stat returns satatistic of database
 func (s *Server) Stat() stat.Stat {
-	return s.so.DB().Stat()
+	return s.db.Stat()
 }
 
 // Quititng returns cahnnel that closed

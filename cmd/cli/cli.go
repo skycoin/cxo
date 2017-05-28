@@ -401,12 +401,17 @@ func stat(rpc *node.RPCClient) (err error) {
 	if stat, err = rpc.Stat(); err != nil {
 		return
 	}
+	fmt.Println("  ----")
 	fmt.Println("  Objects:", stat.Objects)
 	fmt.Println("  Space:  ", stat.Space.String())
+	fmt.Println("  ----")
 	for pk, fs := range stat.Feeds {
-		fmt.Println(" ", pk.Hex())
+		fmt.Println("  -", pk.Hex())
 		fmt.Println("    Root Objects: ", fs.Roots)
 		fmt.Println("    Space:        ", fs.Space.String())
+	}
+	if len(stat.Feeds) > 0 {
+		fmt.Println("  ----")
 	}
 	return
 }

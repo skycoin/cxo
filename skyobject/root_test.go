@@ -258,19 +258,19 @@ func TestRoot_Get(t *testing.T) {
 	// Get(ref Reference) ([]byte, bool)
 }
 
-func TestRoot_DB(t *testing.T) {
-	// DB() data.DB
-	db := data.NewMemoryDB()
-	c := NewContainer(db, nil)
-	pk, sk := cipher.GenerateKeyPair()
-	r, err := c.NewRootReg(pk, sk, RegistryReference{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.DB() != db {
-		t.Error("wrong db")
-	}
-}
+// func TestRoot_DB(t *testing.T) {
+// 	// DB() data.DB
+// 	db := data.NewMemoryDB()
+// 	c := NewContainer(db, nil)
+// 	pk, sk := cipher.GenerateKeyPair()
+// 	r, err := c.NewRootReg(pk, sk, RegistryReference{})
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if r.DB() != db {
+// 		t.Error("wrong db")
+// 	}
+// }
 
 func TestRoot_Save(t *testing.T) {
 	// Save(i interface{}) Reference
@@ -391,7 +391,7 @@ func TestRoot_WantFunc(t *testing.T) {
 	if aliceData, ok := sender.Get(alice.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+		receiver.Set(alice.Object, aliceData)
 	}
 	want = []Reference{} // reset
 	err = r.WantFunc(func(ref Reference) (_ error) {
@@ -414,7 +414,7 @@ func TestRoot_WantFunc(t *testing.T) {
 	if evaData, ok := sender.Get(eva.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+		receiver.Set(eva.Object, evaData)
 	}
 	want = []Reference{} // reset
 	err = r.WantFunc(func(ref Reference) (_ error) {
@@ -437,7 +437,7 @@ func TestRoot_WantFunc(t *testing.T) {
 	if ammyData, ok := sender.Get(ammy.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+		receiver.Set(ammy.Object, ammyData)
 	}
 	want = []Reference{} // reset
 	err = r.WantFunc(func(ref Reference) (_ error) {
@@ -504,7 +504,7 @@ func TestRoot_GotFunc(t *testing.T) {
 	if aliceData, ok := sender.Get(alice.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+		receiver.Set(alice.Object, aliceData)
 	}
 	var got []Reference // reset
 	err = r.GotFunc(func(ref Reference) (_ error) {
@@ -527,7 +527,7 @@ func TestRoot_GotFunc(t *testing.T) {
 	if evaData, ok := sender.Get(eva.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+		receiver.Set(eva.Object, evaData)
 	}
 	got = []Reference{} // reset
 	err = r.GotFunc(func(ref Reference) (_ error) {
@@ -550,7 +550,7 @@ func TestRoot_GotFunc(t *testing.T) {
 	if ammyData, ok := sender.Get(ammy.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+		receiver.Set(ammy.Object, ammyData)
 	}
 	got = []Reference{} // reset
 	err = r.GotFunc(func(ref Reference) (_ error) {

@@ -16,9 +16,9 @@ func TestNewContainer(t *testing.T) {
 		reg := NewRegistry()
 		db := data.NewMemoryDB()
 		c := NewContainer(db, reg)
-		if c.DB() == nil {
+		if c.db == nil {
 			t.Error("missing database")
-		} else if c.DB() != db {
+		} else if c.db != db {
 			t.Error("wrong database")
 		} else if c.coreRegistry != reg {
 			t.Error("wrong core registry")
@@ -26,7 +26,7 @@ func TestNewContainer(t *testing.T) {
 			if reg.done != true {
 				t.Error("missing (*Registry).Done in NewContainer")
 			}
-			if _, ok := c.DB().Get(cipher.SHA256(reg.Reference())); !ok {
+			if _, ok := c.db.Get(cipher.SHA256(reg.Reference())); !ok {
 				t.Error("registry wasn't saved")
 			}
 		}
@@ -44,7 +44,7 @@ func TestContainer_AddRegistry(t *testing.T) {
 		t.Error("missing (*Registry).Done in AddRegistry")
 	} else if _, err := c.Registry(reg.Reference()); err != nil {
 		t.Error("can't give registyr by reference")
-	} else if _, ok := c.DB().Get(cipher.SHA256(reg.Reference())); !ok {
+	} else if _, ok := c.db.Get(cipher.SHA256(reg.Reference())); !ok {
 		t.Error("registry wasn't saved")
 	}
 }
@@ -149,7 +149,7 @@ func TestContainer_Registries(t *testing.T) {
 func TestContainer_DB(t *testing.T) {
 	db := data.NewMemoryDB()
 	c := NewContainer(db, nil)
-	if c.DB() != db {
+	if c.db != db {
 		t.Error("wrong db")
 	}
 }
@@ -665,7 +665,7 @@ func TestContainer_WantFeed(t *testing.T) {
 	if aliceData, ok := sender.Get(alice.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+		receiver.db.Set(cipher.SHA256(alice.Object), aliceData)
 	}
 	want = []Reference{} // reset
 	receiver.WantFeed(pk, func(ref Reference) (_ error) {
@@ -685,7 +685,7 @@ func TestContainer_WantFeed(t *testing.T) {
 	if evaData, ok := sender.Get(eva.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+		receiver.db.Set(cipher.SHA256(eva.Object), evaData)
 	}
 	want = []Reference{} // reset
 	receiver.WantFeed(pk, func(ref Reference) (_ error) {
@@ -705,7 +705,7 @@ func TestContainer_WantFeed(t *testing.T) {
 	if ammyData, ok := sender.Get(ammy.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+		receiver.db.Set(cipher.SHA256(ammy.Object), ammyData)
 	}
 	want = []Reference{} // reset
 	receiver.WantFeed(pk, func(ref Reference) (_ error) {
@@ -761,7 +761,7 @@ func TestContainer_GotFeed(t *testing.T) {
 	if aliceData, ok := sender.Get(alice.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(alice.Object), aliceData)
+		receiver.db.Set(cipher.SHA256(alice.Object), aliceData)
 	}
 	var got []Reference // reset
 	receiver.GotFeed(pk, func(ref Reference) (_ error) {
@@ -784,7 +784,7 @@ func TestContainer_GotFeed(t *testing.T) {
 	if evaData, ok := sender.Get(eva.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(eva.Object), evaData)
+		receiver.db.Set(cipher.SHA256(eva.Object), evaData)
 	}
 	got = []Reference{} // reset
 	receiver.GotFeed(pk, func(ref Reference) (_ error) {
@@ -807,7 +807,7 @@ func TestContainer_GotFeed(t *testing.T) {
 	if ammyData, ok := sender.Get(ammy.Object); !ok {
 		t.Fatal("misisng object")
 	} else {
-		receiver.DB().Set(cipher.SHA256(ammy.Object), ammyData)
+		receiver.db.Set(cipher.SHA256(ammy.Object), ammyData)
 	}
 	got = []Reference{} // reset
 	receiver.GotFeed(pk, func(ref Reference) (_ error) {
@@ -866,21 +866,21 @@ func TestContainer_DelRootsBefore(t *testing.T) {
 	if _, err := r.Touch(); err != nil {
 		t.Fatal(err)
 	}
-	fs, ok := c.DB().Stat().Feeds[pk]
+	fs, ok := c.db.Stat().Feeds[pk]
 	if !ok {
 		t.Error("missing feed")
 	} else if fs.Roots != 3 {
 		t.Error("wrong amount of roots")
 	}
 	c.DelRootsBefore(pk, r.Seq())
-	fs, ok = c.DB().Stat().Feeds[pk]
+	fs, ok = c.db.Stat().Feeds[pk]
 	if !ok {
 		t.Error("missing feed")
 	} else if fs.Roots != 1 {
 		t.Error("wrong amount of roots")
 	}
 	c.DelRootsBefore(pk, r.Seq()+1)
-	if len(c.DB().Stat().Feeds) != 0 {
+	if len(c.db.Stat().Feeds) != 0 {
 		t.Error("got feeds")
 	}
 }
@@ -909,7 +909,7 @@ func TestContainer_GC(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.GC(false)
-	stat := c.DB().Stat()
+	stat := c.db.Stat()
 	if f := stat.Feeds[pk]; f.Roots != 1 {
 		t.Error("not clear", f.Roots)
 	}
@@ -920,12 +920,15 @@ func TestContainer_GC(t *testing.T) {
 	// clean up (except core)
 	c.DelRootsBefore(pk, 1005000)
 	c.GC(false)
-	stat = c.DB().Stat()
+	stat = c.db.Stat()
 	if len(stat.Feeds) != 0 {
 		t.Error("not clear")
 	}
 	// registry
 	if stat.Objects != 1 {
-		t.Error("not clear")
+		t.Error("not clear", stat.Objects)
+	}
+	if len(c.registries) != 1 {
+		t.Error("core registry removed")
 	}
 }

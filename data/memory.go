@@ -78,6 +78,18 @@ func (d *memoryDB) Range(fn func(key cipher.SHA256, value []byte) (stop bool)) {
 	return
 }
 
+func (d *memoryDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	for key := range d.objects {
+		if fn(key) {
+			delete(d.objects, key)
+		}
+	}
+	return
+}
+
 //
 // Feeds
 //
