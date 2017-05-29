@@ -12,7 +12,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-// be sure that all messages implements Msg interface
+// be sure that all messages implements Msg interface compiler time
 var (
 	_ Msg = &PingMsg{}
 	_ Msg = &PongMsg{}
@@ -26,7 +26,7 @@ var (
 	_ Msg = &RegistryMsg{}
 )
 
-// A Msg is ommon interface for CXO messages
+// A Msg is common interface for CXO messages
 type Msg interface {
 	MsgType() MsgType
 }

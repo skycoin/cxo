@@ -53,6 +53,16 @@ func NewContainer(db data.DB, reg *Registry) (c *Container) {
 	return
 }
 
+// database
+
+// DB returns unerlying database. It's unsafe to
+// insert some data to database if GC of Container
+// called. Use Set and Get method of Container
+// or similar methods of Root to be safe
+func (c *Container) DB() data.DB {
+	return c.db
+}
+
 // registry
 
 // AddRegistry to the Container. A registry can be removed

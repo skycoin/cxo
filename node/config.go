@@ -64,7 +64,6 @@ func dataDir(sub string) string {
 }
 
 func initDataDir(dir string) error {
-	println("HERE", dir)
 	return os.MkdirAll(dir, 0700)
 }
 
