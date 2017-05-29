@@ -189,6 +189,11 @@ func (s *Client) handleAddFeedMsg(msg *AddFeedMsg) {
 	if !s.addServerFeed(msg.Feed) {
 		return
 	}
+	// add feed callback
+	if s.conf.OnAddFeed != nil {
+		s.conf.OnAddFeed(msg.Feed)
+	}
+	// send last full root of the feed
 	full := s.so.LastFullRoot(msg.Feed)
 	if full == nil {
 		return
@@ -199,7 +204,14 @@ func (s *Client) handleAddFeedMsg(msg *AddFeedMsg) {
 func (s *Client) handleDelFeedMsg(msg *DelFeedMsg) {
 	s.smx.Lock()
 	defer s.smx.Unlock()
-	delete(s.srvfs, msg.Feed)
+	if _, ok := s.srvfs[msg.Feed]; ok {
+		// del feed callback
+		if s.conf.OnDelFeed != nil {
+			s.conf.OnDelFeed(msg.Feed)
+		}
+		// delete
+		delete(s.srvfs, msg.Feed)
+	}
 	return
 }
 
@@ -243,7 +255,17 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 		s.Print("[ERR] error appending root: ", err)
 		return
 	}
+
+	// callback
+	if s.conf.OnRootReceived != nil {
+		s.conf.OnRootReceived(root)
+	}
+
 	if root.IsFull() {
+		// callback
+		if s.conf.OnRootFilled != nil {
+			s.conf.OnRootFilled(root)
+		}
 		return
 	}
 
@@ -296,6 +318,10 @@ func (s *Client) handleRegistryMsg(msg *RegistryMsg) {
 	for _, fl := range s.roots {
 		if fl.root.RegistryReference() == reg.Reference() {
 			if fl.root.IsFull() {
+				// callback
+				if s.conf.OnRootFilled != nil {
+					s.conf.OnRootFilled(fl.root)
+				}
 				continue // delete
 			}
 			var sent bool
@@ -307,10 +333,10 @@ func (s *Client) handleRegistryMsg(msg *RegistryMsg) {
 			})
 			if err != nil {
 				s.Print("[ERR] unexpected error: ", err)
-				continue // delete
+				continue // delete (malformed root object)
 			}
 			if !sent {
-				continue // delete
+				continue // delete (sending error)
 			}
 		}
 		s.roots[i] = fl
@@ -349,6 +375,10 @@ func (s *Client) handleDataMsg(msg *DataMsg) {
 	for _, fl := range s.roots {
 		if fl.await == hash {
 			if fl.root.IsFull() {
+				// callback
+				if s.conf.OnRootFilled != nil {
+					s.conf.OnRootFilled(fl.root)
+				}
 				continue // delete
 			}
 			var sent bool
@@ -360,10 +390,10 @@ func (s *Client) handleDataMsg(msg *DataMsg) {
 			})
 			if err != nil {
 				s.Print("[ERR] unexpected error: ", err)
-				continue // delete
+				continue // delete (malformed root)
 			}
 			if !sent {
-				continue // delete
+				continue // delete (sending error)
 			}
 		}
 		s.roots[i] = fl

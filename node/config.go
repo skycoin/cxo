@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/skyobject"
+
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 )
@@ -179,9 +183,42 @@ type ClientConfig struct {
 	// DBPath is path to database
 	DBPath string
 
-	// handlers
-	OnConnect    func()
+	//
+	// callbacks
+	//
+
+	// connections
+
+	// OnConnect called when *gnet.Conn created
+	OnConnect func()
+	// OnDisconenct called when *gnet.Conn closed
 	OnDisconenct func()
+
+	// feeds or related server
+
+	// OnAddFeed is callback that called when
+	// Client receive AddFeedMsg from related
+	// Server. The message means that the
+	// Server starts sharing the feed. The
+	// callback never called if the feed already
+	// added
+	OnAddFeed func(cipher.PubKey)
+	// OnDelFeed is callback that called when
+	// Client receive DelFeedMsg from related
+	// Server. The message means that the
+	// Server stops sharing the feed. The
+	// callback never called if the feed never
+	// been added
+	OnDelFeed func(cipher.PubKey)
+
+	// root objects
+
+	// OnRootReceived is callback that called
+	// when Client receive new Root object
+	OnRootReceived func(root *skyobject.Root)
+	// OnRootFilled is callback that called when
+	// Client finishes filling received Root object
+	OnRootFilled func(root *skyobject.Root)
 }
 
 // NewClientConfig returns ClientConfig
