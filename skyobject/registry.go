@@ -415,7 +415,7 @@ func decodeSchema(b []byte) (s Schema, err error) {
 
 	switch k := reflect.Kind(x.Kind); k {
 	case reflect.Slice:
-		ss := arraySchema{}
+		ss := sliceSchema{}
 		ss.schema = sc
 		if ss.elem, err = decodeSchema(x.Elem); err != nil {
 			return

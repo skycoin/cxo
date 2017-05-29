@@ -1,9 +1,13 @@
 package node
 
+/***********
+
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/skycoin/cxo/node/log"
 )
 
 var (
@@ -13,6 +17,34 @@ var (
 
 func clean() {
 	os.Remove(testDataDir)
+}
+
+// name for logs (empty for default)
+// memory - to use databas in memory (otherwise it eill be ./test/test.db)
+func newClientConfig(name string, memory bool) (conf ClientConfig) {
+	conf = NewClientConfig()
+	if name != "" {
+		conf.Log.Prefix = name
+		conf.Log.Debug = testing.Verbose()
+	}
+	if memory {
+		conf.InMemoryDB = true
+	} else {
+		conf.InMemoryDB = false
+		conf.DataDir = testDataDir
+		conf.DBPath = testDBPath
+	}
+	return
+}
+
+func newClient(name string, memory bool) (c *Client, err error) {
+	c, err = NewClient(newClientConfig(name, memory), nil)
+	if err != nil {
+		return
+	}
+	if !testing.Verbose() {
+		//
+	}
 }
 
 func TestNewClient(t *testing.T) {
@@ -142,3 +174,5 @@ func TestClient_Container(t *testing.T) {
 	// Container() *Container {
 
 }
+
+***/

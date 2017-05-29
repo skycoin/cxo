@@ -12,8 +12,8 @@ func shouldPanic(t *testing.T) {
 }
 
 func shouldNotPanic(t *testing.T) {
-	if recover() != nil {
-		t.Error("unexpected panic")
+	if err := recover(); err != nil {
+		t.Error("unexpected panic:", err)
 	}
 }
 
@@ -186,4 +186,38 @@ func TestRegistry_Encode(t *testing.T) {
 
 func TestRegistry_Reference(t *testing.T) {
 	//
+}
+
+func TestRegistry_slice(t *testing.T) {
+	type Post struct {
+		Name    string
+		Content string
+	}
+	type Vote struct {
+		Up   uint32
+		Down uint32
+	}
+	type PostVotePage struct {
+		Post  Reference  `skyobject:"schema=Post"`
+		Votes References `skyobject:"schema=Vote"`
+	}
+	type PostVoteContainer struct {
+		Posts []PostVotePage
+	}
+	r := NewRegistry()
+	r.Register("Post", Post{})
+	r.Register("Vote", Vote{})
+	r.Register("PostVotePage", PostVotePage{})
+	r.Register("PostVoteContainer", PostVoteContainer{})
+	t.Run("done", func(t *testing.T) {
+		defer shouldNotPanic(t)
+		r.Done()
+	})
+	t.Run("encode decode", func(t *testing.T) {
+		defer shouldNotPanic(t)
+		_, err := DecodeRegistry(r.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 }

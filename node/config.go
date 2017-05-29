@@ -40,7 +40,7 @@ const (
 	//   client: ~/.skycoin/cxo/client/bolt.db
 	// todo:
 	//   server should be system wide and its
-	//   directory should be like /var/cache/cxo/bolt.db
+	//   directory should be like /var/lib/cxo/bolt.db
 
 	skycoinDataDir = ".skycoin"
 	cxoSubDir      = "cxo"
