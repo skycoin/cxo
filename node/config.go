@@ -9,8 +9,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/skyobject"
-
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 )
@@ -214,10 +212,10 @@ type ClientConfig struct {
 
 	// OnRootReceived is callback that called
 	// when Client receive new Root object
-	OnRootReceived func(root *skyobject.Root)
+	OnRootReceived func(root *Root)
 	// OnRootFilled is callback that called when
 	// Client finishes filling received Root object
-	OnRootFilled func(root *skyobject.Root)
+	OnRootFilled func(root *Root)
 }
 
 // NewClientConfig returns ClientConfig

@@ -12,6 +12,10 @@ type Container struct {
 	client *Client
 }
 
+func (c *Container) wrapRoot(sr *skyobject.Root) *Root {
+	return &Root{sr, c}
+}
+
 func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	err error) {
 
@@ -30,7 +34,7 @@ func (c *Container) AddRootPack(rp *data.RootPack) (r *Root,
 	if sr, err = c.Container.AddRootPack(rp); err != nil {
 		return
 	} else if sr != nil {
-		r = &Root{sr, c}
+		r = c.wrapRoot(sr)
 	}
 	return
 
@@ -38,21 +42,21 @@ func (c *Container) AddRootPack(rp *data.RootPack) (r *Root,
 
 func (c *Container) LastRoot(pk cipher.PubKey) (r *Root) {
 	if sr := c.Container.LastRoot(pk); sr != nil {
-		r = &Root{sr, c}
+		r = c.wrapRoot(sr)
 	}
 	return
 }
 
 func (c *Container) LastRootSk(pk cipher.PubKey, sk cipher.SecKey) (r *Root) {
 	if sr := c.Container.LastRootSk(pk, sk); sr != nil {
-		r = &Root{sr, c}
+		r = c.wrapRoot(sr)
 	}
 	return
 }
 
 func (c *Container) LastFullRoot(pk cipher.PubKey) (r *Root) {
 	if sr := c.Container.LastFullRoot(pk); sr != nil {
-		r = &Root{sr, c}
+		r = c.wrapRoot(sr)
 	}
 	return
 }
