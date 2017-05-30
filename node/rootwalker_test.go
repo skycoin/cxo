@@ -1,12 +1,12 @@
 package node
 
 import (
-	"github.com/skycoin/cxo/skyobject"
+	"testing"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-	"log"
-	"testing"
-	"time"
+
+	"github.com/skycoin/cxo/skyobject"
 )
 
 type Board struct {
@@ -34,42 +34,57 @@ type Person struct {
 }
 
 // GENERATES:
-// Public Key : 032ffee44b9554cd3350ee16760688b2fb9d0faae7f3534917ff07e971eb36fd6b
-// Secret Key : b4f56cab07ea360c16c22ac241738e923b232138b69089fe0134f81a432ffaff
+// pk : 032ffee44b9554cd3350ee16760688b2fb9d0faae7f3534917ff07e971eb36fd6b
+// sk : b4f56cab07ea360c16c22ac241738e923b232138b69089fe0134f81a432ffaff
 func genKeyPair() (cipher.PubKey, cipher.SecKey) {
 	return cipher.GenerateDeterministicKeyPair([]byte("a"))
 }
 
-func newClient() *Client {
-	r := skyobject.NewRegistry()
-	r.Register("Person", Person{})
-	r.Register("Post", Post{})
-	r.Register("Thread", Thread{})
-	r.Register("Board", Board{})
-	r.Done()
-	cc := NewClientConfig()
-	cc.InMemoryDB = true
-	c, e := NewClient(cc, r)
-	if e != nil {
-		log.Panic(e)
+func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Client,
+	s *Server) {
+
+	reg := skyobject.NewRegistry()
+	reg.Register("Person", Person{})
+	reg.Register("Post", Post{})
+	reg.Register("Thread", Thread{})
+	reg.Register("Board", Board{})
+
+	// async operations
+	addFeed := make(chan cipher.PubKey)
+
+	//
+	conf := newClientConfig()
+	conf.OnAddFeed = func(pk cipher.PubKey) {
+		addFeed <- pk
 	}
-	e = c.Start("[::]:8998")
-	if e != nil {
-		log.Panic(e)
+
+	// feeds
+	feeds := []cipher.PubKey{pk}
+
+	var err error
+	if c, s, err = newRunningClient(conf, reg, feeds); err != nil {
+		t.Fatal(err) // fatality
 	}
-	time.Sleep(5 * time.Second)
-	pk, _ := genKeyPair()
+
+	// sync
+	if addFeedTM(addFeed, t) != pk {
+		t.Fatal("wrong feed added") // fatality
+	}
+
 	if c.Subscribe(pk) == false {
-		log.Panic("unable to subscribe")
+		t.Fatal("unable to subscribe")
 	}
-	return c
+	return
 }
 
-func fillContainer1(c *Container, pk cipher.PubKey, sk cipher.SecKey) *Root {
-	r, _ := c.NewRoot(pk, sk)
+func fillContainer1(c *Container, pk cipher.PubKey,
+	sk cipher.SecKey) (r *Root) {
 
-	dynPerson, _ := r.Dynamic("Person", Person{"Dynamic Beast", 100})
-	dynPost, _ := r.Dynamic("Post", Post{"Dynamic Post", "So big.", dynPerson.Object})
+	r, _ = c.NewRoot(pk, sk)
+
+	dynPerson := r.MustDynamic("Person", Person{"Dynamic Beast", 100})
+	dynPost := r.MustDynamic("Post",
+		Post{"Dynamic Post", "So big.", dynPerson.Object})
 
 	persons := r.SaveArray(
 		Person{"Evan", 21},
@@ -100,7 +115,7 @@ func fillContainer1(c *Container, pk cipher.PubKey, sk cipher.SecKey) *Root {
 		Board{"Talk", persons[1], dynPerson, threads[:2]},
 	)
 
-	return r
+	return
 }
 
 // getReference obtains a skyobject reference from hex string.
@@ -111,8 +126,11 @@ func getReference(s string) (skyobject.Reference, error) {
 
 func TestWalker_AdvanceFromRoot(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -136,8 +154,11 @@ func TestWalker_AdvanceFromRoot(t *testing.T) {
 
 func TestWalker_AdvanceFromRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -156,22 +177,26 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "Greetings"
-	})
+	e = w.AdvanceFromRefsField("Threads",
+		thread,
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
+		})
 
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
 
 	t.Log(len(thread.Posts))
-	e = w.AdvanceFromRefsField("Posts", post, func(i int, ref skyobject.Reference) (chosen bool) {
-		post := &Post{}
-		w.DeserializeFromRef(ref, post)
-		return post.Title == "Hi"
-	})
+	e = w.AdvanceFromRefsField("Posts",
+		post,
+		func(i int, ref skyobject.Reference) (chosen bool) {
+			post := &Post{}
+			w.DeserializeFromRef(ref, post)
+			return post.Title == "Hi"
+		})
 	if e != nil {
 		t.Error("advance from thread to post failed:", e)
 	}
@@ -180,8 +205,11 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 
 func TestWalker_GetFromRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -200,21 +228,25 @@ func TestWalker_GetFromRefsField(t *testing.T) {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "Greetings"
-	})
+	e = w.AdvanceFromRefsField("Threads",
+		thread,
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
+		})
 
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
 
-	e = w.GetFromRefsField("Posts", post, func(i int, ref skyobject.Reference) bool {
-		post := &Post{}
-		w.DeserializeFromRef(ref, post)
-		return post.Title == "Hi"
-	})
+	e = w.GetFromRefsField("Posts",
+		post,
+		func(i int, ref skyobject.Reference) bool {
+			post := &Post{}
+			w.DeserializeFromRef(ref, post)
+			return post.Title == "Hi"
+		})
 	t.Log("\nPost = ", post)
 	if e != nil {
 		t.Error("get posts from thread failed:", e)
@@ -224,8 +256,11 @@ func TestWalker_GetFromRefsField(t *testing.T) {
 
 func TestWalker_AdvanceFromRefField(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -243,11 +278,13 @@ func TestWalker_AdvanceFromRefField(t *testing.T) {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "Greetings"
-	})
+	e = w.AdvanceFromRefsField("Threads",
+		thread,
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
+		})
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
@@ -261,8 +298,11 @@ func TestWalker_AdvanceFromRefField(t *testing.T) {
 
 func TestWalker_GetFromRefField(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -281,11 +321,13 @@ func TestWalker_GetFromRefField(t *testing.T) {
 		t.Error("advance from root to board failed:", e)
 	}
 
-	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "Greetings"
-	})
+	e = w.AdvanceFromRefsField("Threads",
+		thread,
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
+		})
 
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
@@ -302,8 +344,11 @@ func TestWalker_GetFromRefField(t *testing.T) {
 func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 	t.Run("dynamic post", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -328,8 +373,11 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 	})
 	t.Run("dynamic person", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -357,8 +405,11 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 func TestWalker_GetFromDynamicField(t *testing.T) {
 	t.Run("dynamic post", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -384,8 +435,11 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 	})
 	t.Run("dynamic person", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -413,8 +467,11 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 
 func TestWalker_AppendToRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -437,11 +494,13 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 	t.Log("\n After:", w.String())
 
 	thread := &Thread{}
-	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "New Thread"
-	})
+	e = w.AdvanceFromRefsField("Threads",
+		thread,
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "New Thread"
+		})
 	if e != nil {
 		t.Error("advance from board to thread failed:", e)
 	}
@@ -450,8 +509,11 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 
 func TestWalker_ReplaceInRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
-	client := newClient()
+
+	client, server := newRootwalkerClient(t, pk)
+	defer server.Close()
 	defer client.Close()
+
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 	board := &Board{}
@@ -467,22 +529,26 @@ func TestWalker_ReplaceInRefsField(t *testing.T) {
 
 	t.Log("\n Before:", w.String())
 
-	e = w.ReplaceInRefsField("Threads", &Thread{Name: "New Thread"}, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "Greetings"
-	})
+	e = w.ReplaceInRefsField("Threads",
+		&Thread{Name: "New Thread"},
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "Greetings"
+		})
 	if e != nil {
 		t.Error("replace board thread failed:", e)
 	}
 	t.Log("\n After:", w.String())
 
 	thread := &Thread{}
-	e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-		thread := &Thread{}
-		w.DeserializeFromRef(ref, thread)
-		return thread.Name == "New Thread"
-	})
+	e = w.AdvanceFromRefsField("Threads",
+		thread,
+		func(i int, ref skyobject.Reference) bool {
+			thread := &Thread{}
+			w.DeserializeFromRef(ref, thread)
+			return thread.Name == "New Thread"
+		})
 	if e != nil {
 		t.Error("advance from board to the new thread failed:", e)
 	}
@@ -492,8 +558,11 @@ func TestWalker_ReplaceInRefsField(t *testing.T) {
 func TestWalker_RemoveInRefsField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -509,11 +578,12 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 
 		t.Log("\n Before:", w.String())
 
-		e = w.RemoveInRefsField("Threads", func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.RemoveInRefsField("Threads",
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 
 		if e != nil {
 			t.Error("remove board thread failed:", e)
@@ -522,11 +592,13 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		t.Log("\n After:", w.String())
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.AdvanceFromRefsField("Threads",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 
 		if e != nil {
 			t.Log("Removed thread: Greetings")
@@ -538,8 +610,11 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 	})
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -554,29 +629,34 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 		}
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.AdvanceFromRefsField("Threads",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
 		}
 		t.Log("\n Before:", w.String())
 
-		e = w.RemoveInRefsField("Posts", func(i int, ref skyobject.Reference) bool {
-			post := &Post{}
-			w.DeserializeFromRef(ref, post)
-			return post.Title == "Bye"
-		})
+		e = w.RemoveInRefsField("Posts",
+			func(i int, ref skyobject.Reference) bool {
+				post := &Post{}
+				w.DeserializeFromRef(ref, post)
+				return post.Title == "Bye"
+			})
 
 		t.Log("\n After:", w.String())
 
-		e = w.AdvanceFromRefsField("Posts", thread, func(i int, ref skyobject.Reference) bool {
-			post := &Post{}
-			w.DeserializeFromRef(ref, post)
-			return post.Title == "Bye"
-		})
+		e = w.AdvanceFromRefsField("Posts",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				post := &Post{}
+				w.DeserializeFromRef(ref, post)
+				return post.Title == "Bye"
+			})
 
 		if e != nil {
 			t.Log("Removed post: Bye")
@@ -591,8 +671,11 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 func TestWalker_ReplaceInRefField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -614,8 +697,11 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 	})
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -629,11 +715,13 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 		}
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.AdvanceFromRefsField("Threads",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
 		}
@@ -646,7 +734,9 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 			t.Log(p)
 		}
 
-		if _, e = w.ReplaceInRefField("Creator", Person{Name: "Bruce Lee", Age: 77}); e != nil {
+		_, e = w.ReplaceInRefField("Creator",
+			Person{Name: "Bruce Lee", Age: 77})
+		if e != nil {
 			t.Error("failed to replace", e)
 		}
 
@@ -663,8 +753,11 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 func TestWalker_ReplaceCurrent(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 		r := w.r
 		newPerson, _ := r.Dynamic("Person", Person{"NEW PERSON", 666})
@@ -672,8 +765,10 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 		posts := r.SaveArray(
 			newPost,
 		)
-		newThread1, _ := r.Dynamic("Thread", Thread{"NEW THREAD!", newPerson.Object, posts})
-		newThread2, _ := r.Dynamic("Thread", Thread{"ANOTHER THREAD!", newPerson.Object, posts})
+		newThread1, _ := r.Dynamic("Thread",
+			Thread{"NEW THREAD!", newPerson.Object, posts})
+		newThread2, _ := r.Dynamic("Thread",
+			Thread{"ANOTHER THREAD!", newPerson.Object, posts})
 		newThreads := r.SaveArray(
 			newThread1,
 			newThread2,
@@ -702,8 +797,11 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		r := w.r
@@ -726,11 +824,13 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 		t.Log("Got board", board.Name)
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.AdvanceFromRefsField("Threads",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
 		}
@@ -748,8 +848,11 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 func TestWalker_ReplaceInDynamicField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -789,8 +892,11 @@ func TestWalker_ReplaceInDynamicField(t *testing.T) {
 func TestWalker_RemoveCurrent(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -817,8 +923,11 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -833,11 +942,13 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 		t.Log("Got board", board.Name)
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.AdvanceFromRefsField("Threads",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
 		}
@@ -855,8 +966,11 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 func TestWalker_RemoveByRef(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -871,7 +985,8 @@ func TestWalker_RemoveByRef(t *testing.T) {
 		}
 		t.Log("Size:", len(w.r.Refs()))
 		t.Log(w.String())
-		tRef, e := getReference("28950f97f06483f40662ab6cd841d19db40c2453c22cdf2fec2aab893866ae89")
+		tRef, e := getReference(
+			"28950f97f06483f40662ab6cd841d19db40c2453c22cdf2fec2aab893866ae89")
 		t.Log("Removing...", tRef.String(), e)
 		e = w.RemoveInRefsByRef("Threads", tRef)
 
@@ -884,8 +999,11 @@ func TestWalker_RemoveByRef(t *testing.T) {
 
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
-		client := newClient()
+
+		client, server := newRootwalkerClient(t, pk)
+		defer server.Close()
 		defer client.Close()
+
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
 
 		board := &Board{}
@@ -900,18 +1018,21 @@ func TestWalker_RemoveByRef(t *testing.T) {
 		t.Log("Got board", board.Name)
 
 		thread := &Thread{}
-		e = w.AdvanceFromRefsField("Threads", thread, func(i int, ref skyobject.Reference) bool {
-			thread := &Thread{}
-			w.DeserializeFromRef(ref, thread)
-			return thread.Name == "Greetings"
-		})
+		e = w.AdvanceFromRefsField("Threads",
+			thread,
+			func(i int, ref skyobject.Reference) bool {
+				thread := &Thread{}
+				w.DeserializeFromRef(ref, thread)
+				return thread.Name == "Greetings"
+			})
 		if e != nil {
 			t.Error("advance from board to thread failed:", e)
 		}
 		t.Log("Got thread", thread.Name)
 		t.Log(w.String())
 
-		pRef, e := getReference("bd893dbc1bec38f59a97e103774f279ae1e4f5e8008729dff309ea6c5f169d66")
+		pRef, e := getReference(
+			"bd893dbc1bec38f59a97e103774f279ae1e4f5e8008729dff309ea6c5f169d66")
 		t.Log("Removing...", pRef.String(), e)
 		e = w.RemoveInRefsByRef("Posts", pRef)
 		if e != nil {

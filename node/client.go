@@ -260,13 +260,13 @@ func (s *Client) handleRootMsg(msg *RootMsg) {
 
 	// callback
 	if s.conf.OnRootReceived != nil {
-		s.conf.OnRootReceived(root)
+		s.conf.OnRootReceived(s.Container().wrapRoot(root))
 	}
 
 	if root.IsFull() {
 		// callback
 		if s.conf.OnRootFilled != nil {
-			s.conf.OnRootFilled(root)
+			s.conf.OnRootFilled(s.Container().wrapRoot(root))
 		}
 		return
 	}
@@ -322,7 +322,7 @@ func (s *Client) handleRegistryMsg(msg *RegistryMsg) {
 			if fl.root.IsFull() {
 				// callback
 				if s.conf.OnRootFilled != nil {
-					s.conf.OnRootFilled(fl.root)
+					s.conf.OnRootFilled(s.Container().wrapRoot(fl.root))
 				}
 				continue // delete
 			}
@@ -379,7 +379,7 @@ func (s *Client) handleDataMsg(msg *DataMsg) {
 			if fl.root.IsFull() {
 				// callback
 				if s.conf.OnRootFilled != nil {
-					s.conf.OnRootFilled(fl.root)
+					s.conf.OnRootFilled(s.Container().wrapRoot(fl.root))
 				}
 				continue // delete
 			}

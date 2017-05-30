@@ -1,68 +1,25 @@
 package node
 
-/***********
-
 import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/skycoin/cxo/node/log"
 )
-
-var (
-	testDataDir = filepath.Join(".", "test")
-	testDBPath  = filepath.Join(testDataDir, "test.db")
-)
-
-func clean() {
-	os.Remove(testDataDir)
-}
-
-// name for logs (empty for default)
-// memory - to use databas in memory (otherwise it eill be ./test/test.db)
-func newClientConfig(name string, memory bool) (conf ClientConfig) {
-	conf = NewClientConfig()
-	if name != "" {
-		conf.Log.Prefix = name
-		conf.Log.Debug = testing.Verbose()
-	}
-	if memory {
-		conf.InMemoryDB = true
-	} else {
-		conf.InMemoryDB = false
-		conf.DataDir = testDataDir
-		conf.DBPath = testDBPath
-	}
-	return
-}
-
-func newClient(name string, memory bool) (c *Client, err error) {
-	c, err = NewClient(newClientConfig(name, memory), nil)
-	if err != nil {
-		return
-	}
-	if !testing.Verbose() {
-		//
-	}
-}
 
 func TestNewClient(t *testing.T) {
+	defer clean()
 	t.Run("memory db", func(t *testing.T) {
 		clean()
-		conf := NewClientConfig()
-		conf.InMemoryDB = true
-		conf.DataDir = testDataDir
-		conf.DBPath = testDBPath
+		conf := newClientConfig() // in-memory
 		c, err := NewClient(conf, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer c.Close()
-		if _, err := os.Stat(testDataDir); err == nil {
-			t.Error("unexpected data dir")
-			if _, err = os.Stat(testDBPath); err == nil {
-				t.Error("unexpected db file")
+		if _, err := os.Stat(conf.DataDir); err == nil {
+			t.Error("unexpected data dir:", conf.DataDir)
+			if _, err = os.Stat(conf.DBPath); err == nil {
+				t.Error("unexpected db file:", conf.DBPath)
 			} else if !os.IsNotExist(err) {
 				t.Error("unexpected error")
 			}
@@ -72,35 +29,32 @@ func TestNewClient(t *testing.T) {
 	})
 	t.Run("data dir", func(t *testing.T) {
 		clean()
-		conf := NewClientConfig()
+		conf := newClientConfig()
 		conf.InMemoryDB = false
-		conf.DataDir = testDataDir
-		conf.DBPath = testDBPath
 		c, err := NewClient(conf, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer c.Close()
-		if _, err := os.Stat(testDataDir); err != nil {
+		if _, err := os.Stat(conf.DataDir); err != nil {
 			t.Error(err)
 		} else {
-			if _, err := os.Stat(testDBPath); err != nil {
+			if _, err := os.Stat(conf.DBPath); err != nil {
 				t.Error(err)
 			}
 		}
 	})
 	t.Run("dbpath", func(t *testing.T) {
 		clean()
-		conf := NewClientConfig()
+		conf := newClientConfig()
 		conf.InMemoryDB = false
-		conf.DataDir = testDataDir
 		conf.DBPath = filepath.Join(testDataDir, "another.db")
 		c, err := NewClient(conf, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer c.Close()
-		if _, err := os.Stat(testDataDir); err != nil {
+		if _, err := os.Stat(conf.DataDir); err != nil {
 			t.Error(err)
 		} else {
 			if _, err := os.Stat(conf.DBPath); err != nil {
@@ -174,5 +128,3 @@ func TestClient_Container(t *testing.T) {
 	// Container() *Container {
 
 }
-
-***/
