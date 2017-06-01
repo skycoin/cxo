@@ -3,7 +3,7 @@ package node
 import (
 	"net/rpc"
 
-	"github.com/skycoin/cxo/data/stat"
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
@@ -46,7 +46,7 @@ func (r *RPCClient) Feeds() (list []cipher.PubKey, err error) {
 	return
 }
 
-func (r *RPCClient) Stat() (stat stat.Stat, err error) {
+func (r *RPCClient) Stat() (stat data.Stat, err error) {
 	r.c.Call("cxo.Stat", struct{}{}, &stat)
 	return
 }

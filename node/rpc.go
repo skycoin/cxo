@@ -7,7 +7,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data/stat"
+	"github.com/skycoin/cxo/data"
 )
 
 // A RPC is receiver type for net/rpc.
@@ -99,7 +99,7 @@ func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 	return
 }
 
-func (r *RPC) Stat(_ struct{}, stat *stat.Stat) (_ error) {
+func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
 	*stat = r.ns.Stat()
 	return
 }

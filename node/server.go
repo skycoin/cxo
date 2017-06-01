@@ -8,7 +8,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/data/stat"
 	"github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/node/gnet"
@@ -192,11 +191,13 @@ func (s *Server) Start() (err error) {
 
 		s.conf.Log.Debug,
 	)
+
 	// start listener
 	if err = s.pool.Listen(s.conf.Listen); err != nil {
 		return
 	}
 	s.Print("listen on ", s.pool.Address())
+
 	// start rpc listener if need
 	if s.conf.EnableRPC == true {
 		if err = s.rpc.Start(s.conf.RPCAddress); err != nil {
@@ -762,7 +763,7 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 }
 
 // Stat returns satatistic of database
-func (s *Server) Stat() stat.Stat {
+func (s *Server) Stat() data.Stat {
 	return s.db.Stat()
 }
 

@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/data/stat"
 )
 
 // ErrRootAlreadyExists oocurs when you try to save root object
@@ -72,7 +70,7 @@ type DB interface {
 	//
 
 	// Stat of the DB
-	Stat() (s stat.Stat)
+	Stat() (s Stat)
 	// Close the DB
 	Close() (err error)
 }
@@ -98,10 +96,6 @@ type RootError struct {
 	hash  cipher.SHA256 // hash of root
 	seq   uint64        // seq of root
 	descr string        // description
-}
-
-func shortHex(a string) string {
-	return string([]byte(a)[:7])
 }
 
 // Error implements error interface
