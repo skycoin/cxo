@@ -25,6 +25,12 @@ func clean() {
 	os.RemoveAll(testDataDir)
 }
 
+func shouldPanic(t *testing.T) {
+	if recover() == nil {
+		t.Error("missing panic")
+	}
+}
+
 func newClientConfig() (conf ClientConfig) {
 	conf = NewClientConfig()
 	conf.Log.Debug = testing.Verbose()
@@ -67,8 +73,13 @@ func newServerConfig() (conf ServerConfig) {
 //     s.pool.Address()
 //
 // after Start
-func newServer() (s *Server, err error) {
-	s, err = NewServer(newServerConfig())
+func newServer() (*Server, error) {
+	return newServerConf(newServerConfig())
+}
+
+// newServerConf like newServer, but it uses provided config
+func newServerConf(conf ServerConfig) (s *Server, err error) {
+	s, err = NewServer(conf)
 	if err != nil {
 		return
 	}

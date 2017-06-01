@@ -3,7 +3,11 @@ package node
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 func TestNewServer(t *testing.T) {
@@ -94,12 +98,71 @@ func TestNewServerSoDB(t *testing.T) {
 	// 2. so != nil
 	// 3. invalig gnet.Config
 
+	t.Run("nil db", func(t *testing.T) {
+		defer shouldPanic(t)
+		NewServerSoDB(ServerConfig{}, nil, nil)
+	})
+
+	t.Run("nil so", func(t *testing.T) {
+		defer shouldPanic(t)
+		NewServerSoDB(ServerConfig{}, data.NewMemoryDB(), nil)
+	})
+
+	t.Run("invalid gnet.Config", func(t *testing.T) {
+		conf := newServerConfig()
+		conf.Config.DialTimeout = -1000
+		db := data.NewMemoryDB()
+		so := skyobject.NewContainer(db, nil)
+		_, err := NewServerSoDB(conf, db, so)
+		if err == nil {
+			t.Error("missing error")
+		}
+	})
+
 }
 
 func TestServer_Start(t *testing.T) {
 	// Start() (err error)
 
-	//
+	// 1. arbitrary address
+	// 2. provided address
+
+	t.Run("arbitrary", func(t *testing.T) {
+		conf := newServerConfig()
+		conf.Listen = ""
+
+		s, err := newServerConf(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if err := s.Start(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("provided", func(t *testing.T) {
+		conf := newServerConfig()
+		conf.Listen = "[::]:8987"
+
+		s, err := newServerConf(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if err := s.Start(); err != nil {
+			if !strings.Contains(err.Error(), "address already in use") {
+				t.Error(err)
+			}
+			return
+		}
+
+		if a := s.pool.Address(); a != "[::]:8987" {
+			t.Error("wrong listening address:", a)
+		}
+	})
 
 }
 

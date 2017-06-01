@@ -192,11 +192,13 @@ func (s *Server) Start() (err error) {
 
 		s.conf.Log.Debug,
 	)
+
 	// start listener
 	if err = s.pool.Listen(s.conf.Listen); err != nil {
 		return
 	}
 	s.Print("listen on ", s.pool.Address())
+
 	// start rpc listener if need
 	if s.conf.EnableRPC == true {
 		if err = s.rpc.Start(s.conf.RPCAddress); err != nil {
