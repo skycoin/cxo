@@ -70,7 +70,11 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_Start(t *testing.T) {
-	// Start(address string) (err error) {
+	// Start(address string) (err error)
+
+	// 1. invalid address
+	// 2. valid address
+
 	t.Run("invalid address", func(t *testing.T) {
 		c, err := newClient(nil)
 		if err != nil {
@@ -81,6 +85,7 @@ func TestClient_Start(t *testing.T) {
 			t.Error("mising error")
 		}
 	})
+
 	t.Run("connect", func(t *testing.T) {
 		s, err := newRunninServer(nil)
 		if err != nil {
@@ -99,7 +104,7 @@ func TestClient_Start(t *testing.T) {
 }
 
 func TestClient_Close(t *testing.T) {
-	// Close() (err error) {
+	// Close() (err error)
 
 	// TODO: low priority
 }
@@ -111,7 +116,7 @@ func TestClient_IsConnected(t *testing.T) {
 }
 
 func TestClient_Subscribe(t *testing.T) {
-	// Subscribe(feed cipher.PubKey) (ok bool) {
+	// Subscribe(feed cipher.PubKey) (ok bool)
 
 	pk, sk := cipher.GenerateKeyPair()
 
@@ -202,7 +207,7 @@ func TestClient_Subscribe(t *testing.T) {
 }
 
 func TestClient_Unsubscribe(t *testing.T) {
-	// Unsubscribe(feed cipher.PubKey, del bool) (ok bool) {
+	// Unsubscribe(feed cipher.PubKey, del bool) (ok bool)
 
 	pk, sk := cipher.GenerateKeyPair()
 
@@ -303,11 +308,41 @@ func TestClient_Unsubscribe(t *testing.T) {
 }
 
 func TestClient_Feeds(t *testing.T) {
-	// Feeds() (feeds []cipher.PubKey) {
+	// Feeds() (feeds []cipher.PubKey)
+
+	f1, _ := cipher.GenerateKeyPair()
+	f2, _ := cipher.GenerateKeyPair()
+
+	c, err := newClient(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	if c.Feeds() != nil {
+		t.Error("non nil for empty list of feeds")
+	}
+
+	c.Subscribe(f1)
+	if feeds := c.Feeds(); len(feeds) != 1 {
+		t.Error("unexpected amount of feeds subscribed to")
+	} else if feeds[0] != f1 {
+		t.Error("wrong feed")
+	}
+
+	c.Subscribe(f2)
+	if feeds := c.Feeds(); len(feeds) != 2 {
+		t.Error("unexpected amount of feeds subscribed to")
+	} else {
+		if !((feeds[0] == f1 && feeds[1] == f2) ||
+			(feeds[1] == f1 && feeds[0] == f2)) {
+			t.Error("wrong feeds")
+		}
+	}
 
 }
 
 func TestClient_Container(t *testing.T) {
-	// Container() *Container {
+	// Container() *Container
 
 }
