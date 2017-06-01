@@ -158,12 +158,6 @@ func TestClient_Subscribe(t *testing.T) {
 		}
 		defer c.Close()
 
-		s, err := newRunninServer([]cipher.PubKey{pk})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer s.Close()
-
 		root, err := c.so.NewRoot(pk, sk)
 		if err != nil {
 			t.Fatal(err)
@@ -172,6 +166,12 @@ func TestClient_Subscribe(t *testing.T) {
 		if _, _, err := root.Inject("User", User{"Alice"}); err != nil {
 			t.Fatal(err)
 		}
+
+		s, err := newRunninServer([]cipher.PubKey{pk})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
 
 		if err := c.Start(s.pool.Address()); err != nil {
 			t.Fatal(err)
@@ -203,6 +203,102 @@ func TestClient_Subscribe(t *testing.T) {
 
 func TestClient_Unsubscribe(t *testing.T) {
 	// Unsubscribe(feed cipher.PubKey, del bool) (ok bool) {
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	// 1. sending DelFeed
+	// 2. deleting feed
+	// 3. not subscribed
+
+	t.Run("DelFeed sending", func(t *testing.T) {
+		conf := newClientConfig()
+		c, s, err := newRunningClient(conf, nil, []cipher.PubKey{pk})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		defer c.Close()
+
+		// subscribe first to be sure that DelFeed recived by server
+		if !c.Subscribe(pk) {
+			t.Fatal("can't subscribe")
+		}
+
+		time.Sleep(TM) // sleep....
+
+		s.fmx.Lock()
+		{
+			if cs, ok := s.feeds[pk]; !ok {
+				t.Fatal("misisng or slow")
+			} else {
+				if len(cs) != 1 {
+					t.Fatal("misisng or slow")
+				}
+			}
+		}
+		s.fmx.Unlock()
+
+		if !c.Unsubscribe(pk, false) {
+			t.Fatal("can't unsubscribe")
+		}
+
+		time.Sleep(TM) // sleep....
+
+		s.fmx.Lock()
+		defer s.fmx.Unlock()
+		if cs, ok := s.feeds[pk]; ok {
+			if len(cs) != 0 {
+				t.Error("unexpected or slow")
+			}
+		}
+	})
+
+	t.Run("deleting feed", func(t *testing.T) {
+
+		type User struct{ Name string }
+
+		reg := skyobject.NewRegistry()
+		reg.Register("User", User{})
+
+		c, err := newClient(reg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+
+		// subscribe first
+		if !c.Subscribe(pk) {
+			t.Fatal("can't subscribe")
+		}
+
+		root, err := c.so.NewRoot(pk, sk)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, _, err := root.Inject("User", User{"Alice"}); err != nil {
+			t.Fatal(err)
+		}
+
+		if !c.Unsubscribe(pk, true) {
+			t.Error("can't unsubscribe")
+		} else if c.so.LastRoot(pk) != nil {
+			t.Error("feed not deleted")
+		}
+
+	})
+
+	t.Run("not subscribed", func(t *testing.T) {
+		c, err := newClient(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+
+		if c.Unsubscribe(pk, false) {
+			t.Error("unsubscribed while not subscribed")
+		}
+	})
 
 }
 
