@@ -486,6 +486,20 @@ func (c *Client) Unsubscribe(feed cipher.PubKey, del bool) (unsub bool) {
 	return
 }
 
+// FeedsOfServer returns list of feeds related server share
+func (c *Client) FeedsOfServer() (feeds []cipher.PubKey) {
+	c.smx.Lock()
+	defer c.smx.Unlock()
+	if len(c.srvfs) == 0 {
+		return
+	}
+	feeds = make([]cipher.PubKey, 0, len(c.srvfs))
+	for f := range c.srvfs {
+		feeds = append(feeds, f)
+	}
+	return
+}
+
 // Feeds returns list of feeds subscribed
 func (c *Client) Feeds() (feeds []cipher.PubKey) {
 	c.fmx.Lock()

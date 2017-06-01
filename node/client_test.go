@@ -109,8 +109,8 @@ func TestClient_Close(t *testing.T) {
 	// TODO: low priority
 }
 
-func TestClient_IsConnected(t *testing.T) {
-	// IsConnected() bool
+func TestClient_Conn(t *testing.T) {
+	// Conn() *gnet.Conn
 
 	// TODO: low priority
 }
