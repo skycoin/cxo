@@ -78,12 +78,7 @@ func newServer() (s *Server, err error) {
 	return
 }
 
-// start server and connect given client to the server
-// returning the server you need to close later. The server
-// subscribed to given list of feeds, but client doesn't
-// and some time required to sync between client and server.
-// To handle the syncing use ClientConfig.OnAddFeed callback
-func startClient(c *Client, feeds []cipher.PubKey) (s *Server, err error) {
+func newRunninServer(feeds []cipher.PubKey) (s *Server, err error) {
 	s, err = newServer()
 	if err != nil {
 		return
@@ -94,6 +89,18 @@ func startClient(c *Client, feeds []cipher.PubKey) (s *Server, err error) {
 	}
 	for _, f := range feeds {
 		s.AddFeed(f)
+	}
+	return
+}
+
+// start server and connect given client to the server
+// returning the server you need to close later. The server
+// subscribed to given list of feeds, but client doesn't
+// and some time required to sync between client and server.
+// To handle the syncing use ClientConfig.OnAddFeed callback
+func startClient(c *Client, feeds []cipher.PubKey) (s *Server, err error) {
+	if s, err = newRunninServer(feeds); err != nil {
+		return
 	}
 	if err = c.Start(s.pool.Address()); err != nil {
 		s.Close()

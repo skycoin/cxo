@@ -13,6 +13,8 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
+var ErrClosed = errors.New("closed")
+
 // A Client represnets CXO client
 type Client struct {
 	log.Logger
@@ -452,27 +454,32 @@ func (c *Client) sendMessage(msg Msg) (ok bool) {
 	return
 }
 
-func (c *Client) Subscribe(feed cipher.PubKey) (ok bool) {
+// Subscribe to a feed, sending latest root if possible.
+// The method returns false only if the Client already
+// subscribed to given feed
+func (c *Client) Subscribe(feed cipher.PubKey) (sub bool) {
 	c.fmx.Lock()
 	defer c.fmx.Unlock()
 
 	if _, has := c.feeds[feed]; has {
 		return // false (already subscribed)
 	}
-	c.feeds[feed] = struct{}{}
+	c.feeds[feed], sub = struct{}{}, true
 	if c.cn == nil {
 		return
 	}
-	if ok = c.sendMessage(&AddFeedMsg{feed}); ok {
+	if c.sendMessage(&AddFeedMsg{feed}) {
 		if full := c.so.LastFullRoot(feed); full != nil {
-			ok = c.sendMessage(&RootMsg{full.Pub(), full.Encode()})
+			c.sendMessage(&RootMsg{full.Pub(), full.Encode()})
 		}
 	}
 	return
 }
 
-// Unsubscribe from a feed
-func (c *Client) Unsubscribe(feed cipher.PubKey) (ok bool) {
+// Unsubscribe from a feed, with optional feed deleting. The
+// method returns false only if the Client is not subscribed
+// to given feed
+func (c *Client) Unsubscribe(feed cipher.PubKey, del bool) (unsub bool) {
 	c.fmx.Lock()
 	defer c.fmx.Unlock()
 
@@ -480,14 +487,17 @@ func (c *Client) Unsubscribe(feed cipher.PubKey) (ok bool) {
 		return // not subscribed
 	}
 	delete(c.feeds, feed)
+	unsub = true
 	if c.cn != nil {
-		ok = c.sendMessage(&DelFeedMsg{feed})
+		c.sendMessage(&DelFeedMsg{feed})
 	}
-	c.so.DelFeed(feed) // remove from skyobject
+	if del {
+		c.so.DelFeed(feed) // remove from skyobject
+	}
 	return
 }
 
-// Subscribed feeds
+// Feeds returns list of feeds subscribed
 func (c *Client) Feeds() (feeds []cipher.PubKey) {
 	c.fmx.Lock()
 	defer c.fmx.Unlock()
@@ -500,8 +510,6 @@ func (c *Client) Feeds() (feeds []cipher.PubKey) {
 	}
 	return
 }
-
-var ErrClosed = errors.New("closed")
 
 // Container returns wraper around skyobject.Container.
 // The wrapper sends all changes to server
