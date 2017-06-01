@@ -1,9 +1,4 @@
-// Package stat represents statistic of a database.
-// The package introduced to use it inside packages
-// (such as 'cli') that doesn't need full functionality
-// of the cxo/data package. Thus the package avoids
-// unnessesary import dependencies (like boltdb)
-package stat
+package data
 
 import (
 	"fmt"

@@ -169,83 +169,83 @@ func TestServer_Start(t *testing.T) {
 func TestServer_Close(t *testing.T) {
 	// Close() (err error)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Connect(t *testing.T) {
 	// Connect(address string) (err error)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Disconnect(t *testing.T) {
 	// Disconnect(address string) (err error)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Connections(t *testing.T) {
 	// Connections() []*gnet.Conn
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Connection(t *testing.T) {
 	// Connection(address string) *gnet.Conn
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_AddFeed(t *testing.T) {
 	// AddFeed(f cipher.PubKey) (added bool)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_DelFeed(t *testing.T) {
 	// DelFeed(f cipher.PubKey) (deleted bool)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Want(t *testing.T) {
 	// Want(feed cipher.PubKey) (wn []cipher.SHA256)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Got(t *testing.T) {
 	// Got(feed cipher.PubKey) (gt []cipher.SHA256)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Feeds(t *testing.T) {
 	// Feeds() (fs []cipher.PubKey)
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Stat(t *testing.T) {
 	// Stat() stat.Stat
 
-	//
+	// TODO: mid. priority
 
 }
 
 func TestServer_Quiting(t *testing.T) {
 	// Quiting() <-chan struct{}
 
-	//
+	// TODO: mid. priority
 
 }

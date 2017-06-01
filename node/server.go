@@ -8,7 +8,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/data/stat"
 	"github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/node/gnet"
@@ -764,7 +763,7 @@ func (s *Server) Feeds() (fs []cipher.PubKey) {
 }
 
 // Stat returns satatistic of database
-func (s *Server) Stat() stat.Stat {
+func (s *Server) Stat() data.Stat {
 	return s.db.Stat()
 }
 

@@ -14,7 +14,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	dstat "github.com/skycoin/cxo/data/stat"
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
 )
 
@@ -397,7 +397,7 @@ func feeds(rpc *node.RPCClient) (err error) {
 }
 
 func stat(rpc *node.RPCClient) (err error) {
-	var stat dstat.Stat
+	var stat data.Stat
 	if stat, err = rpc.Stat(); err != nil {
 		return
 	}

@@ -5,8 +5,6 @@ import (
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/data/stat"
 )
 
 // buckets:
@@ -281,25 +279,25 @@ func (d *memoryDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	}
 }
 
-func (d *memoryDB) Stat() (s stat.Stat) {
+func (d *memoryDB) Stat() (s Stat) {
 	d.mx.RLock()
 	defer d.mx.RUnlock()
 
 	s.Objects = len(d.objects)
 	for _, v := range d.objects {
-		s.Space += stat.Space(len(v))
+		s.Space += Space(len(v))
 	}
 
 	if len(d.feeds) == 0 {
 		return
 	}
-	s.Feeds = make(map[cipher.PubKey]stat.FeedStat, len(d.feeds))
+	s.Feeds = make(map[cipher.PubKey]FeedStat, len(d.feeds))
 	// lengths of Prev, Hash, Sig and Seq (8 byte)
 	var add int = len(cipher.SHA256{})*2 + len(cipher.Sig{}) + 8
 	for pk, rs := range d.feeds {
-		var fs stat.FeedStat
+		var fs FeedStat
 		for _, hash := range rs {
-			fs.Space += stat.Space(len(d.roots[hash].Root) + add)
+			fs.Space += Space(len(d.roots[hash].Root) + add)
 		}
 		fs.Roots = len(rs)
 		s.Feeds[pk] = fs

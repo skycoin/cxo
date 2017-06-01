@@ -9,8 +9,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/data/stat"
 )
 
 const dbMode = 0644
@@ -393,7 +391,7 @@ func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	})
 }
 
-func (d *driveDB) Stat() (s stat.Stat) {
+func (d *driveDB) Stat() (s Stat) {
 	// Objects int
 	// Space   Space
 	// Feeds   map[cipher.PubKey]struct {
@@ -405,7 +403,7 @@ func (d *driveDB) Stat() (s stat.Stat) {
 		o := t.Bucket(objectsBucket)
 		s.Objects = o.Stats().KeyN
 		e := o.ForEach(func(_, val []byte) (_ error) {
-			s.Space += stat.Space(len(val))
+			s.Space += Space(len(val))
 			return
 		})
 		if e != nil {
@@ -417,13 +415,13 @@ func (d *driveDB) Stat() (s stat.Stat) {
 		if feeds := f.Stats().KeyN; feeds == 0 {
 			return // no feeds
 		} else {
-			s.Feeds = make(map[cipher.PubKey]stat.FeedStat, feeds)
+			s.Feeds = make(map[cipher.PubKey]FeedStat, feeds)
 		}
 		var pk cipher.PubKey
 		// for each feed
 		e = f.ForEach(func(pkb, _ []byte) (_ error) {
 			// pkb is bucket name
-			var fs stat.FeedStat
+			var fs FeedStat
 
 			fpk := f.Bucket(pkb)
 			fs.Roots = fpk.Stats().KeyN
@@ -431,7 +429,7 @@ func (d *driveDB) Stat() (s stat.Stat) {
 			// for each seq->hash
 			e := fpk.ForEach(func(_, hashb []byte) (_ error) {
 				// size of encoded RootPack
-				fs.Space += stat.Space(len(r.Get(hashb)))
+				fs.Space += Space(len(r.Get(hashb)))
 				return
 			})
 			if e != nil {
