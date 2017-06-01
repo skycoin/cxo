@@ -35,8 +35,7 @@ type Client struct {
 
 	cn *gnet.Conn
 
-	icmx        sync.Mutex
-	isConnected bool
+	icmx sync.Mutex
 
 	quito sync.Once
 	quit  chan struct{}
@@ -117,23 +116,14 @@ func (c *Client) Close() (err error) {
 	return
 }
 
-// IsConnected reports true if the Client
-// connected to server
-func (c *Client) IsConnected() bool {
-	c.icmx.Lock()
-	defer c.icmx.Unlock()
-	return c.isConnected
-}
-
-func (c *Client) setIsConnected(t bool) {
-	c.icmx.Lock()
-	defer c.icmx.Unlock()
-	c.isConnected = t
+// Conn returns underlying *gnet.Conn or nil, if the
+// Client is not started yet
+func (c *Client) Conn() *gnet.Conn {
+	return c.cn
 }
 
 func (c *Client) connectHandler(cn *gnet.Conn) {
 	c.Debug("connected to ", cn.Address())
-	c.setIsConnected(true)
 	if c.conf.OnConnect != nil {
 		c.conf.OnConnect()
 	}
@@ -141,7 +131,6 @@ func (c *Client) connectHandler(cn *gnet.Conn) {
 
 func (c *Client) disconnectHandler(cn *gnet.Conn) {
 	c.Debug("disconnected from ", cn.Address())
-	c.setIsConnected(false)
 	if c.conf.OnDisconenct != nil {
 		c.conf.OnDisconenct()
 	}
