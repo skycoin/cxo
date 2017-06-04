@@ -38,13 +38,17 @@ type DB interface {
 	// Feeds
 	//
 
+	// AddFeed appends empty feed or does nothing if
+	// given feed already exists in database
+	AddFeed(pk cipher.PubKey)
+	// HasFeed returns true if datbase contains given feed
+	HasFeed(pk cipher.PubKey) (has bool)
 	// Feeds returns list of feeds
 	Feeds() []cipher.PubKey
 	// DelFeed deletes feed and all related root objects.
 	// The method doesn't remove related objects and schemas
 	DelFeed(pk cipher.PubKey)
-	// AddRoot to feed, rejecting all roots older then
-	// oldest the feed has got
+	// AddRoot to feed. AddRoot adds feed if it doesn't exist
 	AddRoot(pk cipher.PubKey, rp *RootPack) (err error)
 	// LastRoot returns last root of a feed
 	LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool)

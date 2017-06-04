@@ -14,11 +14,15 @@ import (
 
 // be sure that all messages implements Msg interface compiler time
 var (
+	// ping-, pongs
 	_ Msg = &PingMsg{}
 	_ Msg = &PongMsg{}
 
-	_ Msg = &AddFeedMsg{}
-	_ Msg = &DelFeedMsg{}
+	// join and leave feeds
+	_ Msg = &JoinFeedMsg{}
+	_ Msg = &LeaveFeedMsg{}
+
+	// root, data, etc
 	_ Msg = &RootMsg{}
 	_ Msg = &RequestDataMsg{}
 	_ Msg = &DataMsg{}
@@ -45,25 +49,25 @@ type PongMsg struct{}
 // MsgType implements Msg interface
 func (*PongMsg) MsgType() MsgType { return PongMsgType }
 
-// A AddFeedMsg sent from one node to another one to
+// A JoinFeedMsg sent from one node to another one to
 // notify the remote node about new feed the sender
 // interesting in
-type AddFeedMsg struct {
+type JoinFeedMsg struct {
 	Feed cipher.PubKey
 }
 
 // MsgType implements Msg interface
-func (*AddFeedMsg) MsgType() MsgType { return AddFeedMsgType }
+func (*JoinFeedMsg) MsgType() MsgType { return JoinFeedMsgType }
 
-// A DelFeedMsg sent from one node to another one to
+// A LeaveFeedMsg sent from one node to another one to
 // notify the remote node about feed the sender
 // doesn't interesting in anymore
-type DelFeedMsg struct {
+type LeaveFeedMsg struct {
 	Feed cipher.PubKey
 }
 
 // MsgType implements Msg interface
-func (*DelFeedMsg) MsgType() MsgType { return DelFeedMsgType }
+func (*LeaveFeedMsg) MsgType() MsgType { return LeaveFeedMsgType }
 
 // A RootMsg sent from one node to another one
 // to update root object of feed described in
@@ -111,8 +115,8 @@ type MsgType uint8
 const (
 	PingMsgType            MsgType = 1 + iota // PingMsg 1
 	PongMsgType                               // PongMsg 2
-	AddFeedMsgType                            // AddFeedMsg 3
-	DelFeedMsgType                            // DelFeedMsg 4
+	JoinFeedMsgType                           // JoinFeedMsg 3
+	LeaveFeedMsgType                          // LeaveFeedMsg 4
 	RootMsgType                               // RootMsg 5
 	RequestDataMsgType                        // RequestDataMsg 6
 	DataMsgType                               // DataMsg 7
@@ -124,8 +128,8 @@ const (
 var msgTypeString = [...]string{
 	PingMsgType:            "PING",
 	PongMsgType:            "PONG",
-	AddFeedMsgType:         "ADD",
-	DelFeedMsgType:         "DEL",
+	JoinFeedMsgType:        "ADD",
+	LeaveFeedMsgType:       "DEL",
 	RootMsgType:            "ROOT",
 	RequestDataMsgType:     "RQDT",
 	DataMsgType:            "DATA",
@@ -144,8 +148,8 @@ func (m MsgType) String() string {
 var forwardRegistry = [...]reflect.Type{
 	PingMsgType:            reflect.TypeOf(PingMsg{}),
 	PongMsgType:            reflect.TypeOf(PongMsg{}),
-	AddFeedMsgType:         reflect.TypeOf(AddFeedMsg{}),
-	DelFeedMsgType:         reflect.TypeOf(DelFeedMsg{}),
+	JoinFeedMsgType:        reflect.TypeOf(JoinFeedMsg{}),
+	LeaveFeedMsgType:       reflect.TypeOf(LeaveFeedMsg{}),
 	RootMsgType:            reflect.TypeOf(RootMsg{}),
 	RequestDataMsgType:     reflect.TypeOf(RequestDataMsg{}),
 	DataMsgType:            reflect.TypeOf(DataMsg{}),

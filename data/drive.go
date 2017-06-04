@@ -149,6 +149,22 @@ func (d *driveDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
 // Feeds
 //
 
+func (d *driveDB) AddFeed(pk cipher.PubKey) {
+	d.update(func(t *bolt.Tx) (err error) {
+		f := t.Bucket(feedsBucket)
+		_, err = f.CreateBucketIfNotExists(pk[:])
+		return
+	})
+}
+
+func (d *driveDB) HasFeed(pk cipher.PubKey) (has bool) {
+	d.view(func(t *bolt.Tx) (_ error) {
+		has = t.Bucket(feedsBucket).Bucket(pk[:]) != nil
+		return
+	})
+	return
+}
+
 func (d *driveDB) Feeds() (fs []cipher.PubKey) {
 	d.view(func(t *bolt.Tx) (_ error) {
 		f := t.Bucket(feedsBucket)
@@ -338,14 +354,6 @@ func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 			return
 		}
 
-		// TODO:
-		// Unfortunately, boldb has an issue
-		// > https://github.com/boltdb/bolt/issues/275
-		// Until it is open we need to calculate
-		// count of allRoots - deletedRoots
-
-		allRoots := f.Stats().KeyN // temporary, bolt #275
-
 		// collect
 
 		type sh struct{ s, h []byte }
@@ -366,23 +374,10 @@ func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 		r := t.Bucket(rootsBucket)
 		for _, x := range del {
 
-			allRoots-- // temporary, bolt #275
-
 			if e := f.Delete(x.s); e != nil {
 				panic(e) // critical
 			}
 			if e := r.Delete(x.h); e != nil {
-				panic(e) // critical
-			}
-		}
-
-		// delete feed if its empty
-
-		// temporary, bolt #275 {{{
-		//	if f.Stats().KeyN == 0 {
-		if allRoots == 0 {
-			// }}}
-			if e := fb.DeleteBucket(pk[:]); e != nil {
 				panic(e) // critical
 			}
 		}
