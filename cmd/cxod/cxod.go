@@ -27,7 +27,11 @@ func waitInterrupt(quit <-chan struct{}) {
 
 func main() {
 
-	var c node.ServerConfig = node.NewServerConfig()
+	var code int
+
+	defer func() { os.Exit(code) }()
+
+	var c node.NodeConfig = node.NewNodeConfig()
 
 	c.RPCAddress = RPC
 	c.Listen = Host
@@ -36,19 +40,21 @@ func main() {
 	c.FromFlags()
 	flag.Parse()
 
-	var s *node.Server
+	var s *node.Node
 	var err error
 
-	if s, err = node.NewServer(c); err != nil {
+	if s, err = node.NewNode(c); err != nil {
 		log.Print(err)
-		return
-	}
-
-	if err = s.Start(); err != nil {
-		log.Print(err)
+		code = 1
 		return
 	}
 	defer s.Close()
+
+	if err = s.Start(); err != nil {
+		log.Print(err)
+		code = 1
+		return
+	}
 
 	// TODO: subscribe and connect to KNOWN
 
