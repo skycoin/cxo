@@ -22,7 +22,7 @@ var (
 	// subscriptions
 
 	_ Msg = &SubscribeMsg{}
-	_ MSg = &UnsubscribeMsg{}
+	_ Msg = &UnsubscribeMsg{}
 
 	// subscriptions reply
 
@@ -63,7 +63,7 @@ type SubscribeMsg struct {
 }
 
 // MsgType implements Msg interface
-func (*SubscribeMsg) MsgType() MsgType { return SubscribeMsg }
+func (*SubscribeMsg) MsgType() MsgType { return SubscribeMsgType }
 
 // An UnsubscribeMsg ...
 type UnsubscribeMsg struct {
@@ -71,7 +71,7 @@ type UnsubscribeMsg struct {
 }
 
 // MsgType implements Msg interface
-func (*UnsubscribeMsg) MsgType() MsgType { return UnsubscribeMsg }
+func (*UnsubscribeMsg) MsgType() MsgType { return UnsubscribeMsgType }
 
 // An AcceptSubscriptionMsg ...
 type AcceptSubscriptionMsg struct {
@@ -79,7 +79,9 @@ type AcceptSubscriptionMsg struct {
 }
 
 // MsgType implements Msg interface
-func (*AcceptSubscriptionMsg) MsgType() MsgType { return AcceptSubscriptionMsg }
+func (*AcceptSubscriptionMsg) MsgType() MsgType {
+	return AcceptSubscriptionMsgType
+}
 
 // A DenySubscriptionMsg ...
 type DenySubscriptionMsg struct {
@@ -87,7 +89,7 @@ type DenySubscriptionMsg struct {
 }
 
 // MsgType implements Msg interface
-func (*PublicSubscriptionMsg) MsgType() MsgType { return PublicSubscriptionMsg }
+func (*DenySubscriptionMsg) MsgType() MsgType { return DenySubscriptionMsgType }
 
 // A RootMsg sent from one node to another one
 // to update root object of feed described in

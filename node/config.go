@@ -24,7 +24,6 @@ const (
 	RemoteClose    bool   = false       // default remote-closing pin
 	RPCAddress     string = "[::]:8878" // default RPC address
 	InMemoryDB     bool   = false       // default database placement pin
-	PublicServer   bool   = false       // default public-server pin
 
 	// PingInterval is default interval by which server send pings
 	// to connections that doesn't communicate. Actually, the
@@ -36,23 +35,15 @@ const (
 	GCInterval time.Duration = 5 * time.Second
 
 	// default tree is
-	//   server: ~/.skycoin/cxo/server/bolt.db
-	//   client: ~/.skycoin/cxo/client/bolt.db
-	// todo:
-	//   server should be system wide and its
-	//   directory should be like /var/lib/cxo/bolt.db
+	//   server: ~/.skycoin/cxo/bolt.db
 
 	skycoinDataDir = ".skycoin"
 	cxoSubDir      = "cxo"
 
-	serverSubDir = "server"
-	clientSubDir = "client"
-
 	dbFile = "bolt.db"
 )
 
-func dataDir(sub string) string {
-	// TODO: /var/lib/cxo for cxod
+func dataDir() string {
 	usr, err := user.Current()
 	if err != nil {
 		panic(err) // fatal
@@ -60,7 +51,7 @@ func dataDir(sub string) string {
 	if usr.HomeDir == "" {
 		panic("empty home dir")
 	}
-	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir, sub)
+	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir)
 }
 
 func initDataDir(dir string) error {
@@ -138,9 +129,8 @@ func NewNodeConfig() (sc NodeConfig) {
 	sc.PingInterval = PingInterval
 	sc.GCInterval = GCInterval
 	sc.InMemoryDB = InMemoryDB
-	sc.DataDir = dataDir(serverSubDir)
+	sc.DataDir = dataDir()
 	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
-	sc.PublicServer = PublicServer
 	return
 }
 
@@ -167,7 +157,7 @@ func (s *NodeConfig) FromFlags() {
 		"address",
 		s.Listen,
 		"listening address (pass empty string to arbitrary assignment by OS)")
-	flag.StringVar(&s.EnableListener,
+	flag.BoolVar(&s.EnableListener,
 		"enable-listening",
 		s.EnableListener,
 		"enable listening pin")
@@ -195,9 +185,5 @@ func (s *NodeConfig) FromFlags() {
 		"db-path",
 		s.DBPath,
 		"path to database")
-	flag.BoolVar(&s.PublicServer,
-		"public-server",
-		s.PublicServer,
-		"turn the server to be public")
 	return
 }

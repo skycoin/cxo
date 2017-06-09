@@ -1,7 +1,7 @@
+// A node package implements P2P transport for sharing CX objects
 package node
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -44,7 +44,7 @@ type Node struct {
 	// (while a node subscribes to feed of another node
 	// the first node sends SubscrieMsg and waits for
 	// accept or deny (reject))
-	pmx     sync.RWMutex
+	pmx     sync.Mutex
 	pending map[*gnet.Conn]map[cipher.PubKey]struct{}
 
 	rmx   sync.RWMutex
@@ -64,16 +64,16 @@ type Node struct {
 	await sync.WaitGroup
 }
 
-// NewNode creates new Server instnace using given
+// NewNode creates new Node instnace using given
 // configurations. The functions creates database and
 // Container of skyobject instances internally
-func NewNode(sc ServerConfig) (s *Server, err error) {
+func NewNode(sc NodeConfig) (s *Node, err error) {
 	s, err = NewNodeReg(sc, nil)
 	return
 }
 
 // NewNodeReg creates new Node instance using given
-// skyobject.Registryto create container
+// skyobject.Registry to create container
 func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
 	err error) {
 
@@ -330,10 +330,14 @@ func (s *Node) gcLoop() {
 
 // send a message to given connection
 func (s *Node) sendMessage(c *gnet.Conn, msg Msg) (ok bool) {
+	return s.sendEncodedMessage(c, Encode(msg))
+}
+
+func (s *Node) sendEncodedMessage(c *gnet.Conn, msg []byte) (ok bool) {
 	s.Debugf("send message %T to %s", msg, c.Address())
 
 	select {
-	case c.SendQueue() <- Encode(msg):
+	case c.SendQueue() <- msg:
 		ok = true
 	case <-c.Closed():
 	default:
@@ -365,7 +369,7 @@ func (s *Node) disconnectHandler(c *gnet.Conn) {
 }
 
 // delete connection from feeds
-func (s *Node) deleteFromFeeds(c *gnet.Conn) {
+func (s *Node) deleteConnFromFeeds(c *gnet.Conn) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
 	for _, cs := range s.feeds {
@@ -374,7 +378,7 @@ func (s *Node) deleteFromFeeds(c *gnet.Conn) {
 }
 
 // delete connection from pendings
-func (s *Node) deleteFromPending(c *gnet.Conn) {
+func (s *Node) deleteConnFromPending(c *gnet.Conn) {
 	s.pmx.Lock()
 	defer s.pmx.Unlock()
 	delete(s.pending, c)
@@ -382,8 +386,8 @@ func (s *Node) deleteFromPending(c *gnet.Conn) {
 
 // close a connection removing associated resources
 func (s *Node) close(c *gnet.Conn) {
-	s.deleteFromFeeds(c)
-	s.deleteFromPending(c)
+	s.deleteConnFromFeeds(c)
+	s.deleteConnFromPending(c)
 	c.Close()
 }
 
@@ -439,10 +443,11 @@ func (s *Node) subscribeConn(c *gnet.Conn, feed cipher.PubKey) (accept,
 	return // no such feed
 }
 
-func (s *Node) sendLastFullRoot(c *gnet.Conn, feed cipher.PubKey) {
+func (s *Node) sendLastFullRoot(c *gnet.Conn, feed cipher.PubKey) (sent bool) {
 	if full := s.so.LastFullRoot(feed); full != nil {
-		s.sendMessage(c, &RootMsg{feed, full.Encode()})
+		sent = s.sendMessage(c, &RootMsg{feed, full.Encode()})
 	}
+	return
 }
 
 func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
@@ -466,14 +471,14 @@ func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
 	// just unsubscribe if subscribed
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
-	if cs, ok := s.feeds[msg.Feed]; cs {
+	if cs, ok := s.feeds[msg.Feed]; ok {
 		delete(cs, c)
 	}
 }
 
 // the function deletes given conn->feed from pendings
 // and returns true if there was
-func (s *Node) deleteFeedFromPending(c *gnet.Conn,
+func (s *Node) deleteConnFeedFromPending(c *gnet.Conn,
 	feed cipher.PubKey) (ok bool) {
 
 	s.pmx.Lock()
@@ -504,7 +509,7 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 	// receive an AcceptSubscriptionMsg but we didn't send
 	// SubscribeMsg to the remote peer before
 
-	if !s.deleteFeedFromPending(c, msg.Feed) {
+	if !s.deleteConnFeedFromPending(c, msg.Feed) {
 		s.Debug("unexpected AcceptSubscriptionMsg from ", c.Address())
 		return
 	}
@@ -530,7 +535,7 @@ func (s *Node) handleDenySubscriptionMsg(c *gnet.Conn,
 
 	// remove from pending and call OnSubscriptionDenied callback
 
-	if !s.deleteFeedFromPending(c, msg.Feed) {
+	if !s.deleteConnFeedFromPending(c, msg.Feed) {
 		s.Debug("unexpected DenySubscriptionMsg from ", c.Address())
 		return
 	}
@@ -787,91 +792,141 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 }
 
 //
-// Public methods of the Server
+// Public methods of the Node
 //
 
-// Connect to given address. The method returns error only
-// if address is malformed. A connection itself means nothing.
-// To associate connection with a feed use Associate method
-func (s *Node) Connect(address string) (err error) {
-	_, err = s.pool.Dial(address)
+// A Pool returns underlying gnet.Pool.
+// It returns nil if the Node is not started
+// yet. Use methods of this Pool to manipulate
+// connections: Connect, Disconnect, Address, etc
+func (s *Node) Pool() *gnet.Pool {
+	return s.pool
+}
+
+func (s *Node) addFeed(feed cipher.PubKey) (already bool) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+	if _, already = s.feeds[feed]; !already {
+		s.so.AddFeed(feed)
+		s.feeds[feed] = make(map[*gnet.Conn]struct{})
+	}
 	return
 }
 
-// Disconnect from given address. The method returns error
-// if Server is not connected to the address. Also it
-// can returns error of closing
-func (s *Node) Disconnect(address string) (err error) {
-	cx := s.pool.Connection(address)
-	if cx == nil {
-		err = fmt.Errorf("connection not found %q", address)
+func (s *Node) addToPending(c *gnet.Conn, feed cipher.PubKey) {
+	s.pmx.Lock()
+	defer s.pmx.Unlock()
+
+	var ps map[cipher.PubKey]struct{}
+	var ok bool
+	if ps, ok = s.pending[c]; !ok {
+		ps = make(map[cipher.PubKey]struct{})
+		s.pending[c] = ps
+	}
+	ps[feed] = struct{}{} // add anyway
+}
+
+// Subscribe to given feed. If given connection is nil, then this subscription
+// is local. Otherwise, it subscribes to a remote peer. To handle result use
+// (NodeConfig).OnAcceptSubsctiption and OnDeniedSubscription callbacks. The
+// connection must be from the gnet.Pool of the Node. To subscribe to the same
+// feed of many remote peers call the method many times for every connection
+// you want. To make the server subscribed to a feed (even if it is not
+// conencted to any remote peer) call this method with nil. To obtain
+// *gnet.Conn use (*Node).Pool() methods like
+// (*net.Pool).Conenction(address string) (*gnet.Conn)
+func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
+	// subscribe the Node to the feed, create feed in database if not exists
+	s.addFeed(feed)
+	// just return if we don't want to subscribe to feed of a remote peer
+	if c == nil {
 		return
 	}
-	err = cx.Close()
+	// add conn->feed to pendings
+	s.addToPending(c, feed)
+	// send SubscribeMsg
+	s.sendMessage(c, &SubscribeMsg{feed})
 	return
 }
 
-// Connections returns all connectiosn of the Server
-func (s *Node) Connections() []*gnet.Conn {
-	return s.pool.Connections()
-}
+// delte (any connection)->feed from all pending subscriptions
+func (s *Node) deleteFeedFromPending(feed cipher.PubKey) {
+	s.pmx.Lock()
+	defer s.pmx.Unlock()
 
-// Connection returns *gnet.Conn by stringifyed address
-func (s *Node) Connection(address string) *gnet.Conn {
-	return s.pool.Connection(address)
-}
-
-// Address returns listening address or empty string if
-// the Server was not started
-func (s *Node) Address() string {
-	return s.pool.Address()
-}
-
-// send given message to all conenctions
-func (s *Node) broadcast(msg Msg) {
-	for _, c := range s.pool.Connections() {
-		s.sendMessage(c, msg)
-	}
-}
-
-// AddFeed to feeds the Server shares. The method returns false
-// only if the Server already shares the feed. The method
-// adds given feed to database and Server will share it next
-// time (after shutdown and start)
-func (s *Node) AddFeed(f cipher.PubKey) (added bool) {
-	s.fmx.Lock()
-	defer s.fmx.Unlock()
-	if _, ok := s.feeds[f]; !ok {
-		s.so.AddFeed(f)
-		s.feeds[f], added = make(map[*gnet.Conn]struct{}), true
-	}
-	return
-}
-
-// DelFeed stops sharing given feed and remove all related
-// root objects and feed itself from database
-func (s *Node) DelFeed(f cipher.PubKey) (deleted bool) {
-	s.fmx.Lock()
-	defer s.fmx.Unlock()
-	if _, ok := s.feeds[f]; ok {
-		delete(s.feeds, f)
-		// delete from filling
-		s.rmx.Lock()
-		defer s.rmx.Unlock()
-		var i int = 0
-		for _, fl := range s.roots {
-			if fl.root.Pub() == f {
-				continue // delete
-			}
-			i++
-			s.roots[i] = fl
+	for c, ps := range s.pending {
+		delete(ps, feed)
+		if len(ps) == 0 {
+			delete(s.pending, c)
 		}
-		s.roots = s.roots[:i]
-		// delete from skyobject (from database)
-		s.so.DelFeed(f)
-		deleted = true
+	}
+}
+
+// delte all filling root objects of a feed
+func (s *Node) deleteFeedFromFilling(feed cipher.PubKey) {
+	s.rmx.Lock()
+	defer s.rmx.Unlock()
+
+	var i int = 0
+	for _, fl := range s.roots {
+		if fl.root.Pub() == feed {
+			continue // delete
+		}
+		i++
+		s.roots[i] = fl
+	}
+	s.roots = s.roots[:i]
+}
+
+// delete a feed and all associated resources without sending UnsubscribeMsg
+// to peers; the sending is not palced in the method to unlock fmx mutex
+func (s *Node) deleteFeed(feed cipher.PubKey) (cs map[*gnet.Conn]struct{}) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+
+	var ok bool
+	if cs, ok = s.feeds[feed]; ok {
+		delete(s.feeds, feed)
+		s.deleteFeedFromPending(feed)
+		s.deleteFeedFromFilling(feed)
+		s.so.DelFeed(feed) // delete from database
 	}
 	return
+}
+
+// total unsubscribing; delete given feed and all associated resources,
+// send UnsubscribeMsg to peers that share the feed
+func (s *Node) unsubscribe(feed cipher.PubKey) {
+	var unsub []byte = Encode(&UnsubscribeMsg{feed})
+	for peer := range s.deleteFeed(feed) {
+		s.sendEncodedMessage(peer, unsub)
+	}
+}
+
+func (s *Node) deleteConnFeedFromFeeds(c *gnet.Conn, feed cipher.PubKey) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+
+	if cs, ok := s.feeds[feed]; ok {
+		delete(cs, c)
+	}
+}
+
+// Unsubscribe from a feed of a remote peer or from all remote peers and
+// locally too if given gnet.Conn is nil. Given *gnet.Conn must be from
+// *gnet.Pool of this Node. Unsubscribe with nil removes feed from
+// underlying database and the Node stops sharing the feed
+func (s *Node) Unsubscribe(c *gnet.Conn, feed cipher.PubKey) {
+	if c == nil {
+		s.unsubscribe(feed)
+		return
+	}
+	// 1. remove the conn->feed from pendings
+	s.deleteConnFeedFromPending(c, feed)
+	// 2. remove the conn from s.feeds->feed
+	s.deleteConnFeedFromFeeds(c, feed)
+	// 3. send UnsubscribeMsg to peer
+	s.sendMessage(c, &UnsubscribeMsg{feed})
 }
 
 // TODO: + Want per root of a feed
@@ -926,11 +981,6 @@ func (s *Node) Feeds() (fs []cipher.PubKey) {
 		fs = append(fs, f)
 	}
 	return
-}
-
-// Stat returns satatistic of database
-func (s *Node) Stat() data.Stat {
-	return s.db.Stat()
 }
 
 // Quititng returns cahnnel that closed

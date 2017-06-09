@@ -70,14 +70,13 @@ func (r *Root) send(rp data.RootPack) {
 	if !r.c.node.hasFeed(r.Pub()) {
 		return // don't send
 	}
-	r.c.node.sendMessage(&RootMsg{
+	r.c.node.sendToFeed(r.Pub(), &RootMsg{
 		Feed:     r.Pub(),
 		RootPack: rp,
-	})
+	}, nil)
 }
 
 func (r *Root) Touch() (rp data.RootPack, err error) {
-	// TODO: sending never see the (*Client).feeds
 	if rp, err = r.Root.Touch(); err == nil {
 		r.send(rp)
 	}
@@ -87,7 +86,6 @@ func (r *Root) Touch() (rp data.RootPack, err error) {
 func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
 	rp data.RootPack, err error) {
 
-	// TODO: sending never see the (*Client).feeds
 	if inj, rp, err = r.Root.Inject(schemName, i); err == nil {
 		r.send(rp)
 	}
@@ -98,7 +96,6 @@ func (r *Root) InjectMany(schemaName string,
 	i ...interface{}) (injs []skyobject.Dynamic, rp data.RootPack,
 	err error) {
 
-	// TODO: sending never see the (*Client).feeds
 	if injs, rp, err = r.Root.InjectMany(schemaName, i...); err == nil {
 		r.send(rp)
 	}
@@ -108,7 +105,6 @@ func (r *Root) InjectMany(schemaName string,
 func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
 	rp data.RootPack, err error) {
 
-	// TODO: sending never see the (*Client).feeds
 	if prev, rp, err = r.Root.Replace(refs); err == nil {
 		r.send(rp)
 	}

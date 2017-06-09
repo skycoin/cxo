@@ -200,7 +200,7 @@ func (d *driveDB) DelFeed(pk cipher.PubKey) {
 		// godoc: https://godoc.org/github.com/boltdb/bolt#Bucket.DeleteBucket
 		// > [...] Returns an error if the bucket does not exists, or if
 		// > the key represents a non-bucket value.
-		fb.DeleteBucket(pk[:]) // ignore error
+		fb.DeleteBucket(pk[:]) // Thus, we ignore an error
 		return
 	})
 }

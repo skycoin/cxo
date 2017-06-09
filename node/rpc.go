@@ -18,10 +18,10 @@ import (
 type RPC struct {
 	l  net.Listener
 	rs *rpc.Server
-	ns *Server
+	ns *Node
 }
 
-func newRPC(s *Server) (r *RPC) {
+func newRPC(s *Node) (r *RPC) {
 	r = new(RPC)
 	r.ns = s
 	r.rs = rpc.NewServer()
@@ -85,14 +85,35 @@ func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
 	return
 }
 
-func (r *RPC) Subscribe(feed cipher.PubKey, ok *bool) (err error) {
-	*ok = r.ns.Subscribe(feed)
-	return
+// A ConnFeed represetns conenction->feed pair. The struct used
+// by RPC methods Subscribe and Unsubscribe
+type ConnFeed struct {
+	Address string // remote address
+	Feed    cipher.PubKey
 }
 
-func (r *RPC) Unsubscribe(feed cipher.PubKey, ok *bool) (err error) {
-	*ok = r.ns.Unsubscribe(feed)
-	return
+func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (_ error) {
+	if cf.Address == "" {
+		r.ns.Subscribe(nil, cf.Feed)
+		return
+	}
+	if c := r.ns.Pool().Connection(cf.Address); c != nil {
+		r.ns.Subscribe(c, cf.Feed)
+		return
+	}
+	return errors.New("no such connection: " + cf.Address)
+}
+
+func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
+	if cf.Address == "" {
+		r.ns.Unsubscribe(nil, cf.Feed)
+		return
+	}
+	if c := r.ns.Pool().Connection(cf.Address); c != nil {
+		r.ns.Unsubscribe(c, cf.Feed)
+		return
+	}
+	return errors.New("no such connection: " + cf.Address)
 }
 
 func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
@@ -101,12 +122,15 @@ func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 }
 
 func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
-	*stat = r.ns.Stat()
+	*stat = r.ns.db.Stat()
 	return
 }
 
 func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
-	cs := r.ns.Connections()
+	cs := r.ns.pool.Connections()
+	if len(cs) == 0 {
+		return
+	}
 	l := make([]string, 0, len(cs))
 	for _, c := range cs {
 		l = append(l, c.Address())
@@ -138,17 +162,19 @@ func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
 }
 
 func (r *RPC) Connect(address string, _ *struct{}) (err error) {
-	err = r.ns.Connect(address)
+	_, err = r.ns.pool.Dial(address)
 	return
 }
 
 func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
-	err = r.ns.Disconnect(address)
-	return
+	if c := r.ns.pool.Connection(address); c != nil {
+		err = c.Close()
+	}
+	return errors.New("no such connection: " + address)
 }
 
 func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
-	*address = r.ns.Address()
+	*address = r.ns.pool.Address()
 	return
 }
 
