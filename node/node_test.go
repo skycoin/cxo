@@ -97,6 +97,7 @@ func TestNewServerSoDB(t *testing.T) {
 	// 1. db != nil
 	// 2. so != nil
 	// 3. invalig gnet.Config
+	// 4. feeds from database (TODO: high priority)
 
 	t.Run("nil db", func(t *testing.T) {
 		defer shouldPanic(t)

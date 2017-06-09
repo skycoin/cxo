@@ -15,14 +15,22 @@ import (
 // be sure that all messages implements Msg interface compiler time
 var (
 	// ping-, pongs
+
 	_ Msg = &PingMsg{}
 	_ Msg = &PongMsg{}
 
-	// join and leave feeds
-	_ Msg = &JoinFeedMsg{}
-	_ Msg = &LeaveFeedMsg{}
+	// subscriptions
 
-	// root, data, etc
+	_ Msg = &SubscribeMsg{}
+	_ MSg = &UnsubscribeMsg{}
+
+	// subscriptions reply
+
+	_ Msg = &AcceptSubscriptionMsg{}
+	_ Msg = &DenySubscriptionMsg{}
+
+	// root, registry, data and requests
+
 	_ Msg = &RootMsg{}
 	_ Msg = &RequestDataMsg{}
 	_ Msg = &DataMsg{}
@@ -35,7 +43,7 @@ type Msg interface {
 	MsgType() MsgType
 }
 
-// PingMsg is service message and used
+// A PingMsg is service message and used
 // by server to ping clients
 type PingMsg struct{}
 
@@ -49,25 +57,37 @@ type PongMsg struct{}
 // MsgType implements Msg interface
 func (*PongMsg) MsgType() MsgType { return PongMsgType }
 
-// A JoinFeedMsg sent from one node to another one to
-// notify the remote node about new feed the sender
-// interesting in
-type JoinFeedMsg struct {
+// A SubscribeMsg ...
+type SubscribeMsg struct {
 	Feed cipher.PubKey
 }
 
 // MsgType implements Msg interface
-func (*JoinFeedMsg) MsgType() MsgType { return JoinFeedMsgType }
+func (*SubscribeMsg) MsgType() MsgType { return SubscribeMsg }
 
-// A LeaveFeedMsg sent from one node to another one to
-// notify the remote node about feed the sender
-// doesn't interesting in anymore
-type LeaveFeedMsg struct {
+// An UnsubscribeMsg ...
+type UnsubscribeMsg struct {
 	Feed cipher.PubKey
 }
 
 // MsgType implements Msg interface
-func (*LeaveFeedMsg) MsgType() MsgType { return LeaveFeedMsgType }
+func (*UnsubscribeMsg) MsgType() MsgType { return UnsubscribeMsg }
+
+// An AcceptSubscriptionMsg ...
+type AcceptSubscriptionMsg struct {
+	Feed cipher.PubKey
+}
+
+// MsgType implements Msg interface
+func (*AcceptSubscriptionMsg) MsgType() MsgType { return AcceptSubscriptionMsg }
+
+// A DenySubscriptionMsg ...
+type DenySubscriptionMsg struct {
+	Feed cipher.PubKey
+}
+
+// MsgType implements Msg interface
+func (*PublicSubscriptionMsg) MsgType() MsgType { return PublicSubscriptionMsg }
 
 // A RootMsg sent from one node to another one
 // to update root object of feed described in
@@ -113,28 +133,36 @@ func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
 type MsgType uint8
 
 const (
-	PingMsgType            MsgType = 1 + iota // PingMsg 1
-	PongMsgType                               // PongMsg 2
-	JoinFeedMsgType                           // JoinFeedMsg 3
-	LeaveFeedMsgType                          // LeaveFeedMsg 4
-	RootMsgType                               // RootMsg 5
-	RequestDataMsgType                        // RequestDataMsg 6
-	DataMsgType                               // DataMsg 7
-	RequestRegistryMsgType                    // RequestRegistryMsg 8
-	RegistryMsgType                           // RegistryMsg 9
+	PingMsgType MsgType = 1 + iota // PingMsg 1
+	PongMsgType                    // PongMsg 2
+
+	SubscribeMsgType          // SubscribeMsg          3
+	UnsubscribeMsgType        // UnsubscribeMsg        4
+	AcceptSubscriptionMsgType // AcceptSubscriptionMsg 5
+	DenySubscriptionMsgType   // DenySubscriptionMsg   6
+
+	RootMsgType            // RootMsg             7
+	RequestDataMsgType     // RequestDataMsg      8
+	DataMsgType            // DataMsg             9
+	RequestRegistryMsgType // RequestRegistryMsg 10
+	RegistryMsgType        // RegistryMsg        11
 )
 
 // MsgType to string mapping
 var msgTypeString = [...]string{
-	PingMsgType:            "PING",
-	PongMsgType:            "PONG",
-	JoinFeedMsgType:        "ADD",
-	LeaveFeedMsgType:       "DEL",
-	RootMsgType:            "ROOT",
-	RequestDataMsgType:     "RQDT",
-	DataMsgType:            "DATA",
-	RequestRegistryMsgType: "RQREG",
-	RegistryMsgType:        "REG",
+	PingMsgType: "Ping",
+	PongMsgType: "Pong",
+
+	SubscribeMsgType:          "Subscribe",
+	UnsubscribeMsgType:        "Unsubscribe",
+	AcceptSubscriptionMsgType: "AcceptSubscription",
+	DenySubscriptionMsgType:   "DenySubscription",
+
+	RootMsgType:            "Root",
+	RequestDataMsgType:     "RequestData",
+	DataMsgType:            "Data",
+	RequestRegistryMsgType: "RequestRegistry",
+	RegistryMsgType:        "Registry",
 }
 
 // String implements fmt.Stringer interface
@@ -146,10 +174,14 @@ func (m MsgType) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
-	PingMsgType:            reflect.TypeOf(PingMsg{}),
-	PongMsgType:            reflect.TypeOf(PongMsg{}),
-	JoinFeedMsgType:        reflect.TypeOf(JoinFeedMsg{}),
-	LeaveFeedMsgType:       reflect.TypeOf(LeaveFeedMsg{}),
+	PingMsgType: reflect.TypeOf(PingMsg{}),
+	PongMsgType: reflect.TypeOf(PongMsg{}),
+
+	SubscribeMsgType:          reflect.TypeOf(SubscribeMsg{}),
+	UnsubscribeMsgType:        reflect.TypeOf(UnsubscribeMsg{}),
+	AcceptSubscriptionMsgType: reflect.TypeOf(AcceptSubscriptionMsg{}),
+	DenySubscriptionMsgType:   reflect.TypeOf(DenySubscriptionMsg{}),
+
 	RootMsgType:            reflect.TypeOf(RootMsg{}),
 	RequestDataMsgType:     reflect.TypeOf(RequestDataMsg{}),
 	DataMsgType:            reflect.TypeOf(DataMsg{}),

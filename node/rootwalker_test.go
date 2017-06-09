@@ -49,26 +49,12 @@ func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Client,
 	reg.Register("Thread", Thread{})
 	reg.Register("Board", Board{})
 
-	// async operations
-	addFeed := make(chan cipher.PubKey)
-
-	//
-	conf := newClientConfig()
-	conf.OnAddFeed = func(pk cipher.PubKey) {
-		addFeed <- pk
-	}
-
 	// feeds
 	feeds := []cipher.PubKey{pk}
 
 	var err error
-	if c, s, err = newRunningClient(conf, reg, feeds); err != nil {
+	if c, s, err = newRunningClient(newClientConfig(), reg, feeds); err != nil {
 		t.Fatal(err) // fatality
-	}
-
-	// sync
-	if addFeedTM(addFeed, t) != pk {
-		t.Fatal("wrong feed added") // fatality
 	}
 
 	if c.Subscribe(pk) == false {

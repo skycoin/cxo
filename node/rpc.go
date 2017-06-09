@@ -61,8 +61,8 @@ func (r *RPC) Close() (err error) {
 
 // - Want
 // - Got
-// - AddFeed
-// - DelFeed
+// - Subscribe
+// - Unsubscribe
 // - Feeds
 // - Stat
 // - Connections
@@ -70,6 +70,7 @@ func (r *RPC) Close() (err error) {
 // - OutgoingConnections
 // - Connect
 // - Disconnect
+// - Associate
 // - ListeningAddress
 // - Tree
 // - Terminate
@@ -84,13 +85,13 @@ func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
 	return
 }
 
-func (r *RPC) AddFeed(feed cipher.PubKey, ok *bool) (err error) {
-	*ok = r.ns.AddFeed(feed)
+func (r *RPC) Subscribe(feed cipher.PubKey, ok *bool) (err error) {
+	*ok = r.ns.Subscribe(feed)
 	return
 }
 
-func (r *RPC) DelFeed(feed cipher.PubKey, ok *bool) (err error) {
-	*ok = r.ns.DelFeed(feed)
+func (r *RPC) Unsubscribe(feed cipher.PubKey, ok *bool) (err error) {
+	*ok = r.ns.Unsubscribe(feed)
 	return
 }
 
@@ -147,7 +148,7 @@ func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
 }
 
 func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
-	*address = r.ns.pool.Address()
+	*address = r.ns.Address()
 	return
 }
 

@@ -342,15 +342,14 @@ func TestContainer_NewRootReg(t *testing.T) {
 
 func isRefsEqual(a, b []Dynamic) (equal bool) {
 	if len(a) != len(b) {
-		return // false
+		return false
 	}
 	for i, r := range a {
 		if r != b[i] {
-			return // false
+			return false
 		}
 	}
-	equal = true
-	return
+	return true
 }
 
 func TestContainer_AddRootPack(t *testing.T) {
@@ -594,16 +593,14 @@ func TestContainer_Feeds(t *testing.T) {
 	})
 	t.Run("delete one", func(t *testing.T) {
 		c.DelRootsBefore(opk, 100500)
-		if fs := c.Feeds(); len(fs) != 1 {
-			t.Fatal("missing feed")
-		} else if fs[0] != tpk {
-			t.Fatal("wrong feed")
+		if fs := c.Feeds(); len(fs) != 2 {
+			t.Fatal("wrong amount of feeds")
 		}
 	})
 	t.Run("delete two", func(t *testing.T) {
 		c.DelRootsBefore(tpk, 100500)
-		if len(c.Feeds()) != 0 {
-			t.Fatal("got feeds")
+		if len(c.Feeds()) != 2 {
+			t.Fatal("wrong amount of feeds")
 		}
 	})
 }
@@ -880,8 +877,8 @@ func TestContainer_DelRootsBefore(t *testing.T) {
 		t.Error("wrong amount of roots")
 	}
 	c.DelRootsBefore(pk, r.Seq()+1)
-	if len(c.db.Stat().Feeds) != 0 {
-		t.Error("got feeds")
+	if len(c.db.Stat().Feeds) != 1 {
+		t.Error("wrong amount of feeds")
 	}
 }
 
@@ -921,8 +918,8 @@ func TestContainer_GC(t *testing.T) {
 	c.DelRootsBefore(pk, 1005000)
 	c.GC(false)
 	stat = c.db.Stat()
-	if len(stat.Feeds) != 0 {
-		t.Error("not clear")
+	if len(stat.Feeds) != 1 {
+		t.Error("looks like a feed was deleted")
 	}
 	// registry
 	if stat.Objects != 1 {

@@ -437,6 +437,20 @@ func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) {
 	})
 }
 
+// AddFeed to database of do nothing if given
+// feed already exists in the database
+func (c *Container) AddFeed(pk cipher.PubKey) {
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
+	c.db.AddFeed(pk)
+}
+
+// HasFeed looks database about given feed
+func (c *Container) HasFeed(pk cipher.PubKey) (yes bool) {
+	return c.db.HasFeed(pk)
+}
+
 // DelFeed deletes all root object of given feed. The
 // method doesn't perform GC
 func (c *Container) DelFeed(pk cipher.PubKey) {

@@ -9,7 +9,7 @@ import (
 
 type Container struct {
 	*skyobject.Container
-	client *Client
+	node *Node
 }
 
 func (c *Container) wrapRoot(sr *skyobject.Root) *Root {
@@ -67,10 +67,10 @@ type Root struct {
 }
 
 func (r *Root) send(rp data.RootPack) {
-	if !r.c.client.hasFeed(r.Pub()) {
+	if !r.c.node.hasFeed(r.Pub()) {
 		return // don't send
 	}
-	r.c.client.sendMessage(&RootMsg{
+	r.c.node.sendMessage(&RootMsg{
 		Feed:     r.Pub(),
 		RootPack: rp,
 	})
