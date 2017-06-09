@@ -20,7 +20,7 @@ type fillRoot struct {
 	await skyobject.Reference // waiting for
 }
 
-// A Node represents CXO node
+// A Node represents CXO P2P node
 // that includes RPC server if enabled
 // by configs
 type Node struct {
@@ -795,7 +795,7 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 // Public methods of the Node
 //
 
-// A Pool returns underlying gnet.Pool.
+// A Pool returns underlying *gnet.Pool.
 // It returns nil if the Node is not started
 // yet. Use methods of this Pool to manipulate
 // connections: Connect, Disconnect, Address, etc

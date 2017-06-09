@@ -28,6 +28,7 @@ func newRPC(s *Node) (r *RPC) {
 	return
 }
 
+// Start RPC server
 func (r *RPC) Start(address string) (err error) {
 	r.rs.RegisterName("cxo", r)
 	if r.l, err = net.Listen("tcp", address); err != nil {
@@ -41,6 +42,7 @@ func (r *RPC) Start(address string) (err error) {
 	return
 }
 
+// Address of RPC server
 func (r *RPC) Address() (address string) {
 	if r.l != nil {
 		address = r.l.Addr().String()
@@ -48,6 +50,7 @@ func (r *RPC) Address() (address string) {
 	return
 }
 
+// Clsoe RPC server
 func (r *RPC) Close() (err error) {
 	if r.l != nil {
 		err = r.l.Close()
@@ -173,6 +176,7 @@ func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
 	return errors.New("no such connection: " + address)
 }
 
+// LsiteningAddress of Node
 func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	*address = r.ns.pool.Address()
 	return
@@ -186,6 +190,7 @@ func (r *RPC) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
 	return
 }
 
+// Terminate remote Node if allowed by it s configurations
 func (r *RPC) Terminate(_ struct{}, _ *struct{}) (err error) {
 	if !r.ns.conf.RemoteClose {
 		err = errors.New("not allowed")

@@ -17,7 +17,6 @@ const TM time.Duration = 50 * time.Millisecond
 
 var (
 	testDataDir      = filepath.Join(".", "test")
-	testClientDBPath = filepath.Join(testDataDir, "client.db")
 	testServerDBPath = filepath.Join(testDataDir, "server.db")
 )
 
