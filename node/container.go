@@ -12,6 +12,10 @@ type Container struct {
 	node *Node
 }
 
+func (s *Node) Container() *Container {
+	return &Container{s.so, s}
+}
+
 func (c *Container) wrapRoot(sr *skyobject.Root) *Root {
 	return &Root{sr, c}
 }
