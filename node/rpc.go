@@ -85,7 +85,7 @@ func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
 	return
 }
 
-// A ConnFeed represetns conenction->feed pair. The struct used
+// A ConnFeed represetns connection->feed pair. The struct used
 // by RPC methods Subscribe and Unsubscribe
 type ConnFeed struct {
 	Address string // remote address

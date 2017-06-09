@@ -41,7 +41,7 @@ type DB interface {
 	// AddFeed appends empty feed or does nothing if
 	// given feed already exists in database
 	AddFeed(pk cipher.PubKey)
-	// HasFeed returns true if datbase contains given feed
+	// HasFeed returns true if database contains given feed
 	HasFeed(pk cipher.PubKey) (has bool)
 	// Feeds returns list of feeds
 	Feeds() []cipher.PubKey

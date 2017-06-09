@@ -834,7 +834,7 @@ func (s *Node) addToPending(c *gnet.Conn, feed cipher.PubKey) {
 // you want. To make the server subscribed to a feed (even if it is not
 // conencted to any remote peer) call this method with nil. To obtain
 // *gnet.Conn use (*Node).Pool() methods like
-// (*net.Pool).Conenction(address string) (*gnet.Conn)
+// (*net.Pool).Connection(address string) (*gnet.Conn)
 func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
 	// subscribe the Node to the feed, create feed in database if not exists
 	s.addFeed(feed)
