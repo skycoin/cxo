@@ -178,7 +178,8 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	return
 }
 
-// Tree prints objects tree for given root
+// Tree prints objects tree for given root.
+// This method is not imeplemented (low priority)
 func (r *RPC) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
 	//
 	err = errors.New("not implemented yet")
