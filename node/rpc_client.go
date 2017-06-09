@@ -31,13 +31,13 @@ func (r *RPCClient) Got(feed cipher.PubKey) (list []cipher.SHA256, err error) {
 	return
 }
 
-func (r *RPCClient) Subscribe(cf ConnFeed) (ok bool, err error) {
-	err = r.c.Call("cxo.Subscribe", cf, &ok)
+func (r *RPCClient) Subscribe(cf ConnFeed) (err error) {
+	err = r.c.Call("cxo.Subscribe", cf, &struct{}{})
 	return
 }
 
-func (r *RPCClient) Unsubscribe(cf ConnFeed) (ok bool, err error) {
-	err = r.c.Call("cxo.Unsubscribe", cf, &ok)
+func (r *RPCClient) Unsubscribe(cf ConnFeed) (err error) {
+	err = r.c.Call("cxo.Unsubscribe", cf, &struct{}{})
 	return
 }
 
