@@ -38,27 +38,47 @@ var (
 	_ Msg = &RegistryMsg{}
 )
 
+// a msgSource represents source of messages
+type msgSource struct {
+	lastMsgId uint32
+}
+
 // A Msg is common interface for CXO messages
 type Msg interface {
+	Id() uint32
 	MsgType() MsgType // type of the message to encode
 }
 
+// MsgCore keeps msg id
+type MsgCore struct {
+	Identifier uint32
+}
+
+// Id returns id of a message
+func (m *MsgCore) Id() uint32 { return m.Identifier }
+
 // A PingMsg is service message and used
 // by server to ping clients
-type PingMsg struct{}
+type PingMsg struct {
+	MsgCore
+}
 
 // MsgType implements Msg interface
 func (*PingMsg) MsgType() MsgType { return PingMsgType }
 
 // PongMsg is service message and used
 // by client to reply for PingMsg
-type PongMsg struct{}
+type PongMsg struct {
+	MsgCore
+}
 
 // MsgType implements Msg interface
 func (*PongMsg) MsgType() MsgType { return PongMsgType }
 
 // A SubscribeMsg ...
 type SubscribeMsg struct {
+	MsgCore
+
 	Feed cipher.PubKey
 }
 
@@ -67,6 +87,8 @@ func (*SubscribeMsg) MsgType() MsgType { return SubscribeMsgType }
 
 // An UnsubscribeMsg ...
 type UnsubscribeMsg struct {
+	MsgCore
+
 	Feed cipher.PubKey
 }
 
@@ -75,6 +97,8 @@ func (*UnsubscribeMsg) MsgType() MsgType { return UnsubscribeMsgType }
 
 // An AcceptSubscriptionMsg ...
 type AcceptSubscriptionMsg struct {
+	MsgCore
+
 	Feed cipher.PubKey
 }
 
@@ -85,6 +109,8 @@ func (*AcceptSubscriptionMsg) MsgType() MsgType {
 
 // A DenySubscriptionMsg ...
 type DenySubscriptionMsg struct {
+	MsgCore
+
 	Feed cipher.PubKey
 }
 
@@ -95,6 +121,8 @@ func (*DenySubscriptionMsg) MsgType() MsgType { return DenySubscriptionMsgType }
 // to update root object of feed described in
 // Feed filed of the message
 type RootMsg struct {
+	MsgCore
+
 	Feed     cipher.PubKey
 	RootPack data.RootPack
 }
@@ -103,6 +131,8 @@ type RootMsg struct {
 func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
 type RequestDataMsg struct {
+	MsgCore
+
 	Ref skyobject.Reference
 }
 
@@ -111,6 +141,8 @@ func (*RequestDataMsg) MsgType() MsgType { return RequestDataMsgType }
 
 // A DataMsg reperesents a data
 type DataMsg struct {
+	MsgCore
+
 	Data []byte
 }
 
@@ -118,6 +150,8 @@ type DataMsg struct {
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
 type RequestRegistryMsg struct {
+	MsgCore
+
 	Ref skyobject.RegistryReference // registry reference
 }
 
@@ -125,6 +159,8 @@ type RequestRegistryMsg struct {
 func (*RequestRegistryMsg) MsgType() MsgType { return RequestRegistryMsgType }
 
 type RegistryMsg struct {
+	MsgCore
+
 	Reg []byte
 }
 
