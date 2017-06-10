@@ -30,6 +30,8 @@ const (
 	// interval can be increased x2
 	PingInterval time.Duration = 0 * 2 * time.Second
 
+	ResponseTimeout time.Duration = 5 * time.Second // default
+
 	// GCInterval is default valie for GC
 	// triggering interval
 	GCInterval time.Duration = 5 * time.Second
@@ -86,6 +88,10 @@ type NodeConfig struct {
 	// Set to 0 to disable pings
 	PingInterval time.Duration
 
+	// ResponseTimeout used by methods that requires response.
+	// Zero timeout means infinity. Negative timeout causes panic
+	ResponseTimeout time.Duration
+
 	// GCInterval is interval to trigger GC
 	// Set to 0 to disabel GC
 	GCInterval time.Duration
@@ -135,6 +141,7 @@ func NewNodeConfig() (sc NodeConfig) {
 	sc.InMemoryDB = InMemoryDB
 	sc.DataDir = dataDir()
 	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
+	sc.ResponseTimeout = ResponseTimeout
 	return
 }
 
@@ -189,5 +196,9 @@ func (s *NodeConfig) FromFlags() {
 		"db-path",
 		s.DBPath,
 		"path to database")
+	flag.DurationVar(&s.ResponseTimeout,
+		"response-tm",
+		s.ResponseTimeout,
+		"response timeout (0 = infinity)")
 	return
 }

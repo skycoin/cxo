@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync/atomic"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -38,10 +40,155 @@ var (
 	_ Msg = &RegistryMsg{}
 )
 
-// a msgSource represents source of messages
+//
+// msgSource
+//
+
+// a msgSource represents source of messages,
+// it creates messages with unique id per session
 type msgSource struct {
 	lastMsgId uint32
 }
+
+func (m *msgSource) getId() uint32 {
+	return atomic.AddUint32(&m.lastMsgId, 1)
+}
+
+func (m *msgSource) NewPingMsg() (msg *PingMsg) {
+	msg = new(PingMsg)
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewPongMsg() (msg *PongMsg) {
+	msg = new(PongMsg)
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewSubscribeMsg(feed cipher.PubKey) (msg *SubscribeMsg) {
+	msg = &SubscribeMsg{Feed: feed}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewUnsubscribeMsg(feed cipher.PubKey) (msg *UnsubscribeMsg) {
+	msg = &UnsubscribeMsg{Feed: feed}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewAcceptSubscriptionMsg(
+	feed cipher.PubKey) (msg *AcceptSubscriptionMsg) {
+
+	msg = &AcceptSubscriptionMsg{Feed: feed}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewDenySubscriptionMsg(
+	feed cipher.PubKey) (msg *DenySubscriptionMsg) {
+
+	msg = &DenySubscriptionMsg{Feed: feed}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewRootMsg(feed cipher.PubKey,
+	rp data.RootPack) (msg *RootMsg) {
+
+	msg = &RootMsg{Feed: feed, RootPack: rp}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewRequestDataMsg(
+	ref skyobject.Reference) (msg *RequestDataMsg) {
+
+	msg = &RequestDataMsg{Ref: ref}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewDataMsg(data []byte) (msg *DataMsg) {
+	msg = &DataMsg{Data: data}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewRequestRegistryMsg(
+	ref skyobject.RegistryReference) (msg *RequestRegistryMsg) {
+
+	msg = &RequestRegistryMsg{Ref: ref}
+	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewRegistryMsg(reg []byte) (msg *RegistryMsg) {
+	msg = &RegistryMsg{Reg: reg}
+	msg.Identifier = m.getId()
+	return
+}
+
+//
+// Node developer usability and code readability methods
+//
+
+func (s *Node) sendPingMsg(c *gnet.Conn) bool {
+	return s.sendMessage(c, s.src.NewPingMsg())
+}
+
+func (s *Node) sendPongMsg(c *gnet.Conn) bool {
+	return s.sendMessage(c, s.src.NewPongMsg())
+}
+
+func (s *Node) sendSubscribeMsg(c *gnet.Conn, feed cipher.PubKey) bool {
+	return s.sendMessage(c, s.src.NewSubscribeMsg(feed))
+}
+
+func (s *Node) sendUnsubscribeMsg(c *gnet.Conn, feed cipher.PubKey) bool {
+	return s.sendMessage(c, s.src.NewUnsubscribeMsg(feed))
+}
+
+func (s *Node) sendAcceptSubscriptionMsg(c *gnet.Conn,
+	feed cipher.PubKey) bool {
+
+	return s.sendMessage(c, s.src.NewAcceptSubscriptionMsg(feed))
+}
+
+func (s *Node) sendDenySubscriptionMsg(c *gnet.Conn,
+	feed cipher.PubKey) bool {
+
+	return s.sendMessage(c, s.src.NewDenySubscriptionMsg(feed))
+}
+
+func (s *Node) sendRootMsg(c *gnet.Conn, feed cipher.PubKey,
+	rp data.RootPack) bool {
+
+	return s.sendMessage(c, s.src.NewRootMsg(feed, rp))
+}
+
+func (s *Node) sendRequestDataMsg(c *gnet.Conn, ref skyobject.Reference) bool {
+	return s.sendMessage(c, s.src.NewRequestDataMsg(ref))
+}
+
+func (s *Node) sendDataMsg(c *gnet.Conn, data []byte) bool {
+	return s.sendMessage(c, s.src.NewDataMsg(data))
+}
+
+func (s *Node) sendRequestRegistryMsg(c *gnet.Conn,
+	ref skyobject.RegistryReference) bool {
+
+	return s.sendMessage(c, s.src.NewRequestRegistryMsg(ref))
+}
+
+func (s *Node) sendRegistryMsg(c *gnet.Conn, reg []byte) bool {
+	return s.sendMessage(c, s.src.NewRegistryMsg(reg))
+}
+
+//
+// Msg interface, MsgCore and messages
+//
 
 // A Msg is common interface for CXO messages
 type Msg interface {
@@ -163,6 +310,10 @@ type RegistryMsg struct {
 
 	Reg []byte
 }
+
+//
+// MsgType / Encode / Deocode / String()
+//
 
 // MsgType implements Msg interface
 func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
