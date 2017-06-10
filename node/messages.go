@@ -14,6 +14,10 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+//
+// TODO: DRY (by refactoring may be, or moving outside to separate package)
+//
+
 // be sure that all messages implements Msg interface compiler time
 var (
 	// ping-, pongs
@@ -30,6 +34,12 @@ var (
 
 	_ Msg = &AcceptSubscriptionMsg{}
 	_ Msg = &DenySubscriptionMsg{}
+
+	// public server features
+
+	_ Msg = &RequestListOfFeedsMsg{}
+	_ Msg = &ListOfFeedsMsg{}
+	_ Msg = &NonPublicServerMsg{}
 
 	// root, registry, data and requests
 
@@ -56,13 +66,11 @@ func (m *msgSource) getId() uint32 {
 
 func (m *msgSource) NewPingMsg() (msg *PingMsg) {
 	msg = new(PingMsg)
-	msg.Identifier = m.getId()
 	return
 }
 
 func (m *msgSource) NewPongMsg() (msg *PongMsg) {
 	msg = new(PongMsg)
-	msg.Identifier = m.getId()
 	return
 }
 
@@ -72,25 +80,26 @@ func (m *msgSource) NewSubscribeMsg(feed cipher.PubKey) (msg *SubscribeMsg) {
 	return
 }
 
-func (m *msgSource) NewUnsubscribeMsg(feed cipher.PubKey) (msg *UnsubscribeMsg) {
+func (m *msgSource) NewUnsubscribeMsg(
+	feed cipher.PubKey) (msg *UnsubscribeMsg) {
+
 	msg = &UnsubscribeMsg{Feed: feed}
-	msg.Identifier = m.getId()
 	return
 }
 
-func (m *msgSource) NewAcceptSubscriptionMsg(
+func (m *msgSource) NewAcceptSubscriptionMsg(responseId uint32,
 	feed cipher.PubKey) (msg *AcceptSubscriptionMsg) {
 
 	msg = &AcceptSubscriptionMsg{Feed: feed}
-	msg.Identifier = m.getId()
+	msg.ResponseForId = responseId
 	return
 }
 
-func (m *msgSource) NewDenySubscriptionMsg(
+func (m *msgSource) NewDenySubscriptionMsg(responseId uint32,
 	feed cipher.PubKey) (msg *DenySubscriptionMsg) {
 
 	msg = &DenySubscriptionMsg{Feed: feed}
-	msg.Identifier = m.getId()
+	msg.ResponseForId = responseId
 	return
 }
 
@@ -98,7 +107,6 @@ func (m *msgSource) NewRootMsg(feed cipher.PubKey,
 	rp data.RootPack) (msg *RootMsg) {
 
 	msg = &RootMsg{Feed: feed, RootPack: rp}
-	msg.Identifier = m.getId()
 	return
 }
 
@@ -106,13 +114,11 @@ func (m *msgSource) NewRequestDataMsg(
 	ref skyobject.Reference) (msg *RequestDataMsg) {
 
 	msg = &RequestDataMsg{Ref: ref}
-	msg.Identifier = m.getId()
 	return
 }
 
 func (m *msgSource) NewDataMsg(data []byte) (msg *DataMsg) {
 	msg = &DataMsg{Data: data}
-	msg.Identifier = m.getId()
 	return
 }
 
@@ -120,13 +126,34 @@ func (m *msgSource) NewRequestRegistryMsg(
 	ref skyobject.RegistryReference) (msg *RequestRegistryMsg) {
 
 	msg = &RequestRegistryMsg{Ref: ref}
-	msg.Identifier = m.getId()
 	return
 }
 
 func (m *msgSource) NewRegistryMsg(reg []byte) (msg *RegistryMsg) {
 	msg = &RegistryMsg{Reg: reg}
+	return
+}
+
+func (m *msgSource) NewRequestListOfFeedsMsg() (msg *RequestListOfFeedsMsg) {
+	msg = new(RequestListOfFeedsMsg)
 	msg.Identifier = m.getId()
+	return
+}
+
+func (m *msgSource) NewListOfFeedsMsg(responseId uint32,
+	list []cipher.PubKey) (msg *ListOfFeedsMsg) {
+
+	msg = new(ListOfFeedsMsg)
+	msg.ResponseForId = responseId
+	msg.List = list
+	return
+}
+
+func (m *msgSource) NewNonPublicServerMsg(
+	responseId uint32) (msg *NonPublicServerMsg) {
+
+	msg = new(NonPublicServerMsg)
+	msg.ResponseForId = responseId
 	return
 }
 
@@ -150,16 +177,16 @@ func (s *Node) sendUnsubscribeMsg(c *gnet.Conn, feed cipher.PubKey) bool {
 	return s.sendMessage(c, s.src.NewUnsubscribeMsg(feed))
 }
 
-func (s *Node) sendAcceptSubscriptionMsg(c *gnet.Conn,
+func (s *Node) sendAcceptSubscriptionMsg(c *gnet.Conn, responseId uint32,
 	feed cipher.PubKey) bool {
 
-	return s.sendMessage(c, s.src.NewAcceptSubscriptionMsg(feed))
+	return s.sendMessage(c, s.src.NewAcceptSubscriptionMsg(responseId, feed))
 }
 
-func (s *Node) sendDenySubscriptionMsg(c *gnet.Conn,
+func (s *Node) sendDenySubscriptionMsg(c *gnet.Conn, responseId uint32,
 	feed cipher.PubKey) bool {
 
-	return s.sendMessage(c, s.src.NewDenySubscriptionMsg(feed))
+	return s.sendMessage(c, s.src.NewDenySubscriptionMsg(responseId, feed))
 }
 
 func (s *Node) sendRootMsg(c *gnet.Conn, feed cipher.PubKey,
@@ -186,28 +213,54 @@ func (s *Node) sendRegistryMsg(c *gnet.Conn, reg []byte) bool {
 	return s.sendMessage(c, s.src.NewRegistryMsg(reg))
 }
 
+func (s *Node) sendRequestListOfFeedsMsg(c *gnet.Conn) bool {
+	return s.sendMessage(c, s.src.NewRequestListOfFeedsMsg())
+}
+
+func (s *Node) sendListOfFeedsMsg(c *gnet.Conn, responseId uint32,
+	list []cipher.PubKey) bool {
+
+	return s.sendMessage(c, s.src.NewListOfFeedsMsg(responseId, list))
+}
+
+func (s *Node) sendNonPublicServerMsg(c *gnet.Conn, responseId uint32) bool {
+	return s.sendMessage(c, s.src.NewNonPublicServerMsg(responseId))
+}
+
 //
 // Msg interface, MsgCore and messages
 //
 
 // A Msg is common interface for CXO messages
 type Msg interface {
-	Id() uint32
-	MsgType() MsgType // type of the message to encode
+	Id() uint32          // id of the message
+	ResponseFor() uint32 // the message is response for
+	MsgType() MsgType    // type of the message to encode
 }
 
-// MsgCore keeps msg id
-type MsgCore struct {
+type IdentifiedMsg struct {
 	Identifier uint32
 }
 
-// Id returns id of a message
-func (m *MsgCore) Id() uint32 { return m.Identifier }
+func (i *IdentifiedMsg) Id() uint32        { return i.Identifier }
+func (*IdentifiedMsg) ResponseFor() uint32 { return 0 }
+
+type ResponsedMsg struct {
+	ResponseForId uint32
+}
+
+func (r *ResponsedMsg) Id() uint32          { return 0 }
+func (r *ResponsedMsg) ResponseFor() uint32 { return r.ResponseForId }
+
+type msgCoreStub struct{}
+
+func (msgCoreStub) Id() uint32          { return 0 }
+func (msgCoreStub) ResponseFor() uint32 { return 0 }
 
 // A PingMsg is service message and used
 // by server to ping clients
 type PingMsg struct {
-	MsgCore
+	msgCoreStub
 }
 
 // MsgType implements Msg interface
@@ -216,7 +269,7 @@ func (*PingMsg) MsgType() MsgType { return PingMsgType }
 // PongMsg is service message and used
 // by client to reply for PingMsg
 type PongMsg struct {
-	MsgCore
+	msgCoreStub
 }
 
 // MsgType implements Msg interface
@@ -224,7 +277,7 @@ func (*PongMsg) MsgType() MsgType { return PongMsgType }
 
 // A SubscribeMsg ...
 type SubscribeMsg struct {
-	MsgCore
+	IdentifiedMsg
 
 	Feed cipher.PubKey
 }
@@ -234,7 +287,7 @@ func (*SubscribeMsg) MsgType() MsgType { return SubscribeMsgType }
 
 // An UnsubscribeMsg ...
 type UnsubscribeMsg struct {
-	MsgCore
+	msgCoreStub
 
 	Feed cipher.PubKey
 }
@@ -244,7 +297,7 @@ func (*UnsubscribeMsg) MsgType() MsgType { return UnsubscribeMsgType }
 
 // An AcceptSubscriptionMsg ...
 type AcceptSubscriptionMsg struct {
-	MsgCore
+	ResponsedMsg
 
 	Feed cipher.PubKey
 }
@@ -256,7 +309,7 @@ func (*AcceptSubscriptionMsg) MsgType() MsgType {
 
 // A DenySubscriptionMsg ...
 type DenySubscriptionMsg struct {
-	MsgCore
+	ResponsedMsg
 
 	Feed cipher.PubKey
 }
@@ -264,11 +317,41 @@ type DenySubscriptionMsg struct {
 // MsgType implements Msg interface
 func (*DenySubscriptionMsg) MsgType() MsgType { return DenySubscriptionMsgType }
 
+// A RequestListOfFeeds is transport message to obtain list of
+// feeds from a public server
+type RequestListOfFeedsMsg struct {
+	IdentifiedMsg
+}
+
+// MsgType implements Msg interface
+func (*RequestListOfFeedsMsg) MsgType() MsgType {
+	return RequestListOfFeedsMsgType
+}
+
+// A ListOfFeedsMsg is reply for ListOfFeedMsg
+type ListOfFeedsMsg struct {
+	ResponsedMsg
+
+	List []cipher.PubKey
+}
+
+// MsgType implements Msg interface
+func (*ListOfFeedsMsg) MsgType() MsgType { return ListOfFeedsMsgType }
+
+// A NonPublicServerMsg is reply for ListOfFeedMsg while requested
+// server is not public
+type NonPublicServerMsg struct {
+	ResponsedMsg
+}
+
+// MsgType implements Msg interface
+func (*NonPublicServerMsg) MsgType() MsgType { return NonPublicServerMsgType }
+
 // A RootMsg sent from one node to another one
 // to update root object of feed described in
 // Feed filed of the message
 type RootMsg struct {
-	MsgCore
+	msgCoreStub
 
 	Feed     cipher.PubKey
 	RootPack data.RootPack
@@ -278,7 +361,7 @@ type RootMsg struct {
 func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
 type RequestDataMsg struct {
-	MsgCore
+	msgCoreStub
 
 	Ref skyobject.Reference
 }
@@ -288,7 +371,7 @@ func (*RequestDataMsg) MsgType() MsgType { return RequestDataMsgType }
 
 // A DataMsg reperesents a data
 type DataMsg struct {
-	MsgCore
+	msgCoreStub
 
 	Data []byte
 }
@@ -297,7 +380,7 @@ type DataMsg struct {
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
 type RequestRegistryMsg struct {
-	MsgCore
+	msgCoreStub
 
 	Ref skyobject.RegistryReference // registry reference
 }
@@ -306,7 +389,7 @@ type RequestRegistryMsg struct {
 func (*RequestRegistryMsg) MsgType() MsgType { return RequestRegistryMsgType }
 
 type RegistryMsg struct {
-	MsgCore
+	msgCoreStub
 
 	Reg []byte
 }
@@ -325,16 +408,20 @@ const (
 	PingMsgType MsgType = 1 + iota // PingMsg 1
 	PongMsgType                    // PongMsg 2
 
-	SubscribeMsgType          // SubscribeMsg          3
-	UnsubscribeMsgType        // UnsubscribeMsg        4
-	AcceptSubscriptionMsgType // AcceptSubscriptionMsg 5
-	DenySubscriptionMsgType   // DenySubscriptionMsg   6
+	SubscribeMsgType          // SubscribeMsg           3
+	UnsubscribeMsgType        // UnsubscribeMsg         4
+	AcceptSubscriptionMsgType // AcceptSubscriptionMsg  5
+	DenySubscriptionMsgType   // DenySubscriptionMsg    6
 
-	RootMsgType            // RootMsg             7
-	RequestDataMsgType     // RequestDataMsg      8
-	DataMsgType            // DataMsg             9
-	RequestRegistryMsgType // RequestRegistryMsg 10
-	RegistryMsgType        // RegistryMsg        11
+	RequestListOfFeedsMsgType // RequestListOfFeedsMsg  7
+	ListOfFeedsMsgType        // ListOfFeedsMsg         8
+	NonPublicServerMsgType    // NonPublicServerMsg     9
+
+	RootMsgType            // RootMsg            10
+	RequestDataMsgType     // RequestDataMsg     11
+	DataMsgType            // DataMsg            12
+	RequestRegistryMsgType // RequestRegistryMsg 13
+	RegistryMsgType        // RegistryMsg        14
 )
 
 // MsgType to string mapping
@@ -346,6 +433,10 @@ var msgTypeString = [...]string{
 	UnsubscribeMsgType:        "Unsubscribe",
 	AcceptSubscriptionMsgType: "AcceptSubscription",
 	DenySubscriptionMsgType:   "DenySubscription",
+
+	RequestListOfFeedsMsgType: "RequestListOfFeeds",
+	ListOfFeedsMsgType:        "ListOfFeeds",
+	NonPublicServerMsgType:    "NonPublicServer",
 
 	RootMsgType:            "Root",
 	RequestDataMsgType:     "RequestData",
@@ -370,6 +461,10 @@ var forwardRegistry = [...]reflect.Type{
 	UnsubscribeMsgType:        reflect.TypeOf(UnsubscribeMsg{}),
 	AcceptSubscriptionMsgType: reflect.TypeOf(AcceptSubscriptionMsg{}),
 	DenySubscriptionMsgType:   reflect.TypeOf(DenySubscriptionMsg{}),
+
+	RequestListOfFeedsMsgType: reflect.TypeOf(RequestListOfFeedsMsg{}),
+	ListOfFeedsMsgType:        reflect.TypeOf(ListOfFeedsMsg{}),
+	NonPublicServerMsgType:    reflect.TypeOf(NonPublicServerMsg{}),
 
 	RootMsgType:            reflect.TypeOf(RootMsg{}),
 	RequestDataMsgType:     reflect.TypeOf(RequestDataMsg{}),

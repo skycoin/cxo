@@ -36,6 +36,8 @@ const (
 	// triggering interval
 	GCInterval time.Duration = 5 * time.Second
 
+	PublicServer bool = false // default
+
 	// default tree is
 	//   server: ~/.skycoin/cxo/bolt.db
 
@@ -103,6 +105,9 @@ type NodeConfig struct {
 	// DataDir is directory with data files
 	DataDir string
 
+	// PublicServer never keeps secret feeds it share
+	PublicServer bool
+
 	//
 	// callbacks
 	//
@@ -142,6 +147,7 @@ func NewNodeConfig() (sc NodeConfig) {
 	sc.DataDir = dataDir()
 	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
 	sc.ResponseTimeout = ResponseTimeout
+	sc.PublicServer = PublicServer
 	return
 }
 
@@ -200,5 +206,9 @@ func (s *NodeConfig) FromFlags() {
 		"response-tm",
 		s.ResponseTimeout,
 		"response timeout (0 = infinity)")
+	flag.BoolVar(&s.PublicServer,
+		"public-server",
+		s.PublicServer,
+		"make the server public")
 	return
 }

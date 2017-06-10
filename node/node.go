@@ -315,7 +315,7 @@ func (s *Node) pingsLoop() {
 				if md < s.conf.PingInterval {
 					continue
 				}
-				s.sendMessage(c, &PingMsg{})
+				s.sendPingMsg(c)
 			}
 		case <-s.quit:
 			return
@@ -476,16 +476,16 @@ func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 	// (3) send  DenySubscription if the Node doesn't share feed
 	if accept, already := s.subscribeConn(c, msg.Feed); already == true {
 		// (2)
-		s.sendAcceptSubscriptionMsg(c, msg.Feed)
+		s.sendAcceptSubscriptionMsg(c, msg.Id(), msg.Feed)
 		return
 	} else if accept == true {
 		// (1)
-		if s.sendAcceptSubscriptionMsg(c, msg.Feed) {
+		if s.sendAcceptSubscriptionMsg(c, msg.Id(), msg.Feed) {
 			s.sendLastFullRoot(c, msg.Feed)
 		}
 		return
 	}
-	s.sendDenySubscriptionMsg(c, msg.Feed) // (3)
+	s.sendDenySubscriptionMsg(c, msg.Id(), msg.Feed) // (3)
 }
 
 func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
@@ -626,7 +626,6 @@ func (s *Node) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	}
 	if root.IsFull() {
 		// change remote Id to local to avoid collisions
-		msg.Identifier = s.src.getId()
 		s.sendToFeed(msg.Feed, msg, c)
 		return
 	}
@@ -765,6 +764,16 @@ func (s *Node) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 	s.roots = s.roots[:i]
 }
 
+func (s *Node) handleRequestListOfFeedsMsg(c *gnet.Conn,
+	x *RequestListOfFeedsMsg) {
+
+	if s.conf.PublicServer == true {
+		s.sendListOfFeedsMsg(c, x.Id(), s.Feeds())
+	} else {
+		s.sendNonPublicServerMsg(c, x.Id()) // reject
+	}
+}
+
 func (s *Node) handlePingMsg(c *gnet.Conn) {
 	s.sendPongMsg(c)
 }
@@ -773,6 +782,10 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	s.Debugf("handle message %T from %s", msg, c.Address())
 
 	switch x := msg.(type) {
+
+	//
+	// subscribe/unsubscribe
+	//
 
 	// subscribe/unsubscribe
 	case *SubscribeMsg:
@@ -786,7 +799,9 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	case *DenySubscriptionMsg:
 		s.handleDenySubscriptionMsg(c, x)
 
-	// root, data, registry, requests
+		//
+		// root, data, registry, requests
+		//
 
 	// root
 	case *RootMsg:
@@ -804,6 +819,21 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	case *DataMsg:
 		s.handleDataMsg(c, x)
 
+		//
+		// public servers
+		//
+
+	case *RequestListOfFeedsMsg:
+		s.handleRequestListOfFeedsMsg(c, x)
+	case *ListOfFeedsMsg:
+		// do ntohing (handled at the bottom of this method)
+	case *NonPublicServerMsg:
+		// do ntohing (handled at the bottom of this method)
+
+	//
+	// ping / pong
+	//
+
 	// ping/pong
 	case *PingMsg:
 		s.handlePingMsg(c)
@@ -813,6 +843,11 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	// critical
 	default:
 		s.Printf("[CRIT] unhandled message type %T", msg)
+	}
+
+	// the msg is not request that need identified response
+	if msg.ResponseFor() == 0 {
+		return
 	}
 
 	// process responses after handling
