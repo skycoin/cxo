@@ -131,7 +131,7 @@ func (p *Pool) listen(l net.Listener) {
 		c   net.Conn
 		err error
 
-		ch ConnectionHandler
+		ch OnCreateConnection
 		cn *Conn
 	)
 
@@ -153,7 +153,7 @@ func (p *Pool) listen(l net.Listener) {
 		if cn, err = p.acceptConnection(c); err != nil {
 			p.release()
 			p.Print("[ERR] accepting connection: ", err)
-		} else if ch = p.conf.ConnectionHandler; ch != nil {
+		} else if ch = p.conf.OnCreateConnection; ch != nil {
 			ch(cn)
 		}
 	}
@@ -212,7 +212,7 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 	// the config is malformed
 
 	cn = p.createConnection(address)
-	if ch := p.conf.ConnectionHandler; ch != nil {
+	if ch := p.conf.OnCreateConnection; ch != nil {
 		ch(cn)
 	}
 	return

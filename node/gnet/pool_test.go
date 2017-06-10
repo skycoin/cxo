@@ -78,7 +78,7 @@ func TestPool_Listen(t *testing.T) {
 	t.Run("connect", func(t *testing.T) {
 		connect := make(chan struct{})
 		conf := newConfig("")
-		conf.ConnectionHandler = func(*Conn) { connect <- struct{}{} }
+		conf.OnCreateConnection = func(*Conn) { connect <- struct{}{} }
 		p, err := NewPool(conf)
 		if err != nil {
 			t.Fatal(err)

@@ -40,7 +40,7 @@ var (
 
 // A Msg is common interface for CXO messages
 type Msg interface {
-	MsgType() MsgType
+	MsgType() MsgType // type of the message to encode
 }
 
 // A PingMsg is service message and used

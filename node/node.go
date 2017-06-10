@@ -20,6 +20,11 @@ type fillRoot struct {
 	await skyobject.Reference // waiting for
 }
 
+type connFeed struct {
+	c    *gnet.Conn
+	feed cipher.PubKey
+}
+
 // A Node represents CXO P2P node
 // that includes RPC server if enabled
 // by configs
@@ -46,6 +51,10 @@ type Node struct {
 	// accept or deny (reject))
 	pmx     sync.Mutex
 	pending map[*gnet.Conn]map[cipher.PubKey]struct{}
+
+	// subscribe requests
+	smx        sync.Mutex
+	subscrubes map[connFeed]chan struct{}
 
 	rmx   sync.RWMutex
 	roots []*fillRoot // filling up
@@ -453,10 +462,12 @@ func (s *Node) sendLastFullRoot(c *gnet.Conn, feed cipher.PubKey) (sent bool) {
 func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 	// (1) subscribe if the Node shares feed and send AcceptSubscriptionMsg back
 	//     and send latest full root of the feed if has
-	// (2) do nothing if the connection already subscibed to the feed
+	// (2) send AcceptSubscriptionMsg back if the connection already
+	//     subscibed to the feed
 	// (3) send  DenySubscription if the Node doesn't share feed
 	if accept, already := s.subscribeConn(c, msg.Feed); already == true {
-		return // (2)
+		s.sendMessage(c, &AcceptSubscriptionMsg{msg.Feed}) // (2)
+		return
 	} else if accept == true {
 		// (1)
 		if s.sendMessage(c, &AcceptSubscriptionMsg{msg.Feed}) {

@@ -23,19 +23,28 @@ const (
 
 	RedialTimeout    time.Duration = 100 * time.Millisecond // default
 	MaxRedialTimeout time.Duration = 5 * time.Second        // default
-	RedialsLimit     int           = 0                      // 0 - infinity
+	DialsLimit       int           = 0                      // 0 - infinity
 
 	ReadBufferSize  int = 0 * 4096 // default
 	WriteBufferSize int = 0 * 4096 // default
 )
 
-// ConnectionHandler called by pool when
-// it has got new connection
-type ConnectionHandler func(c *Conn)
+// OnCreateConnection represents connectinig callback.
+// The callback performed while *Conn created. The callback
+// has nothing to do with underlying net.Conn(s)
+type OnCreateConnection func(c *Conn)
 
-// DisconnectHandler called when a connections
-// was closed
-type DisconnectHandler func(c *Conn)
+// OnCloseConnection represents disconnecting callback.
+// The callback performed while *Conn closed. The callback
+// has nothing to do with underlying net.Conn(s)
+type OnCloseConnection func(c *Conn)
+
+// OnDial represetns dialing callback. The err argumetn
+// represtns first error by which previous connection was
+// closed. If this function returns an error it terminates
+// dialing and connection. The err is nil if it's first
+// dialing
+type OnDial func(c *Conn, err error) error
 
 // A Config represents configurations of a Pool
 type Config struct {
@@ -58,13 +67,24 @@ type Config struct {
 
 	RedialTimeout    time.Duration // timeout between redials
 	MaxRedialTimeout time.Duration // increase RedilaTimeout up to it every time
-	RedialsLimit     int           // doesn't work and likely to be removed
+	DialsLimit       int           // max dials allowed
 
 	ReadBufferSize  int // reading buffer
 	WriteBufferSize int // writing buffer
 
-	ConnectionHandler ConnectionHandler // on conenct callback
-	DisconnectHandler DisconnectHandler // on disconnect callback
+	OnCreateConnection OnCreateConnection // on conenct callback
+	OnCloseConnection  OnCloseConnection  // on disconnect callback
+
+	// OnDial is callback that called before dialing and
+	// the callback used to stop dialing and make
+	// some work you may need. The callback receive
+	// error by which connection fails. For first dialing
+	// (for outgoing connections) the error is nil. If the
+	// callback returns non-nil error then dialing will not
+	// be performed and connection (gnet.Conn) will be closed
+	// While the callback called, underlying net.Conn already
+	// closed or not created yet
+	OnDial OnDial
 
 	TLSConfig *tls.Config // use TLS if it's not nil
 
@@ -86,7 +106,7 @@ func NewConfig() (c Config) {
 
 	c.RedialTimeout = RedialTimeout
 	c.MaxRedialTimeout = MaxRedialTimeout
-	c.RedialsLimit = RedialsLimit
+	c.DialsLimit = DialsLimit
 
 	c.ReadBufferSize = ReadBufferSize
 	c.WriteBufferSize = WriteBufferSize
@@ -141,9 +161,9 @@ func (c *Config) FromFlags() {
 		"max-redial-timeout",
 		c.MaxRedialTimeout,
 		"max redial timeout")
-	flag.IntVar(&c.RedialsLimit,
+	flag.IntVar(&c.DialsLimit,
 		"redials-limit",
-		c.RedialsLimit,
+		c.DialsLimit,
 		"redials limit (0 - no limit)")
 
 	flag.IntVar(&c.ReadBufferSize,
@@ -176,8 +196,8 @@ func (c *Config) Validate() (err error) {
 		err = fmt.Errorf("negative RedialTimeout %v", c.RedialTimeout)
 	} else if c.MaxRedialTimeout < 0 {
 		err = fmt.Errorf("negative MaxRedialTimeout %v", c.MaxRedialTimeout)
-	} else if c.RedialsLimit < 0 {
-		err = fmt.Errorf("negative RedialsLimit %v", c.RedialsLimit)
+	} else if c.DialsLimit < 0 {
+		err = fmt.Errorf("negative DialsLimit %v", c.DialsLimit)
 	} else if c.ReadBufferSize < 0 {
 		err = fmt.Errorf("negative ReadBufferSize %v", c.ReadBufferSize)
 	} else if c.WriteBufferSize < 0 {

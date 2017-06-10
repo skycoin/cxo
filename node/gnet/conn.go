@@ -38,6 +38,7 @@ func (c ConnState) String() string {
 type Conn struct {
 	address string // diaing address
 
+	// cmx locks conn, state, dialo and diallm fields
 	cmx   sync.Mutex // connection lock for redialing
 	conn  net.Conn
 	state ConnState
@@ -52,19 +53,25 @@ type Conn struct {
 	readq  chan []byte
 	writeq chan []byte
 
+	diallm int           // dials limit (countdown)
 	dialo  *sync.Once    // trigger dialing once per connection fail
-	dialtr chan struct{} // trigger dialing
+	dialtr chan error    // trigger dialing
 	dialrl chan struct{} // redialing (lock read)
 	dialwl chan struct{} // redialing (lock write)
 
-	lrmx      sync.Mutex
-	lastRead  time.Time
-	lwmx      sync.Mutex
+	//
+	// last read and last write
+	//
+
+	lrmx     sync.Mutex // lock for lastRead
+	lastRead time.Time
+
+	lwmx      sync.Mutex /// lock for lastWrite
 	lastWrite time.Time
 
 	p *Pool // logger and configs
 
-	vmx sync.Mutex
+	vmx sync.Mutex // lock for value
 	val interface{}
 
 	closeo sync.Once
@@ -127,8 +134,9 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 	cn.readq = make(chan []byte, p.conf.ReadQueueLen)
 	cn.writeq = make(chan []byte, p.conf.WriteQueueLen)
 
+	cn.diallm = p.conf.DialsLimit
 	cn.dialo = new(sync.Once)
-	cn.dialtr = make(chan struct{})
+	cn.dialtr = make(chan error)
 	cn.dialrl = make(chan struct{})
 	cn.dialwl = make(chan struct{})
 
@@ -139,7 +147,7 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 	go cn.write()
 	go cn.dial()
 
-	cn.triggerDialing()
+	cn.triggerDialing(nil)
 
 	return
 }
@@ -153,6 +161,7 @@ func (c *Conn) closeConnection() {
 
 	c.cmx.Lock()
 	defer c.cmx.Unlock()
+
 	if c.conn != nil {
 		c.conn.Close()
 		c.state = ConnStateClosed
@@ -184,21 +193,67 @@ func (cn *Conn) dialing() (c net.Conn, err error) {
 	return
 }
 
-func (c *Conn) triggerDialing() {
+func (c *Conn) triggerDialing(err error) {
 	c.p.Debug("trigger dialing of: ", c.address)
 
 	c.cmx.Lock()
 	defer c.cmx.Unlock()
+
 	c.dialo.Do(func() {
-		if c.conn != nil {
-			c.conn.Close() // make sure that conn is closed
+		// check out dialing limit
+		c.diallm--
+		if c.diallm == 0 {
+			c.p.Debug("dials limit exceeded: ", c.address)
+			// close the connection
+
+			// we need to unlock cmx to close the connection
+			c.cmx.Unlock() // unlock -> lock again (because of deferred unlock)
+			{
+				c.Close()
+			}
+			c.cmx.Lock()
+
+			return
 		}
+
+		// change state
 		c.state = ConnStateDialing
+
+		// make sure that conn is closed
+		if c.conn != nil {
+			c.conn.Close()
+		}
+
+		//
+		// the callback should be prefomed with unlocked cmx
+		//
+
+		// perform dialing callback
+		if callback := c.p.conf.OnDial; callback != nil {
+
+			// we need to unlock cmx to close the connection
+			c.cmx.Unlock() // unlock -> lock again (because of deferred unlock)
+			{
+				if err = callback(c, err); err != nil {
+
+					// we don't want to redial anymore
+					c.Close()
+					c.cmx.Lock()
+					return
+
+				}
+			}
+			c.cmx.Lock()
+
+		}
+
+		// trigger redialing
 		select {
-		case c.dialtr <- struct{}{}:
+		case c.dialtr <- err:
 		case <-c.closed:
 		}
 	})
+
 }
 
 func (cn *Conn) updateConnection(c net.Conn) {
@@ -351,7 +406,7 @@ DialLoop:
 				if c.incoming {
 					return // don't redial if the connection is incoming
 				}
-				c.triggerDialing()
+				c.triggerDialing(err)
 				continue DialLoop // waiting for redialing
 			}
 			// the head contains message length
@@ -381,7 +436,7 @@ DialLoop:
 				if c.incoming {
 					return // don't redial if the connection is incoming
 				}
-				c.triggerDialing()
+				c.triggerDialing(err)
 				continue DialLoop // waiting for redialing
 			}
 			select {
@@ -396,7 +451,7 @@ DialLoop:
 }
 
 func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
-	redial bool) {
+	redial bool, err error) {
 
 	c.p.Debug("write message to ", c.address)
 
@@ -412,8 +467,6 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 
 	binary.LittleEndian.PutUint32(head, uint32(len(body)))
 
-	var err error
-
 	// write the head
 	if _, err = w.Write(head); err != nil {
 		select {
@@ -425,7 +478,9 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 		c.p.Printf("[ERR] %s writing error: %v",
 			c.address,
 			err)
-		redial = true
+		if !c.incoming { // don't redial if the connection is incoming
+			redial = true
+		}
 		return
 	}
 
@@ -440,7 +495,9 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate,
 		c.p.Printf("[ERR] %s writing error: %v",
 			c.address,
 			err)
-		redial = true
+		if !c.incoming { // don't redial if the connection is incoming
+			redial = true
+		}
 	}
 
 	return
@@ -482,14 +539,10 @@ DialLoop:
 				return
 			}
 
-			switch terminate, redial = c.writeMsg(w, body); {
-			case terminate:
+			if terminate, redial, err = c.writeMsg(w, body); terminate {
 				return
-			case redial:
-				if c.incoming {
-					return // don't redial if the connection is incoming
-				}
-				c.triggerDialing()
+			} else if redial {
+				c.triggerDialing(err)
 				continue DialLoop
 			}
 
@@ -498,14 +551,10 @@ DialLoop:
 				select {
 				case body = <-c.writeq:
 					c.p.Debug("msg was dequeued from SendQueue ", c.address)
-					switch terminate, redial = c.writeMsg(w, body); {
-					case terminate:
+					if terminate, redial, err = c.writeMsg(w, body); terminate {
 						return
-					case redial:
-						if c.incoming {
-							return // don't redial if the connection is incoming
-						}
-						c.triggerDialing()
+					} else if redial {
+						c.triggerDialing(err)
 						continue DialLoop
 					}
 				default:
@@ -524,7 +573,7 @@ DialLoop:
 							if c.incoming {
 								return // don't redial if the connection is inc.
 							}
-							c.triggerDialing()
+							c.triggerDialing(err)
 							continue DialLoop
 						}
 					}
@@ -629,7 +678,7 @@ func (c *Conn) Close() (err error) {
 		close(c.closed)
 		c.closeConnection()
 		c.p.delete(c.Address())
-		if dh := c.p.conf.DisconnectHandler; dh != nil {
+		if dh := c.p.conf.OnCloseConnection; dh != nil {
 			dh(c)
 		}
 	})
