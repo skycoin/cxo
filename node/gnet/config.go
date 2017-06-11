@@ -39,7 +39,7 @@ type OnCreateConnection func(c *Conn)
 // has nothing to do with underlying net.Conn(s)
 type OnCloseConnection func(c *Conn)
 
-// OnDial represetns dialing callback. The err argumetn
+// OnDial represetns dialing callback. The err argument
 // represtns first error by which previous connection was
 // closed. If this function returns an error it terminates
 // dialing and connection. The err is nil if it's first
