@@ -88,10 +88,10 @@ func (r *Root) send(rp data.RootPack) {
 	if !r.c.node.hasFeed(r.Pub()) {
 		return // don't send
 	}
-	r.c.node.sendToFeed(r.Pub(), &RootMsg{
-		Feed:     r.Pub(),
-		RootPack: rp,
-	}, nil)
+	r.c.node.sendToFeed(r.Pub(), r.c.node.src.NewRootMsg(
+		r.Pub(), // feed
+		rp,      // root pack
+	), nil)
 }
 
 // Touch wrapper

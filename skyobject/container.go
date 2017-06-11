@@ -28,6 +28,8 @@ type Container struct {
 	rmx          sync.RWMutex
 	coreRegistry *Registry // registry witch which the container was created
 	registries   map[RegistryReference]*Registry
+
+	gcmx sync.Mutex
 }
 
 // NewContainer creates new Container using given databse and
@@ -476,6 +478,9 @@ func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 // call the GC with true
 func (c *Container) GC(dontRemoveRoots bool) {
 
+	c.gcmx.Lock()
+	defer c.gcmx.Unlock()
+
 	// gc lock
 	c.dbmx.Lock()
 	defer c.dbmx.Unlock()
@@ -571,4 +576,14 @@ func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
 	rp = r.encode()
 	err = c.db.AddRoot(r.pub, &rp)
 	return
+}
+
+// LockGC locks mutex of GC
+func (c *Container) LockGC() {
+	c.gcmx.Lock()
+}
+
+//UnlockGC unlocks mutex of GC
+func (c *Container) UnlockGC() {
+	c.gcmx.Unlock()
 }
