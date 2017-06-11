@@ -1154,7 +1154,7 @@ func (s *Node) sendSubscribeMsgAndWaitForResponse(c *gnet.Conn,
 	return s.sendMsgAndWaitForResponse(c, s.src.NewSubscribeMsg(feed), timeout)
 }
 
-// SubscribeResponse is similar to subscribe but it requires non-nil conenction
+// SubscribeResponse is similar to subscribe but it requires non-nil connection
 // and waits for reply from remote peer. It waits for response
 // NodeConfig.ResponseTimeout
 func (s *Node) SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error {
