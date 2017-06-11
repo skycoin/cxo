@@ -154,6 +154,16 @@ func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
 			dh(c)
 		}
 	}
+	if dc := sc.Config.OnDial; dc == nil {
+		sc.Config.OnDial = s.onDial
+	} else {
+		sc.Config.OnDial = func(c *gnet.Conn, err error) error {
+			if err = dc(c, err); err != nil {
+				return err
+			}
+			return s.onDial(c, err)
+		}
+	}
 
 	if s.pool, err = gnet.NewPool(sc.Config); err != nil {
 		s = nil
@@ -521,6 +531,32 @@ func (s *Node) deleteConnFeedFromPending(c *gnet.Conn,
 	return
 }
 
+func (s *Node) onDial(c *gnet.Conn, _ error) (_ error) {
+	if val := c.Value(); val == nil {
+		return
+	} else if rs, ok := val.([]cipher.PubKey); !ok {
+		s.Debugf("wrong type of associated Value of gnet.Conn (%s): %T",
+			c.Address(), val)
+	} else {
+		for _, feed := range rs {
+			s.sendSubscribeMsg(c, feed) // resubscribe
+		}
+	}
+	return
+}
+
+func (s *Node) addToResubscriptions(c *gnet.Conn, feed cipher.PubKey) {
+	if val := c.Value(); val == nil {
+		c.SetValue([]cipher.PubKey{feed})
+		return
+	} else if rs, ok := val.([]cipher.PubKey); !ok {
+		s.Debugf("wrong type of associated Value of gnet.Conn (%s): %T",
+			c.Address(), val)
+	} else {
+		c.SetValue(append(rs, feed))
+	}
+}
+
 func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 	msg *AcceptSubscriptionMsg) {
 
@@ -546,6 +582,10 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 		if callback := s.conf.OnSubscriptionAccepted; callback != nil {
 			callback(c, msg.Feed)
 		}
+
+		// add the subscription to list of resubscribtions
+		// if connection fails
+		//
 	}
 
 	// else -> seems the feed was removed from the node
