@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"io/ioutil"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	//"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -61,6 +63,68 @@ func newNodeReg(conf NodeConfig, reg *skyobject.Registry) (s *Node, err error) {
 		s.Logger.SetOutput(ioutil.Discard)
 		s.pool.Logger.SetOutput(ioutil.Discard)
 		log.SetOutput(ioutil.Discard) // RPC
+	}
+	return
+}
+
+// b - listener (listens anyway)
+// a - conencts to b (can listen and can not)
+func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
+	ac, bc *gnet.Conn, err error) {
+
+	bconf.EnableListener = true
+
+	// accept conenction by b
+	accept := make(chan *gnet.Conn, 1)
+
+	var onCreateConnection = func(c *gnet.Conn) {
+		select {
+		case accept <- c: // never block here
+		default:
+		}
+	}
+
+	if cc := bconf.Config.OnCreateConnection; cc == nil {
+		bconf.Config.OnCreateConnection = onCreateConnection
+	} else {
+		bconf.Config.OnCreateConnection = func(c *gnet.Conn) {
+			cc(c)
+			onCreateConnection(c)
+		}
+	}
+
+	if a, err = newNode(aconf); err != nil {
+		return
+	}
+	if err = a.Start(); err != nil {
+		a.Close()
+		return
+	}
+
+	if b, err = newNode(bconf); err != nil {
+		a.Close()
+		return
+	}
+	if err = b.Start(); err != nil {
+		a.Close()
+		b.Close()
+		return
+	}
+
+	if ac, err = a.Pool().Dial(b.Pool().Address()); err != nil {
+		a.Close()
+		b.Close()
+		return
+	}
+	// dialing prefoms asynchronously and we need to wait until
+	// connection of b will be created
+	select {
+	case bc = <-accept:
+	case <-time.After(TM):
+		a.Close()
+		b.Close()
+		err = errors.New("slow")
+		return
 	}
 	return
 }

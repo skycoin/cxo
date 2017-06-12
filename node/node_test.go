@@ -5,56 +5,14 @@ import (
 	"path/filepath"
 	//"strings"
 	"testing"
+	"time"
+
+	"github.com/skycoin/skycoin/src/cipher"
 
 	// "github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
-
-// func TestServer_Start(t *testing.T) {
-// 	// Start() (err error)
-
-// 	// 1. arbitrary address
-// 	// 2. provided address
-
-// 	t.Run("arbitrary", func(t *testing.T) {
-// 		conf := newServerConfig()
-// 		conf.Listen = ""
-
-// 		s, err := newServerConf(conf)
-// 		if err != nil {
-// 			t.Fatal(err)
-// 		}
-// 		defer s.Close()
-
-// 		if err := s.Start(); err != nil {
-// 			t.Error(err)
-// 		}
-// 	})
-
-// 	t.Run("provided", func(t *testing.T) {
-// 		conf := newServerConfig()
-// 		conf.Listen = "[::]:8987"
-
-// 		s, err := newServerConf(conf)
-// 		if err != nil {
-// 			t.Fatal(err)
-// 		}
-// 		defer s.Close()
-
-// 		if err := s.Start(); err != nil {
-// 			if !strings.Contains(err.Error(), "address already in use") {
-// 				t.Error(err)
-// 			}
-// 			return
-// 		}
-
-// 		if a := s.pool.Address(); a != "[::]:8987" {
-// 			t.Error("wrong listening address:", a)
-// 		}
-// 	})
-
-// }
 
 func TestNewNode(t *testing.T) {
 	// NewNode(sc NodeConfig) (s *Node, err error)
@@ -147,6 +105,11 @@ func TestNewNode(t *testing.T) {
 		}
 
 	})
+
+	// ----
+	// loading feeds from datbase tested below in
+	//    TestNewNode_loadingFeeds
+	// ----
 
 }
 
@@ -289,6 +252,8 @@ func TestNode_Close(t *testing.T) {
 	})
 
 	t.Run("twice", func(t *testing.T) {
+		defer clean()
+
 		conf := newNodeConfig(true)
 		conf.EnableRPC = true
 		conf.InMemoryDB = false // force to use BoltDBs
@@ -308,4 +273,93 @@ func TestNode_Close(t *testing.T) {
 		}
 	})
 
+}
+
+func TestNode_Pool(t *testing.T) {
+	s, err := newNode(newNodeConfig(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if s.Pool() == nil {
+		t.Fatal("mising pool")
+	}
+}
+
+func TestNode_Subscribe(t *testing.T) {
+
+	t.Run("local", func(t *testing.T) {
+		s, err := newNode(newNodeConfig(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		pk, _ := cipher.GenerateKeyPair()
+
+		s.Subscribe(nil, pk)
+
+		// susbcriptions of the Node
+
+		if feeds := s.Feeds(); len(feeds) != 1 {
+			t.Error("misisng feed")
+		} else if feeds[0] != pk {
+			t.Error("wrong feed subscribed to")
+		}
+
+		// database
+
+		if feeds := s.Container().DB().Feeds(); len(feeds) != 1 {
+			t.Error("misisng feed")
+		} else if feeds[0] != pk {
+			t.Error("wrong feed subscribed to")
+		}
+
+	})
+
+	t.Run("remote reject", func(t *testing.T) {
+		pk, _ := cipher.GenerateKeyPair()
+
+		aconf := newNodeConfig(false)
+		bconf := newNodeConfig(false)
+
+		reject := make(chan *gnet.Conn, 1)
+
+		aconf.OnSubscriptionAccepted = func(_ *gnet.Conn, _ cipher.PubKey) {
+			t.Error("accepted")
+		}
+		aconf.OnSubscriptionDenied = func(c *gnet.Conn, feed cipher.PubKey) {
+			if feed != pk {
+				t.Error("wrong feed rejected")
+			}
+			reject <- c // to test conenction
+		}
+
+		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		a.Subscribe(ac, pk)
+
+		// remote peer must reject the subscription because the
+		// remote peer doesn't share pk feed
+
+		select {
+		case c := <-reject:
+			if c != ac {
+				t.Error("rejected from wrong connection")
+			}
+		case <-time.After(TM):
+			t.Error("slow")
+		}
+
+	})
+
+}
+
+func TestNewNode_loadingFeeds(t *testing.T) {
+	// TODO: high priority
 }

@@ -371,6 +371,7 @@ func (c *Conn) read() {
 
 	defer c.p.await.Done()
 	defer c.Close()
+
 	var (
 		head []byte = make([]byte, 4)
 		body []byte
@@ -382,6 +383,7 @@ func (c *Conn) read() {
 
 		r io.Reader
 	)
+
 DialLoop:
 	for {
 		select {
@@ -648,14 +650,8 @@ func (c *Conn) ReceiveQueue() <-chan []byte {
 // Address of remote node. The address will be address passed
 // to (*Pool).Dial(), or remote address of underlying net.Conn
 // if the connections accepted by listener
-func (c *Conn) Address() string {
-	c.cmx.Lock()
-	defer c.cmx.Unlock()
-
-	if c.address != "" {
-		return c.address
-	}
-	return c.conn.RemoteAddr().String()
+func (c *Conn) Address() (address string) {
+	return c.address
 }
 
 // IsIncoming reports true if the Conn accepted by listener
@@ -670,6 +666,17 @@ func (c *Conn) State() ConnState {
 	defer c.cmx.Unlock()
 
 	return c.state
+}
+
+// Conn returns underlying net.Conn. It can returns nil
+// or closed connection. The method is usefull if you want
+// to get local/remote addresses of the Conn. Keep in mind
+// that underlying net.Conn can be changed anytime
+func (c *Conn) Conn() net.Conn {
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
+
+	return c.conn
 }
 
 // ========================================================================== //

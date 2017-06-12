@@ -228,6 +228,7 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 		err = ErrConnectionsLimit
 		return
 	}
+
 	if _, err = net.ResolveTCPAddr("tcp", address); err != nil {
 		return
 	}
