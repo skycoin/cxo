@@ -1299,7 +1299,7 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 		return
 	}
 
-	// look at respone
+	// look at response
 	typ := response.MsgType()
 	if typ == RejectSubscriptionMsgType {
 		err = ErrSubscriptionRejected
@@ -1308,7 +1308,7 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 		return // nil
 	}
 
-	s.Debug("unexpected subscription response: ", typ.String())
+	s.Debug("unexpected response for subscription: ", typ.String())
 	err = ErrUnexpectedResponse
 	return
 }
