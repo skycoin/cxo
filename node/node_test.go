@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	// "github.com/skycoin/cxo/data"
-
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -250,5 +250,62 @@ func TestNode_Start(t *testing.T) {
 }
 
 func TestNode_Close(t *testing.T) {
-	//
+
+	t.Run("close listener", func(t *testing.T) {
+		s, err := newNode(newNodeConfig(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+		s.Close()
+
+		if err = s.pool.Listen(""); err == nil {
+			t.Error("missing error")
+		} else if err != gnet.ErrClosed {
+			t.Error("unexpected error:", err)
+		}
+	})
+
+	t.Run("close RPC listener", func(t *testing.T) {
+		conf := newNodeConfig(false)
+		conf.EnableRPC = true
+
+		s, err := newNode(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+		s.Close()
+
+		// TODO: can block if not closed
+		if c, err := s.rpc.l.Accept(); err == nil {
+			t.Error("misisng error")
+			c.Close()
+		}
+	})
+
+	t.Run("twice", func(t *testing.T) {
+		conf := newNodeConfig(true)
+		conf.EnableRPC = true
+		conf.InMemoryDB = false // force to use BoltDBs
+
+		s, err := newNode(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.Close(); err != nil {
+			t.Error(err)
+		}
+		if err = s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+
 }
