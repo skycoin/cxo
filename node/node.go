@@ -919,7 +919,8 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 // A Pool returns underlying *gnet.Pool.
 // It returns nil if the Node is not started
 // yet. Use methods of this Pool to manipulate
-// connections: Connect, Disconnect, Address, etc
+// connections: Dial, Conenction, Conenctions,
+// Address, etc
 func (s *Node) Pool() *gnet.Pool {
 	return s.pool
 }
@@ -948,6 +949,19 @@ func (s *Node) addToPending(c *gnet.Conn, feed cipher.PubKey) {
 	ps[feed] = struct{}{} // add anyway
 }
 
+// is given connection already susbcribed to given feed
+func (s *Node) isAlreadySusbcribed(c *gnet.Conn,
+	feed cipher.PubKey) (yep bool) {
+
+	s.fmx.RLock()
+	defer s.fmx.RUnlock()
+
+	if cs, ok := s.feeds[feed]; ok {
+		_, yep = cs[c]
+	}
+	return
+}
+
 // Subscribe to given feed. If given connection is nil, then this subscription
 // is local. Otherwise, it subscribes to a remote peer. To handle result use
 // (NodeConfig).OnAcceptSubsctiption and OnDeniedSubscription callbacks. The
@@ -959,10 +973,18 @@ func (s *Node) addToPending(c *gnet.Conn, feed cipher.PubKey) {
 // (*net.Pool).Connection(address string) (*gnet.Conn)
 func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
 	// subscribe the Node to the feed, create feed in database if not exists
-	s.addFeed(feed)
+	var already bool = s.addFeed(feed)
 	// just return if we don't want to subscribe to feed of a remote peer
 	if c == nil {
 		return
+	}
+	// don't send the message if remote peer already subscribed to
+	// the feed (don't subscribe twice); if the already is true then
+	// we already have the feed and it's possible the c is subscribed
+	// to the feed already; but if the already is false, then this
+	// feed is fresh and we don't have any subscribed remote peer
+	if already && s.isAlreadySusbcribed(c, feed) {
+		return // don't subscribe twice
 	}
 	// add conn->feed to pendings
 	s.addToPending(c, feed)

@@ -400,6 +400,65 @@ func TestNode_Subscribe(t *testing.T) {
 
 	})
 
+	t.Run("remote accept twice", func(t *testing.T) {
+		pk, _ := cipher.GenerateKeyPair()
+
+		aconf := newNodeConfig(false)
+		bconf := newNodeConfig(false)
+
+		accept := make(chan *gnet.Conn, 1)
+
+		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
+			if feed != pk {
+				t.Error("wrong feed accepted")
+			}
+			accept <- c // to test conenction
+		}
+		aconf.OnSubscriptionDenied = func(_ *gnet.Conn, _ cipher.PubKey) {
+			t.Error("accepted")
+		}
+
+		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		b.Subscribe(nil, pk)
+		a.Subscribe(ac, pk)
+
+		// remote peer must accept the subscription because the
+		// remote peer shares pk feed
+
+		select {
+		case c := <-accept:
+			if c != ac {
+				t.Error("rejected from wrong connection")
+			}
+		case <-time.After(TM):
+			t.Error("slow")
+		}
+
+		if t.Failed() {
+			return // don't need to continue
+		}
+
+		// second subscription must not send SusbcribeMsg twice
+		a.Subscribe(ac, pk)
+		select {
+		case c := <-accept:
+			if c != ac {
+				t.Error("rejected from wrong connection")
+			}
+		case <-time.After(TM):
+			// the test is not strong, but it's fast,
+			// it first part of the test passes then this
+			// part should work in many cases
+		}
+
+	})
+
 }
 
 func TestNewNode_loadingFeeds(t *testing.T) {
