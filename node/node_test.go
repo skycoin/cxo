@@ -809,3 +809,61 @@ func TestNewNode_loadingFeeds(t *testing.T) {
 	}
 
 }
+
+func TestNode_Want(t *testing.T) {
+	// Want(feed cipher.PubKey) (wn []cipher.SHA256)
+
+	// TODO: mid. priority
+}
+
+func TestNode_Got(t *testing.T) {
+	// Got(feed cipher.PubKey) (gt []cipher.SHA256)
+
+	// TODO: mid. priority
+}
+
+func TestNode_Feeds(t *testing.T) {
+	// Feeds() (fs []cipher.PubKey)
+
+	// TODO: mid. priority
+}
+
+func TestNode_Quiting(t *testing.T) {
+	// Quiting() <-chan struct{}
+
+	// TODO: mid. priority
+}
+
+func TestNode_SubscribeResponse(t *testing.T) {
+	// SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error
+
+	t.Run("accept", func(t *testing.T) {
+		conf := newNodeConfig(false)
+
+		a, b, ac, _, err := newConnectedNodes(conf, conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		pk, _ := cipher.GenerateKeyPair()
+
+		b.Subscribe(nil, pk)
+
+		// subscribe response
+
+		if err := a.SubscribeResponse(ac, pk); err != nil {
+			t.Error(err)
+		}
+
+	})
+
+}
+
+func TestNode_SubscribeResponseTimeout(t *testing.T) {
+	// SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
+	//     timeout time.Duration) (err error)
+
+	// TODO: mid. priority
+}

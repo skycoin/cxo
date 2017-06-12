@@ -919,11 +919,14 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 		return
 	}
 
+	println("EXECUTED HERE, YOOO-HO-HO!", msg.ResponseFor())
+
 	// process responses after handling
 
 	var rc chan Msg
 	var ok bool
 	if rc, ok = s.takeWaitingForResponse(msg.Id()); ok {
+		println("TAKEN")
 		rc <- msg
 	}
 }
@@ -989,7 +992,9 @@ func (s *Node) isAlreadySusbcribed(c *gnet.Conn,
 // you want. To make the server subscribed to a feed (even if it is not
 // conencted to any remote peer) call this method with nil. To obtain
 // *gnet.Conn use (*Node).Pool() methods like
-// (*net.Pool).Connection(address string) (*gnet.Conn)
+// (*net.Pool).Connection(address string) (*gnet.Conn). This method
+// never sends any mesages if given peer already subscribed to given
+// feed
 func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
 
 	// locks: s.fmx Lock/Unlock and Rlock/RUnlock
@@ -1223,6 +1228,8 @@ func (s *Node) takeWaitingForResponse(id uint32) (rc chan Msg, ok bool) {
 func (s *Node) sendMsgAndWaitForResponse(c *gnet.Conn,
 	msg Msg, timeout time.Duration) (response Msg, err error) {
 
+	println("SEND MSG ID:", msg.Id())
+
 	var (
 		tm *time.Timer
 		tc <-chan time.Time
@@ -1256,10 +1263,13 @@ func (s *Node) sendSubscribeMsgAndWaitForResponse(c *gnet.Conn,
 
 // SubscribeResponse is similar to subscribe but it requires non-nil connection
 // and waits for reply from remote peer. It waits for response
-// NodeConfig.ResponseTimeout
+// NodeConfig.ResponseTimeout. Unlike Subsribe it can subscribe twice or
+// many times sending mesages and waiting response
 func (s *Node) SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error {
 
-	// locks: s.pmx Lock/Unlock (twice)
+	// locks: s.fmx  Lock/Unlock
+	//        s.pmx  Lock/Unlock
+	//        s.rpmx Lock/Unlock (twice)
 
 	return s.SubscribeResponseTimeout(c, feed, s.conf.ResponseTimeout)
 }
@@ -1268,17 +1278,28 @@ func (s *Node) SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error {
 func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 	timeout time.Duration) (err error) {
 
-	// locks: s.rpmx Lock/Unlock (twice)
+	// locks: s.fmx  Lock/Unlock
+	//        s.pmx  Lock/Unlock
+	//        s.rpmx Lock/Unlock (twice)
 
 	if c == nil {
 		err = ErrNilConnection
 		return
 	}
+
+	// add feed
+	s.addFeed(feed)
+
+	// add to pending
+	s.addToPending(c, feed)
+
 	var response Msg
 	response, err = s.sendSubscribeMsgAndWaitForResponse(c, feed, timeout)
 	if err != nil {
 		return
 	}
+
+	// look at respone
 	typ := response.MsgType()
 	if typ == RejectSubscriptionMsgType {
 		err = ErrSubscriptionRejected
@@ -1286,6 +1307,7 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 	} else if typ == AcceptSubscriptionMsgType {
 		return // nil
 	}
+
 	s.Debug("unexpected subscription response: ", typ.String())
 	err = ErrUnexpectedResponse
 	return
