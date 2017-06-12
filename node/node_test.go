@@ -270,6 +270,8 @@ func TestNode_Close(t *testing.T) {
 		if err = s.Start(); err != nil {
 			t.Fatal(err)
 		}
+
+		// close many times
 		if err = s.Close(); err != nil {
 			t.Error(err)
 		}
@@ -758,7 +760,52 @@ func TestNode_Unsubscribe(t *testing.T) {
 }
 
 func TestNewNode_loadingFeeds(t *testing.T) {
-	// TODO: high priority
 
-	//
+	defer clean()
+
+	conf := newNodeConfig(false)
+	conf.InMemoryDB = false
+
+	s, err := newNode(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Start(); err != nil {
+		t.Error(err)
+		s.Close()
+		return
+	}
+
+	f1, _ := cipher.GenerateKeyPair()
+	f2, _ := cipher.GenerateKeyPair()
+
+	s.Subscribe(nil, f1)
+	s.Subscribe(nil, f2)
+
+	s.Close()
+
+	// recreate
+
+	s, err = newNode(conf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer s.Close()
+
+	if err := s.Start(); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if feeds := s.Feeds(); len(feeds) != 2 {
+		t.Error("feeds not loaded from database")
+	} else {
+		if !((feeds[0] == f1 && feeds[1] == f2) ||
+			(feeds[1] == f1 && feeds[0] == f2)) {
+			t.Error("wrong feeds loaded")
+		}
+	}
+
 }

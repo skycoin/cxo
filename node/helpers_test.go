@@ -43,6 +43,7 @@ func newNodeConfig(listen bool) (conf NodeConfig) {
 	conf.EnableListener = listen
 
 	conf.EnableRPC = false
+	conf.RPCAddress = "127.0.0.1:0" // arbitrary assignment
 
 	conf.InMemoryDB = true
 	conf.DataDir = testDataDir
