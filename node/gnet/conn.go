@@ -595,6 +595,7 @@ DialLoop:
 func (c *Conn) Value() interface{} {
 	c.vmx.Lock()
 	defer c.vmx.Unlock()
+
 	return c.val
 }
 
@@ -602,6 +603,7 @@ func (c *Conn) Value() interface{} {
 func (c *Conn) SetValue(val interface{}) {
 	c.vmx.Lock()
 	defer c.vmx.Unlock()
+
 	c.val = val
 }
 
@@ -613,6 +615,7 @@ func (c *Conn) SetValue(val interface{}) {
 func (c *Conn) LastRead() time.Time {
 	c.lrmx.Lock()
 	defer c.lrmx.Unlock()
+
 	return c.lastRead
 }
 
@@ -620,6 +623,7 @@ func (c *Conn) LastRead() time.Time {
 func (c *Conn) LastWrite() time.Time {
 	c.lwmx.Lock()
 	defer c.lwmx.Unlock()
+
 	return c.lastWrite
 }
 
@@ -647,6 +651,7 @@ func (c *Conn) ReceiveQueue() <-chan []byte {
 func (c *Conn) Address() string {
 	c.cmx.Lock()
 	defer c.cmx.Unlock()
+
 	if c.address != "" {
 		return c.address
 	}
@@ -663,6 +668,7 @@ func (c *Conn) IsIncoming() bool {
 func (c *Conn) State() ConnState {
 	c.cmx.Lock()
 	defer c.cmx.Unlock()
+
 	return c.state
 }
 

@@ -1,13 +1,16 @@
 package node
 
 import (
-	//"io/ioutil"
+	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
 	//"github.com/skycoin/skycoin/src/cipher"
-	//"github.com/skycoin/cxo/skyobject"
+
+	"github.com/skycoin/cxo/skyobject"
 )
 
 // timeout to fail slow opertions
@@ -42,5 +45,22 @@ func newNodeConfig(listen bool) (conf NodeConfig) {
 	conf.InMemoryDB = true
 	conf.DataDir = testDataDir
 	conf.DBPath = testServerDBPath
+	return
+}
+
+func newNode(conf NodeConfig) (s *Node, err error) {
+	s, err = newNodeReg(conf, nil)
+	return
+}
+
+func newNodeReg(conf NodeConfig, reg *skyobject.Registry) (s *Node, err error) {
+	if s, err = NewNodeReg(conf, reg); err != nil {
+		return
+	}
+	if !testing.Verbose() {
+		s.Logger.SetOutput(ioutil.Discard)
+		s.pool.Logger.SetOutput(ioutil.Discard)
+		log.SetOutput(ioutil.Discard) // RPC
+	}
 	return
 }

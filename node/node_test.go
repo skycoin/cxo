@@ -61,7 +61,7 @@ func TestNewNode(t *testing.T) {
 
 	// registry must be nil
 	t.Run("registry", func(t *testing.T) {
-		s, err := NewNode(newNodeConfig(false))
+		s, err := newNode(newNodeConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,7 +81,7 @@ func TestNewNode(t *testing.T) {
 
 		conf := newNodeConfig(false) // in-memory
 
-		s, err := NewNode(conf)
+		s, err := newNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,7 +109,7 @@ func TestNewNode(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.InMemoryDB = false
 
-		s, err := NewNode(conf)
+		s, err := newNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func TestNewNode(t *testing.T) {
 		conf.InMemoryDB = false
 		conf.DBPath = filepath.Join(testDataDir, "another.db")
 
-		s, err := NewNode(conf)
+		s, err := newNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +157,7 @@ func TestNewNodeReg(t *testing.T) {
 	t.Run("registry", func(t *testing.T) {
 		reg := skyobject.NewRegistry()
 
-		s, err := NewNodeReg(newNodeConfig(false), reg)
+		s, err := newNodeReg(newNodeConfig(false), reg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,10 +171,84 @@ func TestNewNodeReg(t *testing.T) {
 	t.Run("invalid gnet.Config", func(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.Config.DialTimeout = -1000
-		if s, err := NewNode(conf); err == nil {
+		if s, err := newNode(conf); err == nil {
 			t.Error("missing error")
 			s.Close()
 		}
 	})
 
+}
+
+func TestNode_Start(t *testing.T) {
+
+	t.Run("disable listener", func(t *testing.T) {
+		s, err := newNode(newNodeConfig(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+
+		if s.pool.Address() != "" {
+			t.Error("listens on")
+		}
+	})
+
+	t.Run("enable listener", func(t *testing.T) {
+		s, err := newNode(newNodeConfig(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+
+		if s.pool.Address() == "" {
+			t.Error("doesn't listen on")
+		}
+	})
+
+	t.Run("disable RPC listener", func(t *testing.T) {
+		s, err := newNode(newNodeConfig(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+
+		if s.rpc != nil {
+			t.Error("RPC was created")
+		}
+	})
+
+	t.Run("enable RPC listener", func(t *testing.T) {
+		conf := newNodeConfig(false)
+		conf.EnableRPC = true
+
+		s, err := newNode(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if err = s.Start(); err != nil {
+			t.Fatal(err)
+		}
+
+		if s.rpc == nil {
+			t.Error("RPC wasn't created")
+		}
+	})
+}
+
+func TestNode_Close(t *testing.T) {
+	//
 }
