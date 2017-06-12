@@ -40,6 +40,10 @@ type Logger interface {
 	// SetDebug is used to change debug logs flag. The method is not
 	// safe for async usage
 	SetDebug(bool)
+	// IsDebug returns true if the logger in debug mode.
+	// The method is not safe for async usage if you're
+	// using SetDebug
+	IsDebug() bool
 
 	SetPrefix(string)    //
 	SetFlags(int)        //
@@ -100,3 +104,5 @@ func (l *logger) Debugf(format string, args ...interface{}) {
 func (l *logger) SetDebug(debug bool) {
 	l.debug = debug
 }
+
+func (l *logger) IsDebug() bool { return l.debug }

@@ -3,6 +3,7 @@ package node
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -356,11 +357,15 @@ func (s *Node) gcLoop() {
 
 // send a message to given connection
 func (s *Node) sendMessage(c *gnet.Conn, msg Msg) (ok bool) {
-	return s.sendEncodedMessage(c, Encode(msg))
+	return s.sendEncodedMessage(c, fmt.Sprintf("%T", msg), Encode(msg))
 }
 
-func (s *Node) sendEncodedMessage(c *gnet.Conn, msg []byte) (ok bool) {
-	s.Debugf("send message %T to %s", msg, c.Address())
+func (s *Node) sendEncodedMessage(c *gnet.Conn, name string,
+	msg []byte) (ok bool) {
+
+	// the name argument used for Debug logs
+
+	s.Debugf("send message %s to %s", name, c.Address())
 
 	select {
 	case c.SendQueue() <- msg:
@@ -479,6 +484,8 @@ func (s *Node) sendLastFullRoot(c *gnet.Conn, feed cipher.PubKey) (sent bool) {
 }
 
 func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
+	s.Debugln("handleSubscribeMsg", c.Address(), shortHex(msg.Feed.Hex()))
+
 	// (1) subscribe if the Node shares feed and send AcceptSubscriptionMsg back
 	//     and send latest full root of the feed if has
 	// (2) send AcceptSubscriptionMsg back if the connection already
@@ -499,6 +506,8 @@ func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 }
 
 func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
+	s.Debugln("handleUnsubscribeMsg", c.Address(), shortHex(msg.Feed.Hex()))
+
 	// just unsubscribe if subscribed
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
@@ -560,6 +569,9 @@ func (s *Node) addToResubscriptions(c *gnet.Conn, feed cipher.PubKey) {
 func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 	msg *AcceptSubscriptionMsg) {
 
+	s.Debugln("handleAcceptSubscriptionMsg", c.Address(),
+		shortHex(msg.Feed.Hex()))
+
 	// if subscription had been accepted then we
 	// need to subscribe remote peer our side
 
@@ -574,9 +586,7 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 
 	// subscribe the remote peer to the subscription
 	if ok, _ := s.subscribeConn(c, msg.Feed); ok {
-		if !s.sendLastFullRoot(c, msg.Feed) {
-			return // sending error
-		}
+		s.sendLastFullRoot(c, msg.Feed)
 
 		// call OnSubscriptionAccepted callback
 		if callback := s.conf.OnSubscriptionAccepted; callback != nil {
@@ -609,7 +619,10 @@ func (s *Node) handleDenySubscriptionMsg(c *gnet.Conn,
 
 func (s *Node) sendToFeed(feed cipher.PubKey, msg Msg, except *gnet.Conn) {
 
-	var data []byte = Encode(msg) // encode once
+	var (
+		data []byte = Encode(msg)            // encode once
+		name string = fmt.Sprintf("%T", msg) // name for debug logs
+	)
 
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
@@ -618,7 +631,7 @@ func (s *Node) sendToFeed(feed cipher.PubKey, msg Msg, except *gnet.Conn) {
 		if c == except {
 			continue
 		}
-		s.sendEncodedMessage(c, data) // send many times the same slice
+		s.sendEncodedMessage(c, name, data) // send many times the same slice
 	}
 }
 
@@ -1007,9 +1020,13 @@ func (s *Node) deleteFeed(feed cipher.PubKey) (cs map[*gnet.Conn]struct{}) {
 // send UnsubscribeMsg to peers that share the feed
 func (s *Node) unsubscribe(feed cipher.PubKey) {
 	// we can't use sendToFeed here
-	var unsub []byte = Encode(s.src.NewUnsubscribeMsg(feed))
+	var (
+		msg   Msg    = s.src.NewUnsubscribeMsg(feed)
+		unsub []byte = Encode(msg)
+		name         = fmt.Sprintf("%T", msg)
+	)
 	for peer := range s.deleteFeed(feed) {
-		s.sendEncodedMessage(peer, unsub)
+		s.sendEncodedMessage(peer, name, unsub)
 	}
 }
 

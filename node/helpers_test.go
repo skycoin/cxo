@@ -120,6 +120,9 @@ func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
 	// connection of b will be created
 	select {
 	case bc = <-accept:
+		if bc == nil {
+			err = errors.New("misisng connection")
+		}
 	case <-time.After(TM):
 		a.Close()
 		b.Close()
