@@ -1,15 +1,13 @@
 package node
 
 import (
-	"io/ioutil"
+	//"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/skyobject"
+	//"github.com/skycoin/skycoin/src/cipher"
+	//"github.com/skycoin/cxo/skyobject"
 )
 
 // timeout to fail slow opertions
@@ -32,10 +30,12 @@ func shouldPanic(t *testing.T) {
 
 // name for logs (empty for default)
 // memory - to use databas in memory (otherwise it will be ./test/test.db)
-func newServerConfig() (conf ServerConfig) {
-	conf = NewServerConfig()
+// listening enabled by agrument
+func newNodeConfig(listen bool) (conf NodeConfig) {
+	conf = NewNodeConfig()
 	conf.Log.Debug = testing.Verbose()
 	conf.Listen = "" // arbitrary assignment
+	conf.EnableListener = listen
 
 	conf.EnableRPC = false
 
@@ -43,15 +43,4 @@ func newServerConfig() (conf ServerConfig) {
 	conf.DataDir = testDataDir
 	conf.DBPath = testServerDBPath
 	return
-}
-
-// newServer returns testing server. Listenng address of the
-// server is empty and any possible address will be used.
-// To determine address of the server use
-//
-//     s.pool.Address()
-//
-// after Start
-func newServer() (*Server, error) {
-	return newServerConf(newServerConfig())
 }

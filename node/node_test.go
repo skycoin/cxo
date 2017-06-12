@@ -3,28 +3,85 @@ package node
 import (
 	"os"
 	"path/filepath"
-	"strings"
+	//"strings"
 	"testing"
 
-	"github.com/skycoin/cxo/data"
+	// "github.com/skycoin/cxo/data"
+
 	"github.com/skycoin/cxo/skyobject"
 )
 
-func TestNewServer(t *testing.T) {
-	// NewServer(sc ServerConfig) (s *Server, err error)
+// func TestServer_Start(t *testing.T) {
+// 	// Start() (err error)
 
-	// 1. memory db
-	// 2. data dir
-	// 3. database path
+// 	// 1. arbitrary address
+// 	// 2. provided address
+
+// 	t.Run("arbitrary", func(t *testing.T) {
+// 		conf := newServerConfig()
+// 		conf.Listen = ""
+
+// 		s, err := newServerConf(conf)
+// 		if err != nil {
+// 			t.Fatal(err)
+// 		}
+// 		defer s.Close()
+
+// 		if err := s.Start(); err != nil {
+// 			t.Error(err)
+// 		}
+// 	})
+
+// 	t.Run("provided", func(t *testing.T) {
+// 		conf := newServerConfig()
+// 		conf.Listen = "[::]:8987"
+
+// 		s, err := newServerConf(conf)
+// 		if err != nil {
+// 			t.Fatal(err)
+// 		}
+// 		defer s.Close()
+
+// 		if err := s.Start(); err != nil {
+// 			if !strings.Contains(err.Error(), "address already in use") {
+// 				t.Error(err)
+// 			}
+// 			return
+// 		}
+
+// 		if a := s.pool.Address(); a != "[::]:8987" {
+// 			t.Error("wrong listening address:", a)
+// 		}
+// 	})
+
+// }
+
+func TestNewNode(t *testing.T) {
+	// NewNode(sc NodeConfig) (s *Node, err error)
+
+	// registry must be nil
+	t.Run("registry", func(t *testing.T) {
+		s, err := NewNode(newNodeConfig(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if s.Container().CoreRegistry() != nil {
+			t.Error("unexpected core registry")
+		}
+	})
 
 	defer clean()
 
+	// if datbase in memeory then Node doesn't
+	// creates DataDir and datbase
 	t.Run("memory db", func(t *testing.T) {
 		clean()
 
-		conf := newServerConfig() // in-memory
+		conf := newNodeConfig(false) // in-memory
 
-		s, err := NewServer(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -43,13 +100,16 @@ func TestNewServer(t *testing.T) {
 
 	})
 
+	// If database is not in memory, then
+	// DataDir must be created even if DBPath
+	// points to another directory
 	t.Run("data dir", func(t *testing.T) {
 		clean()
 
-		conf := newServerConfig()
+		conf := newNodeConfig(false)
 		conf.InMemoryDB = false
 
-		s, err := NewServer(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -68,11 +128,11 @@ func TestNewServer(t *testing.T) {
 	t.Run("dbpath", func(t *testing.T) {
 		clean()
 
-		conf := newServerConfig()
+		conf := newNodeConfig(false)
 		conf.InMemoryDB = false
 		conf.DBPath = filepath.Join(testDataDir, "another.db")
 
-		s, err := NewServer(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,163 +150,31 @@ func TestNewServer(t *testing.T) {
 
 }
 
-func TestNewServerSoDB(t *testing.T) {
-	// NewServerSoDB(sc ServerConfig, db data.DB,
-	//     so *skyobject.Container) (s *Server, err error)
+func TestNewNodeReg(t *testing.T) {
+	//sc NodeConfig, reg *skyobject.Registry) (s *Node, err error)
 
-	// 1. db != nil
-	// 2. so != nil
-	// 3. invalig gnet.Config
-	// 4. feeds from database (TODO: high priority)
+	// registry must be the same
+	t.Run("registry", func(t *testing.T) {
+		reg := skyobject.NewRegistry()
 
-	t.Run("nil db", func(t *testing.T) {
-		defer shouldPanic(t)
-		NewServerSoDB(ServerConfig{}, nil, nil)
-	})
+		s, err := NewNodeReg(newNodeConfig(false), reg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
 
-	t.Run("nil so", func(t *testing.T) {
-		defer shouldPanic(t)
-		NewServerSoDB(ServerConfig{}, data.NewMemoryDB(), nil)
+		if s.Container().CoreRegistry() != reg {
+			t.Error("wrong or missing registry")
+		}
 	})
 
 	t.Run("invalid gnet.Config", func(t *testing.T) {
-		conf := newServerConfig()
+		conf := newNodeConfig(false)
 		conf.Config.DialTimeout = -1000
-		db := data.NewMemoryDB()
-		so := skyobject.NewContainer(db, nil)
-		_, err := NewServerSoDB(conf, db, so)
-		if err == nil {
+		if s, err := NewNode(conf); err == nil {
 			t.Error("missing error")
+			s.Close()
 		}
 	})
-
-}
-
-func TestServer_Start(t *testing.T) {
-	// Start() (err error)
-
-	// 1. arbitrary address
-	// 2. provided address
-
-	t.Run("arbitrary", func(t *testing.T) {
-		conf := newServerConfig()
-		conf.Listen = ""
-
-		s, err := newServerConf(conf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer s.Close()
-
-		if err := s.Start(); err != nil {
-			t.Error(err)
-		}
-	})
-
-	t.Run("provided", func(t *testing.T) {
-		conf := newServerConfig()
-		conf.Listen = "[::]:8987"
-
-		s, err := newServerConf(conf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer s.Close()
-
-		if err := s.Start(); err != nil {
-			if !strings.Contains(err.Error(), "address already in use") {
-				t.Error(err)
-			}
-			return
-		}
-
-		if a := s.pool.Address(); a != "[::]:8987" {
-			t.Error("wrong listening address:", a)
-		}
-	})
-
-}
-
-func TestServer_Close(t *testing.T) {
-	// Close() (err error)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Connect(t *testing.T) {
-	// Connect(address string) (err error)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Disconnect(t *testing.T) {
-	// Disconnect(address string) (err error)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Connections(t *testing.T) {
-	// Connections() []*gnet.Conn
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Connection(t *testing.T) {
-	// Connection(address string) *gnet.Conn
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_AddFeed(t *testing.T) {
-	// AddFeed(f cipher.PubKey) (added bool)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_DelFeed(t *testing.T) {
-	// DelFeed(f cipher.PubKey) (deleted bool)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Want(t *testing.T) {
-	// Want(feed cipher.PubKey) (wn []cipher.SHA256)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Got(t *testing.T) {
-	// Got(feed cipher.PubKey) (gt []cipher.SHA256)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Feeds(t *testing.T) {
-	// Feeds() (fs []cipher.PubKey)
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Stat(t *testing.T) {
-	// Stat() stat.Stat
-
-	// TODO: mid. priority
-
-}
-
-func TestServer_Quiting(t *testing.T) {
-	// Quiting() <-chan struct{}
-
-	// TODO: mid. priority
 
 }

@@ -256,7 +256,7 @@ func (s *Node) Start() (err error) {
 	)
 
 	// start listener
-	if s.conf.EnableListener == false {
+	if s.conf.EnableListener == true {
 		if err = s.pool.Listen(s.conf.Listen); err != nil {
 			return
 		}
