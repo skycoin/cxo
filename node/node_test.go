@@ -114,7 +114,7 @@ func TestNewNode(t *testing.T) {
 }
 
 func TestNewNodeReg(t *testing.T) {
-	//sc NodeConfig, reg *skyobject.Registry) (s *Node, err error)
+	// NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node, err error)
 
 	// registry must be the same
 	t.Run("registry", func(t *testing.T) {
@@ -143,6 +143,7 @@ func TestNewNodeReg(t *testing.T) {
 }
 
 func TestNode_Start(t *testing.T) {
+	// Start() (err error)
 
 	t.Run("disable listener", func(t *testing.T) {
 		s, err := newNode(newNodeConfig(false))
@@ -213,6 +214,7 @@ func TestNode_Start(t *testing.T) {
 }
 
 func TestNode_Close(t *testing.T) {
+	// Close() (err error)
 
 	t.Run("close listener", func(t *testing.T) {
 		s, err := newNode(newNodeConfig(true))
@@ -276,6 +278,8 @@ func TestNode_Close(t *testing.T) {
 }
 
 func TestNode_Pool(t *testing.T) {
+	// Pool() (pool *gnet.Pool)
+
 	s, err := newNode(newNodeConfig(false))
 	if err != nil {
 		t.Fatal(err)
@@ -287,6 +291,7 @@ func TestNode_Pool(t *testing.T) {
 }
 
 func TestNode_Subscribe(t *testing.T) {
+	// Subscribe(c *gnet.Conn, feed cipher.PubKey)
 
 	t.Run("local", func(t *testing.T) {
 		s, err := newNode(newNodeConfig(false))
@@ -453,7 +458,7 @@ func TestNode_Subscribe(t *testing.T) {
 			}
 		case <-time.After(TM):
 			// the test is not strong, but it's fast,
-			// it first part of the test passes then this
+			// if first part of the test passes then this
 			// part should work in many cases
 		}
 
@@ -461,6 +466,36 @@ func TestNode_Subscribe(t *testing.T) {
 
 }
 
+func TestNode_Unsusbcribe(t *testing.T) {
+	// Unsubscribe(c *gnet,.Conn, feed cipher.PubKey)
+
+	t.Run("local", func(t *testing.T) {
+		s, err := newNode(newNodeConfig(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		pk, _ := cipher.GenerateKeyPair()
+
+		s.Subscribe(nil, pk)
+
+		// susbcriptions of the Node
+		if feeds := s.Feeds(); len(feeds) != 1 && feeds[0] != pk {
+			t.Error("somethig wrong with Susbcribe")
+			return
+		}
+
+		s.Unsubscribe(nil, pk)
+
+		if len(s.Feeds()) != 0 {
+			t.Error("don't unsusbcribes")
+		}
+	})
+}
+
 func TestNewNode_loadingFeeds(t *testing.T) {
 	// TODO: high priority
+
+	//
 }
