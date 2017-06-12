@@ -114,6 +114,11 @@ type NodeConfig struct {
 
 	// subscribe/unsubscribe from a remote peer
 
+	// Both OnSubscribeRemote and OnUnsubscribeRemote
+	// called while some mutexes are locked and it's
+	// imposisble to call following methods of the Node
+	// in this callbacks: Subscribe, Unsubscribe, Feeds
+
 	// OnSubscribeRemote called while a remote peer wants to
 	// subscribe to feed of this (local) node. This callback
 	// never called if subscription rejected by any reason.

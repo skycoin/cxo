@@ -470,6 +470,14 @@ func (s *Node) subscribeConn(c *gnet.Conn, feed cipher.PubKey) (accept,
 		if _, already = cs[c]; already {
 			return
 		}
+		// call OnSubscribeRemote callback and check out its reply
+		if callback := s.conf.OnSubscribeRemote; callback != nil {
+			if reject := callback(c, feed); reject != nil {
+				s.Debugln("remote subscription rejected by OnSubscribeRemote:",
+					reject)
+				return // false, false
+			}
+		}
 		cs[c], accept = struct{}{}, true
 	}
 
@@ -513,7 +521,15 @@ func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
 	defer s.fmx.Unlock()
 
 	if cs, ok := s.feeds[msg.Feed]; ok {
-		delete(cs, c)
+		if _, ok = cs[c]; ok {
+			// trigger OnUnsubscribeRemote callback only
+			// if we have the subcription from the
+			// remote peer
+			if callack := s.conf.OnUnsubscribeRemote; callack != nil {
+				callack(c, msg.Feed)
+			}
+			delete(cs, c)
+		}
 	}
 }
 
@@ -922,6 +938,9 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 // connections: Dial, Connection, Connections,
 // Address, etc
 func (s *Node) Pool() *gnet.Pool {
+
+	// locks: no
+
 	return s.pool
 }
 
@@ -972,7 +991,16 @@ func (s *Node) isAlreadySusbcribed(c *gnet.Conn,
 // *gnet.Conn use (*Node).Pool() methods like
 // (*net.Pool).Connection(address string) (*gnet.Conn)
 func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
+
+	// locks: s.fmx Lock/Unlock and Rlock/RUnlock
+	//        s.pmx Lock/Unlock
+	//
+	// see below for orders
+
 	// subscribe the Node to the feed, create feed in database if not exists
+	//
+	// lock: s.fmx Lock/Unlock
+	//
 	var already bool = s.addFeed(feed)
 	// just return if we don't want to subscribe to feed of a remote peer
 	if c == nil {
@@ -983,10 +1011,16 @@ func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
 	// we already have the feed and it's possible the c is subscribed
 	// to the feed already; but if the already is false, then this
 	// feed is fresh and we don't have any subscribed remote peer
+	//
+	// locks: s.fmx RLock/RUnlock
+	//
 	if already && s.isAlreadySusbcribed(c, feed) {
 		return // don't subscribe twice
 	}
 	// add conn->feed to pendings
+	//
+	// locks: s.pmx Lock/Unlock
+	//
 	s.addToPending(c, feed)
 	// send SubscribeMsg
 	s.sendSubscribeMsg(c, feed)
@@ -1053,6 +1087,7 @@ func (s *Node) unsubscribe(feed cipher.PubKey) {
 }
 
 func (s *Node) deleteConnFeedFromFeeds(c *gnet.Conn, feed cipher.PubKey) {
+
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
 
@@ -1066,10 +1101,26 @@ func (s *Node) deleteConnFeedFromFeeds(c *gnet.Conn, feed cipher.PubKey) {
 // *gnet.Pool of this Node. Unsubscribe with nil removes feed from
 // underlying database and the Node stops sharing the feed
 func (s *Node) Unsubscribe(c *gnet.Conn, feed cipher.PubKey) {
+
+	// locks: s.fmx Lock/Unlock
+	//        s.pmx Lock/Unlock
+	//        s.rmx Lock/Unlock
+	//
+	// see blow for lock orders
+
 	if c == nil {
+		// (1)
+		// locks: s.fmx Lock/Unlock
+		//        s.pmx Lock/Unlock (under fmx)
+		//        s.rmx Lock/Unlock (under fmx)
 		s.unsubscribe(feed)
 		return
 	}
+
+	// (2)
+	// locks: s.pmx Lock/Unlock
+	//        s.fmx Lock/Unlock
+
 	// 1. remove the conn->feed from pendings
 	s.deleteConnFeedFromPending(c, feed)
 	// 2. remove the conn from s.feeds->feed
@@ -1083,6 +1134,9 @@ func (s *Node) Unsubscribe(c *gnet.Conn, feed cipher.PubKey) {
 // Want returns lits of objects related to given
 // feed that the server hasn't got but knows about
 func (s *Node) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
+
+	// locks: no (skyobject)
+
 	set := make(map[skyobject.Reference]struct{})
 	s.so.WantFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
@@ -1103,6 +1157,9 @@ func (s *Node) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
 // Got returns lits of objects related to given
 // feed that the server has got
 func (s *Node) Got(feed cipher.PubKey) (gt []cipher.SHA256) {
+
+	// locks: no (skyobject)
+
 	set := make(map[skyobject.Reference]struct{})
 	s.so.GotFeed(feed, func(k skyobject.Reference) error {
 		set[k] = struct{}{}
@@ -1120,8 +1177,12 @@ func (s *Node) Got(feed cipher.PubKey) (gt []cipher.SHA256) {
 
 // Feeds the server share
 func (s *Node) Feeds() (fs []cipher.PubKey) {
+
+	// locks: s.fmx RLock/RUnlock
+
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
+
 	if len(s.feeds) == 0 {
 		return
 	}
@@ -1197,12 +1258,17 @@ func (s *Node) sendSubscribeMsgAndWaitForResponse(c *gnet.Conn,
 // and waits for reply from remote peer. It waits for response
 // NodeConfig.ResponseTimeout
 func (s *Node) SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error {
+
+	// locks: s.pmx Lock/Unlock (twice)
+
 	return s.SubscribeResponseTimeout(c, feed, s.conf.ResponseTimeout)
 }
 
 // SubscribeResponseTimeout uses provided timeout instead of configured
 func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 	timeout time.Duration) (err error) {
+
+	// locks: s.rpmx Lock/Unlock (twice)
 
 	if c == nil {
 		err = ErrNilConnection

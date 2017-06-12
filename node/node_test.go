@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	//"strings"
+	"io"
+	"io/ioutil"
+	"net"
 	"testing"
 	"time"
 
@@ -290,6 +293,13 @@ func TestNode_Pool(t *testing.T) {
 	}
 }
 
+func (s *Node) lenPending() int {
+	s.pmx.Lock()
+	defer s.pmx.Unlock()
+
+	return len(s.pending)
+}
+
 func TestNode_Subscribe(t *testing.T) {
 	// Subscribe(c *gnet.Conn, feed cipher.PubKey)
 
@@ -361,7 +371,7 @@ func TestNode_Subscribe(t *testing.T) {
 			t.Error("slow")
 		}
 
-		if len(a.pending) != 0 {
+		if a.lenPending() != 0 {
 			t.Error("has pending subscriptions")
 		}
 
@@ -407,7 +417,7 @@ func TestNode_Subscribe(t *testing.T) {
 			t.Error("slow")
 		}
 
-		if len(a.pending) != 0 {
+		if a.lenPending() != 0 {
 			t.Error("has pending subscriptions")
 		}
 
@@ -459,19 +469,15 @@ func TestNode_Subscribe(t *testing.T) {
 
 		// second subscription must not send SusbcribeMsg twice
 		a.Subscribe(ac, pk)
-		select {
-		case c := <-accept:
-			if c != ac {
-				t.Error("acceped by wrong connection")
-			}
-		case <-time.After(TM):
-			// the test is not strong, but it's fast,
-			// if first part of the test passes then this
-			// part should work in many cases
-		}
 
-		if len(a.pending) != 0 {
-			t.Error("has pending subscriptions")
+		// the test is not strong, but it's fast;
+		// if first part of this test passes then
+		// we can trust this part; increase timeout
+		// if you want strong result
+		select {
+		case <-accept:
+			t.Error("SubscribeMsg sent twice for the same connection")
+		case <-time.After(TM):
 		}
 
 	})
@@ -506,7 +512,7 @@ func TestNode_Unsubscribe(t *testing.T) {
 
 	})
 
-	t.Run("remote", func(t *testing.T) {
+	t.Run("remote single", func(t *testing.T) {
 		pk, _ := cipher.GenerateKeyPair()
 
 		aconf := newNodeConfig(false)
@@ -524,7 +530,15 @@ func TestNode_Unsubscribe(t *testing.T) {
 			t.Error("rejected")
 		}
 
-		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+		unsub := make(chan *gnet.Conn, 1)
+		bconf.OnUnsubscribeRemote = func(c *gnet.Conn, feed cipher.PubKey) {
+			if feed != pk {
+				t.Error("unsubscribe from wrong feed")
+			}
+			unsub <- c
+		}
+
+		a, b, ac, bc, err := newConnectedNodes(aconf, bconf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -550,7 +564,194 @@ func TestNode_Unsubscribe(t *testing.T) {
 
 		a.Unsubscribe(ac, pk)
 
-		//
+		select {
+		case c := <-unsub:
+			if c != bc {
+				t.Error("got UnsubscribeMsg from wrong connection")
+			}
+		case <-time.After(TM):
+			t.Error("misisng UnsubscribeMsg")
+		}
+
+	})
+
+	t.Run("remote many", func(t *testing.T) {
+		pk, _ := cipher.GenerateKeyPair()
+
+		// create
+
+		aconf := newNodeConfig(false) // client subscribes
+		sconf := newNodeConfig(true)  // b and c (servers)
+
+		accept := make(chan *gnet.Conn, 1)
+		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
+			if feed != pk {
+				t.Error("got AcceptSubscriptionMsg with wrong feed")
+			}
+			accept <- c
+		}
+
+		a, err := newNode(aconf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+
+		if err := a.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+
+		connect := make(chan *gnet.Conn, 1)
+		sconf.Config.OnCreateConnection = func(c *gnet.Conn) {
+			connect <- c
+		}
+
+		unsub := make(chan *gnet.Conn, 2)
+		sconf.OnUnsubscribeRemote = func(c *gnet.Conn, feed cipher.PubKey) {
+			if feed != pk {
+				t.Error("got UnsubscribeMsg with wrong feed")
+			}
+			unsub <- c
+		}
+
+		b, err := newNode(sconf)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer b.Close()
+
+		if err := b.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+
+		c, err := newNode(sconf)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer c.Close()
+
+		if err := c.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+
+		// connect
+
+		var abc, acc *gnet.Conn
+
+		if abc, err = a.Pool().Dial(b.Pool().Address()); err != nil {
+			t.Error(err)
+			return
+		}
+
+		select {
+		case <-connect:
+		case <-time.After(TM):
+			t.Error("slow")
+			return
+		}
+
+		if acc, err = a.Pool().Dial(c.Pool().Address()); err != nil {
+			t.Error(err)
+			return
+		}
+
+		select {
+		case <-connect:
+		case <-time.After(TM):
+			t.Error("slow")
+			return
+		}
+
+		// subscribe servers
+
+		b.Subscribe(nil, pk)
+		c.Subscribe(nil, pk)
+
+		// subscribe to b and c
+
+		a.Subscribe(abc, pk)
+
+		select {
+		case <-accept:
+		case <-time.After(TM):
+			t.Error("slow")
+			return
+		}
+
+		a.Subscribe(acc, pk)
+
+		select {
+		case <-accept:
+		case <-time.After(TM):
+			t.Error("slow")
+			return
+		}
+
+		// total unsubscribe
+
+		a.Unsubscribe(nil, pk)
+
+		for i := 0; i < 2; i++ {
+			select {
+			case <-unsub:
+			case <-time.After(TM):
+				t.Error("slow")
+				return
+			}
+		}
+
+	})
+
+	t.Run("remove from pending", func(t *testing.T) {
+		pk, _ := cipher.GenerateKeyPair()
+
+		a, err := newNode(newNodeConfig(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+
+		if err := a.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+
+		// create stub remote peer
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer l.Close()
+
+		go func() {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			io.Copy(ioutil.Discard, c) // redirect input to /dev/null
+		}()
+
+		ac, err := a.Pool().Dial(l.Addr().String())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		// subscribe (make pending subscription)
+
+		a.Subscribe(ac, pk)
+		a.Unsubscribe(ac, pk)
+
+		if a.lenPending() != 0 {
+			t.Error("not removed from pending during Unsubscribe")
+		}
 
 	})
 
