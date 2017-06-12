@@ -669,7 +669,7 @@ func (c *Conn) State() ConnState {
 }
 
 // Conn returns underlying net.Conn. It can returns nil
-// or closed connection. The method is usefull if you want
+// or closed connection. The method is useful if you want
 // to get local/remote addresses of the Conn. Keep in mind
 // that underlying net.Conn can be changed anytime
 func (c *Conn) Conn() net.Conn {

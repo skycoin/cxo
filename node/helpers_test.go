@@ -35,7 +35,7 @@ func shouldPanic(t *testing.T) {
 
 // name for logs (empty for default)
 // memory - to use databas in memory (otherwise it will be ./test/test.db)
-// listening enabled by agrument
+// listening enabled by argument
 func newNodeConfig(listen bool) (conf NodeConfig) {
 	conf = NewNodeConfig()
 	conf.Log.Debug = testing.Verbose()
@@ -68,13 +68,13 @@ func newNodeReg(conf NodeConfig, reg *skyobject.Registry) (s *Node, err error) {
 }
 
 // b - listener (listens anyway)
-// a - conencts to b (can listen and can not)
+// a - connects to b (can listen and can not)
 func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
 	ac, bc *gnet.Conn, err error) {
 
 	bconf.EnableListener = true
 
-	// accept conenction by b
+	// accept connection by b
 	accept := make(chan *gnet.Conn, 1)
 
 	var onCreateConnection = func(c *gnet.Conn) {

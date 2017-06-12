@@ -919,7 +919,7 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 // A Pool returns underlying *gnet.Pool.
 // It returns nil if the Node is not started
 // yet. Use methods of this Pool to manipulate
-// connections: Dial, Conenction, Conenctions,
+// connections: Dial, Connection, Connections,
 // Address, etc
 func (s *Node) Pool() *gnet.Pool {
 	return s.pool

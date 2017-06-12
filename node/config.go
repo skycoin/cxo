@@ -112,7 +112,20 @@ type NodeConfig struct {
 	// callbacks
 	//
 
-	// subscriptions
+	// subscribe/unsubscribe from a remote peer
+
+	// OnSubscribeRemote called while a remote peer wants to
+	// subscribe to feed of this (local) node. This callback
+	// never called if subscription rejected by any reason.
+	// If this callback returns a non-nil error the subscription
+	// willl be rejected, even if it's ok
+	OnSubscribeRemote func(c *gnet.Conn, feed cipher.PubKey) (reject error)
+	// OnUnsubscribeRemote called while a remote peer wants
+	// to unsubscribe from feed of this (local) node. This
+	// callback never called if remote peer is not susbcribed
+	OnUnsubscribeRemote func(c *gnet.Conn, feed cipher.PubKey)
+
+	// replies for subscriptions
 
 	// OnSubscriptionAccepted called when a remote peer accepts
 	// you subscription

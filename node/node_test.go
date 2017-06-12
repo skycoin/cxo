@@ -32,8 +32,8 @@ func TestNewNode(t *testing.T) {
 
 	defer clean()
 
-	// if datbase in memeory then Node doesn't
-	// creates DataDir and datbase
+	// if database in memeory then Node doesn't
+	// creates DataDir and database
 	t.Run("memory db", func(t *testing.T) {
 		clean()
 
@@ -107,7 +107,7 @@ func TestNewNode(t *testing.T) {
 	})
 
 	// ----
-	// loading feeds from datbase tested below in
+	// loading feeds from database tested below in
 	//    TestNewNode_loadingFeeds
 	// ----
 
@@ -337,7 +337,7 @@ func TestNode_Subscribe(t *testing.T) {
 			if feed != pk {
 				t.Error("wrong feed rejected")
 			}
-			reject <- c // to test conenction
+			reject <- c // to test connection
 		}
 
 		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
@@ -379,7 +379,7 @@ func TestNode_Subscribe(t *testing.T) {
 			if feed != pk {
 				t.Error("wrong feed accepted")
 			}
-			accept <- c // to test conenction
+			accept <- c // to test connection
 		}
 		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
 			t.Error("rejected")
@@ -425,7 +425,7 @@ func TestNode_Subscribe(t *testing.T) {
 			if feed != pk {
 				t.Error("wrong feed accepted")
 			}
-			accept <- c // to test conenction
+			accept <- c // to test connection
 		}
 		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
 			t.Error("rejected")
@@ -478,7 +478,7 @@ func TestNode_Subscribe(t *testing.T) {
 
 }
 
-func TestNode_Unsusbcribe(t *testing.T) {
+func TestNode_Unsubscribe(t *testing.T) {
 	// Unsubscribe(c *gnet,.Conn, feed cipher.PubKey)
 
 	t.Run("local", func(t *testing.T) {
@@ -494,7 +494,7 @@ func TestNode_Unsusbcribe(t *testing.T) {
 
 		// susbcriptions of the Node
 		if feeds := s.Feeds(); len(feeds) != 1 && feeds[0] != pk {
-			t.Error("somethig wrong with Susbcribe")
+			t.Error("somethig wrong with Subscribe")
 			return
 		}
 
@@ -518,7 +518,7 @@ func TestNode_Unsusbcribe(t *testing.T) {
 			if feed != pk {
 				t.Error("wrong feed accepted")
 			}
-			accept <- c // to test conenction
+			accept <- c // to test connection
 		}
 		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
 			t.Error("rejected")
@@ -547,6 +547,8 @@ func TestNode_Unsusbcribe(t *testing.T) {
 			t.Error("slow")
 			return
 		}
+
+		a.Unsubscribe(ac, pk)
 
 		//
 
