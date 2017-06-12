@@ -54,7 +54,7 @@ type Node struct {
 	// pending subscriptions
 	// (while a node subscribes to feed of another node
 	// the first node sends SubscrieMsg and waits for
-	// accept or deny (reject))
+	// accept or reject
 	pmx     sync.Mutex
 	pending map[*gnet.Conn]map[cipher.PubKey]struct{}
 
@@ -490,7 +490,7 @@ func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 	//     and send latest full root of the feed if has
 	// (2) send AcceptSubscriptionMsg back if the connection already
 	//     subscibed to the feed
-	// (3) send  DenySubscription if the Node doesn't share feed
+	// (3) send  RejectSubscriptionMsg if the Node doesn't share feed
 	if accept, already := s.subscribeConn(c, msg.Feed); already == true {
 		// (2)
 		s.sendAcceptSubscriptionMsg(c, msg.Id(), msg.Feed)
@@ -502,7 +502,7 @@ func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 		}
 		return
 	}
-	s.sendDenySubscriptionMsg(c, msg.Id(), msg.Feed) // (3)
+	s.sendRejectSubscriptionMsg(c, msg.Id(), msg.Feed) // (3)
 }
 
 func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
@@ -602,17 +602,17 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 
 }
 
-func (s *Node) handleDenySubscriptionMsg(c *gnet.Conn,
-	msg *DenySubscriptionMsg) {
+func (s *Node) handleRejectSubscriptionMsg(c *gnet.Conn,
+	msg *RejectSubscriptionMsg) {
 
-	// remove from pending and call OnSubscriptionDenied callback
+	// remove from pending and call OnSubscriptionRejected callback
 
 	if !s.deleteConnFeedFromPending(c, msg.Feed) {
-		s.Debug("unexpected DenySubscriptionMsg from ", c.Address())
+		s.Debug("unexpected RejectSubscriptionMsg from ", c.Address())
 		return
 	}
 
-	if callback := s.conf.OnSubscriptionDenied; callback != nil {
+	if callback := s.conf.OnSubscriptionRejected; callback != nil {
 		callback(c, msg.Feed)
 	}
 }
@@ -849,8 +849,8 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	// relies for subscribing
 	case *AcceptSubscriptionMsg:
 		s.handleAcceptSubscriptionMsg(c, x)
-	case *DenySubscriptionMsg:
-		s.handleDenySubscriptionMsg(c, x)
+	case *RejectSubscriptionMsg:
+		s.handleRejectSubscriptionMsg(c, x)
 
 		//
 		// root, data, registry, requests
@@ -1214,7 +1214,7 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 		return
 	}
 	typ := response.MsgType()
-	if typ == DenySubscriptionMsgType {
+	if typ == RejectSubscriptionMsgType {
 		err = ErrSubscriptionRejected
 		return
 	} else if typ == AcceptSubscriptionMsgType {

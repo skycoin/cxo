@@ -39,7 +39,7 @@ func shouldPanic(t *testing.T) {
 func newNodeConfig(listen bool) (conf NodeConfig) {
 	conf = NewNodeConfig()
 	conf.Log.Debug = testing.Verbose()
-	conf.Listen = "" // arbitrary assignment
+	conf.Listen = "127.0.0.1:0" // arbitrary assignment
 	conf.EnableListener = listen
 
 	conf.EnableRPC = false

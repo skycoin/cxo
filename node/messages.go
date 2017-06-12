@@ -33,7 +33,7 @@ var (
 	// subscriptions reply
 
 	_ Msg = &AcceptSubscriptionMsg{}
-	_ Msg = &DenySubscriptionMsg{}
+	_ Msg = &RejectSubscriptionMsg{}
 
 	// public server features
 
@@ -95,10 +95,10 @@ func (m *msgSource) NewAcceptSubscriptionMsg(responseId uint32,
 	return
 }
 
-func (m *msgSource) NewDenySubscriptionMsg(responseId uint32,
-	feed cipher.PubKey) (msg *DenySubscriptionMsg) {
+func (m *msgSource) NewRejectSubscriptionMsg(responseId uint32,
+	feed cipher.PubKey) (msg *RejectSubscriptionMsg) {
 
-	msg = &DenySubscriptionMsg{Feed: feed}
+	msg = &RejectSubscriptionMsg{Feed: feed}
 	msg.ResponseForId = responseId
 	return
 }
@@ -183,10 +183,10 @@ func (s *Node) sendAcceptSubscriptionMsg(c *gnet.Conn, responseId uint32,
 	return s.sendMessage(c, s.src.NewAcceptSubscriptionMsg(responseId, feed))
 }
 
-func (s *Node) sendDenySubscriptionMsg(c *gnet.Conn, responseId uint32,
+func (s *Node) sendRejectSubscriptionMsg(c *gnet.Conn, responseId uint32,
 	feed cipher.PubKey) bool {
 
-	return s.sendMessage(c, s.src.NewDenySubscriptionMsg(responseId, feed))
+	return s.sendMessage(c, s.src.NewRejectSubscriptionMsg(responseId, feed))
 }
 
 func (s *Node) sendRootMsg(c *gnet.Conn, feed cipher.PubKey,
@@ -307,15 +307,17 @@ func (*AcceptSubscriptionMsg) MsgType() MsgType {
 	return AcceptSubscriptionMsgType
 }
 
-// A DenySubscriptionMsg ...
-type DenySubscriptionMsg struct {
+// A RejectSubscriptionMsg ...
+type RejectSubscriptionMsg struct {
 	ResponsedMsg
 
 	Feed cipher.PubKey
 }
 
 // MsgType implements Msg interface
-func (*DenySubscriptionMsg) MsgType() MsgType { return DenySubscriptionMsgType }
+func (*RejectSubscriptionMsg) MsgType() MsgType {
+	return RejectSubscriptionMsgType
+}
 
 // A RequestListOfFeeds is transport message to obtain list of
 // feeds from a public server
@@ -411,7 +413,7 @@ const (
 	SubscribeMsgType          // SubscribeMsg           3
 	UnsubscribeMsgType        // UnsubscribeMsg         4
 	AcceptSubscriptionMsgType // AcceptSubscriptionMsg  5
-	DenySubscriptionMsgType   // DenySubscriptionMsg    6
+	RejectSubscriptionMsgType // RejectSubscriptionMsg    6
 
 	RequestListOfFeedsMsgType // RequestListOfFeedsMsg  7
 	ListOfFeedsMsgType        // ListOfFeedsMsg         8
@@ -432,7 +434,7 @@ var msgTypeString = [...]string{
 	SubscribeMsgType:          "Subscribe",
 	UnsubscribeMsgType:        "Unsubscribe",
 	AcceptSubscriptionMsgType: "AcceptSubscription",
-	DenySubscriptionMsgType:   "DenySubscription",
+	RejectSubscriptionMsgType: "RejectSubscription",
 
 	RequestListOfFeedsMsgType: "RequestListOfFeeds",
 	ListOfFeedsMsgType:        "ListOfFeeds",
@@ -460,7 +462,7 @@ var forwardRegistry = [...]reflect.Type{
 	SubscribeMsgType:          reflect.TypeOf(SubscribeMsg{}),
 	UnsubscribeMsgType:        reflect.TypeOf(UnsubscribeMsg{}),
 	AcceptSubscriptionMsgType: reflect.TypeOf(AcceptSubscriptionMsg{}),
-	DenySubscriptionMsgType:   reflect.TypeOf(DenySubscriptionMsg{}),
+	RejectSubscriptionMsgType: reflect.TypeOf(RejectSubscriptionMsg{}),
 
 	RequestListOfFeedsMsgType: reflect.TypeOf(RequestListOfFeedsMsg{}),
 	ListOfFeedsMsgType:        reflect.TypeOf(ListOfFeedsMsg{}),

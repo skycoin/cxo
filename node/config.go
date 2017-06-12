@@ -117,9 +117,9 @@ type NodeConfig struct {
 	// OnSubscriptionAccepted called when a remote peer accepts
 	// you subscription
 	OnSubscriptionAccepted func(c *gnet.Conn, feed cipher.PubKey)
-	// OnSubscriptionDenied called when a remote peer rejects
+	// OnSubscriptionRejected called when a remote peer rejects
 	// you subscription
-	OnSubscriptionDenied func(c *gnet.Conn, feed cipher.PubKey)
+	OnSubscriptionRejected func(c *gnet.Conn, feed cipher.PubKey)
 
 	// root objects
 

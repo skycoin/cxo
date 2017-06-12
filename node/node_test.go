@@ -331,9 +331,9 @@ func TestNode_Subscribe(t *testing.T) {
 		reject := make(chan *gnet.Conn, 1)
 
 		aconf.OnSubscriptionAccepted = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("accepted")
+			t.Error("accepted") // must not be accepted
 		}
-		aconf.OnSubscriptionDenied = func(c *gnet.Conn, feed cipher.PubKey) {
+		aconf.OnSubscriptionRejected = func(c *gnet.Conn, feed cipher.PubKey) {
 			if feed != pk {
 				t.Error("wrong feed rejected")
 			}
@@ -355,10 +355,14 @@ func TestNode_Subscribe(t *testing.T) {
 		select {
 		case c := <-reject:
 			if c != ac {
-				t.Error("rejected from wrong connection")
+				t.Error("rejected by wrong connection")
 			}
 		case <-time.After(TM):
 			t.Error("slow")
+		}
+
+		if len(a.pending) != 0 {
+			t.Error("has pending subscriptions")
 		}
 
 	})
@@ -377,8 +381,8 @@ func TestNode_Subscribe(t *testing.T) {
 			}
 			accept <- c // to test conenction
 		}
-		aconf.OnSubscriptionDenied = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("accepted")
+		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
+			t.Error("rejected")
 		}
 
 		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
@@ -397,10 +401,14 @@ func TestNode_Subscribe(t *testing.T) {
 		select {
 		case c := <-accept:
 			if c != ac {
-				t.Error("rejected from wrong connection")
+				t.Error("rejected by wrong connection")
 			}
 		case <-time.After(TM):
 			t.Error("slow")
+		}
+
+		if len(a.pending) != 0 {
+			t.Error("has pending subscriptions")
 		}
 
 	})
@@ -419,8 +427,8 @@ func TestNode_Subscribe(t *testing.T) {
 			}
 			accept <- c // to test conenction
 		}
-		aconf.OnSubscriptionDenied = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("accepted")
+		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
+			t.Error("rejected")
 		}
 
 		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
@@ -439,7 +447,7 @@ func TestNode_Subscribe(t *testing.T) {
 		select {
 		case c := <-accept:
 			if c != ac {
-				t.Error("rejected from wrong connection")
+				t.Error("accepted by wrong connection")
 			}
 		case <-time.After(TM):
 			t.Error("slow")
@@ -454,12 +462,16 @@ func TestNode_Subscribe(t *testing.T) {
 		select {
 		case c := <-accept:
 			if c != ac {
-				t.Error("rejected from wrong connection")
+				t.Error("acceped by wrong connection")
 			}
 		case <-time.After(TM):
 			// the test is not strong, but it's fast,
 			// if first part of the test passes then this
 			// part should work in many cases
+		}
+
+		if len(a.pending) != 0 {
+			t.Error("has pending subscriptions")
 		}
 
 	})
@@ -491,7 +503,55 @@ func TestNode_Unsusbcribe(t *testing.T) {
 		if len(s.Feeds()) != 0 {
 			t.Error("don't unsusbcribes")
 		}
+
 	})
+
+	t.Run("remote", func(t *testing.T) {
+		pk, _ := cipher.GenerateKeyPair()
+
+		aconf := newNodeConfig(false)
+		bconf := newNodeConfig(false)
+
+		accept := make(chan *gnet.Conn, 1)
+
+		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
+			if feed != pk {
+				t.Error("wrong feed accepted")
+			}
+			accept <- c // to test conenction
+		}
+		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
+			t.Error("rejected")
+		}
+
+		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		b.Subscribe(nil, pk)
+		a.Subscribe(ac, pk)
+
+		// remote peer must accept the subscription because the
+		// remote peer shares pk feed
+
+		select {
+		case c := <-accept:
+			if c != ac {
+				t.Error("accepted by wrong connection")
+				return
+			}
+		case <-time.After(TM):
+			t.Error("slow")
+			return
+		}
+
+		//
+
+	})
+
 }
 
 func TestNewNode_loadingFeeds(t *testing.T) {
