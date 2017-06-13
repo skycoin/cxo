@@ -935,3 +935,107 @@ func TestNode_SubscribeResponseTimeout(t *testing.T) {
 
 	// TODO: mid. priority
 }
+
+func TestNode_ListOfFeedsResponse(t *testing.T) {
+	// ListOfFeedsResponse(c *gnet.Conn) ([]cipher.PubKey, error)
+
+	t.Run("success", func(t *testing.T) {
+		aconf := newNodeConfig(false)
+		bconf := newNodeConfig(true)
+		bconf.PublicServer = true
+
+		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		pk, _ := cipher.GenerateKeyPair()
+
+		b.Subscribe(nil, pk)
+
+		// subscribe response
+
+		if list, err := a.ListOfFeedsResponse(ac); err != nil {
+			t.Error(err)
+		} else if len(list) != 1 {
+			t.Error("wrong list length")
+		} else if list[0] != pk {
+			t.Error("wrong content of the list")
+		}
+
+	})
+
+	t.Run("non-public", func(t *testing.T) {
+		conf := newNodeConfig(false)
+
+		a, b, ac, _, err := newConnectedNodes(conf, conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		// subscribe response
+
+		if _, err := a.ListOfFeedsResponse(ac); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrNonPublicPeer {
+			t.Error("wrong error:", err)
+		}
+
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		conf := newNodeConfig(false)
+		conf.ResponseTimeout = TM
+
+		a, err := newNode(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer l.Close()
+
+		go func() {
+			c, err := l.Accept()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer c.Close()
+			io.Copy(ioutil.Discard, c)
+		}()
+
+		ac, err := a.Pool().Dial(l.Addr().String())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		// subscribe response
+
+		if _, err := a.ListOfFeedsResponse(ac); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrTimeout {
+			t.Error("wrong error:", err)
+		}
+
+	})
+
+}
+
+func TestNode_ListOfFeedsResponseTimeout(t *testing.T) {
+	// ListOfFeedsResponseTimeout(c *gnet.Conn,
+	//     timeout time.Duration) (list []cipher.PubKey, err error)
+
+	// TODO: mid. priority
+
+}

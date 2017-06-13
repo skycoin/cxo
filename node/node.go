@@ -1317,6 +1317,7 @@ func (s *Node) ListOfFeedsResponse(c *gnet.Conn) ([]cipher.PubKey, error) {
 	return s.ListOfFeedsResponseTimeout(c, s.conf.ResponseTimeout)
 }
 
+// ListOfFeedsResponseTimeout uses provided timeout instead of configured
 func (s *Node) ListOfFeedsResponseTimeout(c *gnet.Conn,
 	timeout time.Duration) (list []cipher.PubKey, err error) {
 
