@@ -566,6 +566,7 @@ func (s *Node) onDial(c *gnet.Conn, _ error) (_ error) {
 			c.Address(), val)
 	} else {
 		for _, feed := range rs {
+			s.addToPending(c, feed)     // TODO: pending ?
 			s.sendSubscribeMsg(c, feed) // resubscribe
 		}
 	}
@@ -604,6 +605,10 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 
 	// subscribe the remote peer to the subscription
 	if ok, _ := s.subscribeConn(c, msg.Feed); ok {
+		// susbcribeConn returns (accept, alreaady) where
+		// already is false if accept is true and vise versa;
+		// thus if the ok is true then we can ignore already,
+		// because it is false
 		s.sendLastFullRoot(c, msg.Feed)
 
 		// call OnSubscriptionAccepted callback
@@ -613,22 +618,50 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 
 		// add the subscription to list of resubscribtions
 		// if connection fails
-		//
+		s.addToResubscriptions(c, msg.Feed)
 	}
 
 	// else -> seems the feed was removed from the node
 
 }
 
+func delFromListOfFeeds(list []cipher.PubKey,
+	feed cipher.PubKey) []cipher.PubKey {
+
+	var i int
+	for _, x := range list {
+		if x == feed {
+			continue // delete
+		}
+		list[i] = x
+		i++
+	}
+	return list[:i]
+}
+
+func (s *Node) removeFromResubscriptions(c *gnet.Conn, feed cipher.PubKey) {
+	if val := c.Value(); val == nil {
+		return
+	} else if rs, ok := val.([]cipher.PubKey); !ok {
+		s.Debugf("wrong type of associated Value of gnet.Conn (%s): %T",
+			c.Address(), val)
+	} else {
+		c.SetValue(delFromListOfFeeds(rs, feed))
+	}
+}
+
 func (s *Node) handleRejectSubscriptionMsg(c *gnet.Conn,
 	msg *RejectSubscriptionMsg) {
 
-	// remove from pending and call OnSubscriptionRejected callback
+	// remove from pending and call OnSubscriptionRejected callback;
+	// remove from resubscriptions
 
 	if !s.deleteConnFeedFromPending(c, msg.Feed) {
 		s.Debug("unexpected RejectSubscriptionMsg from ", c.Address())
 		return
 	}
+
+	s.removeFromResubscriptions(c, msg.Feed)
 
 	if callback := s.conf.OnSubscriptionRejected; callback != nil {
 		callback(c, msg.Feed)

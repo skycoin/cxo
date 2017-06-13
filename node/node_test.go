@@ -1039,3 +1039,90 @@ func TestNode_ListOfFeedsResponseTimeout(t *testing.T) {
 	// TODO: mid. priority
 
 }
+
+// A Node that connects to another node recreates
+// connection automatically. But for other side
+// this connection will be another connection. Thus,
+// we need to send all SubscribeMsg that we sent before
+func TestNode_resubscribe(t *testing.T) {
+
+	if testing.Short() {
+		t.Skip("short")
+	}
+
+	aconf := newNodeConfig(false)
+	aconf.Log.Prefix = "[A CLIENT]"
+	aconf.Config.RedialTimeout = 0 // redial immediately
+	accept := make(chan struct{}, 1)
+	aconf.OnSubscriptionAccepted = func(*gnet.Conn, cipher.PubKey) {
+		accept <- struct{}{}
+	}
+
+	// we can't use OnSubscriptionAccepted because it never called
+	// if remote peer already subscribed to a feed by this (local)
+	// node; but we can use OnSubscribeRemote of b
+	bconf := newNodeConfig(true)
+	bconf.Log.Prefix = "[B SERVER]"
+	subs := make(chan cipher.PubKey, 1)
+	bconf.OnSubscribeRemote = func(_ *gnet.Conn, feed cipher.PubKey) (_ error) {
+		subs <- feed
+		return
+	}
+
+	conn := make(chan struct{}, 1)
+	// we need to handle connections to be sure that remote peer redials
+	bconf.Config.OnCreateConnection = func(*gnet.Conn) {
+		conn <- struct{}{}
+	}
+
+	a, b, ac, bc, err := newConnectedNodes(aconf, bconf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	defer b.Close()
+
+	<-conn // newConnectedNodes creates connection
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	b.Subscribe(nil, pk)
+	a.Subscribe(ac, pk)
+
+	select {
+	case <-subs:
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+
+	select {
+	case <-accept:
+		// be sure that this susbcription was accepted by remote peer
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
+
+	// close conection from b side
+	bc.Close()
+
+	select {
+	case <-conn:
+		// we got renewed conenction
+	case <-time.After(TM):
+		t.Error("slow redialing")
+		return
+	}
+
+	select {
+	case feed := <-subs:
+		if feed != pk {
+			t.Error("wrong feed resubscribing")
+		}
+	case <-time.After(TM * 2):
+		// increase TM because of Redial+resusbcribe
+		t.Error("slow or missing resubscribing")
+	}
+
+}

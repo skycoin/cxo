@@ -134,7 +134,8 @@ type NodeConfig struct {
 	// replies for subscriptions
 
 	// OnSubscriptionAccepted called when a remote peer accepts
-	// you subscription
+	// you subscription. It never called if remote peer already
+	// subscribed to the feed by this (local) node
 	OnSubscriptionAccepted func(c *gnet.Conn, feed cipher.PubKey)
 	// OnSubscriptionRejected called when a remote peer rejects
 	// you subscription
