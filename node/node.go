@@ -21,6 +21,8 @@ var (
 	ErrSubscriptionRejected = errors.New("subscription rejected by remote peer")
 	ErrNilConnection        = errors.New("subscribe to nil connection")
 	ErrUnexpectedResponse   = errors.New("unexpected response")
+	ErrNonPublicPeer        = errors.New(
+		"request list of feeds from non-public peer")
 )
 
 type fillRoot struct {
@@ -868,9 +870,9 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	case *RejectSubscriptionMsg:
 		s.handleRejectSubscriptionMsg(c, x)
 
-		//
-		// root, data, registry, requests
-		//
+	//
+	// root, data, registry, requests
+	//
 
 	// root
 	case *RootMsg:
@@ -888,9 +890,9 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	case *DataMsg:
 		s.handleDataMsg(c, x)
 
-		//
-		// public servers
-		//
+	//
+	// public servers
+	//
 
 	case *RequestListOfFeedsMsg:
 		s.handleRequestListOfFeedsMsg(c, x)
@@ -899,9 +901,9 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	case *NonPublicServerMsg:
 		// do ntohing (handled at the bottom of this method)
 
-		//
-		// ping / pong
-		//
+	//
+	// ping / pong
+	//
 
 	// ping/pong
 	case *PingMsg:
@@ -1250,12 +1252,6 @@ func (s *Node) sendMsgAndWaitForResponse(c *gnet.Conn,
 	return
 }
 
-func (s *Node) sendSubscribeMsgAndWaitForResponse(c *gnet.Conn,
-	feed cipher.PubKey, timeout time.Duration) (response Msg, err error) {
-
-	return s.sendMsgAndWaitForResponse(c, s.src.NewSubscribeMsg(feed), timeout)
-}
-
 // SubscribeResponse is similar to subscribe but it requires non-nil connection
 // and waits for reply from remote peer. It waits for response
 // NodeConfig.ResponseTimeout. Unlike Subsribe it can subscribe twice or
@@ -1289,7 +1285,9 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 	s.addToPending(c, feed)
 
 	var response Msg
-	response, err = s.sendSubscribeMsgAndWaitForResponse(c, feed, timeout)
+	response, err = s.sendMsgAndWaitForResponse(c,
+		s.src.NewSubscribeMsg(feed),
+		timeout)
 	if err != nil {
 		return
 	}
@@ -1306,4 +1304,49 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 	s.Debug("unexpected response for subscription: ", typ.String())
 	err = ErrUnexpectedResponse
 	return
+}
+
+// ListOfFeedsResponse reuqests list of feeds of a public server (peer).
+// It receive connection to the server that should not be nil and must be
+// form connections pool of this Node. It returns error if the server is
+// not public or if the server not responding (timeout errror).
+func (s *Node) ListOfFeedsResponse(c *gnet.Conn) ([]cipher.PubKey, error) {
+
+	// locks: s.rpmx Lock/Unlock (twice)
+
+	return s.ListOfFeedsResponseTimeout(c, s.conf.ResponseTimeout)
+}
+
+func (s *Node) ListOfFeedsResponseTimeout(c *gnet.Conn,
+	timeout time.Duration) (list []cipher.PubKey, err error) {
+
+	// locks: s.rpmx Lock/Unlock (twice)
+
+	if c == nil {
+		err = ErrNilConnection
+		return
+	}
+
+	var response Msg
+	response, err = s.sendMsgAndWaitForResponse(c,
+		s.src.NewRequestListOfFeedsMsg(),
+		timeout)
+	if err != nil {
+		return
+	}
+
+	// look at response
+	typ := response.MsgType()
+	if typ == NonPublicServerMsgType {
+		err = ErrNonPublicPeer
+		return
+	} else if typ == ListOfFeedsMsgType {
+		list = response.(*ListOfFeedsMsg).List
+		return
+	}
+
+	s.Debug("unexpected response for list of feeds requesting: ", typ.String())
+	err = ErrUnexpectedResponse
+	return
+
 }
