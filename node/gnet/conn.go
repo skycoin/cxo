@@ -215,14 +215,13 @@ func (c *Conn) triggerDialingRead(err error, conn net.Conn) {
 		return    // don't redial if conenction is incoming
 	}
 
-	c.p.Debugf("triggerDialingRead of %s: %v", conn.RemoteAddr().String(), err)
+	c.p.Debugf("triggerDialingRead of %s: %v", c.address, err)
 
 	// may be writing loop already waits
 	// reading loop to fail, thus we use
 	// error of writing loop (first error)
 	select {
 	case <-c.writed:
-		c.p.Debug("dialing deligated to writing trigger (1)")
 		return // leave redialing for triggerRedialWrite
 	default:
 	}
@@ -230,10 +229,8 @@ func (c *Conn) triggerDialingRead(err error, conn net.Conn) {
 	// wait until write loop triggers dialing
 	select {
 	case c.readd <- struct{}{}:
-		c.p.Debug("dialing triggered by reading triggers")
 		c.triggerDialing(err)
 	case <-c.writed:
-		c.p.Debug("dialing deligated to writing trigger (2)")
 	case <-c.closed:
 		return
 	}
@@ -250,21 +247,18 @@ func (c *Conn) triggerDialingWrite(err error, conn net.Conn) {
 		return
 	}
 
-	c.p.Debugf("triggerDialingWrite of %s: %v", conn.RemoteAddr().String(), err)
+	c.p.Debugf("triggerDialingWrite of %s: %v", c.address, err)
 
 	select {
 	case <-c.readd:
-		c.p.Debug("dialing deligated to reading trigger (1)")
 		return
 	default:
 	}
 
 	select {
 	case c.writed <- struct{}{}:
-		c.p.Debug("dialing triggered by writing trigger")
 		c.triggerDialing(err)
 	case <-c.readd:
-		c.p.Debug("dialing deligated to reading trigger (2)")
 	case <-c.closed:
 		return
 	}
@@ -459,14 +453,12 @@ DialLoop: // -------------------------------------------------------------------
 
 	ReadLoop: // -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 		for {
-			c.p.Debug("read: ReadLoop")
-			c.p.Debug("read message ", c.address)
+			c.p.Debug("read head ", c.address)
 			if _, err = io.ReadFull(r, head); err != nil {
 				if c.isClosed() {
 					return
 				}
 				c.p.Printf("[ERR] %s reading error: %v", c.address, err)
-				c.p.Debug("triggerDialingRead")
 				c.triggerDialingRead(err, conn)
 				continue DialLoop // waiting for redialing
 			}
@@ -485,6 +477,7 @@ DialLoop: // -------------------------------------------------------------------
 			}
 			body = make([]byte, l) // create new slice
 			// and read it
+			c.p.Debug("read body ", c.address)
 			if _, err = io.ReadFull(r, body); err != nil {
 				if c.isClosed() {
 					return
@@ -492,7 +485,6 @@ DialLoop: // -------------------------------------------------------------------
 				c.p.Printf("[ERR] %s reading error: %v",
 					c.address,
 					err)
-				c.p.Debug("triggerDialingRead")
 				c.triggerDialingRead(err, conn)
 				continue DialLoop // waiting for redialing
 			}
@@ -573,7 +565,6 @@ func (c *Conn) write() {
 	)
 DialLoop: // -------------------------------------------------------------------
 	for {
-		c.p.Debug("write: DialLoop")
 		select {
 		case conn = <-c.dialwl: // waiting for dialing
 			w, bw = c.connectionWriter(conn)
@@ -584,7 +575,6 @@ DialLoop: // -------------------------------------------------------------------
 
 	WriteLoop: // -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 		for {
-			c.p.Debug("write: WriteLoop")
 			select {
 			case body = <-c.writeq: // send
 				c.p.Debug("msg was dequeued from SendQueue ", c.address)
@@ -599,7 +589,6 @@ DialLoop: // -------------------------------------------------------------------
 			if terminate, err = c.writeMsg(w, body); terminate {
 				return
 			} else if err != nil {
-				c.p.Debug("triggerDialingWrite")
 				c.triggerDialingWrite(err, conn)
 				continue DialLoop
 			}
@@ -614,7 +603,6 @@ DialLoop: // -------------------------------------------------------------------
 					if terminate, err = c.writeMsg(w, body); terminate {
 						return
 					} else if err != nil {
-						c.p.Debug("triggerDialingWrite")
 						c.triggerDialingWrite(err, conn)
 						continue DialLoop
 					}
@@ -631,7 +619,6 @@ DialLoop: // -------------------------------------------------------------------
 							c.p.Printf("[ERR] %s flushing buffer error: %v",
 								c.conn.RemoteAddr().String(),
 								err)
-							c.p.Debug("triggerDialingWrite")
 							c.triggerDialingWrite(err, conn)
 							continue DialLoop
 						}
