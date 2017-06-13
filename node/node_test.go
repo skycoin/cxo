@@ -737,6 +737,7 @@ func TestNode_Unsubscribe(t *testing.T) {
 			if err != nil {
 				return
 			}
+			defer c.Close()
 			io.Copy(ioutil.Discard, c) // redirect input to /dev/null
 		}()
 
@@ -855,6 +856,73 @@ func TestNode_SubscribeResponse(t *testing.T) {
 
 		if err := a.SubscribeResponse(ac, pk); err != nil {
 			t.Error(err)
+		}
+
+	})
+
+	t.Run("reject", func(t *testing.T) {
+		conf := newNodeConfig(false)
+
+		a, b, ac, _, err := newConnectedNodes(conf, conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		defer b.Close()
+
+		pk, _ := cipher.GenerateKeyPair()
+
+		// subscribe response
+
+		if err := a.SubscribeResponse(ac, pk); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrSubscriptionRejected {
+			t.Error("wrong error:", err)
+		}
+
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		conf := newNodeConfig(false)
+		conf.ResponseTimeout = TM
+
+		a, err := newNode(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer l.Close()
+
+		go func() {
+			c, err := l.Accept()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer c.Close()
+			io.Copy(ioutil.Discard, c)
+		}()
+
+		ac, err := a.Pool().Dial(l.Addr().String())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		pk, _ := cipher.GenerateKeyPair()
+
+		// subscribe response
+
+		if err := a.SubscribeResponse(ac, pk); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrTimeout {
+			t.Error("wrong error:", err)
 		}
 
 	})

@@ -899,9 +899,9 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 	case *NonPublicServerMsg:
 		// do ntohing (handled at the bottom of this method)
 
-	//
-	// ping / pong
-	//
+		//
+		// ping / pong
+		//
 
 	// ping/pong
 	case *PingMsg:
@@ -919,14 +919,11 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 		return
 	}
 
-	println("EXECUTED HERE, YOOO-HO-HO!", msg.ResponseFor())
-
 	// process responses after handling
 
 	var rc chan Msg
 	var ok bool
-	if rc, ok = s.takeWaitingForResponse(msg.Id()); ok {
-		println("TAKEN")
+	if rc, ok = s.takeWaitingForResponse(msg.ResponseFor()); ok {
 		rc <- msg
 	}
 }
@@ -1227,8 +1224,6 @@ func (s *Node) takeWaitingForResponse(id uint32) (rc chan Msg, ok bool) {
 
 func (s *Node) sendMsgAndWaitForResponse(c *gnet.Conn,
 	msg Msg, timeout time.Duration) (response Msg, err error) {
-
-	println("SEND MSG ID:", msg.Id())
 
 	var (
 		tm *time.Timer
