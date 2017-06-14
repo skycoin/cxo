@@ -2,9 +2,12 @@ package node
 
 import (
 	"flag"
+	"io"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -168,6 +171,7 @@ func NewNodeConfig() (sc NodeConfig) {
 	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
 	sc.ResponseTimeout = ResponseTimeout
 	sc.PublicServer = PublicServer
+	sc.Config.OnDial = OnDialFilter
 	return
 }
 
@@ -231,4 +235,29 @@ func (s *NodeConfig) FromFlags() {
 		s.PublicServer,
 		"make the server public")
 	return
+}
+
+// OnDialFilter is gnet.OnDial callback that rejects redialing if
+// remote peer closes conenction
+func OnDialFilter(c *gnet.Conn, err error) (reject error) {
+	if ne, ok := err.(net.Error); ok {
+		if ne.Temporary() {
+			return // nil
+		}
+		if oe, ok := err.(*net.OpError); ok {
+			// reading fails with EOF if remote peer closes connection,
+			// but writing ...
+			if se, ok := oe.Err.(*os.SyscallError); ok {
+				if errno, ok := se.Err.(syscall.Errno); ok {
+					if errno == 0x68 {
+						// "connection reset by peer"
+						return err // reject
+					}
+				}
+			}
+		}
+	} else if err == io.EOF { // conenction has been closed by peer
+		return err // reject
+	}
+	return // nil (unknowm case)
 }

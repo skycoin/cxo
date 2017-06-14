@@ -348,6 +348,7 @@ func TestPool_redialWrite(t *testing.T) {
 		}
 		// trigger redialing
 		closeRead(sc) // break reading loop other side
+		cc.SendQueue() <- []byte("fail write")
 	case <-time.After(TM * 100):
 		t.Error("slow")
 		return

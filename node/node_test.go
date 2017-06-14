@@ -1053,6 +1053,7 @@ func TestNode_resubscribe(t *testing.T) {
 	aconf := newNodeConfig(false)
 	aconf.Log.Prefix = "[A CLIENT]"
 	aconf.Config.RedialTimeout = 0 // redial immediately
+	aconf.Config.OnDial = nil      // clear any default redialing filters
 	accept := make(chan struct{}, 1)
 	aconf.OnSubscriptionAccepted = func(*gnet.Conn, cipher.PubKey) {
 		accept <- struct{}{}
