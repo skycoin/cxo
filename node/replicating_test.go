@@ -10,6 +10,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
+// from one node to another
 func Test_replicating(t *testing.T) {
 
 	// tpyes
@@ -127,8 +128,190 @@ func Test_replicating(t *testing.T) {
 
 	select {
 	case <-filled:
-		//
+		t.Log("filled")
 	case <-time.After(TM * 10): // increase timeout
+		t.Error("slow")
+		return
+	}
+
+}
+
+// the same as replicating, but 1 -> 2 -> 3
+func Test_passThrough(t *testing.T) {
+
+	// tpyes
+
+	type User struct {
+		Name string
+		Age  uint32
+	}
+
+	type Group struct {
+		Name   string
+		Leader skyobject.Reference  `skyobject:"schema=test.User"`
+		Users  skyobject.References `skyobject:"schema=test.User"`
+	}
+
+	// feed and owner
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	// a config
+
+	aconf := newNodeConfig(false)
+	aconf.GCInterval = 0 // disable GC
+
+	accept := make(chan struct{}) // used by a and c
+
+	aconf.OnSubscriptionAccepted = func(*gnet.Conn, cipher.PubKey) {
+		accept <- struct{}{}
+	}
+
+	// b conf (no changes)
+
+	// c config
+
+	cconf := newNodeConfig(true)
+
+	received := make(chan struct{})
+	filled := make(chan struct{})
+
+	cconf.OnSubscriptionAccepted = aconf.OnSubscriptionAccepted
+	cconf.OnRootReceived = func(root *Root) {
+		if root.Pub() != pk {
+			t.Error("wrong feed")
+		}
+		hash := root.Hash()
+		t.Log("received root object:", shortHex(hash.String()))
+		received <- struct{}{}
+	}
+	cconf.OnRootFilled = func(root *Root) {
+		if root.Pub() != pk {
+			t.Error("wrong feed")
+		}
+		filled <- struct{}{}
+	}
+
+	//
+	// registry
+	//
+
+	reg := skyobject.NewRegistry()
+
+	reg.Register("test.User", User{})
+	reg.Register("test.Group", Group{})
+
+	//
+	// a
+	//
+
+	a, err := newNodeReg(aconf, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	if err := a.Start(); err != nil {
+		t.Error(err)
+		return
+	}
+
+	//
+	// b
+	//
+
+	b, err := newNode(newNodeConfig(true)) // listen
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer b.Close()
+
+	if err := b.Start(); err != nil {
+		t.Error(err)
+		return
+	}
+
+	//
+	// c
+	//
+
+	c, err := newNode(cconf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer c.Close()
+
+	if err := c.Start(); err != nil {
+		t.Error(err)
+		return
+	}
+
+	//
+	// dial
+	//
+
+	ac, err := a.Pool().Dial(b.Pool().Address())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	cc, err := c.Pool().Dial(b.Pool().Address())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	//
+	// subscribe
+	//
+
+	b.Subscribe(nil, pk)
+	a.Subscribe(ac, pk)
+	c.Subscribe(cc, pk)
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-accept:
+		case <-time.After(TM):
+			t.Error("slow")
+			return
+		}
+	}
+
+	//
+	// generate
+	//
+
+	root, err := a.Container().NewRoot(pk, sk)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	root.Inject("test.User", User{
+		Name: "Alice",
+		Age:  21,
+	})
+
+	//
+	// receive / fill
+	//
+
+	select {
+	case <-received:
+		t.Log("received")
+	case <-time.After(TM * 10):
+		t.Error("slow")
+		return
+	}
+
+	select {
+	case <-filled:
+		t.Log("filled")
+	case <-time.After(TM * 10):
 		t.Error("slow")
 		return
 	}
