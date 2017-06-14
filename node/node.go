@@ -611,14 +611,14 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 		// because it is false
 		s.sendLastFullRoot(c, msg.Feed)
 
+		// add the subscription to list of resubscribtions
+		// if connection fails
+		s.addToResubscriptions(c, msg.Feed)
+
 		// call OnSubscriptionAccepted callback
 		if callback := s.conf.OnSubscriptionAccepted; callback != nil {
 			callback(c, msg.Feed)
 		}
-
-		// add the subscription to list of resubscribtions
-		// if connection fails
-		s.addToResubscriptions(c, msg.Feed)
 	}
 
 	// else -> seems the feed was removed from the node
@@ -719,6 +719,7 @@ func (s *Node) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 		s.Debug("reject root: not subscribed")
 		return
 	}
+
 	root, err := s.so.AddRootPack(&msg.RootPack)
 	if err != nil {
 		if err == data.ErrRootAlreadyExists {
@@ -728,8 +729,19 @@ func (s *Node) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 		s.Print("[ERR] error appending root: ", err)
 		return
 	}
+
+	// callback
+	if orr := s.conf.OnRootReceived; orr != nil {
+		orr(s.Container().wrapRoot(root))
+	}
+
 	if root.IsFull() {
-		// change remote Id to local to avoid collisions
+
+		// callback
+		if orf := s.conf.OnRootFilled; orf != nil {
+			orf(s.Container().wrapRoot(root))
+		}
+
 		s.sendToFeed(msg.Feed, msg, c)
 		return
 	}
@@ -744,6 +756,7 @@ func (s *Node) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 		}
 		return
 	}
+
 	err = root.WantFunc(func(ref skyobject.Reference) error {
 		if !s.sendRequestDataMsg(c, ref) {
 			s.delNonFullRoot(root) // sending error (connection closed)
@@ -755,6 +768,7 @@ func (s *Node) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
 	if err != nil {
 		s.Print("[ERR] unexpected error: ", err)
 	}
+
 }
 
 func (s *Node) handleRequestRegistryMsg(c *gnet.Conn,
@@ -780,16 +794,27 @@ func (s *Node) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
 
 	s.rmx.Lock()
 	defer s.rmx.Unlock()
+
 	var i int = 0 // index for deleting
 	for _, fl := range s.roots {
+
 		if fl.root.RegistryReference() == reg.Reference() {
+
 			if fl.root.IsFull() {
+
+				// callback
+				if orf := s.conf.OnRootFilled; orf != nil {
+					orf(s.Container().wrapRoot(fl.root))
+				}
+
 				s.sendToFeed(fl.root.Pub(), s.src.NewRootMsg(
 					fl.root.Pub(),    // feed
 					fl.root.Encode(), // root pack
 				), fl.c)
 				continue // delete
+
 			}
+
 			var sent bool
 			err = fl.root.WantFunc(func(ref skyobject.Reference) error {
 				if sent = s.sendRequestDataMsg(c, ref); sent {
@@ -807,6 +832,7 @@ func (s *Node) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
 		}
 		s.roots[i] = fl
 		i++
+
 	}
 	s.roots = s.roots[:i]
 }
@@ -839,14 +865,24 @@ func (s *Node) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 	// check filling
 	var i int = 0 // index for deleting
 	for _, fl := range s.roots {
+
 		if fl.await == hash {
+
 			if fl.root.IsFull() {
+
+				// callback
+				if orf := s.conf.OnRootFilled; orf != nil {
+					orf(s.Container().wrapRoot(fl.root))
+				}
+
 				s.sendToFeed(fl.root.Pub(), s.src.NewRootMsg(
 					fl.root.Pub(),    // feed
 					fl.root.Encode(), // root pack
 				), fl.c)
 				continue // delete
+
 			}
+
 			var sent bool
 			err := fl.root.WantFunc(func(ref skyobject.Reference) error {
 				if sent = s.sendRequestDataMsg(c, ref); sent {
@@ -861,9 +897,11 @@ func (s *Node) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 			if !sent {
 				continue // delete
 			}
+
 		}
 		s.roots[i] = fl
 		i++
+
 	}
 	s.roots = s.roots[:i]
 }

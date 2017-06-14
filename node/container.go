@@ -34,7 +34,20 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey) (r *Root,
 	if sr, err = c.Container.NewRoot(pk, sk); err != nil {
 		return
 	}
-	r = &Root{sr, c}
+	r = c.wrapRoot(sr)
+	return
+}
+
+// NewRootReg similar to (*skyobject.Container).NewRootReg
+// but it returns wrapped Root object
+func (c *Container) NewRootReg(pk cipher.PubKey, sk cipher.SecKey,
+	rr skyobject.RegistryReference) (r *Root, err error) {
+
+	var sr *skyobject.Root
+	if sr, err = c.Container.NewRootReg(pk, sk, rr); err != nil {
+		return
+	}
+	r = c.wrapRoot(sr)
 	return
 }
 
