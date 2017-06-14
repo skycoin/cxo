@@ -1352,7 +1352,8 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 	// add feed
 	s.addFeed(feed)
 
-	// add to pending
+	// add to pending to make handling by handleAcceptSusbcriptionMsg
+	// successful
 	s.addToPending(c, feed)
 
 	var response Msg
@@ -1360,6 +1361,12 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 		s.src.NewSubscribeMsg(feed),
 		timeout)
 	if err != nil {
+		// delete from pending to not subscribe the connection on
+		// timeout error; but this way remote peer can subscribe the
+		// node anyway;
+		// TODO: to send UnsusbcribeMsg or not to send, that
+		//       is the fucking question (c) Hamlet
+		s.deleteConnFeedFromPending(c, feed)
 		return
 	}
 

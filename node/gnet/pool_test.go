@@ -278,7 +278,7 @@ func TestPool_redialRead(t *testing.T) {
 
 	select {
 	case sc := <-accept:
-		// test conenction
+		// test connection
 		sendReceiveDuplex(t, cc, sc)
 		if t.Failed() {
 			return
@@ -293,7 +293,7 @@ func TestPool_redialRead(t *testing.T) {
 	select {
 	case sc := <-accept:
 		t.Log("accepted again")
-		// test conenction
+		// test connection
 		sendReceiveDuplex(t, cc, sc)
 	case <-time.After(TM):
 		t.Error("slow")
@@ -341,13 +341,14 @@ func TestPool_redialWrite(t *testing.T) {
 
 	select {
 	case sc := <-accept:
-		// test conenction
+		// test connection
 		sendReceiveDuplex(t, cc, sc)
 		if t.Failed() {
 			return
 		}
 		// trigger redialing
 		closeRead(sc) // break reading loop other side
+		cc.SendQueue() <- []byte("fail write")
 	case <-time.After(TM * 100):
 		t.Error("slow")
 		return
@@ -355,7 +356,7 @@ func TestPool_redialWrite(t *testing.T) {
 
 	select {
 	case sc := <-accept:
-		// test conenction
+		// test connection
 		sendReceiveDuplex(t, cc, sc)
 	case <-time.After(TM * 100):
 		t.Error("slow")

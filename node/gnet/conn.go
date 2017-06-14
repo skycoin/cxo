@@ -212,7 +212,7 @@ func (c *Conn) triggerDialingRead(err error, conn net.Conn) {
 
 	if c.incoming {
 		c.Close() // terminate
-		return    // don't redial if conenction is incoming
+		return    // don't redial if connection is incoming
 	}
 
 	c.p.Debugf("triggerDialingRead of %s: %v", c.address, err)
