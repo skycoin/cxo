@@ -32,7 +32,12 @@ func pair() (l, d *Pool, lc, dc *Conn, err error) {
 		lconf    Config     = newConfig("listener")
 		accepted chan *Conn = make(chan *Conn, 1)
 	)
-	lconf.ConnectionHandler = func(c *Conn) { accepted <- c }
+	lconf.OnCreateConnection = func(c *Conn) {
+		select {
+		case accepted <- c: // don't block
+		default:
+		}
+	}
 	if l, err = NewPool(lconf); err != nil {
 		d.Close()
 		return

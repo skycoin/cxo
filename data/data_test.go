@@ -771,8 +771,8 @@ func testDelRootsBefore(t *testing.T, db DB) {
 	}
 	// del all
 	db.DelRootsBefore(pk, 9000)
-	if len(db.Feeds()) != 0 {
-		t.Error("feed was not deleted")
+	if len(db.Feeds()) == 0 {
+		t.Error("feed was deleted")
 	}
 
 }

@@ -16,6 +16,8 @@ var (
 	ErrClosed = errors.New("closed pool")
 	// ErrConnectionsLimit reached error
 	ErrConnectionsLimit = errors.New("connections limit reached")
+	// ErrAlreadyListen occurswhen you try to Listen may times
+	ErrAlreadyListen = errors.New("already listen")
 )
 
 // A Pool represents connections pool
@@ -102,6 +104,11 @@ func (p *Pool) release() {
 // ========================================================================== //
 
 func (p *Pool) Listen(address string) (err error) {
+	if p.isClosed() {
+		err = ErrClosed
+		return
+	}
+
 	var l net.Listener
 	if p.conf.TLSConfig == nil {
 		l, err = net.Listen("tcp", address)
@@ -111,11 +118,20 @@ func (p *Pool) Listen(address string) (err error) {
 	if err != nil {
 		return
 	}
+
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
+
+	if p.l != nil {
+		l.Close()
+		err = ErrAlreadyListen
+		return
+	}
+
 	p.l = l
 	p.await.Add(1)
 	go p.listen(l)
+
 	return
 }
 
@@ -131,7 +147,7 @@ func (p *Pool) listen(l net.Listener) {
 		c   net.Conn
 		err error
 
-		ch ConnectionHandler
+		ch OnCreateConnection
 		cn *Conn
 	)
 
@@ -153,7 +169,7 @@ func (p *Pool) listen(l net.Listener) {
 		if cn, err = p.acceptConnection(c); err != nil {
 			p.release()
 			p.Print("[ERR] accepting connection: ", err)
-		} else if ch = p.conf.ConnectionHandler; ch != nil {
+		} else if ch = p.conf.OnCreateConnection; ch != nil {
 			ch(cn)
 		}
 	}
@@ -164,6 +180,7 @@ func (p *Pool) listen(l net.Listener) {
 func (p *Pool) Address() (address string) {
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
+
 	if p.l != nil {
 		address = p.l.Addr().String()
 	}
@@ -177,6 +194,7 @@ func (p *Pool) Address() (address string) {
 func (p *Pool) has(address string) (got bool) {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
+
 	_, got = p.conns[address]
 	return
 }
@@ -184,6 +202,7 @@ func (p *Pool) has(address string) (got bool) {
 func (p *Pool) delete(address string) {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
+
 	delete(p.conns, address)
 }
 
@@ -191,6 +210,11 @@ func (p *Pool) delete(address string) {
 // error if connection already exists, address is malformed or
 // connections limit reached by the Pool
 func (p *Pool) Dial(address string) (cn *Conn, err error) {
+	if p.isClosed() {
+		err = ErrClosed
+		return
+	}
+
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
 
@@ -204,6 +228,7 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 		err = ErrConnectionsLimit
 		return
 	}
+
 	if _, err = net.ResolveTCPAddr("tcp", address); err != nil {
 		return
 	}
@@ -212,7 +237,7 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 	// the config is malformed
 
 	cn = p.createConnection(address)
-	if ch := p.conf.ConnectionHandler; ch != nil {
+	if ch := p.conf.OnCreateConnection; ch != nil {
 		ch(cn)
 	}
 	return
@@ -226,6 +251,7 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 func (p *Pool) Connections() (cs []*Conn) {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
+
 	if len(p.conns) == 0 {
 		return
 	}
@@ -241,6 +267,7 @@ func (p *Pool) Connections() (cs []*Conn) {
 func (p *Pool) Connection(address string) *Conn {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
+
 	return p.conns[address]
 }
 
@@ -251,6 +278,7 @@ func (p *Pool) Connection(address string) *Conn {
 func (p *Pool) closeListener() (err error) {
 	p.lmx.Lock()
 	defer p.lmx.Unlock()
+
 	if p.l != nil {
 		p.Debug("close listener")
 
@@ -264,6 +292,7 @@ func (p *Pool) closeConnections() {
 
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
+
 	for _, c := range p.conns {
 		p.cmx.Unlock()
 		c.Close()
@@ -280,4 +309,13 @@ func (p *Pool) Close() (err error) {
 		p.await.Wait()
 	})
 	return
+}
+
+func (p *Pool) isClosed() bool {
+	select {
+	case <-p.quit:
+		return true
+	default:
+	}
+	return false
 }

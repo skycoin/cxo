@@ -29,7 +29,7 @@ node_modules
 gui/static/dev/
 
 
-cmd/cli/cli
+cmd/cxocli/cxocli
 cmd/cxod/cxod
 cmd/*.out
 

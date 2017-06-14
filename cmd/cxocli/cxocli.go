@@ -31,8 +31,10 @@ var (
 	commands = []string{
 		"want",
 		"got",
-		"add_feed",
-		"del_feed",
+		"subscribe",
+		"subscribe_to",
+		"unsubscribe",
+		"unsubscribe_from",
 		"feeds",
 		"stat",
 		"connections",
@@ -49,6 +51,7 @@ var (
 )
 
 func main() {
+
 	var (
 		address string
 		execute string
@@ -220,10 +223,14 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		err = want(rpc, ss)
 	case "got":
 		err = got(rpc, ss)
-	case "add_feed":
-		err = add_feed(rpc, ss)
-	case "del_feed":
-		err = del_feed(rpc, ss)
+	case "subscribe":
+		err = subscribe(rpc, ss)
+	case "subscribe_to":
+		err = subscribe_to(rpc, ss)
+	case "unsubscribe":
+		err = unsubscribe(rpc, ss)
+	case "unsubscribe_from":
+		err = unsubscribe_from(rpc, ss)
 	case "feeds":
 		err = feeds(rpc)
 	case "stat":
@@ -263,10 +270,14 @@ func showHelp() {
     list objects of feed the server doesn't have (yet), but knows about
   got <public key>
     list objects of feed
-  add_feed <public key>
+  subscribe <public key>
     start shareing feed
-  del_feed <public key>
+  subscribe_to <address> <pub key>
+    subscribe to feed of a connected peer
+  unsubscribe <public key>
     stop sharing feed
+  unsubscribe_from <address> <public key>
+    unsubscribe_from feed of a connected peer
   feeds
     list feeds
   stat
@@ -347,37 +358,68 @@ func got(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func add_feed(rpc *node.RPCClient, ss []string) (err error) {
+func subscribe(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	if pk, err = publicKeyArg(ss); err != nil {
 		return
 	}
-	var ok bool
-	if ok, err = rpc.AddFeed(pk); err != nil {
+	if err = rpc.Subscribe(node.ConnFeed{Feed: pk}); err != nil {
 		return
 	}
-	if ok {
-		fmt.Println("  success")
-		return
-	}
-	fmt.Println("  already")
+	fmt.Println("  subscribed")
 	return
 }
 
-func del_feed(rpc *node.RPCClient, ss []string) (err error) {
+func addressFeedArgs(ss []string) (address string, pk cipher.PubKey,
+	err error) {
+
+	switch len(ss) {
+	case 0, 1, 2:
+		err = ErrMisisngArgument
+	case 3:
+		address = ss[1]
+		pk, err = cipher.PubKeyFromHex(ss[2])
+	default:
+		err = ErrTooManyArguments
+	}
+	return
+}
+
+func subscribe_to(rpc *node.RPCClient, ss []string) (err error) {
+	var pk cipher.PubKey
+	var address string
+	if address, pk, err = addressFeedArgs(ss); err != nil {
+		return
+	}
+	if err = rpc.Subscribe(node.ConnFeed{address, pk}); err != nil {
+		return
+	}
+	fmt.Println("  subscribed") // optimistic
+	return
+}
+
+func unsubscribe(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	if pk, err = publicKeyArg(ss); err != nil {
 		return
 	}
-	var ok bool
-	if ok, err = rpc.DelFeed(pk); err != nil {
+	if err = rpc.Unsubscribe(node.ConnFeed{Feed: pk}); err != nil {
 		return
 	}
-	if ok {
-		fmt.Println("  success")
+	fmt.Println("  unsubscribed") // optimistic
+	return
+}
+
+func unsubscribe_from(rpc *node.RPCClient, ss []string) (err error) {
+	var pk cipher.PubKey
+	var address string
+	if address, pk, err = addressFeedArgs(ss); err != nil {
 		return
 	}
-	fmt.Println("  hasn't got the feed")
+	if err = rpc.Unsubscribe(node.ConnFeed{address, pk}); err != nil {
+		return
+	}
+	fmt.Println("  unsubscribed") // optimistic
 	return
 }
 

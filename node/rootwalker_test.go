@@ -40,8 +40,7 @@ func genKeyPair() (cipher.PubKey, cipher.SecKey) {
 	return cipher.GenerateDeterministicKeyPair([]byte("a"))
 }
 
-func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Client,
-	s *Server) {
+func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Node) {
 
 	reg := skyobject.NewRegistry()
 	reg.Register("Person", Person{})
@@ -49,31 +48,17 @@ func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Client,
 	reg.Register("Thread", Thread{})
 	reg.Register("Board", Board{})
 
-	// async operations
-	addFeed := make(chan cipher.PubKey)
-
-	//
-	conf := newClientConfig()
-	conf.OnAddFeed = func(pk cipher.PubKey) {
-		addFeed <- pk
-	}
-
-	// feeds
-	feeds := []cipher.PubKey{pk}
-
 	var err error
-	if c, s, err = newRunningClient(conf, reg, feeds); err != nil {
+	if c, err = newNodeReg(newNodeConfig(false), reg); err != nil {
 		t.Fatal(err) // fatality
 	}
 
-	// sync
-	if addFeedTM(addFeed, t) != pk {
-		t.Fatal("wrong feed added") // fatality
+	if err = c.Start(); err != nil {
+		c.Close()
+		t.Fatal(err)
 	}
 
-	if c.Subscribe(pk) == false {
-		t.Fatal("unable to subscribe")
-	}
+	c.Subscribe(nil, pk)
 	return
 }
 
@@ -127,8 +112,7 @@ func getReference(s string) (skyobject.Reference, error) {
 func TestWalker_AdvanceFromRoot(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -155,8 +139,7 @@ func TestWalker_AdvanceFromRoot(t *testing.T) {
 func TestWalker_AdvanceFromRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -206,8 +189,7 @@ func TestWalker_AdvanceFromRefsField(t *testing.T) {
 func TestWalker_GetFromRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -257,8 +239,7 @@ func TestWalker_GetFromRefsField(t *testing.T) {
 func TestWalker_AdvanceFromRefField(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -299,8 +280,7 @@ func TestWalker_AdvanceFromRefField(t *testing.T) {
 func TestWalker_GetFromRefField(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -345,8 +325,7 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 	t.Run("dynamic post", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -374,8 +353,7 @@ func TestWalker_AdvanceFromDynamicField(t *testing.T) {
 	t.Run("dynamic person", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -406,8 +384,7 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 	t.Run("dynamic post", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -436,8 +413,7 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 	t.Run("dynamic person", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -468,8 +444,7 @@ func TestWalker_GetFromDynamicField(t *testing.T) {
 func TestWalker_AppendToRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -510,8 +485,7 @@ func TestWalker_AppendToRefsField(t *testing.T) {
 func TestWalker_ReplaceInRefsField(t *testing.T) {
 	pk, sk := genKeyPair()
 
-	client, server := newRootwalkerClient(t, pk)
-	defer server.Close()
+	client := newRootwalkerClient(t, pk)
 	defer client.Close()
 
 	w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -559,8 +533,7 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -611,8 +584,7 @@ func TestWalker_RemoveInRefsField(t *testing.T) {
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -672,8 +644,7 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -698,8 +669,7 @@ func TestWalker_ReplaceInRefField(t *testing.T) {
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -754,8 +724,7 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -798,8 +767,7 @@ func TestWalker_ReplaceCurrent(t *testing.T) {
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -849,8 +817,7 @@ func TestWalker_ReplaceInDynamicField(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -893,8 +860,7 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -924,8 +890,7 @@ func TestWalker_RemoveCurrent(t *testing.T) {
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -967,8 +932,7 @@ func TestWalker_RemoveByRef(t *testing.T) {
 	t.Run("depth of 1", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))
@@ -1000,8 +964,7 @@ func TestWalker_RemoveByRef(t *testing.T) {
 	t.Run("depth of 2", func(t *testing.T) {
 		pk, sk := genKeyPair()
 
-		client, server := newRootwalkerClient(t, pk)
-		defer server.Close()
+		client := newRootwalkerClient(t, pk)
 		defer client.Close()
 
 		w := NewRootWalker(fillContainer1(client.Container(), pk, sk))

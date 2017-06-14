@@ -43,9 +43,9 @@ func TestNewConfig(t *testing.T) {
 		t.Error("unexpected MaxRedialTimeout, want %v, got %v",
 			MaxRedialTimeout, c.MaxRedialTimeout)
 	}
-	if c.RedialsLimit != RedialsLimit {
-		t.Error("unexpected RedialsLimit, want %v, got %v",
-			RedialsLimit, c.RedialsLimit)
+	if c.DialsLimit != DialsLimit {
+		t.Error("unexpected DialsLimit, want %v, got %v",
+			DialsLimit, c.DialsLimit)
 	}
 	if c.ReadBufferSize != ReadBufferSize {
 		t.Error("unexpected ReadBufferSize, want %v, got %v",
@@ -114,9 +114,9 @@ func TestConfig_FromFlags(t *testing.T) {
 		t.Error("MaxRedialTimeout doesn't set from flags properly:",
 			c.MaxRedialTimeout)
 	}
-	if c.RedialsLimit != 53 {
-		t.Error("RedialsLimit doesn't set from flags properly:",
-			c.RedialsLimit)
+	if c.DialsLimit != 53 {
+		t.Error("DialsLimit doesn't set from flags properly:",
+			c.DialsLimit)
 	}
 	if c.ReadBufferSize != 53 {
 		t.Error("ReadBufferSize doesn't set from flags properly:",
@@ -139,7 +139,7 @@ func TestConfig_Validate(t *testing.T) {
 		{WriteQueueLen: -1},
 		{RedialTimeout: -1},
 		{MaxRedialTimeout: -1},
-		{RedialsLimit: -1},
+		{DialsLimit: -1},
 		{ReadBufferSize: -1},
 		{WriteBufferSize: -1},
 	} {

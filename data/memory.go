@@ -92,6 +92,23 @@ func (d *memoryDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
 // Feeds
 //
 
+func (d *memoryDB) AddFeed(pk cipher.PubKey) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	if _, ok := d.feeds[pk]; !ok {
+		d.feeds[pk] = map[uint64]cipher.SHA256{}
+	}
+}
+
+func (d *memoryDB) HasFeed(pk cipher.PubKey) (has bool) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	_, has = d.feeds[pk]
+	return
+}
+
 func (m *memoryDB) Feeds() (fs []cipher.PubKey) {
 	m.mx.RLock()
 	defer m.mx.RUnlock()
@@ -272,10 +289,6 @@ func (d *memoryDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	for _, s := range o {
 		delete(d.roots, roots[s])
 		delete(roots, s)
-	}
-
-	if len(roots) == 0 {
-		delete(d.feeds, pk)
 	}
 }
 

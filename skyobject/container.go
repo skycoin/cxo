@@ -28,6 +28,8 @@ type Container struct {
 	rmx          sync.RWMutex
 	coreRegistry *Registry // registry witch which the container was created
 	registries   map[RegistryReference]*Registry
+
+	gcmx sync.Mutex
 }
 
 // NewContainer creates new Container using given databse and
@@ -437,6 +439,20 @@ func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) {
 	})
 }
 
+// AddFeed to database of do nothing if given
+// feed already exists in the database
+func (c *Container) AddFeed(pk cipher.PubKey) {
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
+	c.db.AddFeed(pk)
+}
+
+// HasFeed looks database about given feed
+func (c *Container) HasFeed(pk cipher.PubKey) (yes bool) {
+	return c.db.HasFeed(pk)
+}
+
 // DelFeed deletes all root object of given feed. The
 // method doesn't perform GC
 func (c *Container) DelFeed(pk cipher.PubKey) {
@@ -461,6 +477,9 @@ func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 // last full root of a feed. If you want to keep all roots, then
 // call the GC with true
 func (c *Container) GC(dontRemoveRoots bool) {
+
+	c.gcmx.Lock()
+	defer c.gcmx.Unlock()
 
 	// gc lock
 	c.dbmx.Lock()
@@ -557,4 +576,14 @@ func (c *Container) addRoot(r *Root) (rp data.RootPack, err error) {
 	rp = r.encode()
 	err = c.db.AddRoot(r.pub, &rp)
 	return
+}
+
+// LockGC locks mutex of GC
+func (c *Container) LockGC() {
+	c.gcmx.Lock()
+}
+
+//UnlockGC unlocks mutex of GC
+func (c *Container) UnlockGC() {
+	c.gcmx.Unlock()
 }

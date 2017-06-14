@@ -1,14 +1,17 @@
 package node
 
 import (
+	"errors"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/skycoin/skycoin/src/cipher"
+	//"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -17,7 +20,6 @@ const TM time.Duration = 50 * time.Millisecond
 
 var (
 	testDataDir      = filepath.Join(".", "test")
-	testClientDBPath = filepath.Join(testDataDir, "client.db")
 	testServerDBPath = filepath.Join(testDataDir, "server.db")
 )
 
@@ -31,34 +33,17 @@ func shouldPanic(t *testing.T) {
 	}
 }
 
-func newClientConfig() (conf ClientConfig) {
-	conf = NewClientConfig()
-	conf.Log.Debug = testing.Verbose()
-	conf.InMemoryDB = true
-	conf.DataDir = testDataDir
-	conf.DBPath = testClientDBPath
-	return
-}
-
-func newClient(reg *skyobject.Registry) (c *Client, err error) {
-	c, err = NewClient(newClientConfig(), reg)
-	if err != nil {
-		return
-	}
-	if !testing.Verbose() {
-		c.Logger.SetOutput(ioutil.Discard)
-	}
-	return
-}
-
 // name for logs (empty for default)
 // memory - to use databas in memory (otherwise it will be ./test/test.db)
-func newServerConfig() (conf ServerConfig) {
-	conf = NewServerConfig()
+// listening enabled by argument
+func newNodeConfig(listen bool) (conf NodeConfig) {
+	conf = NewNodeConfig()
 	conf.Log.Debug = testing.Verbose()
-	conf.Listen = "" // arbitrary assignment
+	conf.Listen = "127.0.0.1:0" // arbitrary assignment
+	conf.EnableListener = listen
 
 	conf.EnableRPC = false
+	conf.RPCAddress = "127.0.0.1:0" // arbitrary assignment
 
 	conf.InMemoryDB = true
 	conf.DataDir = testDataDir
@@ -66,78 +51,84 @@ func newServerConfig() (conf ServerConfig) {
 	return
 }
 
-// newServer returns testing server. Listenng address of the
-// server is empty and any possible address will be used.
-// To determine address of the server use
-//
-//     s.pool.Address()
-//
-// after Start
-func newServer() (*Server, error) {
-	return newServerConf(newServerConfig())
+func newNode(conf NodeConfig) (s *Node, err error) {
+	s, err = newNodeReg(conf, nil)
+	return
 }
 
-// newServerConf like newServer, but it uses provided config
-func newServerConf(conf ServerConfig) (s *Server, err error) {
-	s, err = NewServer(conf)
-	if err != nil {
+func newNodeReg(conf NodeConfig, reg *skyobject.Registry) (s *Node, err error) {
+	if s, err = NewNodeReg(conf, reg); err != nil {
 		return
 	}
 	if !testing.Verbose() {
 		s.Logger.SetOutput(ioutil.Discard)
+		s.pool.Logger.SetOutput(ioutil.Discard)
+		log.SetOutput(ioutil.Discard) // RPC
 	}
 	return
 }
 
-func newRunninServer(feeds []cipher.PubKey) (s *Server, err error) {
-	s, err = newServer()
-	if err != nil {
-		return
-	}
-	if err = s.Start(); err != nil {
-		s.Close()
-		return
-	}
-	for _, f := range feeds {
-		s.AddFeed(f)
-	}
-	return
-}
+// b - listener (listens anyway)
+// a - connects to b (can listen and can not)
+func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
+	ac, bc *gnet.Conn, err error) {
 
-// start server and connect given client to the server
-// returning the server you need to close later. The server
-// subscribed to given list of feeds, but client doesn't
-// and some time required to sync between client and server.
-// To handle the syncing use ClientConfig.OnAddFeed callback
-func startClient(c *Client, feeds []cipher.PubKey) (s *Server, err error) {
-	if s, err = newRunninServer(feeds); err != nil {
-		return
-	}
-	if err = c.Start(s.pool.Address()); err != nil {
-		s.Close()
-		return
-	}
-	return
-}
+	bconf.EnableListener = true
 
-func newRunningClient(conf ClientConfig, reg *skyobject.Registry,
-	feeds []cipher.PubKey) (c *Client, s *Server, err error) {
+	// accept connection by b
+	accept := make(chan *gnet.Conn, 1)
 
-	if c, err = NewClient(conf, reg); err != nil {
+	var onCreateConnection = func(c *gnet.Conn) {
+		select {
+		case accept <- c: // never block here
+		default:
+		}
+	}
+
+	if cc := bconf.Config.OnCreateConnection; cc == nil {
+		bconf.Config.OnCreateConnection = onCreateConnection
+	} else {
+		bconf.Config.OnCreateConnection = func(c *gnet.Conn) {
+			cc(c)
+			onCreateConnection(c)
+		}
+	}
+
+	if a, err = newNode(aconf); err != nil {
 		return
 	}
-	if s, err = startClient(c, feeds); err != nil {
-		c.Close()
+	if err = a.Start(); err != nil {
+		a.Close()
 		return
 	}
-	return
-}
 
-func addFeedTM(addFeed <-chan cipher.PubKey, t *testing.T) (pk cipher.PubKey) {
+	if b, err = newNode(bconf); err != nil {
+		a.Close()
+		return
+	}
+	if err = b.Start(); err != nil {
+		a.Close()
+		b.Close()
+		return
+	}
+
+	if ac, err = a.Pool().Dial(b.Pool().Address()); err != nil {
+		a.Close()
+		b.Close()
+		return
+	}
+	// dialing prefoms asynchronously and we need to wait until
+	// connection of b will be created
 	select {
-	case pk = <-addFeed:
+	case bc = <-accept:
+		if bc == nil {
+			err = errors.New("misisng connection")
+		}
 	case <-time.After(TM):
-		t.Fatal("slow")
+		a.Close()
+		b.Close()
+		err = errors.New("slow")
+		return
 	}
 	return
 }
