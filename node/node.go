@@ -1269,7 +1269,7 @@ func (s *Node) Feeds() (fs []cipher.PubKey) {
 }
 
 // Quititng returns cahnnel that closed
-// when the Server closed
+// when the Node closed
 func (s *Node) Quiting() <-chan struct{} {
 	return s.done // when quit done
 }
