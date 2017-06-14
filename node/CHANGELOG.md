@@ -1,7 +1,7 @@
 changes
 =======
 
-#### TODO
+### TODO
 
 - [ ] add examples
 - [ ] improve documentation
@@ -12,9 +12,9 @@ changes
 - [ ] add more tests
 - [ ] add benchmarks
 
-#### Done
+### Done
 
-##### 18:20 14 June 2017 UTC
+#### 18:20 14 June 2017 UTC
 
 - [x] add OnDial filter to close connection that closed by other side
 

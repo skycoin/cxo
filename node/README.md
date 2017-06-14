@@ -5,6 +5,6 @@ node
 
 Node is low level package that implements P2P transport for CX objects
 
-##### Changes
+#### Changes
 
-see CHANGELOG.md for changes
+see `CHANGELOG.md` for changes
