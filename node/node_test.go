@@ -1105,12 +1105,12 @@ func TestNode_resubscribe(t *testing.T) {
 		return
 	}
 
-	// close conection from b side
+	// close connection from b side
 	bc.Close()
 
 	select {
 	case <-conn:
-		// we got renewed conenction
+		// we got renewed connection
 	case <-time.After(TM):
 		t.Error("slow redialing")
 		return

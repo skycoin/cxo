@@ -18,8 +18,8 @@ changes
 
 - [x] add OnDial filter to close connection that closed by other side
 
-Now, a Node doesn't redial if a remote peer closes conenction (by
-`io.EOF` and `connection reset by peer` errors). Introducted `OnDialFilter`
+Now, a Node doesn't redial if a remote peer closes connection (by
+`io.EOF` and `connection reset by peer` errors). Introduced `OnDialFilter`
 function that is in `NodeConfig` returned by `NewNodeConfig`.
 A developer free to set it to nil or use own filter. For example:
 
@@ -42,4 +42,4 @@ conf.Config.OnDial = nil // that is obvious
 
 If you create NodeConfig not using NewNodeConfig, then you need to set
 this field manually. Otherwise the Node created using this NodeConfig will
-redials even if remote peer resets conenction.
+redials even if remote peer resets connection.

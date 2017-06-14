@@ -238,7 +238,7 @@ func (s *NodeConfig) FromFlags() {
 }
 
 // OnDialFilter is gnet.OnDial callback that rejects redialing if
-// remote peer closes conenction
+// remote peer closes connection
 func OnDialFilter(c *gnet.Conn, err error) (reject error) {
 	if ne, ok := err.(net.Error); ok {
 		if ne.Temporary() {
@@ -256,7 +256,7 @@ func OnDialFilter(c *gnet.Conn, err error) (reject error) {
 				}
 			}
 		}
-	} else if err == io.EOF { // conenction has been closed by peer
+	} else if err == io.EOF { // connection has been closed by peer
 		return err // reject
 	}
 	return // nil (unknowm case)
