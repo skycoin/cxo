@@ -13,7 +13,7 @@ import (
 
 func getConfig() (c NodeConfig) {
 	c = NewNodeConfig()
-	c.InMemoryDB = true // use datbase in memory for examples
+	c.InMemoryDB = true // use database in memory for examples
 	return
 }
 
@@ -87,7 +87,7 @@ func ExampleNode_Pool() {
 	if conn, err := pool.Dial("127.0.0.1:8998"); err != nil {
 		// handle error
 	} else {
-		_ = conn // work with conection
+		_ = conn // work with connection
 	}
 
 	// call listen manually
@@ -102,7 +102,7 @@ func ExampleNode_Pool() {
 		c.Close()
 	}
 
-	// get all conenctions
+	// get all connections
 
 	for _, c := range pool.Connections() {
 		if c.IsIncoming() {
@@ -180,7 +180,7 @@ func ExampleNode_Unsubscribe() {
 
 	node.Subscribe(nil, Y)
 
-	// connect to a remote node and susbcribe to X feed of the node
+	// connect to a remote node and subscribe to X feed of the node
 
 	remote, err := node.Pool().Dial("127.0.0.1:8998")
 	if err != nil {
@@ -229,7 +229,7 @@ func ExampleNode_Feeds() {
 		return
 	}
 
-	// chech out feed we already subscribed to
+	// check out feed we already subscribed to
 
 	if len(node.Feeds()) != 0 {
 		// stuff
@@ -251,7 +251,7 @@ func ExampleNode_Feeds() {
 func ExampleNode_Quiting() {
 
 	// we  can't call log.Fatal, os.Exit, panic
-	// because of datbase. To be safe, we need
+	// because of database. To be safe, we need
 	// to close Node
 
 	conf := getConfig()
