@@ -23,30 +23,25 @@ _testmain.go
 *.test
 *.prof
 
-node_modules
+node_modules/
 
 .idea
 gui/static/dev/
 
+# coverage
+
+cover.out
+cover.html
+
+# executables
 
 cmd/cxocli/cxocli
 cmd/cxod/cxod
-cmd/*.out
 
-skyobject/cover.out
-skyobject/cover.html
-
-node/cover.out
-node/cover.html
+# tests directory
 
 node/test/
 
-node/gnet/cover.out
-node/gnet/cover.html
-
-bbs/generate/generate
-bbs/generate/generate.db
-bbs/receive/receive
-bbs/receive/receive.db
+# suffix for ignore files and directories temporary 
 
 *.go.ignore

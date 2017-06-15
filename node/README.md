@@ -5,6 +5,12 @@ node
 
 Node is low level package that implements P2P transport for CX objects
 
+#### Get
+
+```
+go get -u -t github.com/skycoin/cxo/node
+```
+
 #### Changes
 
 see `CHANGELOG.md` for changes
