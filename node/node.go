@@ -1,4 +1,3 @@
-// A node package implements P2P transport for sharing CX objects
 package node
 
 import (
