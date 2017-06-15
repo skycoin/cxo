@@ -291,3 +291,93 @@ func valueItem(val *skyobject.Value) (item gotree.GTStructure) {
 	}
 	return
 }
+
+/* ***** **** *** ** *
+
+Output:
+--------------------------------------------------------------------------------
+[SRC] 22:18:04 node.go:266: listen on 127.0.0.1:46101
+----
+f2590990ccf98334700623af22d2a040fa40f9472e087014ecf33d9941099cdd
+└── struct cxo.Group
+    ├── (field) Name
+    │   └── Group #0
+    ├── (field) Leader
+    │   └── *
+    │       └── struct cxo.User
+    │           ├── (field) Name
+    │           │   └── Elisabet Bathory
+    │           └── (field) Age
+    │               └── 30
+    └── (field) Users
+        └── []cxo.User
+            ├── *
+            │   └── struct cxo.User
+            │       ├── (field) Name
+            │       │   └── Alice #0
+            │       └── (field) Age
+            │           └── 19
+            └── *
+                └── struct cxo.User
+                    ├── (field) Name
+                    │   └── Eva #0
+                    └── (field) Age
+                        └── 21
+
+----
+----
+f47d8dd3c4cae83ddd3e99cece193350ce37b26bbc5c007dd5bffd7cde57b73f
+├── struct cxo.Group
+│   ├── (field) Name
+│   │   └── Group #0
+│   ├── (field) Leader
+│   │   └── *
+│   │       └── struct cxo.User
+│   │           ├── (field) Name
+│   │           │   └── Elisabet Bathory
+│   │           └── (field) Age
+│   │               └── 30
+│   └── (field) Users
+│       └── []cxo.User
+│           ├── *
+│           │   └── struct cxo.User
+│           │       ├── (field) Name
+│           │       │   └── Alice #0
+│           │       └── (field) Age
+│           │           └── 19
+│           └── *
+│               └── struct cxo.User
+│                   ├── (field) Name
+│                   │   └── Eva #0
+│                   └── (field) Age
+│                       └── 21
+└── struct cxo.Group
+    ├── (field) Name
+    │   └── Group #1
+    ├── (field) Leader
+    │   └── *
+    │       └── struct cxo.User
+    │           ├── (field) Name
+    │           │   └── Elisabet Bathory
+    │           └── (field) Age
+    │               └── 30
+    └── (field) Users
+        └── []cxo.User
+            ├── *
+            │   └── struct cxo.User
+            │       ├── (field) Name
+            │       │   └── Alice #1
+            │       └── (field) Age
+            │           └── 20
+            └── *
+                └── struct cxo.User
+                    ├── (field) Name
+                    │   └── Eva #1
+                    └── (field) Age
+                        └── 22
+
+----
+[DST] 22:18:07 conn.go:461: [ERR] 127.0.0.1:46101 reading error: EOF
+--------------------------------------------------------------------------------
+
+*/
