@@ -3,16 +3,45 @@ changes
 
 ### TODO
 
-- [ ] add examples
+- [ ] improve GC
 - [ ] improve documentation
 - [ ] add RPC methods to see conn->feeds and feed->conns
 - [ ] implement Tree RPC method
 - [ ] add OnDropRoot callback
 - [ ] add ability to remove non-full root objects that will not be filled
 - [ ] add more tests
-- [ ] add benchmarks
+- [ ] dry benchmarks
+- [ ] add long running tests
 
 ### Done
+
+#### 20:40 15 June 2017 UTC
+
+- [x] add examples
+- [x] add benchmarks
+
+Also, there are some documentation improvements.
+
+Benchmarks output is:
+
+```
+$ go test -bench . -benchtime 10s
+BenchmarkNode_srcDst/empty_roots_memory-4       10000    2390448 ns/op  100237 B/op  1690 allocs/op
+BenchmarkNode_srcDst/empty_roots_boltdb-4         100  113579500 ns/op  135854 B/op  1911 allocs/op
+BenchmarkNode_passThrough/empty_roots_memory-4   5000    3082852 ns/op  128090 B/op  2159 allocs/op
+BenchmarkNode_passThrough/empty_roots_boltdb-4    100  173033312 ns/op  184738 B/op  2549 allocs/op
+PASS
+ok      github.com/logrusorgru/cxo/node 73.241s
+```
+
+Machine is: 
+
+```
+Intel Core i5-6200U
+8GB DDR4
+Linux 4.10.0-22-generic #24-Ubuntu SMP Mon May 22 17:43:20 UTC 2017 x86_64
+```
+
 
 #### 18:20 14 June 2017 UTC
 
