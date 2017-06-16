@@ -471,7 +471,6 @@ type RangeFeedFunc func(r *Root) (err error)
 // Given RangeFeedFunc must be read-only
 func (c *Container) RangeFeed(pk cipher.PubKey, fn RangeFeedFunc) (err error) {
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
-		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
 			panic(err) // critical
