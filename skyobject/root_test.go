@@ -390,9 +390,9 @@ func TestRoot_WantFunc(t *testing.T) {
 		t.Fatal("wrong wants")
 	}
 	set := map[Reference]struct{}{
-		alice.Object: struct{}{},
-		eva.Object:   struct{}{},
-		ammy.Object:  struct{}{},
+		alice.Object: {},
+		eva.Object:   {},
+		ammy.Object:  {},
 	}
 	for _, w := range want {
 		if _, ok := set[w]; !ok {
@@ -537,7 +537,7 @@ func TestRoot_GotFunc(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatal("wrong gots", got)
 	}
-	set := map[Reference]struct{}{alice.Object: struct{}{}}
+	set := map[Reference]struct{}{alice.Object: {}}
 	for _, w := range got {
 		if _, ok := set[w]; !ok {
 			t.Fatal("wrong ref")

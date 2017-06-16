@@ -216,7 +216,7 @@ func rootItems(root *node.Root) (items []gotree.GTStructure) {
 	vals, err := root.Values()
 	if err != nil {
 		items = []gotree.GTStructure{
-			gotree.GTStructure{Name: "error: " + err.Error()},
+			{Name: "error: " + err.Error()},
 		}
 		return
 	}
@@ -257,7 +257,7 @@ func valueItem(val *skyobject.Value) (item gotree.GTStructure) {
 			}
 		} else {
 			item.Items = []gotree.GTStructure{
-				gotree.GTStructure{
+				{
 					Name: "error: " + err.Error(),
 				},
 			}

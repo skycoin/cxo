@@ -27,7 +27,7 @@ func rootItems(root *Root) (items []gotree.GTStructure) {
 	vals, err := root.Values()
 	if err != nil {
 		items = []gotree.GTStructure{
-			gotree.GTStructure{Name: "error: " + err.Error()},
+			{Name: "error: " + err.Error()},
 		}
 		return
 	}
@@ -81,7 +81,7 @@ func valueItem(val *Value) (item gotree.GTStructure) {
 			}
 		} else {
 			item.Items = []gotree.GTStructure{
-				gotree.GTStructure{
+				{
 					Name: "error: " + err.Error(),
 				},
 			}
@@ -131,7 +131,7 @@ func valueItem(val *Value) (item gotree.GTStructure) {
 			}
 			item.Name = "[]byte"
 			item.Items = []gotree.GTStructure{
-				gotree.GTStructure{Name: hex.EncodeToString(bt)},
+				{Name: hex.EncodeToString(bt)},
 			}
 			return
 		}
