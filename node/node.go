@@ -373,7 +373,7 @@ func (s *Node) sendEncodedMessage(c *gnet.Conn, name string,
 		ok = true
 	case <-c.Closed():
 	default:
-		s.Print("[ERR] %s send queue full", c.Address())
+		s.Printf("[ERR] %s send queue full", c.Address())
 		c.Close()
 	}
 	return

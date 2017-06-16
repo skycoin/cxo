@@ -290,7 +290,6 @@ func (r *Registry) getSchema(typ reflect.Type) Schema {
 	default:
 		panic("invlaid type: " + typ.String())
 	}
-	return nil // never happens
 }
 
 func (r *Registry) getField(sf reflect.StructField) Field {
@@ -359,7 +358,6 @@ func tagReference(tag reflect.StructTag) string {
 		return ss[1]
 	}
 	panic("invalid skyobject tag: " + skytag)
-	return ""
 }
 
 func typeOf(i interface{}) reflect.Type {
