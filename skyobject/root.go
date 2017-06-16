@@ -160,7 +160,8 @@ func (r *Root) Sig() cipher.Sig {
 func (r *Root) Hash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
-	return RootReference(r.hash)
+	rr := RootReference(r.hash)
+	return rr
 }
 
 // PrevHash returns RootReference to previous
@@ -172,7 +173,8 @@ func (r *Root) Hash() RootReference {
 func (r *Root) PrevHash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
-	return RootReference(r.prev)
+	rr := RootReference(r.prev)
+	return rr
 }
 
 // IsFull reports true if the Root is full
@@ -272,7 +274,7 @@ func (r *Root) SaveArray(i ...interface{}) References {
 }
 
 // Dynamic creates Dynamic object using Registry related to
-// the Root. If Registry doesn't exists or type was not
+// the Root. If Registry doesn't exists or type has not been
 // registered then the method returns error
 func (r *Root) Dynamic(schemaName string, i interface{}) (dr Dynamic,
 	err error) {
@@ -290,7 +292,7 @@ func (r *Root) Dynamic(schemaName string, i interface{}) (dr Dynamic,
 	return
 }
 
-// MustDynamic panics if registry missing or schema not registered
+// MustDynamic panics if registry missing or schema does not registered
 func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
 	var err error
 	if dr, err = r.Dynamic(schemaName, i); err != nil {
@@ -299,46 +301,66 @@ func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
 	return
 }
 
-// Inject an object to the Root updating the seq,
+// Append objects to the Root updating the seq,
 // timestamp and signature of the Root
-func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
-	rp data.RootPack, err error) {
+func (r *Root) Append(drs ...Dynamic) (rp data.RootPack, err error) {
 
-	if inj, err = r.Dynamic(schemaName, i); err != nil {
+	r.Lock()
+	defer r.Unlock()
+
+	r.refs = append(r.refs, drs...)
+	rp, err = r.touch()
+	return
+}
+
+// Len of root references
+func (r *Root) Len() int {
+	r.RLock()
+	defer r.RUnlock()
+
+	return len(r.refs)
+}
+
+// Index returns Dynamic reference by index. The error
+// can only be ErrIndexOutOfRange
+func (r *Root) Index(i int) (dr Dynamic, err error) {
+	if i < 0 || i >= len(r.refs) {
+		err = ErrIndexOutOfRange
 		return
 	}
-	r.Lock()
-	defer r.Unlock()
-	r.refs = append(r.refs, inj)
-	rp, err = r.touch()
+
+	r.RLock()
+	defer r.RUnlock()
+
+	dr = r.refs[i]
 	return
 }
 
-// InjectMany objects to the Root updating the seq,
-// timestamp and signature of the Root
-func (r *Root) InjectMany(schemaName string, i ...interface{}) (injs []Dynamic,
-	rp data.RootPack, err error) {
-
-	injs = make([]Dynamic, 0, len(i))
-	var inj Dynamic
-	for _, e := range i {
-		if inj, err = r.Dynamic(schemaName, e); err != nil {
-			injs = nil
-			return
-		}
-		injs = append(injs, inj)
+// Slice is like Index but it retursn slice from i to j.
+// This method retursn unsafe slice. E.g. modifications
+// of returned slice produce modifications in the Root.
+// To get safe slice use Refs method. The error can only be
+// ErrIndexOutOfRange
+func (r *Root) Slice(i, j int) (drs []Dynamic, err error) {
+	if i < 0 || i >= len(r.refs) || j < 0 || j >= len(r.refs) || j < i {
+		err = ErrIndexOutOfRange
+		return
 	}
-	r.Lock()
-	defer r.Unlock()
-	r.refs = append(r.refs, injs...)
-	rp, err = r.touch()
+
+	r.RLock()
+	defer r.RUnlock()
+
+	drs = r.refs[i:j]
 	return
 }
 
-// Refs returns references of the Root
+// Refs returns references of the Root. This method
+// returns safe copy of references that you can to
+// modify as you want without any side-effects
 func (r *Root) Refs() (refs []Dynamic) {
 	r.RLock()
 	defer r.RUnlock()
+
 	if len(r.refs) > 0 {
 		refs = make([]Dynamic, len(r.refs))
 		copy(refs, r.refs)
@@ -351,12 +373,11 @@ func (r *Root) Refs() (refs []Dynamic) {
 // least, by a Root that uses the same Registry). The Replace
 // implicitly updates seq, timestamp and signature of the Root.
 // The method returns list of previous references of the Root
-func (r *Root) Replace(refs []Dynamic) (prev []Dynamic, rp data.RootPack,
-	err error) {
-
+func (r *Root) Replace(refs []Dynamic) (rp data.RootPack, err error) {
 	r.Lock()
 	defer r.Unlock()
-	prev, r.refs = r.refs, refs
+
+	r.refs = refs
 	rp, err = r.touch()
 	return
 }
@@ -603,7 +624,7 @@ type RefsFunc func(Reference) (skip bool, err error)
 
 // RefsFunc used to determine possible references
 // of a Root. If the Root is full, then given
-// function will be caleed for every object
+// function will be called for every object
 // (ecxept skipped). Given function can be
 // called for objects that is not present
 // in database yet

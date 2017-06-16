@@ -16,6 +16,10 @@ changes
 
 ### Done
 
+#### 13:20 16 June 2017 UTC
+
+There are breaking changes in skyobject package.
+
 ####  1:00 16 June 2017 UTC
 
 - [x] implement `Tree` RPC method

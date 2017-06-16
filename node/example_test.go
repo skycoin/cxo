@@ -128,7 +128,7 @@ func generateGroup(i int, cnt *node.Container, root *node.Root) {
 	cnt.LockGC()
 	defer cnt.UnlockGC()
 
-	_, _, err := root.Inject("cxo.Group", Group{
+	group, err := root.Dynamic("cxo.Group", Group{
 		Name: fmt.Sprint("Group #", i),
 		Leader: root.Save(User{
 			Name: "Elisabet Bathory",
@@ -139,8 +139,12 @@ func generateGroup(i int, cnt *node.Container, root *node.Root) {
 			User{fmt.Sprintf("Eva #%d", i), 21 + uint32(i)},
 		),
 	})
-
 	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	if _, err := root.Append(group); err != nil {
 		log.Print(err)
 	}
 

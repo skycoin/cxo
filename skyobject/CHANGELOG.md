@@ -8,9 +8,25 @@ changes
 - [ ] fix user-provided-schema-name issue #98
 - [ ] add tests for `(*Container).RangeFeed`
 - [ ] add tests for `(*Container).RootByHash`
-- [ ] rename `(*Root).Inject, InjectMany -> Append`
+- [ ] add test for `(*Root).Index`
+- [ ] add test for `(*Root).Slice`
 
 ### Done
+
+#### 13:20 16 June 2017 UTC
+
+*There are breaking changes*
+
+- [x] rename `(*Root).Inject, InjectMany -> Append`
+
+Also:
+
++ introduced `(*Root).Slice(i, j int) (dr []Dynamic, err error)` method
++ introduced `(*Root).Index(i int) (dr Dynamic, err error)` method
+
+So, the changes are for semantics. A `Root` contains slice of references and
+methods `Append`, `Index` and `Slice` are intuitive. Methods `Inject` and
+`InjectMany` are not depricated, but removed
 
 ####  1:00 16 June 2017 UTC
 

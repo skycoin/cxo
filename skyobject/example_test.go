@@ -47,8 +47,7 @@ func Example() {
 
 	// callings of
 	//  - Touch
-	//  - Inject
-	//  - InjectMany
+	//  - Append
 	//  - Replace
 	// (1) increment seq number of the root
 	// (2) set its timestamp to now
@@ -58,7 +57,7 @@ func Example() {
 	// thus every of the callings create new version
 	// of the root
 
-	root.Inject("test.Group", Group{
+	root.Append(root.MustDynamic("test.Group", Group{
 		Name: "group #1",
 		Leader: root.Save(User{
 			Name:   "Bob Marley",
@@ -74,7 +73,7 @@ func Example() {
 			Name:   "kostyarin",
 			GitHub: "logrusorgru",
 		}),
-	})
+	}))
 
 	// TODO
 

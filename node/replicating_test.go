@@ -107,10 +107,10 @@ func Test_replicating(t *testing.T) {
 			return
 		}
 
-		root.Inject("test.User", User{
+		root.Append(root.MustDynamic("test.User", User{
 			Name: "Alice",
 			Age:  19,
-		})
+		}))
 
 		// after this Inject call root object saved and
 		// referes to the registry, now we can safely unlock GC
@@ -291,10 +291,10 @@ func Test_passThrough(t *testing.T) {
 		return
 	}
 
-	root.Inject("test.User", User{
+	root.Append(root.MustDynamic("test.User", User{
 		Name: "Alice",
-		Age:  21,
-	})
+		Age:  19,
+	}))
 
 	//
 	// receive / fill

@@ -467,7 +467,8 @@ func (c *Container) DelFeed(pk cipher.PubKey) {
 // but not returns the error
 type RangeFeedFunc func(r *Root) (err error)
 
-// RangeFeed itterates root obejcts of given feed from old to new
+// RangeFeed itterates root obejcts of given feed from old to new.
+// Given RangeFeedFunc must be read-only
 func (c *Container) RangeFeed(pk cipher.PubKey, fn RangeFeedFunc) (err error) {
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
 		var err error

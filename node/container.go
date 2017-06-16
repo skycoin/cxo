@@ -89,6 +89,15 @@ func (c *Container) LastFullRoot(pk cipher.PubKey) (r *Root) {
 	return
 }
 
+// RootByHash wrapper
+func (c *Container) RootByHash(rr skyobject.RootReference) (r *Root, ok bool) {
+	var sr *skyobject.Root
+	if sr, ok = c.Container.RootByHash(rr); sr != nil {
+		r = c.wrapRoot(sr)
+	}
+	return
+}
+
 // A Root represents wrapper of *skyobject.Root that
 // shares all changes
 type Root struct {
@@ -115,32 +124,17 @@ func (r *Root) Touch() (rp data.RootPack, err error) {
 	return
 }
 
-// Inject wrapper
-func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
-	rp data.RootPack, err error) {
-
-	if inj, rp, err = r.Root.Inject(schemName, i); err == nil {
-		r.send(rp)
-	}
-	return
-}
-
-// InjectMany wrapper
-func (r *Root) InjectMany(schemaName string,
-	i ...interface{}) (injs []skyobject.Dynamic, rp data.RootPack,
-	err error) {
-
-	if injs, rp, err = r.Root.InjectMany(schemaName, i...); err == nil {
+// Append wrapper
+func (r *Root) Append(drs ...skyobject.Dynamic) (rp data.RootPack, err error) {
+	if rp, err = r.Root.Append(drs...); err == nil {
 		r.send(rp)
 	}
 	return
 }
 
 // Repalce wrapper
-func (r *Root) Replace(refs []skyobject.Dynamic) (prev []skyobject.Dynamic,
-	rp data.RootPack, err error) {
-
-	if prev, rp, err = r.Root.Replace(refs); err == nil {
+func (r *Root) Replace(refs []skyobject.Dynamic) (rp data.RootPack, err error) {
+	if rp, err = r.Root.Replace(refs); err == nil {
 		r.send(rp)
 	}
 	return

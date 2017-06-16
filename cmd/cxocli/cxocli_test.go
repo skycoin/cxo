@@ -257,7 +257,7 @@ func Test_tree(t *testing.T) {
 		return
 	}
 
-	root.Inject("Group", Group{
+	root.Append(root.MustDynamic("Group", Group{
 		Name: "Just an average Group",
 		Users: root.SaveArray(
 			User{
@@ -269,7 +269,7 @@ func Test_tree(t *testing.T) {
 				Age:  80,
 			},
 		),
-	})
+	}))
 
 	hash := root.Hash()
 
