@@ -288,8 +288,8 @@ func testDataFeeds(t *testing.T, db DB) {
 		t.Error("wrong feeds length")
 	} else {
 		pks := map[cipher.PubKey]struct{}{
-			pk1: struct{}{},
-			pk2: struct{}{},
+			pk1: {},
+			pk2: {},
 		}
 		for _, pk := range fs {
 			if _, ok := pks[pk]; !ok {
