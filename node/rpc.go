@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net"
 	"net/rpc"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject"
 )
 
 // A RPC is receiver type for net/rpc.
@@ -75,6 +77,7 @@ func (r *RPC) Close() (err error) {
 // - Disconnect
 // - Associate
 // - ListeningAddress
+// - Roots
 // - Tree
 // - Terminate
 
@@ -95,13 +98,13 @@ type ConnFeed struct {
 	Feed    cipher.PubKey
 }
 
-func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (_ error) {
+func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
 	if cf.Address == "" {
 		r.ns.Subscribe(nil, cf.Feed)
 		return
 	}
 	if c := r.ns.Pool().Connection(cf.Address); c != nil {
-		r.ns.Subscribe(c, cf.Feed)
+		err = r.ns.SubscribeResponse(c, cf.Feed)
 		return
 	}
 	return errors.New("no such connection: " + cf.Address)
@@ -182,11 +185,38 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	return
 }
 
-// Tree prints objects tree for given root.
-// This method is not imeplemented (low priority)
-func (r *RPC) Tree(feed cipher.PubKey, tree *[]byte) (err error) {
-	//
-	err = errors.New("not implemented yet")
+type RootInfo struct {
+	Time   time.Time
+	Seq    uint64
+	Hash   skyobject.RootReference
+	IsFull bool
+}
+
+// Roots returns basic information about all root obejcts of a feed.
+// It returns (by RPC) list sorted from old roots to new
+func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (_ error) {
+	rs := make([]RootInfo, 0)
+	r.ns.so.RangeFeed(feed, func(r *skyobject.Root) (_ error) {
+		var ri RootInfo
+		ri.Time = time.Unix(0, r.Time())
+		ri.Seq = r.Seq()
+		ri.Hash = r.Hash()
+		ri.IsFull = r.IsFull()
+		rs = append(rs, ri)
+		return
+	})
+	*roots = rs
+	return
+}
+
+// Tree prints objects tree of chosen root object (chosen by hash)
+func (r *RPC) Tree(hash cipher.SHA256, tree *string) (_ error) {
+	root, ok := r.ns.so.RootByHash(skyobject.RootReference(hash))
+	if !ok {
+		*tree = "<not found>"
+		return
+	}
+	*tree = root.Inspect()
 	return
 }
 

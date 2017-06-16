@@ -378,7 +378,7 @@ func (c *Container) LastFullRoot(pk cipher.PubKey) (lastFull *Root) {
 		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
-			panic(err) // ccritical
+			panic(err) // critical
 		}
 		r.attached = true
 		// first full from tail
@@ -408,7 +408,7 @@ func (c *Container) WantFeed(pk cipher.PubKey, wf WantFunc) {
 		var r *Root
 		var err error
 		if r, err = c.unpackRoot(rp); err != nil {
-			panic(err) // ccritical
+			panic(err) // critical
 		}
 		r.attached = true
 		if err = r.WantFunc(wf); err == ErrStopRange {
@@ -429,7 +429,7 @@ func (c *Container) GotFeed(pk cipher.PubKey, gf GotFunc) {
 		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
-			panic(err) // ccritical
+			panic(err) // critical
 		}
 		r.attached = true
 		if err = r.GotFunc(gf); err == ErrStopRange {
@@ -460,6 +460,46 @@ func (c *Container) DelFeed(pk cipher.PubKey) {
 	defer c.dbmx.Unlock()
 
 	c.db.DelFeed(pk)
+}
+
+// RangeFeedFunc used by RangeFeed method of Container. If the
+// function returns ErrStopRange then itteration terminates
+// but not returns the error
+type RangeFeedFunc func(r *Root) (err error)
+
+// RangeFeed itterates root obejcts of given feed from old to new
+func (c *Container) RangeFeed(pk cipher.PubKey, fn RangeFeedFunc) (err error) {
+	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
+		var err error
+		var r *Root
+		if r, err = c.unpackRoot(rp); err != nil {
+			panic(err) // critical
+		}
+		r.attached = true
+		if err = fn(r); err != nil {
+			stop = true // break
+			if err == ErrStopRange {
+				err = nil
+			}
+		}
+		return // continue
+	})
+	return
+}
+
+// RootByHash return Root by its hash. It returns (nil, fasle)
+// if there is not
+func (c *Container) RootByHash(hash RootReference) (r *Root, ok bool) {
+	var rp *data.RootPack
+	if rp, ok = c.db.GetRoot(cipher.SHA256(hash)); !ok {
+		return
+	}
+	var err error
+	if r, err = c.unpackRoot(rp); err != nil {
+		panic(err) // critical
+	}
+	r.attached = true
+	return
 }
 
 // GC
