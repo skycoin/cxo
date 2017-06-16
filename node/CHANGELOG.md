@@ -18,7 +18,8 @@ changes
 
 #### 13:20 16 June 2017 UTC
 
-There are breaking changes in skyobject package.
+- there are breaking changes in skyobject package
+- GC disabled by default
 
 ####  1:00 16 June 2017 UTC
 

@@ -37,7 +37,7 @@ const (
 
 	// GCInterval is default valie for GC
 	// triggering interval
-	GCInterval time.Duration = 5 * time.Second
+	GCInterval time.Duration = 0 * 5 * time.Second
 
 	PublicServer bool = false // default
 
