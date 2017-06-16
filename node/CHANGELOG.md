@@ -3,15 +3,17 @@ changes
 
 ### TODO
 
-- [ ] improve GC
+- [ ] improve GC (#97)
 - [ ] improve documentation
 - [ ] add RPC methods to see conn->feeds and feed->conns
-- [ ] implement Tree RPC method
-- [ ] add OnDropRoot callback
+- [ ] implement `Tree` RPC method
+- [ ] add `OnDropRoot` callback
 - [ ] add ability to remove non-full root objects that will not be filled
 - [ ] add more tests
 - [ ] dry benchmarks
 - [ ] add long running tests
+- [ ] move `RootWalker` to skyobject package
+- [ ] move `(*Node).Start()` to `NewNodeReg` ridding out of the `Start`
 
 ### Done
 

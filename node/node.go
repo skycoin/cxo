@@ -1428,3 +1428,12 @@ func (s *Node) ListOfFeedsResponseTimeout(c *gnet.Conn,
 	return
 
 }
+
+// RPCAddress returns address of RPC listener or an empty
+// stirng if disabled
+func (n *Node) RPCAddress() (address string) {
+	if n.rpc != nil {
+		address = n.rpc.Address()
+	}
+	return
+}
