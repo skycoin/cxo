@@ -41,8 +41,8 @@ func shouldPanic(t *testing.T) {
 // name for logs (empty for default)
 // memory - to use databas in memory (otherwise it will be ./test/test.db)
 // listening enabled by argument
-func newNodeConfig(listen bool) (conf NodeConfig) {
-	conf = NewNodeConfig()
+func newConfig(listen bool) (conf Config) {
+	conf = NewConfig()
 	conf.Log.Debug = testing.Verbose()
 	if !testing.Verbose() {
 		conf.Log.Output = ioutil.Discard
@@ -61,7 +61,7 @@ func newNodeConfig(listen bool) (conf NodeConfig) {
 
 // b - listener (listens anyway)
 // a - connects to b (can listen and can not)
-func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
+func newConnectedNodes(aconf, bconf Config) (a, b *Node,
 	ac, bc *gnet.Conn, err error) {
 
 	bconf.EnableListener = true

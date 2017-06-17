@@ -65,12 +65,12 @@ func initDataDir(dir string) error {
 	return os.MkdirAll(dir, 0700)
 }
 
-// A NodeConfig represnets configurations
+// A Config represnets configurations
 // of a Node. The config contains configurations
 // for gnet.Pool and  for log.Logger. If logger of
-// gnet.Config is nil, then logger of NodeConfig
+// gnet.Config is nil, then logger of Config
 // will be used
-type NodeConfig struct {
+type Config struct {
 	gnet.Config // pool confirations
 
 	Log log.Config // logger configurations
@@ -154,9 +154,9 @@ type NodeConfig struct {
 	OnRootFilled func(root *Root)
 }
 
-// NewNodeConfig returns NodeConfig
+// NewConfig returns Config
 // filled with default values
-func NewNodeConfig() (sc NodeConfig) {
+func NewConfig() (sc Config) {
 	sc.Config = gnet.NewConfig()
 	sc.Log = log.NewConfig()
 	sc.EnableRPC = EnableRPC
@@ -178,11 +178,11 @@ func NewNodeConfig() (sc NodeConfig) {
 // FromFlags obtains value from command line flags.
 // Call the method before `flag.Parse` for example
 //
-//     c := node.NewNodeConfig()
+//     c := node.NewConfig()
 //     c.FromFlags()
 //     flag.Parse()
 //
-func (s *NodeConfig) FromFlags() {
+func (s *Config) FromFlags() {
 	s.Config.FromFlags()
 	s.Log.FromFlags()
 

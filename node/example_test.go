@@ -69,7 +69,7 @@ func SourceNode(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 
 	// config
 
-	conf := node.NewNodeConfig()
+	conf := node.NewConfig()
 	conf.Listen = "127.0.0.1:0" // arbitrary assignment
 	conf.InMemoryDB = true      // use in-memory database
 	conf.EnableRPC = false      // disable RPC
@@ -150,7 +150,7 @@ func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
 
 	// config
 
-	conf := node.NewNodeConfig()
+	conf := node.NewConfig()
 	conf.EnableListener = false // disable listener for this example
 	conf.InMemoryDB = true      // use database in memory
 	conf.EnableRPC = false

@@ -18,11 +18,11 @@ import (
 )
 
 func TestNewNode(t *testing.T) {
-	// NewNode(sc NodeConfig) (s *Node, err error)
+	// NewNode(sc Config) (s *Node, err error)
 
 	// registry must be nil
 	t.Run("registry", func(t *testing.T) {
-		s, err := NewNode(newNodeConfig(false))
+		s, err := NewNode(newConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func TestNewNode(t *testing.T) {
 	t.Run("memory db", func(t *testing.T) {
 		clean()
 
-		conf := newNodeConfig(false) // in-memory
+		conf := newConfig(false) // in-memory
 
 		s, err := NewNode(conf)
 		if err != nil {
@@ -67,7 +67,7 @@ func TestNewNode(t *testing.T) {
 	t.Run("data dir", func(t *testing.T) {
 		clean()
 
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.InMemoryDB = false
 
 		s, err := NewNode(conf)
@@ -89,7 +89,7 @@ func TestNewNode(t *testing.T) {
 	t.Run("dbpath", func(t *testing.T) {
 		clean()
 
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.InMemoryDB = false
 		conf.DBPath = filepath.Join(testDataDir, "another.db")
 
@@ -117,13 +117,13 @@ func TestNewNode(t *testing.T) {
 }
 
 func TestNewNodeReg(t *testing.T) {
-	// NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node, err error)
+	// NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node, err error)
 
 	// registry must be the same
 	t.Run("registry", func(t *testing.T) {
 		reg := skyobject.NewRegistry()
 
-		s, err := NewNodeReg(newNodeConfig(false), reg)
+		s, err := NewNodeReg(newConfig(false), reg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,7 +135,7 @@ func TestNewNodeReg(t *testing.T) {
 	})
 
 	t.Run("invalid gnet.Config", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.Config.DialTimeout = -1000
 		if s, err := NewNode(conf); err == nil {
 			t.Error("missing error")
@@ -148,7 +148,7 @@ func TestNewNodeReg(t *testing.T) {
 func TestNode_starting(t *testing.T) {
 
 	t.Run("disable listener", func(t *testing.T) {
-		s, err := NewNode(newNodeConfig(false))
+		s, err := NewNode(newConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -160,7 +160,7 @@ func TestNode_starting(t *testing.T) {
 	})
 
 	t.Run("enable listener", func(t *testing.T) {
-		s, err := NewNode(newNodeConfig(true))
+		s, err := NewNode(newConfig(true))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,7 +172,7 @@ func TestNode_starting(t *testing.T) {
 	})
 
 	t.Run("disable RPC listener", func(t *testing.T) {
-		s, err := NewNode(newNodeConfig(false))
+		s, err := NewNode(newConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -184,7 +184,7 @@ func TestNode_starting(t *testing.T) {
 	})
 
 	t.Run("enable RPC listener", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.EnableRPC = true
 
 		s, err := NewNode(conf)
@@ -203,7 +203,7 @@ func TestNode_Close(t *testing.T) {
 	// Close() (err error)
 
 	t.Run("close listener", func(t *testing.T) {
-		s, err := NewNode(newNodeConfig(true))
+		s, err := NewNode(newConfig(true))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -217,7 +217,7 @@ func TestNode_Close(t *testing.T) {
 	})
 
 	t.Run("close RPC listener", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.EnableRPC = true
 
 		s, err := NewNode(conf)
@@ -236,7 +236,7 @@ func TestNode_Close(t *testing.T) {
 	t.Run("twice", func(t *testing.T) {
 		defer clean()
 
-		conf := newNodeConfig(true)
+		conf := newConfig(true)
 		conf.EnableRPC = true
 		conf.InMemoryDB = false // force to use BoltDBs
 
@@ -259,7 +259,7 @@ func TestNode_Close(t *testing.T) {
 func TestNode_Pool(t *testing.T) {
 	// Pool() (pool *gnet.Pool)
 
-	s, err := NewNode(newNodeConfig(false))
+	s, err := NewNode(newConfig(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,8 +276,8 @@ func (s *Node) lenPending() int {
 	return len(s.pending)
 }
 
-func testNodeSubscribe_local(t *testing.T) {
-	s, err := NewNode(newNodeConfig(false))
+func testNodeSubscribeLocal(t *testing.T) {
+	s, err := NewNode(newConfig(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,11 +305,11 @@ func testNodeSubscribe_local(t *testing.T) {
 
 }
 
-func testNodeSubscribe_remoteReject(t *testing.T) {
+func testNodeSubscribeRemoteReject(t *testing.T) {
 	pk, _ := cipher.GenerateKeyPair()
 
-	aconf := newNodeConfig(false)
-	bconf := newNodeConfig(false)
+	aconf := newConfig(false)
+	bconf := newConfig(false)
 
 	reject := make(chan *gnet.Conn, 1)
 
@@ -350,11 +350,11 @@ func testNodeSubscribe_remoteReject(t *testing.T) {
 
 }
 
-func testNodeSubscribe_remoteAccept(t *testing.T) {
+func testNodeSubscribeRemoteAccept(t *testing.T) {
 	pk, _ := cipher.GenerateKeyPair()
 
-	aconf := newNodeConfig(false)
-	bconf := newNodeConfig(false)
+	aconf := newConfig(false)
+	bconf := newConfig(false)
 
 	accept := make(chan *gnet.Conn, 1)
 
@@ -396,11 +396,11 @@ func testNodeSubscribe_remoteAccept(t *testing.T) {
 
 }
 
-func testNodeSubscribe_remoteAcceptTwice(t *testing.T) {
+func testNodeSubscribeRemoteAcceptTwice(t *testing.T) {
 	pk, _ := cipher.GenerateKeyPair()
 
-	aconf := newNodeConfig(false)
-	bconf := newNodeConfig(false)
+	aconf := newConfig(false)
+	bconf := newConfig(false)
 
 	accept := make(chan *gnet.Conn, 1)
 
@@ -458,15 +458,15 @@ func testNodeSubscribe_remoteAcceptTwice(t *testing.T) {
 func TestNode_Subscribe(t *testing.T) {
 	// Subscribe(c *gnet.Conn, feed cipher.PubKey)
 
-	t.Run("local", testNodeSubscribe_local)
-	t.Run("remote reject", testNodeSubscribe_remoteReject)
-	t.Run("remote accept", testNodeSubscribe_remoteAccept)
-	t.Run("remote accept twice", testNodeSubscribe_remoteAcceptTwice)
+	t.Run("local", testNodeSubscribeLocal)
+	t.Run("remote reject", testNodeSubscribeRemoteReject)
+	t.Run("remote accept", testNodeSubscribeRemoteAccept)
+	t.Run("remote accept twice", testNodeSubscribeRemoteAcceptTwice)
 
 }
 
-func testNodeUnsubscribe_local(t *testing.T) {
-	s, err := NewNode(newNodeConfig(false))
+func testNodeUnsubscribeLocal(t *testing.T) {
+	s, err := NewNode(newConfig(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,11 +490,11 @@ func testNodeUnsubscribe_local(t *testing.T) {
 
 }
 
-func testNodeUnsubscribe_remoteSingle(t *testing.T) {
+func testNodeUnsubscribeRemoteSingle(t *testing.T) {
 	pk, _ := cipher.GenerateKeyPair()
 
-	aconf := newNodeConfig(false)
-	bconf := newNodeConfig(false)
+	aconf := newConfig(false)
+	bconf := newConfig(false)
 
 	accept := make(chan *gnet.Conn, 1)
 
@@ -564,13 +564,13 @@ func receiveChanTimeout(c <-chan struct{}, tm time.Duration) (ok bool) {
 
 // TODO: DRY
 
-func testNodeUnsubscribe_remoteMany(t *testing.T) {
+func testNodeUnsubscribeRemoteMany(t *testing.T) {
 	pk, _ := cipher.GenerateKeyPair()
 
 	// create
 
-	aconf := newNodeConfig(false) // client subscribes
-	sconf := newNodeConfig(true)  // b and c (servers)
+	aconf := newConfig(false) // client subscribes
+	sconf := newConfig(true)  // b and c (servers)
 
 	accept := make(chan struct{}, 1)
 	aconf.OnSubscriptionAccepted = func(_ *gnet.Conn, feed cipher.PubKey) {
@@ -671,10 +671,10 @@ func testNodeUnsubscribe_remoteMany(t *testing.T) {
 
 }
 
-func testNodeUnsubscribe_removeFromPending(t *testing.T) {
+func testNodeUnsubscribeRemoveFromPending(t *testing.T) {
 	pk, _ := cipher.GenerateKeyPair()
 
-	a, err := NewNode(newNodeConfig(false))
+	a, err := NewNode(newConfig(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,17 +718,17 @@ func testNodeUnsubscribe_removeFromPending(t *testing.T) {
 func TestNode_Unsubscribe(t *testing.T) {
 	// Unsubscribe(c *gnet,.Conn, feed cipher.PubKey)
 
-	t.Run("local", testNodeUnsubscribe_local)
-	t.Run("remote single", testNodeUnsubscribe_remoteSingle)
-	t.Run("remote many", testNodeUnsubscribe_remoteMany)
-	t.Run("remove from pending", testNodeUnsubscribe_removeFromPending)
+	t.Run("local", testNodeUnsubscribeLocal)
+	t.Run("remote single", testNodeUnsubscribeRemoteSingle)
+	t.Run("remote many", testNodeUnsubscribeRemoteMany)
+	t.Run("remove from pending", testNodeUnsubscribeRemoveFromPending)
 }
 
 func TestNewNode_loadingFeeds(t *testing.T) {
 
 	defer clean()
 
-	conf := newNodeConfig(false)
+	conf := newConfig(false)
 	conf.InMemoryDB = false
 
 	s, err := NewNode(conf)
@@ -792,7 +792,7 @@ func TestNode_SubscribeResponse(t *testing.T) {
 	// SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error
 
 	t.Run("accept", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 
 		a, b, ac, _, err := newConnectedNodes(conf, conf)
 		if err != nil {
@@ -814,7 +814,7 @@ func TestNode_SubscribeResponse(t *testing.T) {
 	})
 
 	t.Run("reject", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 
 		a, b, ac, _, err := newConnectedNodes(conf, conf)
 		if err != nil {
@@ -836,7 +836,7 @@ func TestNode_SubscribeResponse(t *testing.T) {
 	})
 
 	t.Run("timeout", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.ResponseTimeout = TM
 
 		a, err := NewNode(conf)
@@ -893,8 +893,8 @@ func TestNode_ListOfFeedsResponse(t *testing.T) {
 	// ListOfFeedsResponse(c *gnet.Conn) ([]cipher.PubKey, error)
 
 	t.Run("success", func(t *testing.T) {
-		aconf := newNodeConfig(false)
-		bconf := newNodeConfig(true)
+		aconf := newConfig(false)
+		bconf := newConfig(true)
 		bconf.PublicServer = true
 
 		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
@@ -921,7 +921,7 @@ func TestNode_ListOfFeedsResponse(t *testing.T) {
 	})
 
 	t.Run("non-public", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 
 		a, b, ac, _, err := newConnectedNodes(conf, conf)
 		if err != nil {
@@ -941,7 +941,7 @@ func TestNode_ListOfFeedsResponse(t *testing.T) {
 	})
 
 	t.Run("timeout", func(t *testing.T) {
-		conf := newNodeConfig(false)
+		conf := newConfig(false)
 		conf.ResponseTimeout = TM
 
 		a, err := NewNode(conf)
@@ -1003,7 +1003,7 @@ func TestNode_resubscribe(t *testing.T) {
 		t.Skip("short")
 	}
 
-	aconf := newNodeConfig(false)
+	aconf := newConfig(false)
 	aconf.Log.Prefix = "[A CLIENT]"
 	aconf.Config.RedialTimeout = 0 // redial immediately
 	aconf.Config.OnDial = nil      // clear any default redialing filters
@@ -1015,7 +1015,7 @@ func TestNode_resubscribe(t *testing.T) {
 	// we can't use OnSubscriptionAccepted because it never called
 	// if remote peer already subscribed to a feed by this (local)
 	// node; but we can use OnSubscribeRemote of b
-	bconf := newNodeConfig(true)
+	bconf := newConfig(true)
 	bconf.Log.Prefix = "[B SERVER]"
 	subs := make(chan cipher.PubKey, 1)
 	bconf.OnSubscribeRemote = func(_ *gnet.Conn, feed cipher.PubKey) (_ error) {

@@ -103,6 +103,9 @@ func (p *Pool) release() {
 //                                  listeninng                                //
 // ========================================================================== //
 
+// Listen on given address. Only one listener allowed. The listener
+// never recreated. If it fails, you need to recreate entire Pool to
+// listen again
 func (p *Pool) Listen(address string) (err error) {
 	if p.isClosed() {
 		err = ErrClosed
@@ -262,7 +265,7 @@ func (p *Pool) Connections() (cs []*Conn) {
 	return
 }
 
-// Connections returns a connection by address
+// Connection returns a connection by address
 // or nil if connectios with given address doesn't exists
 func (p *Pool) Connection(address string) *Conn {
 	p.cmx.Lock()

@@ -49,7 +49,7 @@ func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Node) {
 	reg.Register("Board", Board{})
 
 	var err error
-	if c, err = NewNodeReg(newNodeConfig(false), reg); err != nil {
+	if c, err = NewNodeReg(newConfig(false), reg); err != nil {
 		t.Fatal(err) // fatality
 	}
 

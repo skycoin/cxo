@@ -199,7 +199,7 @@ func TestData_IsExist(t *testing.T) {
 }
 
 func testDataRange(t *testing.T, db DB) {
-	var vals [][]byte = [][]byte{
+	var vals = [][]byte{
 		[]byte("one"),
 		[]byte("two"),
 		[]byte("othree"),
@@ -208,7 +208,7 @@ func testDataRange(t *testing.T, db DB) {
 	for _, val := range vals {
 		db.Add(val)
 	}
-	var collect map[cipher.SHA256][]byte = make(map[cipher.SHA256][]byte)
+	var collect = make(map[cipher.SHA256][]byte)
 	db.Range(func(key cipher.SHA256, value []byte) (stop bool) {
 		collect[key] = value
 		return
@@ -553,7 +553,7 @@ func getRootPack(seq uint64, content string) (rp RootPack) {
 func testRangeFeed(t *testing.T, db DB) {
 	pk, _ := cipher.GenerateKeyPair()
 	// no feed
-	var i int = 0
+	var i int
 	db.RangeFeed(pk, func(*RootPack) (stop bool) {
 		i++
 		return
@@ -627,7 +627,7 @@ func TestData_RangeFeed(t *testing.T) {
 func testRangeFeedReverese(t *testing.T, db DB) {
 	pk, _ := cipher.GenerateKeyPair()
 	// no feed
-	var i int = 0
+	var i int
 	db.RangeFeedReverse(pk, func(*RootPack) (stop bool) {
 		i++
 		return

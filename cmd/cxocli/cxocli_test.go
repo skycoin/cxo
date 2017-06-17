@@ -29,7 +29,7 @@ type Group struct {
 	Users skyobject.References `skyobject:"schema=User"`
 }
 
-var testOut *bytes.Buffer = new(bytes.Buffer)
+var testOut = new(bytes.Buffer)
 
 func init() {
 	out = testOut // owerwrite
@@ -375,8 +375,8 @@ func Test_term(t *testing.T) {
 
 }
 
-func newNodeConfig() (conf node.NodeConfig) {
-	conf = node.NewNodeConfig()
+func newNodeConfig() (conf node.Config) {
+	conf = node.NewConfig()
 	conf.InMemoryDB = true
 	conf.Listen = "127.0.0.1:0"
 	conf.EnableListener = false
@@ -387,7 +387,7 @@ func newNodeConfig() (conf node.NodeConfig) {
 	return
 }
 
-func launchNode(conf node.NodeConfig) (n *node.Node, err error) {
+func launchNode(conf node.Config) (n *node.Node, err error) {
 	reg := skyobject.NewRegistry()
 	reg.Register("User", User{})
 	reg.Register("Group", Group{})

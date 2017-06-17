@@ -57,11 +57,11 @@ var (
 // a msgSource represents source of messages,
 // it creates messages with unique id per session
 type msgSource struct {
-	lastMsgId uint32
+	lastMsgID uint32
 }
 
-func (m *msgSource) getId() uint32 {
-	return atomic.AddUint32(&m.lastMsgId, 1)
+func (m *msgSource) getID() uint32 {
+	return atomic.AddUint32(&m.lastMsgID, 1)
 }
 
 func (m *msgSource) NewPingMsg() (msg *PingMsg) {
@@ -76,7 +76,7 @@ func (m *msgSource) NewPongMsg() (msg *PongMsg) {
 
 func (m *msgSource) NewSubscribeMsg(feed cipher.PubKey) (msg *SubscribeMsg) {
 	msg = &SubscribeMsg{Feed: feed}
-	msg.Identifier = m.getId()
+	msg.Identifier = m.getID()
 	return
 }
 
@@ -87,19 +87,19 @@ func (m *msgSource) NewUnsubscribeMsg(
 	return
 }
 
-func (m *msgSource) NewAcceptSubscriptionMsg(responseId uint32,
+func (m *msgSource) NewAcceptSubscriptionMsg(responseID uint32,
 	feed cipher.PubKey) (msg *AcceptSubscriptionMsg) {
 
 	msg = &AcceptSubscriptionMsg{Feed: feed}
-	msg.ResponseForId = responseId
+	msg.ResponseForID = responseID
 	return
 }
 
-func (m *msgSource) NewRejectSubscriptionMsg(responseId uint32,
+func (m *msgSource) NewRejectSubscriptionMsg(responseID uint32,
 	feed cipher.PubKey) (msg *RejectSubscriptionMsg) {
 
 	msg = &RejectSubscriptionMsg{Feed: feed}
-	msg.ResponseForId = responseId
+	msg.ResponseForID = responseID
 	return
 }
 
@@ -136,24 +136,24 @@ func (m *msgSource) NewRegistryMsg(reg []byte) (msg *RegistryMsg) {
 
 func (m *msgSource) NewRequestListOfFeedsMsg() (msg *RequestListOfFeedsMsg) {
 	msg = new(RequestListOfFeedsMsg)
-	msg.Identifier = m.getId()
+	msg.Identifier = m.getID()
 	return
 }
 
-func (m *msgSource) NewListOfFeedsMsg(responseId uint32,
+func (m *msgSource) NewListOfFeedsMsg(responseID uint32,
 	list []cipher.PubKey) (msg *ListOfFeedsMsg) {
 
 	msg = new(ListOfFeedsMsg)
-	msg.ResponseForId = responseId
+	msg.ResponseForID = responseID
 	msg.List = list
 	return
 }
 
 func (m *msgSource) NewNonPublicServerMsg(
-	responseId uint32) (msg *NonPublicServerMsg) {
+	responseID uint32) (msg *NonPublicServerMsg) {
 
 	msg = new(NonPublicServerMsg)
-	msg.ResponseForId = responseId
+	msg.ResponseForID = responseID
 	return
 }
 
@@ -177,16 +177,16 @@ func (s *Node) sendUnsubscribeMsg(c *gnet.Conn, feed cipher.PubKey) bool {
 	return s.sendMessage(c, s.src.NewUnsubscribeMsg(feed))
 }
 
-func (s *Node) sendAcceptSubscriptionMsg(c *gnet.Conn, responseId uint32,
+func (s *Node) sendAcceptSubscriptionMsg(c *gnet.Conn, responseID uint32,
 	feed cipher.PubKey) bool {
 
-	return s.sendMessage(c, s.src.NewAcceptSubscriptionMsg(responseId, feed))
+	return s.sendMessage(c, s.src.NewAcceptSubscriptionMsg(responseID, feed))
 }
 
-func (s *Node) sendRejectSubscriptionMsg(c *gnet.Conn, responseId uint32,
+func (s *Node) sendRejectSubscriptionMsg(c *gnet.Conn, responseID uint32,
 	feed cipher.PubKey) bool {
 
-	return s.sendMessage(c, s.src.NewRejectSubscriptionMsg(responseId, feed))
+	return s.sendMessage(c, s.src.NewRejectSubscriptionMsg(responseID, feed))
 }
 
 func (s *Node) sendRootMsg(c *gnet.Conn, feed cipher.PubKey,
@@ -217,14 +217,14 @@ func (s *Node) sendRequestListOfFeedsMsg(c *gnet.Conn) bool {
 	return s.sendMessage(c, s.src.NewRequestListOfFeedsMsg())
 }
 
-func (s *Node) sendListOfFeedsMsg(c *gnet.Conn, responseId uint32,
+func (s *Node) sendListOfFeedsMsg(c *gnet.Conn, responseID uint32,
 	list []cipher.PubKey) bool {
 
-	return s.sendMessage(c, s.src.NewListOfFeedsMsg(responseId, list))
+	return s.sendMessage(c, s.src.NewListOfFeedsMsg(responseID, list))
 }
 
-func (s *Node) sendNonPublicServerMsg(c *gnet.Conn, responseId uint32) bool {
-	return s.sendMessage(c, s.src.NewNonPublicServerMsg(responseId))
+func (s *Node) sendNonPublicServerMsg(c *gnet.Conn, responseID uint32) bool {
+	return s.sendMessage(c, s.src.NewNonPublicServerMsg(responseID))
 }
 
 //
@@ -233,28 +233,38 @@ func (s *Node) sendNonPublicServerMsg(c *gnet.Conn, responseId uint32) bool {
 
 // A Msg is common interface for CXO messages
 type Msg interface {
-	Id() uint32          // id of the message
+	ID() uint32          // id of the message
 	ResponseFor() uint32 // the message is response for
 	MsgType() MsgType    // type of the message to encode
 }
 
+// IdentifiedMsg is embeddable type. This typ should be a
+// part of a *Msg that has ID
 type IdentifiedMsg struct {
-	Identifier uint32
+	Identifier uint32 // identifier in person
 }
 
-func (i *IdentifiedMsg) Id() uint32        { return i.Identifier }
+// ID implements ID method of Msg interface
+func (i *IdentifiedMsg) ID() uint32 { return i.Identifier }
+
+// ResponseFor implements ResponseFor method of Msg interface
 func (*IdentifiedMsg) ResponseFor() uint32 { return 0 }
 
+// A ResponsedMsg represents an embeddabel struct that
+// should be embedded to messages that has ResponseFor
 type ResponsedMsg struct {
-	ResponseForId uint32
+	ResponseForID uint32 // ID of message the message response for
 }
 
-func (r *ResponsedMsg) Id() uint32          { return 0 }
-func (r *ResponsedMsg) ResponseFor() uint32 { return r.ResponseForId }
+// ID implements ID method of Msg interface
+func (r *ResponsedMsg) ID() uint32 { return 0 }
+
+// ResponseFor implements ResponseFor method of Msg interface
+func (r *ResponsedMsg) ResponseFor() uint32 { return r.ResponseForID }
 
 type msgCoreStub struct{}
 
-func (msgCoreStub) Id() uint32          { return 0 }
+func (msgCoreStub) ID() uint32          { return 0 }
 func (msgCoreStub) ResponseFor() uint32 { return 0 }
 
 // A PingMsg is service message and used
@@ -319,7 +329,7 @@ func (*RejectSubscriptionMsg) MsgType() MsgType {
 	return RejectSubscriptionMsgType
 }
 
-// A RequestListOfFeeds is transport message to obtain list of
+// A RequestListOfFeedsMsg is transport message to obtain list of
 // feeds from a public server
 type RequestListOfFeedsMsg struct {
 	IdentifiedMsg
@@ -362,6 +372,7 @@ type RootMsg struct {
 // MsgType implements Msg interface
 func (*RootMsg) MsgType() MsgType { return RootMsgType }
 
+// A RequestDataMsg represents a Msg that request a data by hash
 type RequestDataMsg struct {
 	msgCoreStub
 
@@ -381,6 +392,8 @@ type DataMsg struct {
 // MsgType implements Msg interface
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
+// A RequestRegistryMsg represents a Msg that request skyobject.Registry
+// by hash
 type RequestRegistryMsg struct {
 	msgCoreStub
 
@@ -390,6 +403,7 @@ type RequestRegistryMsg struct {
 // MsgType implements Msg interface
 func (*RequestRegistryMsg) MsgType() MsgType { return RequestRegistryMsgType }
 
+// A RegistryMsg contains encoded skyobject.Registry
 type RegistryMsg struct {
 	msgCoreStub
 
@@ -406,6 +420,7 @@ func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
 // A MsgType represent msg prefix
 type MsgType uint8
 
+// MsgTypes
 const (
 	PingMsgType MsgType = 1 + iota // PingMsg 1
 	PongMsgType                    // PongMsg 2

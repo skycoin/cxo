@@ -43,7 +43,7 @@ func Test_replicating(t *testing.T) {
 
 	// a config
 
-	aconf := newNodeConfig(false)
+	aconf := newConfig(false)
 
 	accept := make(chan struct{})
 
@@ -53,7 +53,7 @@ func Test_replicating(t *testing.T) {
 
 	// b config
 
-	bconf := newNodeConfig(true)
+	bconf := newConfig(true)
 
 	received := make(chan struct{})
 	filled := make(chan struct{})
@@ -153,7 +153,7 @@ func Test_passThrough(t *testing.T) {
 
 	// a config
 
-	aconf := newNodeConfig(false)
+	aconf := newConfig(false)
 	aconf.GCInterval = 0 // disable GC
 
 	accept := make(chan struct{}) // used by a and c
@@ -166,7 +166,7 @@ func Test_passThrough(t *testing.T) {
 
 	// c config
 
-	cconf := newNodeConfig(true)
+	cconf := newConfig(true)
 
 	received := make(chan struct{})
 	filled := make(chan struct{})
@@ -207,7 +207,7 @@ func Test_passThrough(t *testing.T) {
 	// b
 	//
 
-	b, err := NewNode(newNodeConfig(true)) // listen
+	b, err := NewNode(newConfig(true)) // listen
 	if err != nil {
 		t.Error(err)
 		return

@@ -11,8 +11,8 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-func getConfig() (c NodeConfig) {
-	c = NewNodeConfig()
+func getConfig() (c Config) {
+	c = NewConfig()
 	c.InMemoryDB = true // use database in memory for examples
 	return
 }

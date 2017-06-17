@@ -109,15 +109,15 @@ func (d *memoryDB) HasFeed(pk cipher.PubKey) (has bool) {
 	return
 }
 
-func (m *memoryDB) Feeds() (fs []cipher.PubKey) {
-	m.mx.RLock()
-	defer m.mx.RUnlock()
+func (d *memoryDB) Feeds() (fs []cipher.PubKey) {
+	d.mx.RLock()
+	defer d.mx.RUnlock()
 
-	if len(m.feeds) == 0 {
+	if len(d.feeds) == 0 {
 		return
 	}
-	fs = make([]cipher.PubKey, 0, len(m.feeds))
-	for pk := range m.feeds {
+	fs = make([]cipher.PubKey, 0, len(d.feeds))
+	for pk := range d.feeds {
 		fs = append(fs, pk)
 	}
 	return
@@ -134,7 +134,7 @@ func (d *memoryDB) DelFeed(pk cipher.PubKey) {
 }
 
 func (d *memoryDB) AddRoot(pk cipher.PubKey, rr *RootPack) (err error) {
-	var rp *RootPack = new(RootPack)
+	rp := new(RootPack)
 	*rp = *rr // copy (required)
 	// test given rp
 	if rp.Seq == 0 {
@@ -182,7 +182,7 @@ func (d *memoryDB) LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool) {
 	if len(roots) == 0 {
 		return // bo roots
 	}
-	var max uint64 = 0
+	var max uint64
 	for seq := range roots {
 		if max < seq {
 			max = seq
@@ -205,7 +205,7 @@ func (d *memoryDB) RangeFeed(pk cipher.PubKey,
 		return // empty feed
 	}
 
-	var o order = make(order, 0, len(roots))
+	var o = make(order, 0, len(roots))
 	for seq := range roots {
 		o = append(o, seq)
 	}
@@ -235,7 +235,7 @@ func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
 		return // empty feed
 	}
 
-	var o order = make(order, 0, len(roots))
+	var o = make(order, 0, len(roots))
 	for seq := range roots {
 		o = append(o, seq)
 	}
@@ -275,7 +275,7 @@ func (d *memoryDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 		return // empty feed
 	}
 
-	var o order = make(order, 0, len(roots))
+	var o = make(order, 0, len(roots))
 	for s := range roots {
 		if s < seq {
 			o = append(o, s)
@@ -306,7 +306,7 @@ func (d *memoryDB) Stat() (s Stat) {
 	}
 	s.Feeds = make(map[cipher.PubKey]FeedStat, len(d.feeds))
 	// lengths of Prev, Hash, Sig and Seq (8 byte)
-	var add int = len(cipher.SHA256{})*2 + len(cipher.Sig{}) + 8
+	add := len(cipher.SHA256{})*2 + len(cipher.Sig{}) + 8
 	for pk, rs := range d.feeds {
 		var fs FeedStat
 		for _, hash := range rs {

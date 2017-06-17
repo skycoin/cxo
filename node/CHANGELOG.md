@@ -26,6 +26,11 @@ Also
 - there are changes in skyobject package
 - GC disabled by default
 
+
+And there is breaking changes:
+
+- `NodeConfig` renamed to `Config` following golang linter recommendations
+
 ####  1:00 16 June 2017 UTC
 
 - [x] implement `Tree` RPC method

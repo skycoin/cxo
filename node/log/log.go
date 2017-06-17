@@ -8,9 +8,10 @@ import (
 	"os"
 )
 
+// defaults
 const (
-	Prefix string = ""
-	Debug  bool   = false
+	Prefix string = ""    // default prefix
+	Debug  bool   = false // don't show debug logs by default
 )
 
 // A Config represents configurationf for logger
@@ -20,12 +21,15 @@ type Config struct {
 	Output io.Writer // provide an output
 }
 
+// NewConfig returns Config with defautl values
 func NewConfig() (c Config) {
 	c.Prefix = Prefix
 	c.Debug = Debug
 	return
 }
 
+// FromFlags parses commandline flags. So, you need to call
+// flag.Parse after this method
 func (c *Config) FromFlags() {
 	flag.StringVar(&c.Prefix,
 		"log-prefix",

@@ -157,7 +157,7 @@ func (r *Root) Append(drs ...skyobject.Dynamic) (rp data.RootPack, err error) {
 	return
 }
 
-// Repalce wrapper
+// Replace wrapper
 func (r *Root) Replace(refs []skyobject.Dynamic) (rp data.RootPack, err error) {
 	if rp, err = r.Root.Replace(refs); err == nil {
 		r.send(rp)

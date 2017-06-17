@@ -65,8 +65,8 @@ func (s Stat) String() (x string) {
 
 // HumanMemory returns human readable memory string
 func HumanMemory(bytes int) string {
-	var fb float64 = float64(bytes)
-	var ms string = "B"
+	fb := float64(bytes)
+	ms := "B"
 	for _, m := range []string{"KiB", "MiB", "GiB"} {
 		if fb > 1024.0 {
 			fb = fb / 1024.0

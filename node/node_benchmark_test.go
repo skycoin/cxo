@@ -25,14 +25,14 @@ ok      github.com/logrusorgru/cxo/node 73.241s
 // TODO: DRY
 //
 
-func benchmarkNode_srcDst_emptyRootsMemory(b *testing.B) {
+func benchmarkNodeSrcDstEmptyRootsMemory(b *testing.B) {
 
 	// prepare
 	reg := skyobject.NewRegistry()
 	reg.Register("bench.User", User{})
 
-	sconf := newNodeConfig(false)
-	dconf := newNodeConfig(true)
+	sconf := newConfig(false)
+	dconf := newConfig(true)
 
 	filled := make(chan struct{})
 	dconf.OnRootFilled = func(*Root) {
@@ -102,7 +102,7 @@ func benchmarkNode_srcDst_emptyRootsMemory(b *testing.B) {
 	b.ReportAllocs()
 }
 
-func benchmarkNode_srcDst_emptyRootsBoltDB(b *testing.B) {
+func benchmarkNodeSrcDstEmptyRootsBoltDB(b *testing.B) {
 
 	defer clean()
 
@@ -111,11 +111,11 @@ func benchmarkNode_srcDst_emptyRootsBoltDB(b *testing.B) {
 
 	reg.Register("bench.User", User{})
 
-	sconf := newNodeConfig(false)
+	sconf := newConfig(false)
 	sconf.InMemoryDB = false
 	sconf.DBPath = sconf.DBPath + ".source"
 
-	dconf := newNodeConfig(true)
+	dconf := newConfig(true)
 	dconf.InMemoryDB = false
 	dconf.DBPath = dconf.DBPath + ".destination"
 
@@ -189,21 +189,21 @@ func benchmarkNode_srcDst_emptyRootsBoltDB(b *testing.B) {
 
 func BenchmarkNode_srcDst(b *testing.B) {
 
-	b.Run("empty roots memory", benchmarkNode_srcDst_emptyRootsMemory)
-	b.Run("empty roots boltdb", benchmarkNode_srcDst_emptyRootsBoltDB)
+	b.Run("empty roots memory", benchmarkNodeSrcDstEmptyRootsMemory)
+	b.Run("empty roots boltdb", benchmarkNodeSrcDstEmptyRootsBoltDB)
 
 }
 
-func benchmarkNode_passThrough_emptyRootsMemory(b *testing.B) {
+func benchmarkNodePassThroughEmptyRootsMemory(b *testing.B) {
 
 	// prepare
 
 	reg := skyobject.NewRegistry()
 	reg.Register("bench.User", User{})
 
-	sconf := newNodeConfig(false)
-	pconf := newNodeConfig(true)
-	dconf := newNodeConfig(false)
+	sconf := newConfig(false)
+	pconf := newConfig(true)
+	dconf := newConfig(false)
 
 	filled := make(chan struct{})
 	dconf.OnRootFilled = func(*Root) {
@@ -306,7 +306,7 @@ func benchmarkNode_passThrough_emptyRootsMemory(b *testing.B) {
 	b.ReportAllocs()
 }
 
-func benchmarkNode_passThrough_emptyRootsBoltDB(b *testing.B) {
+func benchmarkNodePassThroughEmptyRootsBoltDB(b *testing.B) {
 
 	defer clean()
 
@@ -315,13 +315,13 @@ func benchmarkNode_passThrough_emptyRootsBoltDB(b *testing.B) {
 	reg := skyobject.NewRegistry()
 	reg.Register("bench.User", User{})
 
-	sconf := newNodeConfig(false)
+	sconf := newConfig(false)
 	sconf.InMemoryDB = false
 	sconf.DBPath = sconf.DBPath + ".source"
-	pconf := newNodeConfig(true)
+	pconf := newConfig(true)
 	pconf.InMemoryDB = false
 	pconf.DBPath = pconf.DBPath + ".pipe"
-	dconf := newNodeConfig(false)
+	dconf := newConfig(false)
 	dconf.InMemoryDB = false
 	dconf.DBPath = dconf.DBPath + ".destination"
 
@@ -428,7 +428,7 @@ func benchmarkNode_passThrough_emptyRootsBoltDB(b *testing.B) {
 
 func BenchmarkNode_passThrough(b *testing.B) {
 
-	b.Run("empty roots memory", benchmarkNode_passThrough_emptyRootsMemory)
-	b.Run("empty roots boltdb", benchmarkNode_passThrough_emptyRootsBoltDB)
+	b.Run("empty roots memory", benchmarkNodePassThroughEmptyRootsMemory)
+	b.Run("empty roots boltdb", benchmarkNodePassThroughEmptyRootsBoltDB)
 
 }
