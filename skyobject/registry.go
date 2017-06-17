@@ -11,8 +11,11 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// TAG is name of struct tag the skyobject package use to determine
+// schema of a struct field if the field is reference
 const TAG = "skyobject"
 
+// ErrInvalidEncodedSchema occurs during decoding an invalid registry
 var ErrInvalidEncodedSchema = errors.New("invalid encoded schema")
 
 // A Registry represents registry of schemas.
@@ -41,6 +44,7 @@ type Registry struct {
 	srf  map[SchemaReference]Schema // by reference (for Dynamic references)
 }
 
+// NewRegistry creates fresh empty registry
 func NewRegistry() (r *Registry) {
 	r = new(Registry)
 	r.reg = make(map[string]Schema)
@@ -53,7 +57,7 @@ func NewRegistry() (r *Registry) {
 // Registry already Done
 func DecodeRegistry(b []byte) (r *Registry, err error) {
 	var (
-		res registryEntities = registryEntities{}
+		res = registryEntities{}
 		s   Schema
 	)
 	if err = encoder.DeserializeRaw(b, &res); err != nil {
@@ -69,6 +73,7 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 	return
 }
 
+// Register a struct type using provided name
 func (r *Registry) Register(name string, i interface{}) {
 	if r.done {
 		panic("registration was closed")
@@ -79,7 +84,7 @@ func (r *Registry) Register(name string, i interface{}) {
 	if strings.ContainsAny(name, "=,") {
 		panic("invalid symbols in name (comma or equal-sign")
 	}
-	var typ reflect.Type = typeOf(i)
+	typ := typeOf(i)
 	switch typ {
 	case singleRef, sliceRef, dynamicRef:
 		panic("can't register reference type")
@@ -101,6 +106,7 @@ func (r *Registry) Register(name string, i interface{}) {
 	}
 }
 
+// Done closes registration
 func (r *Registry) Done() {
 	if r.done == true {
 		return // already done
@@ -128,6 +134,7 @@ func (r *Registry) SchemaByName(name string) (Schema, error) {
 	return r.schemaByName(name)
 }
 
+// SchemaByReference returns Schema by SchemaReference that is obvious
 func (r *Registry) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 	r.mustBeDone()
 	var ok bool
@@ -137,6 +144,8 @@ func (r *Registry) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 	return
 }
 
+// SchemaReferenceByName returns SchemaReference by registered name of a struct
+// type
 func (r *Registry) SchemaReferenceByName(name string) (sr SchemaReference,
 	err error) {
 

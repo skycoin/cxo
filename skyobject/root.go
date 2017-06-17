@@ -193,7 +193,7 @@ func (r *Root) IsFull() bool {
 	if !r.attached { // fresh (detached root can't be full)
 		return false
 	}
-	var want bool = false
+	want := false
 	err := r.wantFunc(func(Reference) error {
 		want = true
 		return ErrStopRange
@@ -502,7 +502,7 @@ func (r *Root) Values() (vals []*Value, err error) {
 	return
 }
 
-// SchemaByReference returns Schema by name or
+// SchemaByName returns Schema by name or
 // (1) missing registry error, or (2) missing schema error
 func (r *Root) SchemaByName(name string) (s Schema, err error) {
 	var reg *Registry
@@ -774,13 +774,12 @@ func refsValue(v *Value, rf RefsFunc) (err error) {
 			if skip, err = rf(ref); err != nil || skip {
 				return
 			}
-			if data, ok := v.root.Get(ref); !ok {
-				return // nil
-			} else {
+			if data, ok := v.root.Get(ref); ok {
 				var val *Value
 				val = &Value{data, v.Schema().Elem(), v.root}
 				return refsValue(val, rf)
 			}
+			return // nil
 		case ReferenceTypeDynamic:
 			var dr Dynamic
 			if dr, err = v.Dynamic(); err != nil {

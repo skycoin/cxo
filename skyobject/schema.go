@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	// ErrInvalidType occurs when you tries to register any unacceptable type
 	ErrInvalidType = errors.New("invalid type")
 )
 
@@ -19,8 +20,10 @@ var (
 	dynamicRef = typeOf(Dynamic{})
 )
 
+// A ReferenceType represents type of a reference
 type ReferenceType int
 
+// possible reference
 const (
 	ReferenceTypeNone    ReferenceType = iota
 	ReferenceTypeSingle                // Reference (cipher.SHA256)
@@ -28,6 +31,7 @@ const (
 	ReferenceTypeDynamic               // Dynamic (struct{Object, Schema Ref.})
 )
 
+// A Schema represents schema of a CX object
 type Schema interface {
 	// Reference of the Schema. The reference is valid after call of Done of
 	// Registry by which the Schema created
@@ -301,6 +305,7 @@ func (s *structSchema) Encode() (b []byte) {
 
 // field
 
+// A Field represetns struct field
 type Field interface {
 	Schema() Schema     // Schema of the Field
 	Kind() reflect.Kind // kind of the Field (short hand)

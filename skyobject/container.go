@@ -11,6 +11,8 @@ import (
 )
 
 var (
+	// ErrNoCoreRegistry occurs while you are trying to call NewRoot
+	// of Container that created without Registry
 	ErrNoCoreRegistry = errors.New(
 		"missing registry, Container created without registry")
 	// ErrAlreadyHaveThisRoot occurs when Container already have
@@ -151,10 +153,9 @@ func (c *Container) WantRegistry(rr RegistryReference) (want bool) {
 				if _, ok := c.registries[rr]; !ok {
 					want, stop = true, true // want
 					return
-				} else {
-					have, stop = true, true // already have
-					return
 				}
+				have, stop = true, true // already have
+				return
 			}
 			return // continue
 		})
