@@ -302,13 +302,13 @@ func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
 }
 
 //
-// Inject and InjectMany are depricated
+// Inject and InjectMany are Deprecated
 //
 
 // Inject an object to the Root updating the seq,
 // timestamp and signature of the Root
 //
-// Depricated: use Append instead
+// Deprecated: use Append instead
 func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
 	rp data.RootPack, err error) {
 
@@ -325,7 +325,7 @@ func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
 // InjectMany objects to the Root updating the seq,
 // timestamp and signature of the Root
 //
-// Depricated: use Append instead
+// Deprecated: use Append instead
 func (r *Root) InjectMany(schemaName string, i ...interface{}) (injs []Dynamic,
 	rp data.RootPack, err error) {
 
