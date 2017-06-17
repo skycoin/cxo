@@ -12,13 +12,18 @@ changes
 - [ ] dry benchmarks
 - [ ] add long running tests
 - [ ] move `RootWalker` to skyobject package
-- [ ] move `(*Node).Start()` to `NewNodeReg` ridding out of the `Start`
 
 ### Done
 
-#### 13:20 16 June 2017 UTC
+#### 14:00 17 June 2017 UTC
 
-- there are breaking changes in skyobject package
+- [x] move `(*Node).Start()` to `NewNodeReg`
+
+The `(*Node).Start` is deprecated and has been replaced by a stub.
+
+Also
+
+- there are changes in skyobject package
 - GC disabled by default
 
 ####  1:00 16 June 2017 UTC

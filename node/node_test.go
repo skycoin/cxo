@@ -22,7 +22,7 @@ func TestNewNode(t *testing.T) {
 
 	// registry must be nil
 	t.Run("registry", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(false))
+		s, err := NewNode(newNodeConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +42,7 @@ func TestNewNode(t *testing.T) {
 
 		conf := newNodeConfig(false) // in-memory
 
-		s, err := newNode(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +70,7 @@ func TestNewNode(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.InMemoryDB = false
 
-		s, err := newNode(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +93,7 @@ func TestNewNode(t *testing.T) {
 		conf.InMemoryDB = false
 		conf.DBPath = filepath.Join(testDataDir, "another.db")
 
-		s, err := newNode(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestNewNodeReg(t *testing.T) {
 	t.Run("registry", func(t *testing.T) {
 		reg := skyobject.NewRegistry()
 
-		s, err := newNodeReg(newNodeConfig(false), reg)
+		s, err := NewNodeReg(newNodeConfig(false), reg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +137,7 @@ func TestNewNodeReg(t *testing.T) {
 	t.Run("invalid gnet.Config", func(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.Config.DialTimeout = -1000
-		if s, err := newNode(conf); err == nil {
+		if s, err := NewNode(conf); err == nil {
 			t.Error("missing error")
 			s.Close()
 		}
@@ -145,19 +145,14 @@ func TestNewNodeReg(t *testing.T) {
 
 }
 
-func TestNode_Start(t *testing.T) {
-	// Start() (err error)
+func TestNode_starting(t *testing.T) {
 
 	t.Run("disable listener", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(false))
+		s, err := NewNode(newNodeConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer s.Close()
-
-		if err = s.Start(); err != nil {
-			t.Fatal(err)
-		}
 
 		if s.pool.Address() != "" {
 			t.Error("listens on")
@@ -165,15 +160,11 @@ func TestNode_Start(t *testing.T) {
 	})
 
 	t.Run("enable listener", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(true))
+		s, err := NewNode(newNodeConfig(true))
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer s.Close()
-
-		if err = s.Start(); err != nil {
-			t.Fatal(err)
-		}
 
 		if s.pool.Address() == "" {
 			t.Error("doesn't listen on")
@@ -181,15 +172,11 @@ func TestNode_Start(t *testing.T) {
 	})
 
 	t.Run("disable RPC listener", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(false))
+		s, err := NewNode(newNodeConfig(false))
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer s.Close()
-
-		if err = s.Start(); err != nil {
-			t.Fatal(err)
-		}
 
 		if s.rpc != nil {
 			t.Error("RPC was created")
@@ -200,15 +187,11 @@ func TestNode_Start(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.EnableRPC = true
 
-		s, err := newNode(conf)
+		s, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer s.Close()
-
-		if err = s.Start(); err != nil {
-			t.Fatal(err)
-		}
 
 		if s.rpc == nil {
 			t.Error("RPC wasn't created")
@@ -220,11 +203,8 @@ func TestNode_Close(t *testing.T) {
 	// Close() (err error)
 
 	t.Run("close listener", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(true))
+		s, err := NewNode(newNodeConfig(true))
 		if err != nil {
-			t.Fatal(err)
-		}
-		if err = s.Start(); err != nil {
 			t.Fatal(err)
 		}
 		s.Close()
@@ -240,11 +220,8 @@ func TestNode_Close(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.EnableRPC = true
 
-		s, err := newNode(conf)
+		s, err := NewNode(conf)
 		if err != nil {
-			t.Fatal(err)
-		}
-		if err = s.Start(); err != nil {
 			t.Fatal(err)
 		}
 		s.Close()
@@ -263,11 +240,8 @@ func TestNode_Close(t *testing.T) {
 		conf.EnableRPC = true
 		conf.InMemoryDB = false // force to use BoltDBs
 
-		s, err := newNode(conf)
+		s, err := NewNode(conf)
 		if err != nil {
-			t.Fatal(err)
-		}
-		if err = s.Start(); err != nil {
 			t.Fatal(err)
 		}
 
@@ -285,7 +259,7 @@ func TestNode_Close(t *testing.T) {
 func TestNode_Pool(t *testing.T) {
 	// Pool() (pool *gnet.Pool)
 
-	s, err := newNode(newNodeConfig(false))
+	s, err := NewNode(newNodeConfig(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,462 +276,452 @@ func (s *Node) lenPending() int {
 	return len(s.pending)
 }
 
+func testNodeSubscribe_local(t *testing.T) {
+	s, err := NewNode(newNodeConfig(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	s.Subscribe(nil, pk)
+
+	// susbcriptions of the Node
+
+	if feeds := s.Feeds(); len(feeds) != 1 {
+		t.Error("misisng feed")
+	} else if feeds[0] != pk {
+		t.Error("wrong feed subscribed to")
+	}
+
+	// database
+
+	if feeds := s.Container().DB().Feeds(); len(feeds) != 1 {
+		t.Error("misisng feed")
+	} else if feeds[0] != pk {
+		t.Error("wrong feed subscribed to")
+	}
+
+}
+
+func testNodeSubscribe_remoteReject(t *testing.T) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	aconf := newNodeConfig(false)
+	bconf := newNodeConfig(false)
+
+	reject := make(chan *gnet.Conn, 1)
+
+	aconf.OnSubscriptionAccepted = func(_ *gnet.Conn, _ cipher.PubKey) {
+		t.Error("accepted") // must not be accepted
+	}
+	aconf.OnSubscriptionRejected = func(c *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("wrong feed rejected")
+		}
+		reject <- c // to test connection
+	}
+
+	a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	defer b.Close()
+
+	a.Subscribe(ac, pk)
+
+	// remote peer must reject the subscription because the
+	// remote peer doesn't share pk feed
+
+	select {
+	case c := <-reject:
+		if c != ac {
+			t.Error("rejected by wrong connection")
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+	}
+
+	if a.lenPending() != 0 {
+		t.Error("has pending subscriptions")
+	}
+
+}
+
+func testNodeSubscribe_remoteAccept(t *testing.T) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	aconf := newNodeConfig(false)
+	bconf := newNodeConfig(false)
+
+	accept := make(chan *gnet.Conn, 1)
+
+	aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("wrong feed accepted")
+		}
+		accept <- c // to test connection
+	}
+	aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
+		t.Error("rejected")
+	}
+
+	a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	defer b.Close()
+
+	b.Subscribe(nil, pk)
+	a.Subscribe(ac, pk)
+
+	// remote peer must accept the subscription because the
+	// remote peer shares pk feed
+
+	select {
+	case c := <-accept:
+		if c != ac {
+			t.Error("rejected by wrong connection")
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+	}
+
+	if a.lenPending() != 0 {
+		t.Error("has pending subscriptions")
+	}
+
+}
+
+func testNodeSubscribe_remoteAcceptTwice(t *testing.T) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	aconf := newNodeConfig(false)
+	bconf := newNodeConfig(false)
+
+	accept := make(chan *gnet.Conn, 1)
+
+	aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("wrong feed accepted")
+		}
+		accept <- c // to test connection
+	}
+	aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
+		t.Error("rejected")
+	}
+
+	a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	defer b.Close()
+
+	b.Subscribe(nil, pk)
+	a.Subscribe(ac, pk)
+
+	// remote peer must accept the subscription because the
+	// remote peer shares pk feed
+
+	select {
+	case c := <-accept:
+		if c != ac {
+			t.Error("accepted by wrong connection")
+		}
+	case <-time.After(TM):
+		t.Error("slow")
+	}
+
+	if t.Failed() {
+		return // don't need to continue
+	}
+
+	// second subscription must not send SusbcribeMsg twice
+	a.Subscribe(ac, pk)
+
+	// the test is not strong, but it's fast;
+	// if first part of this test passes then
+	// we can trust this part; increase timeout
+	// if you want strong result
+	select {
+	case <-accept:
+		t.Error("SubscribeMsg sent twice for the same connection")
+	case <-time.After(TM):
+	}
+
+}
+
 func TestNode_Subscribe(t *testing.T) {
 	// Subscribe(c *gnet.Conn, feed cipher.PubKey)
 
-	t.Run("local", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(false))
-		if err != nil {
-			t.Fatal(err)
+	t.Run("local", testNodeSubscribe_local)
+	t.Run("remote reject", testNodeSubscribe_remoteReject)
+	t.Run("remote accept", testNodeSubscribe_remoteAccept)
+	t.Run("remote accept twice", testNodeSubscribe_remoteAcceptTwice)
+
+}
+
+func testNodeUnsubscribe_local(t *testing.T) {
+	s, err := NewNode(newNodeConfig(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	s.Subscribe(nil, pk)
+
+	// susbcriptions of the Node
+	if feeds := s.Feeds(); len(feeds) != 1 && feeds[0] != pk {
+		t.Error("somethig wrong with Subscribe")
+		return
+	}
+
+	s.Unsubscribe(nil, pk)
+
+	if len(s.Feeds()) != 0 {
+		t.Error("don't unsusbcribes")
+	}
+
+}
+
+func testNodeUnsubscribe_remoteSingle(t *testing.T) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	aconf := newNodeConfig(false)
+	bconf := newNodeConfig(false)
+
+	accept := make(chan *gnet.Conn, 1)
+
+	aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("wrong feed accepted")
 		}
-		defer s.Close()
+		accept <- c // to test connection
+	}
+	aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
+		t.Error("rejected")
+	}
 
-		pk, _ := cipher.GenerateKeyPair()
-
-		s.Subscribe(nil, pk)
-
-		// susbcriptions of the Node
-
-		if feeds := s.Feeds(); len(feeds) != 1 {
-			t.Error("misisng feed")
-		} else if feeds[0] != pk {
-			t.Error("wrong feed subscribed to")
+	unsub := make(chan *gnet.Conn, 1)
+	bconf.OnUnsubscribeRemote = func(c *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("unsubscribe from wrong feed")
 		}
+		unsub <- c
+	}
 
-		// database
+	a, b, ac, bc, err := newConnectedNodes(aconf, bconf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	defer b.Close()
 
-		if feeds := s.Container().DB().Feeds(); len(feeds) != 1 {
-			t.Error("misisng feed")
-		} else if feeds[0] != pk {
-			t.Error("wrong feed subscribed to")
+	b.Subscribe(nil, pk)
+	a.Subscribe(ac, pk)
+
+	// remote peer must accept the subscription because the
+	// remote peer shares pk feed
+
+	select {
+	case c := <-accept:
+		if c != ac {
+			t.Error("accepted by wrong connection")
+			return
 		}
+	case <-time.After(TM):
+		t.Error("slow")
+		return
+	}
 
-	})
+	a.Unsubscribe(ac, pk)
 
-	t.Run("remote reject", func(t *testing.T) {
-		pk, _ := cipher.GenerateKeyPair()
-
-		aconf := newNodeConfig(false)
-		bconf := newNodeConfig(false)
-
-		reject := make(chan *gnet.Conn, 1)
-
-		aconf.OnSubscriptionAccepted = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("accepted") // must not be accepted
+	select {
+	case c := <-unsub:
+		if c != bc {
+			t.Error("got UnsubscribeMsg from wrong connection")
 		}
-		aconf.OnSubscriptionRejected = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("wrong feed rejected")
-			}
-			reject <- c // to test connection
+	case <-time.After(TM):
+		t.Error("misisng UnsubscribeMsg")
+	}
+
+}
+
+func receiveChanTimeout(c <-chan struct{}, tm time.Duration) (ok bool) {
+	select {
+	case <-c:
+		ok = true
+	case <-time.After(TM):
+	}
+	return
+}
+
+// TODO: DRY
+
+func testNodeUnsubscribe_remoteMany(t *testing.T) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	// create
+
+	aconf := newNodeConfig(false) // client subscribes
+	sconf := newNodeConfig(true)  // b and c (servers)
+
+	accept := make(chan struct{}, 1)
+	aconf.OnSubscriptionAccepted = func(_ *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("got AcceptSubscriptionMsg with wrong feed")
 		}
+		accept <- struct{}{}
+	}
 
-		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
-		if err != nil {
-			t.Fatal(err)
+	a, err := NewNode(aconf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	connect := make(chan struct{}, 1)
+	sconf.Config.OnCreateConnection = func(*gnet.Conn) {
+		connect <- struct{}{}
+	}
+
+	unsub := make(chan struct{}, 2)
+	sconf.OnUnsubscribeRemote = func(_ *gnet.Conn, feed cipher.PubKey) {
+		if feed != pk {
+			t.Error("got UnsubscribeMsg with wrong feed")
 		}
-		defer a.Close()
-		defer b.Close()
+		unsub <- struct{}{}
+	}
 
-		a.Subscribe(ac, pk)
+	b, err := NewNode(sconf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer b.Close()
 
-		// remote peer must reject the subscription because the
-		// remote peer doesn't share pk feed
+	c, err := NewNode(sconf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer c.Close()
 
-		select {
-		case c := <-reject:
-			if c != ac {
-				t.Error("rejected by wrong connection")
-			}
-		case <-time.After(TM):
+	// connect
+
+	var abc, acc *gnet.Conn
+
+	if abc, err = a.Pool().Dial(b.Pool().Address()); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !receiveChanTimeout(connect, TM) {
+		t.Error("slow")
+		return
+	}
+
+	if acc, err = a.Pool().Dial(c.Pool().Address()); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !receiveChanTimeout(connect, TM) {
+		t.Error("slow")
+		return
+	}
+
+	// subscribe servers
+
+	b.Subscribe(nil, pk)
+	c.Subscribe(nil, pk)
+
+	// subscribe to b and c
+
+	a.Subscribe(abc, pk)
+
+	if !receiveChanTimeout(accept, TM) {
+		t.Error("slow")
+		return
+	}
+
+	a.Subscribe(acc, pk)
+
+	if !receiveChanTimeout(accept, TM) {
+		t.Error("slow")
+		return
+	}
+
+	// total unsubscribe
+
+	a.Unsubscribe(nil, pk)
+
+	for i := 0; i < 2; i++ {
+		if !receiveChanTimeout(unsub, TM) {
 			t.Error("slow")
+			return
 		}
+	}
 
-		if a.lenPending() != 0 {
-			t.Error("has pending subscriptions")
-		}
+}
 
-	})
+func testNodeUnsubscribe_removeFromPending(t *testing.T) {
+	pk, _ := cipher.GenerateKeyPair()
 
-	t.Run("remote accept", func(t *testing.T) {
-		pk, _ := cipher.GenerateKeyPair()
+	a, err := NewNode(newNodeConfig(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
 
-		aconf := newNodeConfig(false)
-		bconf := newNodeConfig(false)
+	// create stub remote peer
 
-		accept := make(chan *gnet.Conn, 1)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer l.Close()
 
-		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("wrong feed accepted")
-			}
-			accept <- c // to test connection
-		}
-		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("rejected")
-		}
-
-		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
+	go func() {
+		c, err := l.Accept()
 		if err != nil {
-			t.Fatal(err)
+			return
 		}
-		defer a.Close()
-		defer b.Close()
+		defer c.Close()
+		io.Copy(ioutil.Discard, c) // redirect input to /dev/null
+	}()
 
-		b.Subscribe(nil, pk)
-		a.Subscribe(ac, pk)
+	ac, err := a.Pool().Dial(l.Addr().String())
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-		// remote peer must accept the subscription because the
-		// remote peer shares pk feed
+	// subscribe (make pending subscription)
 
-		select {
-		case c := <-accept:
-			if c != ac {
-				t.Error("rejected by wrong connection")
-			}
-		case <-time.After(TM):
-			t.Error("slow")
-		}
+	a.Subscribe(ac, pk)
+	a.Unsubscribe(ac, pk)
 
-		if a.lenPending() != 0 {
-			t.Error("has pending subscriptions")
-		}
-
-	})
-
-	t.Run("remote accept twice", func(t *testing.T) {
-		pk, _ := cipher.GenerateKeyPair()
-
-		aconf := newNodeConfig(false)
-		bconf := newNodeConfig(false)
-
-		accept := make(chan *gnet.Conn, 1)
-
-		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("wrong feed accepted")
-			}
-			accept <- c // to test connection
-		}
-		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("rejected")
-		}
-
-		a, b, ac, _, err := newConnectedNodes(aconf, bconf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer a.Close()
-		defer b.Close()
-
-		b.Subscribe(nil, pk)
-		a.Subscribe(ac, pk)
-
-		// remote peer must accept the subscription because the
-		// remote peer shares pk feed
-
-		select {
-		case c := <-accept:
-			if c != ac {
-				t.Error("accepted by wrong connection")
-			}
-		case <-time.After(TM):
-			t.Error("slow")
-		}
-
-		if t.Failed() {
-			return // don't need to continue
-		}
-
-		// second subscription must not send SusbcribeMsg twice
-		a.Subscribe(ac, pk)
-
-		// the test is not strong, but it's fast;
-		// if first part of this test passes then
-		// we can trust this part; increase timeout
-		// if you want strong result
-		select {
-		case <-accept:
-			t.Error("SubscribeMsg sent twice for the same connection")
-		case <-time.After(TM):
-		}
-
-	})
+	if a.lenPending() != 0 {
+		t.Error("not removed from pending during Unsubscribe")
+	}
 
 }
 
 func TestNode_Unsubscribe(t *testing.T) {
 	// Unsubscribe(c *gnet,.Conn, feed cipher.PubKey)
 
-	t.Run("local", func(t *testing.T) {
-		s, err := newNode(newNodeConfig(false))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer s.Close()
-
-		pk, _ := cipher.GenerateKeyPair()
-
-		s.Subscribe(nil, pk)
-
-		// susbcriptions of the Node
-		if feeds := s.Feeds(); len(feeds) != 1 && feeds[0] != pk {
-			t.Error("somethig wrong with Subscribe")
-			return
-		}
-
-		s.Unsubscribe(nil, pk)
-
-		if len(s.Feeds()) != 0 {
-			t.Error("don't unsusbcribes")
-		}
-
-	})
-
-	t.Run("remote single", func(t *testing.T) {
-		pk, _ := cipher.GenerateKeyPair()
-
-		aconf := newNodeConfig(false)
-		bconf := newNodeConfig(false)
-
-		accept := make(chan *gnet.Conn, 1)
-
-		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("wrong feed accepted")
-			}
-			accept <- c // to test connection
-		}
-		aconf.OnSubscriptionRejected = func(_ *gnet.Conn, _ cipher.PubKey) {
-			t.Error("rejected")
-		}
-
-		unsub := make(chan *gnet.Conn, 1)
-		bconf.OnUnsubscribeRemote = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("unsubscribe from wrong feed")
-			}
-			unsub <- c
-		}
-
-		a, b, ac, bc, err := newConnectedNodes(aconf, bconf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer a.Close()
-		defer b.Close()
-
-		b.Subscribe(nil, pk)
-		a.Subscribe(ac, pk)
-
-		// remote peer must accept the subscription because the
-		// remote peer shares pk feed
-
-		select {
-		case c := <-accept:
-			if c != ac {
-				t.Error("accepted by wrong connection")
-				return
-			}
-		case <-time.After(TM):
-			t.Error("slow")
-			return
-		}
-
-		a.Unsubscribe(ac, pk)
-
-		select {
-		case c := <-unsub:
-			if c != bc {
-				t.Error("got UnsubscribeMsg from wrong connection")
-			}
-		case <-time.After(TM):
-			t.Error("misisng UnsubscribeMsg")
-		}
-
-	})
-
-	t.Run("remote many", func(t *testing.T) {
-		pk, _ := cipher.GenerateKeyPair()
-
-		// create
-
-		aconf := newNodeConfig(false) // client subscribes
-		sconf := newNodeConfig(true)  // b and c (servers)
-
-		accept := make(chan *gnet.Conn, 1)
-		aconf.OnSubscriptionAccepted = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("got AcceptSubscriptionMsg with wrong feed")
-			}
-			accept <- c
-		}
-
-		a, err := newNode(aconf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer a.Close()
-
-		if err := a.Start(); err != nil {
-			t.Error(err)
-			return
-		}
-
-		connect := make(chan *gnet.Conn, 1)
-		sconf.Config.OnCreateConnection = func(c *gnet.Conn) {
-			connect <- c
-		}
-
-		unsub := make(chan *gnet.Conn, 2)
-		sconf.OnUnsubscribeRemote = func(c *gnet.Conn, feed cipher.PubKey) {
-			if feed != pk {
-				t.Error("got UnsubscribeMsg with wrong feed")
-			}
-			unsub <- c
-		}
-
-		b, err := newNode(sconf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		defer b.Close()
-
-		if err := b.Start(); err != nil {
-			t.Error(err)
-			return
-		}
-
-		c, err := newNode(sconf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		defer c.Close()
-
-		if err := c.Start(); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// connect
-
-		var abc, acc *gnet.Conn
-
-		if abc, err = a.Pool().Dial(b.Pool().Address()); err != nil {
-			t.Error(err)
-			return
-		}
-
-		select {
-		case <-connect:
-		case <-time.After(TM):
-			t.Error("slow")
-			return
-		}
-
-		if acc, err = a.Pool().Dial(c.Pool().Address()); err != nil {
-			t.Error(err)
-			return
-		}
-
-		select {
-		case <-connect:
-		case <-time.After(TM):
-			t.Error("slow")
-			return
-		}
-
-		// subscribe servers
-
-		b.Subscribe(nil, pk)
-		c.Subscribe(nil, pk)
-
-		// subscribe to b and c
-
-		a.Subscribe(abc, pk)
-
-		select {
-		case <-accept:
-		case <-time.After(TM):
-			t.Error("slow")
-			return
-		}
-
-		a.Subscribe(acc, pk)
-
-		select {
-		case <-accept:
-		case <-time.After(TM):
-			t.Error("slow")
-			return
-		}
-
-		// total unsubscribe
-
-		a.Unsubscribe(nil, pk)
-
-		for i := 0; i < 2; i++ {
-			select {
-			case <-unsub:
-			case <-time.After(TM):
-				t.Error("slow")
-				return
-			}
-		}
-
-	})
-
-	t.Run("remove from pending", func(t *testing.T) {
-		pk, _ := cipher.GenerateKeyPair()
-
-		a, err := newNode(newNodeConfig(false))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer a.Close()
-
-		if err := a.Start(); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// create stub remote peer
-
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		defer l.Close()
-
-		go func() {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			defer c.Close()
-			io.Copy(ioutil.Discard, c) // redirect input to /dev/null
-		}()
-
-		ac, err := a.Pool().Dial(l.Addr().String())
-		if err != nil {
-			t.Error(err)
-			return
-		}
-
-		// subscribe (make pending subscription)
-
-		a.Subscribe(ac, pk)
-		a.Unsubscribe(ac, pk)
-
-		if a.lenPending() != 0 {
-			t.Error("not removed from pending during Unsubscribe")
-		}
-
-	})
-
+	t.Run("local", testNodeUnsubscribe_local)
+	t.Run("remote single", testNodeUnsubscribe_remoteSingle)
+	t.Run("remote many", testNodeUnsubscribe_remoteMany)
+	t.Run("remove from pending", testNodeUnsubscribe_removeFromPending)
 }
 
 func TestNewNode_loadingFeeds(t *testing.T) {
@@ -767,15 +731,9 @@ func TestNewNode_loadingFeeds(t *testing.T) {
 	conf := newNodeConfig(false)
 	conf.InMemoryDB = false
 
-	s, err := newNode(conf)
+	s, err := NewNode(conf)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if err := s.Start(); err != nil {
-		t.Error(err)
-		s.Close()
-		return
 	}
 
 	f1, _ := cipher.GenerateKeyPair()
@@ -788,17 +746,12 @@ func TestNewNode_loadingFeeds(t *testing.T) {
 
 	// recreate
 
-	s, err = newNode(conf)
+	s, err = NewNode(conf)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer s.Close()
-
-	if err := s.Start(); err != nil {
-		t.Error(err)
-		return
-	}
 
 	if feeds := s.Feeds(); len(feeds) != 2 {
 		t.Error("feeds not loaded from database")
@@ -886,7 +839,7 @@ func TestNode_SubscribeResponse(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.ResponseTimeout = TM
 
-		a, err := newNode(conf)
+		a, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -991,7 +944,7 @@ func TestNode_ListOfFeedsResponse(t *testing.T) {
 		conf := newNodeConfig(false)
 		conf.ResponseTimeout = TM
 
-		a, err := newNode(conf)
+		a, err := NewNode(conf)
 		if err != nil {
 			t.Fatal(err)
 		}

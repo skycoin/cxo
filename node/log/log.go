@@ -13,9 +13,11 @@ const (
 	Debug  bool   = false
 )
 
+// A Config represents configurationf for logger
 type Config struct {
-	Prefix string
-	Debug  bool
+	Prefix string    // log prefix
+	Debug  bool      // show debug logs
+	Output io.Writer // provide an output
 }
 
 func NewConfig() (c Config) {
@@ -77,6 +79,18 @@ func NewLogger(prefix string, debug bool) Logger {
 	return &logger{
 		Logger: log.New(os.Stderr, prefix, log.Lshortfile|log.Ltime),
 		debug:  debug,
+	}
+}
+
+// NewLoggerByConfig create logger usinng given Config
+func NewLoggerByConfig(conf Config) Logger {
+	var out io.Writer = os.Stderr
+	if conf.Output != nil {
+		out = conf.Output
+	}
+	return &logger{
+		Logger: log.New(out, conf.Prefix, log.Lshortfile|log.Ltime),
+		debug:  conf.Debug,
 	}
 }
 

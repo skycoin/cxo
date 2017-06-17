@@ -197,48 +197,33 @@ func Test_passThrough(t *testing.T) {
 	// a
 	//
 
-	a, err := newNodeReg(aconf, reg)
+	a, err := NewNodeReg(aconf, reg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
 
-	if err := a.Start(); err != nil {
-		t.Error(err)
-		return
-	}
-
 	//
 	// b
 	//
 
-	b, err := newNode(newNodeConfig(true)) // listen
+	b, err := NewNode(newNodeConfig(true)) // listen
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer b.Close()
 
-	if err := b.Start(); err != nil {
-		t.Error(err)
-		return
-	}
-
 	//
 	// c
 	//
 
-	c, err := newNode(cconf)
+	c, err := NewNode(cconf)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer c.Close()
-
-	if err := c.Start(); err != nil {
-		t.Error(err)
-		return
-	}
 
 	//
 	// dial
@@ -265,9 +250,7 @@ func Test_passThrough(t *testing.T) {
 	c.Subscribe(cc, pk)
 
 	for i := 0; i < 2; i++ {
-		select {
-		case <-accept:
-		case <-time.After(TM):
+		if !receiveChanTimeout(accept, TM) {
 			t.Error("slow")
 			return
 		}

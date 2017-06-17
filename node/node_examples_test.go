@@ -25,10 +25,7 @@ func ExampleNewNode() {
 	}
 	defer node.Close()
 
-	if err := node.Start(); err != nil {
-		// handle error
-		return // don't call Fatal, panic, etc, because of BoltDB
-	}
+	// don't call Fatal, panic, etc, because of BoltDB
 
 	// stuff here
 }
@@ -56,10 +53,7 @@ func ExampleNewNodeReg() {
 	}
 	defer node.Close()
 
-	if err := node.Start(); err != nil {
-		// handle error
-		return // don't call Fatal, panic, etc, because of BoltDB
-	}
+	// don't call Fatal, panic, etc, because of BoltDB
 
 	// stuff here
 }
@@ -74,11 +68,6 @@ func ExampleNode_Pool() {
 		// handle error
 	}
 	defer node.Close()
-
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
 
 	pool := node.Pool()
 
@@ -134,11 +123,6 @@ func ExampleNode_Subscribe() {
 	}
 	defer node.Close()
 
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
-
 	// make the node subscribed to feed Y
 
 	node.Subscribe(nil, Y)
@@ -170,11 +154,6 @@ func ExampleNode_Unsubscribe() {
 		// handle error
 	}
 	defer node.Close()
-
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
 
 	// make the node subscribed to feed Y
 
@@ -224,11 +203,6 @@ func ExampleNode_Feeds() {
 	}
 	defer node.Close()
 
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
-
 	// check out feed we already subscribed to
 
 	if len(node.Feeds()) != 0 {
@@ -263,11 +237,6 @@ func ExampleNode_Quiting() {
 	}
 	defer node.Close()
 
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
-
 	go func() {
 		defer node.Close()
 
@@ -298,11 +267,6 @@ func ExampleNode_SubscribeResponse() {
 	}
 	defer node.Close()
 
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
-
 	// connect to remote peer
 
 	peer, err := node.Pool().Dial("127.0.0.1:8998")
@@ -328,11 +292,6 @@ func ExampleNode_ListOfFeedsResponse() {
 		// handle error
 	}
 	defer node.Close()
-
-	if err := node.Start(); err != nil {
-		// handle error
-		return
-	}
 
 	// connect to remote public peer
 

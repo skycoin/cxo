@@ -82,11 +82,6 @@ func SourceNode(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 		return
 	}
 
-	if err = src.Start(); err != nil {
-		src.Close()
-		return
-	}
-
 	// feed
 
 	src.Subscribe(nil, feed)
@@ -171,11 +166,6 @@ func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
 
 	dst, err = node.NewNode(conf)
 	if err != nil {
-		return
-	}
-
-	if err = dst.Start(); err != nil {
-		dst.Close()
 		return
 	}
 

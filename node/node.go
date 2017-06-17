@@ -118,7 +118,7 @@ func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
 
 	s = new(Node)
 
-	s.Logger = log.NewLogger(sc.Log.Prefix, sc.Log.Debug)
+	s.Logger = log.NewLoggerByConfig(sc.Log)
 	s.conf = sc
 
 	s.db = db
@@ -179,11 +179,22 @@ func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
 	s.quit = make(chan struct{})
 	s.done = make(chan struct{})
 
+	if err = s.start(); err != nil {
+		s.Close()
+		s = nil
+	}
 	return
 }
 
-// Start the Node
-func (s *Node) Start() (err error) {
+// Start wes deprecated. This methods does nothing.
+//
+// Deprecated: just remove Start() invokation
+func (n *Node) Start() (_ error) {
+	///
+	return
+}
+
+func (s *Node) start() (err error) {
 	s.Debugf(`starting node:
     data dir:             %s
 

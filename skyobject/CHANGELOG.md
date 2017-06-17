@@ -13,7 +13,7 @@ changes
 
 ### Done
 
-#### 13:20 16 June 2017 UTC
+#### 14:00 17 June 2017 UTC
 
 - [x] `(*Root).Inject, InjectMany -> Append`
 

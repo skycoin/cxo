@@ -124,6 +124,31 @@ func (r *Root) Touch() (rp data.RootPack, err error) {
 	return
 }
 
+// Inject wrapper
+//
+// Deprecated: use Append instead
+func (r *Root) Inject(schemName string, i interface{}) (inj skyobject.Dynamic,
+	rp data.RootPack, err error) {
+
+	if inj, rp, err = r.Root.Inject(schemName, i); err == nil {
+		r.send(rp)
+	}
+	return
+}
+
+// InjectMany wrapper
+//
+// Deprecated: use Append instead
+func (r *Root) InjectMany(schemaName string,
+	i ...interface{}) (injs []skyobject.Dynamic, rp data.RootPack,
+	err error) {
+
+	if injs, rp, err = r.Root.InjectMany(schemaName, i...); err == nil {
+		r.send(rp)
+	}
+	return
+}
+
 // Append wrapper
 func (r *Root) Append(drs ...skyobject.Dynamic) (rp data.RootPack, err error) {
 	if rp, err = r.Root.Append(drs...); err == nil {
