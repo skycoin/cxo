@@ -15,7 +15,7 @@ changes
 
 ### Done
 
-#### 14:00 17 June 2017 UTC
+#### 16:15 17 June 2017 UTC
 
 - [x] move `(*Node).Start()` to `NewNodeReg`
 
