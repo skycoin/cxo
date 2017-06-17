@@ -301,6 +301,54 @@ func (r *Root) MustDynamic(schemaName string, i interface{}) (dr Dynamic) {
 	return
 }
 
+//
+// Inject and InjectMany are depricated
+//
+
+// Inject an object to the Root updating the seq,
+// timestamp and signature of the Root
+//
+// Depricated: use Append instead
+func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
+	rp data.RootPack, err error) {
+
+	if inj, err = r.Dynamic(schemaName, i); err != nil {
+		return
+	}
+	r.Lock()
+	defer r.Unlock()
+	r.refs = append(r.refs, inj)
+	rp, err = r.touch()
+	return
+}
+
+// InjectMany objects to the Root updating the seq,
+// timestamp and signature of the Root
+//
+// Depricated: use Append instead
+func (r *Root) InjectMany(schemaName string, i ...interface{}) (injs []Dynamic,
+	rp data.RootPack, err error) {
+
+	injs = make([]Dynamic, 0, len(i))
+	var inj Dynamic
+	for _, e := range i {
+		if inj, err = r.Dynamic(schemaName, e); err != nil {
+			injs = nil
+			return
+		}
+		injs = append(injs, inj)
+	}
+	r.Lock()
+	defer r.Unlock()
+	r.refs = append(r.refs, injs...)
+	rp, err = r.touch()
+	return
+}
+
+//
+// Append, Len, Slice and Index was introduced
+//
+
 // Append objects to the Root updating the seq,
 // timestamp and signature of the Root
 func (r *Root) Append(drs ...Dynamic) (rp data.RootPack, err error) {

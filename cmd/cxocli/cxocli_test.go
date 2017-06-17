@@ -308,6 +308,8 @@ func Test_tree(t *testing.T) {
 
 	if out != fmt.Sprintf(want, hash.String()) {
 		t.Error("wrong output")
+		t.Log(out)
+		t.Log(fmt.Sprintf(want, hash.String()))
 	}
 }
 

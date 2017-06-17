@@ -10,21 +10,32 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-// from one node to another
-func Test_replicating(t *testing.T) {
+type User struct {
+	Name string
+	Age  uint32
+}
+
+type Group struct {
+	Name   string
+	Leader skyobject.Reference  `skyobject:"schema=test.User"`
+	Users  skyobject.References `skyobject:"schema=test.User"`
+}
+
+func testRegistry() (reg *skyobject.Registry) {
 
 	// tpyes
 
-	type User struct {
-		Name string
-		Age  uint32
-	}
+	reg = skyobject.NewRegistry()
 
-	type Group struct {
-		Name   string
-		Leader skyobject.Reference  `skyobject:"schema=test.User"`
-		Users  skyobject.References `skyobject:"schema=test.User"`
-	}
+	reg.Register("test.User", User{})
+	reg.Register("test.Group", Group{})
+
+	return
+
+}
+
+// from one node to another
+func Test_replicating(t *testing.T) {
 
 	// feed and owner
 
@@ -84,10 +95,7 @@ func Test_replicating(t *testing.T) {
 	// I don't want to reimplement newConenctedNodes, thus
 	// I will use NewRootReg instead of NewRoot
 
-	reg := skyobject.NewRegistry()
-
-	reg.Register("test.User", User{})
-	reg.Register("test.Group", Group{})
+	reg := testRegistry()
 
 	// core registry will be never removed by GC
 	// but this non-core registry can be removed by GC
@@ -139,19 +147,6 @@ func Test_replicating(t *testing.T) {
 // the same as replicating, but 1 -> 2 -> 3
 func Test_passThrough(t *testing.T) {
 
-	// tpyes
-
-	type User struct {
-		Name string
-		Age  uint32
-	}
-
-	type Group struct {
-		Name   string
-		Leader skyobject.Reference  `skyobject:"schema=test.User"`
-		Users  skyobject.References `skyobject:"schema=test.User"`
-	}
-
 	// feed and owner
 
 	pk, sk := cipher.GenerateKeyPair()
@@ -196,10 +191,7 @@ func Test_passThrough(t *testing.T) {
 	// registry
 	//
 
-	reg := skyobject.NewRegistry()
-
-	reg.Register("test.User", User{})
-	reg.Register("test.Group", Group{})
+	reg := testRegistry()
 
 	//
 	// a

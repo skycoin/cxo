@@ -404,72 +404,16 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 		}
 		n += 4 // encoded length (uint32)
 	case reflect.Slice:
-		if s.IsReference() {
-			if n, err = getLength(p); err == nil {
-				n *= len(Reference{})
-				n += 4 // length prefix
-			}
-			break
-		}
-		var l int
-		if l, err = getLength(p); err != nil {
+		if n, err = schemaSliceSize(s, p); err != nil {
 			return
 		}
-		n += 4
-		el := s.Elem()
-		if s := fixedSize(el.Kind()); s > 0 {
-			n += l * s
-		} else {
-			var m int
-			for i := 0; i < l; i++ {
-				if n >= len(p) {
-					err = ErrInvalidSchemaOrData
-					return
-				}
-				if m, err = SchemaSize(el, p[n:]); err != nil {
-					return
-				}
-				n += m
-			}
-		}
 	case reflect.Array:
-		if s.IsReference() {
-			n = len(Reference{})
-			break
-		}
-		var l int = s.Len()
-		el := s.Elem()
-		if s := fixedSize(el.Kind()); s > 0 {
-			n = l * s
-		} else {
-			var m int
-			for i := 0; i < l; i++ {
-				if n >= len(p) {
-					err = ErrInvalidSchemaOrData
-					return
-				}
-				if m, err = SchemaSize(el, p[n:]); err != nil {
-					return
-				}
-				n += m
-			}
+		if n, err = schemaArraySize(s, p); err != nil {
+			return
 		}
 	case reflect.Struct:
-		if s.IsReference() {
-			n = 2 * len(Reference{})
-			break
-		}
-		var m int
-		for _, sf := range s.Fields() {
-			ss := sf.Schema()
-			if n >= len(p) {
-				err = ErrInvalidSchemaOrData
-				return
-			}
-			if m, err = SchemaSize(ss, p[n:]); err != nil {
-				return
-			}
-			n += m
+		if n, err = schemaStructSize(s, p); err != nil {
+			return
 		}
 	default:
 		err = ErrInvalidSchema
@@ -477,6 +421,80 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 	}
 	if n > len(p) {
 		err = ErrInvalidSchemaOrData
+	}
+	return
+}
+
+func schemaSliceSize(s Schema, p []byte) (n int, err error) {
+	var l int
+	if l, err = getLength(p); err != nil {
+		return
+	}
+	n += 4
+	if s.IsReference() {
+		n *= len(Reference{})
+		return
+	}
+	el := s.Elem()
+	if s := fixedSize(el.Kind()); s > 0 {
+		n += l * s
+	} else {
+		var m int
+		for i := 0; i < l; i++ {
+			if n >= len(p) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if m, err = SchemaSize(el, p[n:]); err != nil {
+				return
+			}
+			n += m
+		}
+	}
+	return
+}
+
+func schemaArraySize(s Schema, p []byte) (n int, err error) {
+	if s.IsReference() {
+		n = len(Reference{})
+		return
+	}
+	var l int = s.Len()
+	el := s.Elem()
+	if s := fixedSize(el.Kind()); s > 0 {
+		n = l * s
+	} else {
+		var m int
+		for i := 0; i < l; i++ {
+			if n >= len(p) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if m, err = SchemaSize(el, p[n:]); err != nil {
+				return
+			}
+			n += m
+		}
+	}
+	return
+}
+
+func schemaStructSize(s Schema, p []byte) (n int, err error) {
+	if s.IsReference() {
+		n = 2 * len(Reference{})
+		return
+	}
+	var m int
+	for _, sf := range s.Fields() {
+		ss := sf.Schema()
+		if n >= len(p) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		if m, err = SchemaSize(ss, p[n:]); err != nil {
+			return
+		}
+		n += m
 	}
 	return
 }
