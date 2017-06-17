@@ -35,8 +35,8 @@ func (c ConnState) String() string {
 	return fmt.Sprintf("ConnState<%d>", c)
 }
 
-// A Conn represents conenction. The Conn can has and can has
-// not underlying TCP conenction. The Conn recereates connection
+// A Conn represents connection. The Conn can has and can has
+// not underlying TCP connection. The Conn recereates connection
 // if it fails. This behaviour should be configures. There are
 // DialTimeout, RedialTimeout, MaxRedialTimeout and DialsLimit
 // configuration.Also, you can control dialing and redialing
@@ -46,7 +46,7 @@ func (c ConnState) String() string {
 // ConnStateDialing and ConnStateClosed. But the state can
 // be changed any time after. If the state is ConnStateClosed
 // then it will not be changed anymore. Use Clsoe method to
-// terminate conenction and wait until it release associated
+// terminate connection and wait until it release associated
 // resources (goroutines, TCP connection, buffers)
 type Conn struct {
 	address string // diaing address
