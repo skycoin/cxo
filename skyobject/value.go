@@ -426,15 +426,18 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 }
 
 func schemaSliceSize(s Schema, p []byte) (n int, err error) {
+	if s.IsReference() {
+		if n, err = getLength(p); err == nil {
+			n *= len(Reference{})
+			n += 4 // length prefix
+		}
+		return
+	}
 	var l int
 	if l, err = getLength(p); err != nil {
 		return
 	}
 	n += 4
-	if s.IsReference() {
-		n *= len(Reference{})
-		return
-	}
 	el := s.Elem()
 	if s := fixedSize(el.Kind()); s > 0 {
 		n += l * s
