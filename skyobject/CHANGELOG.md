@@ -13,6 +13,11 @@ changes
 
 ### Done
 
+#### 22:00 19 June 2017 UTC
+
+- fix `Root.WantFunc` blank reference bug
+- improve `Root.Inspect` method
+
 #### 16:15 17 June 2017 UTC
 
 - [x] `(*Root).Inject, InjectMany -> Append`
