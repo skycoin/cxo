@@ -10,21 +10,32 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-// from one node to another
-func Test_replicating(t *testing.T) {
+type User struct {
+	Name string
+	Age  uint32
+}
+
+type Group struct {
+	Name   string
+	Leader skyobject.Reference  `skyobject:"schema=test.User"`
+	Users  skyobject.References `skyobject:"schema=test.User"`
+}
+
+func testRegistry() (reg *skyobject.Registry) {
 
 	// tpyes
 
-	type User struct {
-		Name string
-		Age  uint32
-	}
+	reg = skyobject.NewRegistry()
 
-	type Group struct {
-		Name   string
-		Leader skyobject.Reference  `skyobject:"schema=test.User"`
-		Users  skyobject.References `skyobject:"schema=test.User"`
-	}
+	reg.Register("test.User", User{})
+	reg.Register("test.Group", Group{})
+
+	return
+
+}
+
+// from one node to another
+func Test_replicating(t *testing.T) {
 
 	// feed and owner
 
@@ -32,7 +43,7 @@ func Test_replicating(t *testing.T) {
 
 	// a config
 
-	aconf := newNodeConfig(false)
+	aconf := newConfig(false)
 
 	accept := make(chan struct{})
 
@@ -42,7 +53,7 @@ func Test_replicating(t *testing.T) {
 
 	// b config
 
-	bconf := newNodeConfig(true)
+	bconf := newConfig(true)
 
 	received := make(chan struct{})
 	filled := make(chan struct{})
@@ -84,10 +95,7 @@ func Test_replicating(t *testing.T) {
 	// I don't want to reimplement newConenctedNodes, thus
 	// I will use NewRootReg instead of NewRoot
 
-	reg := skyobject.NewRegistry()
-
-	reg.Register("test.User", User{})
-	reg.Register("test.Group", Group{})
+	reg := testRegistry()
 
 	// core registry will be never removed by GC
 	// but this non-core registry can be removed by GC
@@ -107,10 +115,10 @@ func Test_replicating(t *testing.T) {
 			return
 		}
 
-		root.Inject("test.User", User{
+		root.Append(root.MustDynamic("test.User", User{
 			Name: "Alice",
 			Age:  19,
-		})
+		}))
 
 		// after this Inject call root object saved and
 		// referes to the registry, now we can safely unlock GC
@@ -139,26 +147,13 @@ func Test_replicating(t *testing.T) {
 // the same as replicating, but 1 -> 2 -> 3
 func Test_passThrough(t *testing.T) {
 
-	// tpyes
-
-	type User struct {
-		Name string
-		Age  uint32
-	}
-
-	type Group struct {
-		Name   string
-		Leader skyobject.Reference  `skyobject:"schema=test.User"`
-		Users  skyobject.References `skyobject:"schema=test.User"`
-	}
-
 	// feed and owner
 
 	pk, sk := cipher.GenerateKeyPair()
 
 	// a config
 
-	aconf := newNodeConfig(false)
+	aconf := newConfig(false)
 	aconf.GCInterval = 0 // disable GC
 
 	accept := make(chan struct{}) // used by a and c
@@ -171,7 +166,7 @@ func Test_passThrough(t *testing.T) {
 
 	// c config
 
-	cconf := newNodeConfig(true)
+	cconf := newConfig(true)
 
 	received := make(chan struct{})
 	filled := make(chan struct{})
@@ -196,57 +191,39 @@ func Test_passThrough(t *testing.T) {
 	// registry
 	//
 
-	reg := skyobject.NewRegistry()
-
-	reg.Register("test.User", User{})
-	reg.Register("test.Group", Group{})
+	reg := testRegistry()
 
 	//
 	// a
 	//
 
-	a, err := newNodeReg(aconf, reg)
+	a, err := NewNodeReg(aconf, reg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
 
-	if err := a.Start(); err != nil {
-		t.Error(err)
-		return
-	}
-
 	//
 	// b
 	//
 
-	b, err := newNode(newNodeConfig(true)) // listen
+	b, err := NewNode(newConfig(true)) // listen
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer b.Close()
 
-	if err := b.Start(); err != nil {
-		t.Error(err)
-		return
-	}
-
 	//
 	// c
 	//
 
-	c, err := newNode(cconf)
+	c, err := NewNode(cconf)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer c.Close()
-
-	if err := c.Start(); err != nil {
-		t.Error(err)
-		return
-	}
 
 	//
 	// dial
@@ -273,9 +250,7 @@ func Test_passThrough(t *testing.T) {
 	c.Subscribe(cc, pk)
 
 	for i := 0; i < 2; i++ {
-		select {
-		case <-accept:
-		case <-time.After(TM):
+		if !receiveChanTimeout(accept, TM) {
 			t.Error("slow")
 			return
 		}
@@ -291,10 +266,10 @@ func Test_passThrough(t *testing.T) {
 		return
 	}
 
-	root.Inject("test.User", User{
+	root.Append(root.MustDynamic("test.User", User{
 		Name: "Alice",
-		Age:  21,
-	})
+		Age:  19,
+	}))
 
 	//
 	// receive / fill

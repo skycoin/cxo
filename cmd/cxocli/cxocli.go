@@ -18,17 +18,18 @@ import (
 	"github.com/skycoin/cxo/node"
 )
 
+// defaults
 const (
-	HISTORY = ".cxocli.history"
-	ADDRESS = "[::]:8997"
+	HISTORY = ".cxocli.history" // history file name
+	ADDRESS = "[::]:8997"       // default RPC address to connect to
 )
 
 var (
 	out io.Writer = os.Stdout // it's nessesary for tests
 
-	ErrUnknowCommand    = errors.New("unknown command")
-	ErrMisisngArgument  = errors.New("missing argument")
-	ErrTooManyArguments = errors.New("too many arguments")
+	errUnknowCommand    = errors.New("unknown command")
+	errMisisngArgument  = errors.New("missing argument")
+	errTooManyArguments = errors.New("too many arguments")
 
 	commands = []string{
 		"want",
@@ -207,11 +208,11 @@ Error:
 func args(ss []string) (string, error) {
 	switch len(ss) {
 	case 0, 1:
-		return "", ErrMisisngArgument
+		return "", errMisisngArgument
 	case 2:
 		return ss[1], nil
 	}
-	return "", ErrTooManyArguments
+	return "", errTooManyArguments
 }
 
 func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
@@ -229,11 +230,11 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 	case "subscribe":
 		err = subscribe(rpc, ss)
 	case "subscribe_to":
-		err = subscribe_to(rpc, ss)
+		err = subscribeTo(rpc, ss)
 	case "unsubscribe":
 		err = unsubscribe(rpc, ss)
 	case "unsubscribe_from":
-		err = unsubscribe_from(rpc, ss)
+		err = unsubscribeFrom(rpc, ss)
 	case "feeds":
 		err = feeds(rpc)
 	case "stat":
@@ -241,15 +242,15 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 	case "connections":
 		err = connections(rpc)
 	case "incoming_connections":
-		err = incoming_connections(rpc)
+		err = incomingConnections(rpc)
 	case "outgoing_connections":
-		err = outgoing_connections(rpc)
+		err = outgoingConnections(rpc)
 	case "connect":
 		err = connect(rpc, ss)
 	case "disconnect":
 		err = disconnect(rpc, ss)
 	case "listening_address":
-		err = listening_address(rpc)
+		err = listeningAddress(rpc)
 	case "roots":
 		err = roots(rpc, ss)
 	case "tree":
@@ -263,7 +264,7 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		terminate = true
 		fmt.Fprintln(out, "cya")
 	default:
-		err = ErrUnknowCommand
+		err = errUnknowCommand
 	}
 	return
 }
@@ -382,17 +383,17 @@ func addressFeedArgs(ss []string) (address string, pk cipher.PubKey,
 
 	switch len(ss) {
 	case 0, 1, 2:
-		err = ErrMisisngArgument
+		err = errMisisngArgument
 	case 3:
 		address = ss[1]
 		pk, err = cipher.PubKeyFromHex(ss[2])
 	default:
-		err = ErrTooManyArguments
+		err = errTooManyArguments
 	}
 	return
 }
 
-func subscribe_to(rpc *node.RPCClient, ss []string) (err error) {
+func subscribeTo(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	var address string
 	if address, pk, err = addressFeedArgs(ss); err != nil {
@@ -417,7 +418,7 @@ func unsubscribe(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func unsubscribe_from(rpc *node.RPCClient, ss []string) (err error) {
+func unsubscribeFrom(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	var address string
 	if address, pk, err = addressFeedArgs(ss); err != nil {
@@ -480,7 +481,7 @@ func connections(rpc *node.RPCClient) (err error) {
 	return
 }
 
-func incoming_connections(rpc *node.RPCClient) (err error) {
+func incomingConnections(rpc *node.RPCClient) (err error) {
 	var list []string
 	if list, err = rpc.IncomingConnections(); err != nil {
 		return
@@ -495,7 +496,7 @@ func incoming_connections(rpc *node.RPCClient) (err error) {
 	return
 }
 
-func outgoing_connections(rpc *node.RPCClient) (err error) {
+func outgoingConnections(rpc *node.RPCClient) (err error) {
 	var list []string
 	if list, err = rpc.OutgoingConnections(); err != nil {
 		return
@@ -534,7 +535,7 @@ func disconnect(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func listening_address(rpc *node.RPCClient) (err error) {
+func listeningAddress(rpc *node.RPCClient) (err error) {
 	var address string
 	if address, err = rpc.ListeningAddress(); err != nil {
 		return

@@ -69,7 +69,7 @@ func SourceNode(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 
 	// config
 
-	conf := node.NewNodeConfig()
+	conf := node.NewConfig()
 	conf.Listen = "127.0.0.1:0" // arbitrary assignment
 	conf.InMemoryDB = true      // use in-memory database
 	conf.EnableRPC = false      // disable RPC
@@ -79,11 +79,6 @@ func SourceNode(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 	// node
 
 	if src, err = node.NewNodeReg(conf, reg); err != nil {
-		return
-	}
-
-	if err = src.Start(); err != nil {
-		src.Close()
 		return
 	}
 
@@ -128,7 +123,7 @@ func generateGroup(i int, cnt *node.Container, root *node.Root) {
 	cnt.LockGC()
 	defer cnt.UnlockGC()
 
-	_, _, err := root.Inject("cxo.Group", Group{
+	group, err := root.Dynamic("cxo.Group", Group{
 		Name: fmt.Sprint("Group #", i),
 		Leader: root.Save(User{
 			Name: "Elisabet Bathory",
@@ -139,8 +134,12 @@ func generateGroup(i int, cnt *node.Container, root *node.Root) {
 			User{fmt.Sprintf("Eva #%d", i), 21 + uint32(i)},
 		),
 	})
-
 	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	if _, err := root.Append(group); err != nil {
 		log.Print(err)
 	}
 
@@ -151,7 +150,7 @@ func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
 
 	// config
 
-	conf := node.NewNodeConfig()
+	conf := node.NewConfig()
 	conf.EnableListener = false // disable listener for this example
 	conf.InMemoryDB = true      // use database in memory
 	conf.EnableRPC = false
@@ -167,11 +166,6 @@ func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
 
 	dst, err = node.NewNode(conf)
 	if err != nil {
-		return
-	}
-
-	if err = dst.Start(); err != nil {
-		dst.Close()
 		return
 	}
 
@@ -212,7 +206,7 @@ func rootItems(root *node.Root) (items []gotree.GTStructure) {
 	vals, err := root.Values()
 	if err != nil {
 		items = []gotree.GTStructure{
-			gotree.GTStructure{Name: "error: " + err.Error()},
+			{Name: "error: " + err.Error()},
 		}
 		return
 	}
@@ -253,7 +247,7 @@ func valueItem(val *skyobject.Value) (item gotree.GTStructure) {
 			}
 		} else {
 			item.Items = []gotree.GTStructure{
-				gotree.GTStructure{
+				{
 					Name: "error: " + err.Error(),
 				},
 			}

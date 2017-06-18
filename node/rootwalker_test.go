@@ -49,13 +49,8 @@ func newRootwalkerClient(t *testing.T, pk cipher.PubKey) (c *Node) {
 	reg.Register("Board", Board{})
 
 	var err error
-	if c, err = newNodeReg(newNodeConfig(false), reg); err != nil {
+	if c, err = NewNodeReg(newConfig(false), reg); err != nil {
 		t.Fatal(err) // fatality
-	}
-
-	if err = c.Start(); err != nil {
-		c.Close()
-		t.Fatal(err)
 	}
 
 	c.Subscribe(nil, pk)
@@ -95,9 +90,13 @@ func fillContainer1(c *Container, pk cipher.PubKey,
 		Thread{"Expressions", persons[2], posts2},
 		Thread{"Testing", persons[3], posts3},
 	)
-	r.InjectMany("Board",
-		Board{"Test", persons[3], dynPost, threads[2:]},
-		Board{"Talk", persons[1], dynPerson, threads[:2]},
+	r.Append(
+		r.MustDynamic("Board",
+			Board{"Test", persons[3], dynPost, threads[2:]},
+		),
+		r.MustDynamic("Board",
+			Board{"Talk", persons[1], dynPerson, threads[:2]},
+		),
 	)
 
 	return

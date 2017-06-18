@@ -469,7 +469,7 @@ func (w *RootWalker) RemoveInRefsField(fieldName string, finder func(i int, ref 
 	return ErrObjNotFound
 }
 
-// RemoveByRef removes a reference in a field of type `skyobject.References`.
+// RemoveInRefsByRef removes a reference in a field of type `skyobject.References`.
 // It uses the Finder implementation to find the reference to remove.
 func (w *RootWalker) RemoveInRefsByRef(fieldName string, fRef skyobject.Reference) error {
 	// Obtain top-most object from internal stack.

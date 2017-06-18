@@ -29,8 +29,8 @@ func pair() (l, d *Pool, lc, dc *Conn, err error) {
 		return
 	}
 	var (
-		lconf    Config     = newConfig("listener")
-		accepted chan *Conn = make(chan *Conn, 1)
+		lconf    = newConfig("listener")
+		accepted = make(chan *Conn, 1)
 	)
 	lconf.OnCreateConnection = func(c *Conn) {
 		select {

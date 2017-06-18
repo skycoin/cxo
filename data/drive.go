@@ -15,9 +15,9 @@ const dbMode = 0644
 
 // names of buckets
 var (
-	objectsBucket []byte = []byte("objects")
-	rootsBucket   []byte = []byte("roots")
-	feedsBucket   []byte = []byte("feeds")
+	objectsBucket = []byte("objects")
+	rootsBucket   = []byte("roots")
+	feedsBucket   = []byte("feeds")
 )
 
 // buckets:
@@ -407,11 +407,13 @@ func (d *driveDB) Stat() (s Stat) {
 		// feeds
 		f := t.Bucket(feedsBucket)
 		r := t.Bucket(rootsBucket)
-		if feeds := f.Stats().KeyN; feeds == 0 {
+		//
+		feeds := f.Stats().KeyN
+		if feeds == 0 {
 			return // no feeds
-		} else {
-			s.Feeds = make(map[cipher.PubKey]FeedStat, feeds)
 		}
+		s.Feeds = make(map[cipher.PubKey]FeedStat, feeds)
+		//
 		var pk cipher.PubKey
 		// for each feed
 		e = f.ForEach(func(pkb, _ []byte) (_ error) {

@@ -25,444 +25,410 @@ ok      github.com/logrusorgru/cxo/node 73.241s
 // TODO: DRY
 //
 
-func BenchmarkNode_srcDst(b *testing.B) {
+func benchmarkNodeSrcDstEmptyRootsMemory(b *testing.B) {
 
-	// types
+	// prepare
+	reg := skyobject.NewRegistry()
+	reg.Register("bench.User", User{})
 
-	type User struct {
-		Name string
-		Age  uint32
+	sconf := newConfig(false)
+	dconf := newConfig(true)
+
+	filled := make(chan struct{})
+	dconf.OnRootFilled = func(*Root) {
+		filled <- struct{}{}
 	}
 
-	b.Run("empty roots memory", func(b *testing.B) {
+	s, d, sc, _, err := newConnectedNodes(sconf, dconf)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	defer d.Close()
 
-		// prepare
-		reg := skyobject.NewRegistry()
+	pk, sk := cipher.GenerateKeyPair()
 
-		reg.Register("bench.User", User{})
+	d.Subscribe(nil, pk)
+	if err := s.SubscribeResponse(sc, pk); err != nil {
+		b.Error(err)
+		return
+	}
 
-		sconf := newNodeConfig(false)
+	// add registry and create first root
+	cnt := s.Container()
 
-		dconf := newNodeConfig(true)
+	var root *Root
 
-		filled := make(chan struct{})
-		dconf.OnRootFilled = func(*Root) {
-			filled <- struct{}{}
-		}
-
-		s, d, sc, _, err := newConnectedNodes(sconf, dconf)
+	// becasu we're not using "core registry" we need be sure that
+	// GC doesn't cleans our registry until we create first root object
+	cnt.LockGC()
+	{
+		cnt.AddRegistry(reg)
+		root, err = cnt.NewRootReg(pk, sk, reg.Reference())
 		if err != nil {
-			b.Fatal(err)
+			cnt.UnlockGC()
+			b.Error(err)
+			return
 		}
-		defer s.Close()
-		defer d.Close()
-
-		pk, sk := cipher.GenerateKeyPair()
-
-		d.Subscribe(nil, pk)
-		if err := s.SubscribeResponse(sc, pk); err != nil {
+		if _, err = root.Touch(); err != nil { // crete first root
+			cnt.UnlockGC()
 			b.Error(err)
 			return
 		}
 
-		// add registry and create first root
-		cnt := s.Container()
+	}
+	cnt.UnlockGC()
 
-		var root *Root
+	select {
+	case <-filled:
+	case <-time.After(TM * 10):
+		b.Error("slow or missing")
+		return
+	}
 
-		// becasu we're not using "core registry" we need be sure that
-		// GC doesn't cleans our registry until we create first root object
-		cnt.LockGC()
-		{
-			cnt.AddRegistry(reg)
-			root, err = cnt.NewRootReg(pk, sk, reg.Reference())
-			if err != nil {
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-			if _, err = root.Touch(); err != nil { // crete first root
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-
-		}
-		cnt.UnlockGC()
-
-		select {
-		case <-filled:
-		case <-time.After(TM * 10):
-			b.Error("slow or missing")
+	// run
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// update
+		if _, err = root.Touch(); err != nil {
+			b.Error(err)
 			return
 		}
+		// receive filled
+		<-filled
+	}
 
-		// run
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// update
-			if _, err = root.Touch(); err != nil {
-				b.Error(err)
-				return
-			}
-			// receive filled
-			<-filled
-		}
+	// fini
+	b.ReportAllocs()
+}
 
-		// fini
-		b.ReportAllocs()
-	})
+func benchmarkNodeSrcDstEmptyRootsBoltDB(b *testing.B) {
 
-	b.Run("empty roots boltdb", func(b *testing.B) {
+	defer clean()
 
-		defer clean()
+	// prepare
+	reg := skyobject.NewRegistry()
 
-		// prepare
-		reg := skyobject.NewRegistry()
+	reg.Register("bench.User", User{})
 
-		reg.Register("bench.User", User{})
+	sconf := newConfig(false)
+	sconf.InMemoryDB = false
+	sconf.DBPath = sconf.DBPath + ".source"
 
-		sconf := newNodeConfig(false)
-		sconf.InMemoryDB = false
-		sconf.DBPath = sconf.DBPath + ".source"
+	dconf := newConfig(true)
+	dconf.InMemoryDB = false
+	dconf.DBPath = dconf.DBPath + ".destination"
 
-		dconf := newNodeConfig(true)
-		dconf.InMemoryDB = false
-		dconf.DBPath = dconf.DBPath + ".destination"
+	filled := make(chan struct{})
+	dconf.OnRootFilled = func(*Root) {
+		filled <- struct{}{}
+	}
 
-		filled := make(chan struct{})
-		dconf.OnRootFilled = func(*Root) {
-			filled <- struct{}{}
-		}
+	s, d, sc, _, err := newConnectedNodes(sconf, dconf)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	defer d.Close()
 
-		s, d, sc, _, err := newConnectedNodes(sconf, dconf)
+	pk, sk := cipher.GenerateKeyPair()
+
+	d.Subscribe(nil, pk)
+	if err := s.SubscribeResponse(sc, pk); err != nil {
+		b.Error(err)
+		return
+	}
+
+	// add registry and create first root
+	cnt := s.Container()
+
+	var root *Root
+
+	// becasu we're not using "core registry" we need be sure that
+	// GC doesn't cleans our registry until we create first root object
+	cnt.LockGC()
+	{
+		cnt.AddRegistry(reg)
+		root, err = cnt.NewRootReg(pk, sk, reg.Reference())
 		if err != nil {
-			b.Fatal(err)
+			cnt.UnlockGC()
+			b.Error(err)
+			return
 		}
-		defer s.Close()
-		defer d.Close()
-
-		pk, sk := cipher.GenerateKeyPair()
-
-		d.Subscribe(nil, pk)
-		if err := s.SubscribeResponse(sc, pk); err != nil {
+		if _, err = root.Touch(); err != nil { // crete first root
+			cnt.UnlockGC()
 			b.Error(err)
 			return
 		}
 
-		// add registry and create first root
-		cnt := s.Container()
+	}
+	cnt.UnlockGC()
 
-		var root *Root
+	select {
+	case <-filled:
+	case <-time.After(TM * 10):
+		b.Error("slow or missing")
+		return
+	}
 
-		// becasu we're not using "core registry" we need be sure that
-		// GC doesn't cleans our registry until we create first root object
-		cnt.LockGC()
-		{
-			cnt.AddRegistry(reg)
-			root, err = cnt.NewRootReg(pk, sk, reg.Reference())
-			if err != nil {
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-			if _, err = root.Touch(); err != nil { // crete first root
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-
+	// run
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// update
+		if _, err = root.Touch(); err != nil {
+			b.Error(err)
+			return
 		}
-		cnt.UnlockGC()
+		// receive filled
+		<-filled
+	}
 
-		select {
-		case <-filled:
-		case <-time.After(TM * 10):
-			b.Error("slow or missing")
+	// fini
+	b.ReportAllocs()
+}
+
+func BenchmarkNode_srcDst(b *testing.B) {
+
+	b.Run("empty roots memory", benchmarkNodeSrcDstEmptyRootsMemory)
+	b.Run("empty roots boltdb", benchmarkNodeSrcDstEmptyRootsBoltDB)
+
+}
+
+func benchmarkNodePassThroughEmptyRootsMemory(b *testing.B) {
+
+	// prepare
+
+	reg := skyobject.NewRegistry()
+	reg.Register("bench.User", User{})
+
+	sconf := newConfig(false)
+	pconf := newConfig(true)
+	dconf := newConfig(false)
+
+	filled := make(chan struct{})
+	dconf.OnRootFilled = func(*Root) {
+		filled <- struct{}{}
+	}
+
+	// source
+	src, err := NewNode(sconf)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer src.Close()
+	// pipe
+	pipe, err := NewNode(pconf)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer pipe.Close()
+	// destination
+	dst, err := NewNode(dconf)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer dst.Close()
+
+	// source->pipe
+	sc, err := src.Pool().Dial(pipe.Pool().Address())
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	// destination->pipe
+	dc, err := dst.Pool().Dial(pipe.Pool().Address())
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	// subcribe
+	pipe.Subscribe(nil, pk)
+	if err := src.SubscribeResponse(sc, pk); err != nil {
+		b.Error(err)
+		return
+	}
+	if err := dst.SubscribeResponse(dc, pk); err != nil {
+		b.Error(err)
+		return
+	}
+
+	// add registry and create first root
+	cnt := src.Container()
+
+	var root *Root
+
+	// becasu we're not using "core registry" we need be sure that
+	// GC doesn't cleans our registry until we create first root object
+	cnt.LockGC()
+	{
+		cnt.AddRegistry(reg)
+		root, err = cnt.NewRootReg(pk, sk, reg.Reference())
+		if err != nil {
+			cnt.UnlockGC()
+			b.Error(err)
+			return
+		}
+		if _, err = root.Touch(); err != nil { // crete first root
+			cnt.UnlockGC()
+			b.Error(err)
 			return
 		}
 
-		// run
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// update
-			if _, err = root.Touch(); err != nil {
-				b.Error(err)
-				return
-			}
-			// receive filled
-			<-filled
+	}
+	cnt.UnlockGC()
+
+	select {
+	case <-filled:
+	case <-time.After(TM * 10):
+		b.Error("slow or missing")
+		return
+	}
+
+	// run
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// update
+		if _, err = root.Touch(); err != nil {
+			b.Error(err)
+			return
+		}
+		// receive filled
+		<-filled
+	}
+
+	// fini
+	b.ReportAllocs()
+}
+
+func benchmarkNodePassThroughEmptyRootsBoltDB(b *testing.B) {
+
+	defer clean()
+
+	// prepare
+
+	reg := skyobject.NewRegistry()
+	reg.Register("bench.User", User{})
+
+	sconf := newConfig(false)
+	sconf.InMemoryDB = false
+	sconf.DBPath = sconf.DBPath + ".source"
+	pconf := newConfig(true)
+	pconf.InMemoryDB = false
+	pconf.DBPath = pconf.DBPath + ".pipe"
+	dconf := newConfig(false)
+	dconf.InMemoryDB = false
+	dconf.DBPath = dconf.DBPath + ".destination"
+
+	filled := make(chan struct{})
+	dconf.OnRootFilled = func(*Root) {
+		filled <- struct{}{}
+	}
+
+	// source
+	src, err := NewNode(sconf)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer src.Close()
+	// pipe
+	pipe, err := NewNode(pconf)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer pipe.Close()
+	// destination
+	dst, err := NewNode(dconf)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer dst.Close()
+
+	// source->pipe
+	sc, err := src.Pool().Dial(pipe.Pool().Address())
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	// destination->pipe
+	dc, err := dst.Pool().Dial(pipe.Pool().Address())
+	if err != nil {
+		b.Error(err)
+		return
+	}
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	// subcribe
+	pipe.Subscribe(nil, pk)
+	if err := src.SubscribeResponse(sc, pk); err != nil {
+		b.Error(err)
+		return
+	}
+	if err := dst.SubscribeResponse(dc, pk); err != nil {
+		b.Error(err)
+		return
+	}
+
+	// add registry and create first root
+	cnt := src.Container()
+
+	var root *Root
+
+	// becasu we're not using "core registry" we need be sure that
+	// GC doesn't cleans our registry until we create first root object
+	cnt.LockGC()
+	{
+		cnt.AddRegistry(reg)
+		root, err = cnt.NewRootReg(pk, sk, reg.Reference())
+		if err != nil {
+			cnt.UnlockGC()
+			b.Error(err)
+			return
+		}
+		if _, err = root.Touch(); err != nil { // crete first root
+			cnt.UnlockGC()
+			b.Error(err)
+			return
 		}
 
-		// fini
-		b.ReportAllocs()
-	})
+	}
+	cnt.UnlockGC()
 
+	select {
+	case <-filled:
+	case <-time.After(TM * 10):
+		b.Error("slow or missing")
+		return
+	}
+
+	// run
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// update
+		if _, err = root.Touch(); err != nil {
+			b.Error(err)
+			return
+		}
+		// receive filled
+		<-filled
+	}
+
+	// fini
+	b.ReportAllocs()
 }
 
 func BenchmarkNode_passThrough(b *testing.B) {
 
-	// types
-
-	type User struct {
-		Name string
-		Age  uint32
-	}
-
-	b.Run("empty roots memory", func(b *testing.B) {
-
-		// prepare
-
-		reg := skyobject.NewRegistry()
-		reg.Register("bench.User", User{})
-
-		sconf := newNodeConfig(false)
-		pconf := newNodeConfig(true)
-		dconf := newNodeConfig(false)
-
-		filled := make(chan struct{})
-		dconf.OnRootFilled = func(*Root) {
-			filled <- struct{}{}
-		}
-
-		// source
-		src, err := newNode(sconf)
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		defer src.Close()
-		if err := src.Start(); err != nil {
-			b.Error(err)
-			return
-		}
-		// pipe
-		pipe, err := newNode(pconf)
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		defer pipe.Close()
-		if err := pipe.Start(); err != nil {
-			b.Error(err)
-			return
-		}
-		// destination
-		dst, err := newNode(dconf)
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		defer dst.Close()
-		if err := dst.Start(); err != nil {
-			b.Error(err)
-			return
-		}
-
-		// source->pipe
-		sc, err := src.Pool().Dial(pipe.Pool().Address())
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		// destination->pipe
-		dc, err := dst.Pool().Dial(pipe.Pool().Address())
-		if err != nil {
-			b.Error(err)
-			return
-		}
-
-		pk, sk := cipher.GenerateKeyPair()
-
-		// subcribe
-		pipe.Subscribe(nil, pk)
-		if err := src.SubscribeResponse(sc, pk); err != nil {
-			b.Error(err)
-			return
-		}
-		if err := dst.SubscribeResponse(dc, pk); err != nil {
-			b.Error(err)
-			return
-		}
-
-		// add registry and create first root
-		cnt := src.Container()
-
-		var root *Root
-
-		// becasu we're not using "core registry" we need be sure that
-		// GC doesn't cleans our registry until we create first root object
-		cnt.LockGC()
-		{
-			cnt.AddRegistry(reg)
-			root, err = cnt.NewRootReg(pk, sk, reg.Reference())
-			if err != nil {
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-			if _, err = root.Touch(); err != nil { // crete first root
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-
-		}
-		cnt.UnlockGC()
-
-		select {
-		case <-filled:
-		case <-time.After(TM * 10):
-			b.Error("slow or missing")
-			return
-		}
-
-		// run
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// update
-			if _, err = root.Touch(); err != nil {
-				b.Error(err)
-				return
-			}
-			// receive filled
-			<-filled
-		}
-
-		// fini
-		b.ReportAllocs()
-	})
-
-	b.Run("empty roots boltdb", func(b *testing.B) {
-
-		defer clean()
-
-		// prepare
-
-		reg := skyobject.NewRegistry()
-		reg.Register("bench.User", User{})
-
-		sconf := newNodeConfig(false)
-		sconf.InMemoryDB = false
-		sconf.DBPath = sconf.DBPath + ".source"
-		pconf := newNodeConfig(true)
-		pconf.InMemoryDB = false
-		pconf.DBPath = pconf.DBPath + ".pipe"
-		dconf := newNodeConfig(false)
-		dconf.InMemoryDB = false
-		dconf.DBPath = dconf.DBPath + ".destination"
-
-		filled := make(chan struct{})
-		dconf.OnRootFilled = func(*Root) {
-			filled <- struct{}{}
-		}
-
-		// source
-		src, err := newNode(sconf)
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		defer src.Close()
-		if err := src.Start(); err != nil {
-			b.Error(err)
-			return
-		}
-		// pipe
-		pipe, err := newNode(pconf)
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		defer pipe.Close()
-		if err := pipe.Start(); err != nil {
-			b.Error(err)
-			return
-		}
-		// destination
-		dst, err := newNode(dconf)
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		defer dst.Close()
-		if err := dst.Start(); err != nil {
-			b.Error(err)
-			return
-		}
-
-		// source->pipe
-		sc, err := src.Pool().Dial(pipe.Pool().Address())
-		if err != nil {
-			b.Error(err)
-			return
-		}
-		// destination->pipe
-		dc, err := dst.Pool().Dial(pipe.Pool().Address())
-		if err != nil {
-			b.Error(err)
-			return
-		}
-
-		pk, sk := cipher.GenerateKeyPair()
-
-		// subcribe
-		pipe.Subscribe(nil, pk)
-		if err := src.SubscribeResponse(sc, pk); err != nil {
-			b.Error(err)
-			return
-		}
-		if err := dst.SubscribeResponse(dc, pk); err != nil {
-			b.Error(err)
-			return
-		}
-
-		// add registry and create first root
-		cnt := src.Container()
-
-		var root *Root
-
-		// becasu we're not using "core registry" we need be sure that
-		// GC doesn't cleans our registry until we create first root object
-		cnt.LockGC()
-		{
-			cnt.AddRegistry(reg)
-			root, err = cnt.NewRootReg(pk, sk, reg.Reference())
-			if err != nil {
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-			if _, err = root.Touch(); err != nil { // crete first root
-				cnt.UnlockGC()
-				b.Error(err)
-				return
-			}
-
-		}
-		cnt.UnlockGC()
-
-		select {
-		case <-filled:
-		case <-time.After(TM * 10):
-			b.Error("slow or missing")
-			return
-		}
-
-		// run
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// update
-			if _, err = root.Touch(); err != nil {
-				b.Error(err)
-				return
-			}
-			// receive filled
-			<-filled
-		}
-
-		// fini
-		b.ReportAllocs()
-	})
+	b.Run("empty roots memory", benchmarkNodePassThroughEmptyRootsMemory)
+	b.Run("empty roots boltdb", benchmarkNodePassThroughEmptyRootsBoltDB)
 
 }

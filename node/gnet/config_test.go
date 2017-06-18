@@ -8,51 +8,51 @@ import (
 func TestNewConfig(t *testing.T) {
 	c := NewConfig()
 	if c.MaxConnections != MaxConnections {
-		t.Error("unexpected MaxConnections, want %v, got %v",
+		t.Errorf("unexpected MaxConnections, want %v, got %v",
 			MaxConnections, c.MaxConnections)
 	}
 	if c.MaxMessageSize != MaxMessageSize {
-		t.Error("unexpected MaxMessageSize, want %v, got %v",
+		t.Errorf("unexpected MaxMessageSize, want %v, got %v",
 			MaxMessageSize, c.MaxMessageSize)
 	}
 	if c.DialTimeout != DialTimeout {
-		t.Error("unexpected DialTimeout, want %v, got %v",
+		t.Errorf("unexpected DialTimeout, want %v, got %v",
 			DialTimeout, c.DialTimeout)
 	}
 	if c.ReadTimeout != ReadTimeout {
-		t.Error("unexpected ReadTimeout, want %v, got %v",
+		t.Errorf("unexpected ReadTimeout, want %v, got %v",
 			ReadTimeout, c.ReadTimeout)
 	}
 	if c.WriteTimeout != WriteTimeout {
-		t.Error("unexpected WriteTimeout, want %v, got %v",
+		t.Errorf("unexpected WriteTimeout, want %v, got %v",
 			WriteTimeout, c.WriteTimeout)
 	}
 	if c.ReadQueueLen != ReadQueueLen {
-		t.Error("unexpected ReadQueueLen, want %v, got %v",
+		t.Errorf("unexpected ReadQueueLen, want %v, got %v",
 			ReadQueueLen, c.ReadQueueLen)
 	}
 	if c.WriteQueueLen != WriteQueueLen {
-		t.Error("unexpected WriteQueueLen, want %v, got %v",
+		t.Errorf("unexpected WriteQueueLen, want %v, got %v",
 			WriteQueueLen, c.WriteQueueLen)
 	}
 	if c.RedialTimeout != RedialTimeout {
-		t.Error("unexpected RedialTimeout, want %v, got %v",
+		t.Errorf("unexpected RedialTimeout, want %v, got %v",
 			RedialTimeout, c.RedialTimeout)
 	}
 	if c.MaxRedialTimeout != MaxRedialTimeout {
-		t.Error("unexpected MaxRedialTimeout, want %v, got %v",
+		t.Errorf("unexpected MaxRedialTimeout, want %v, got %v",
 			MaxRedialTimeout, c.MaxRedialTimeout)
 	}
 	if c.DialsLimit != DialsLimit {
-		t.Error("unexpected DialsLimit, want %v, got %v",
+		t.Errorf("unexpected DialsLimit, want %v, got %v",
 			DialsLimit, c.DialsLimit)
 	}
 	if c.ReadBufferSize != ReadBufferSize {
-		t.Error("unexpected ReadBufferSize, want %v, got %v",
+		t.Errorf("unexpected ReadBufferSize, want %v, got %v",
 			ReadBufferSize, c.ReadBufferSize)
 	}
 	if c.WriteBufferSize != WriteBufferSize {
-		t.Error("unexpected WriteBufferSize, want %v, got %v",
+		t.Errorf("unexpected WriteBufferSize, want %v, got %v",
 			WriteBufferSize, c.WriteBufferSize)
 	}
 }

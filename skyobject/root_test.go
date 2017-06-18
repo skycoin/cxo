@@ -174,8 +174,9 @@ func TestRoot_IsFull(t *testing.T) {
 	if r.IsFull() {
 		t.Error("detached root is full")
 	}
-	_, _, err = r.Inject("cxo.User", User{"Alice", 20, nil})
-	if err != nil {
+	if alice, err := r.Dynamic("cxo.User", User{"Alice", 20, nil}); err != nil {
+		t.Fatal(err)
+	} else if _, err = r.Append(alice); err != nil {
 		t.Fatal(err)
 	}
 	if !r.IsFull() {
@@ -207,8 +208,9 @@ func TestRoot_Encode(t *testing.T) {
 	if _, err := c.unpackRoot(&rp); err != nil {
 		t.Fatal(err)
 	}
-	_, rp, err = r.Inject("cxo.User", User{"Alice", 20, nil})
-	if err != nil {
+	if alice, err := r.Dynamic("cxo.User", User{"Alice", 20, nil}); err != nil {
+		t.Fatal(err)
+	} else if rp, err = r.Append(alice); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(rp)
@@ -338,18 +340,28 @@ func TestRoot_WantFunc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+
+	//
+	var aliceUser, evaUser, ammyUser User = User{"Alice", 20, nil},
+		User{"Eva", 21, nil}, User{"Ammy", 16, nil}
+	//
+	var alice, eva, ammy Dynamic
+	if alice, err = r.Dynamic("cxo.User", aliceUser); err != nil {
+		t.Fatal(err)
+	}
+	if eva, err = r.Dynamic("cxo.User", evaUser); err != nil {
+		t.Fatal(err)
+	}
+	if ammy, err = r.Dynamic("cxo.User", ammyUser); err != nil {
+		t.Fatal(err)
+	}
+	//
+	rp, err := r.Append(alice, eva, ammy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
+	//
+
 	// receiver
 	receiver := NewContainer(data.NewMemoryDB(), nil)
 	if r, err = receiver.AddRootPack(&rp); err != nil {
@@ -378,9 +390,9 @@ func TestRoot_WantFunc(t *testing.T) {
 		t.Fatal("wrong wants")
 	}
 	set := map[Reference]struct{}{
-		alice.Object: struct{}{},
-		eva.Object:   struct{}{},
-		ammy.Object:  struct{}{},
+		alice.Object: {},
+		eva.Object:   {},
+		ammy.Object:  {},
 	}
 	for _, w := range want {
 		if _, ok := set[w]; !ok {
@@ -462,18 +474,26 @@ func TestRoot_GotFunc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+
+	var aliceUser, evaUser, ammyUser User = User{"Alice", 20, nil},
+		User{"Eva", 21, nil}, User{"Ammy", 16, nil}
+	//
+	var alice, eva, ammy Dynamic
+	if alice, err = r.Dynamic("cxo.User", aliceUser); err != nil {
+		t.Fatal(err)
+	}
+	if eva, err = r.Dynamic("cxo.User", evaUser); err != nil {
+		t.Fatal(err)
+	}
+	if ammy, err = r.Dynamic("cxo.User", ammyUser); err != nil {
+		t.Fatal(err)
+	}
+	//
+	rp, err := r.Append(alice, eva, ammy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	// receiver
 	receiver := NewContainer(data.NewMemoryDB(), nil)
 	if r, err = receiver.AddRootPack(&rp); err != nil {
@@ -517,7 +537,7 @@ func TestRoot_GotFunc(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatal("wrong gots", got)
 	}
-	set := map[Reference]struct{}{alice.Object: struct{}{}}
+	set := map[Reference]struct{}{alice.Object: {}}
 	for _, w := range got {
 		if _, ok := set[w]; !ok {
 			t.Fatal("wrong ref")

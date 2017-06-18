@@ -12,7 +12,6 @@ import (
 	//"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node/gnet"
-	"github.com/skycoin/cxo/skyobject"
 )
 
 // timeout to fail slow opertions
@@ -22,6 +21,12 @@ var (
 	testDataDir      = filepath.Join(".", "test")
 	testServerDBPath = filepath.Join(testDataDir, "server.db")
 )
+
+func init() {
+	if !testing.Verbose() {
+		log.SetOutput(ioutil.Discard) // for RPC logs
+	}
+}
 
 func clean() {
 	os.RemoveAll(testDataDir)
@@ -36,9 +41,12 @@ func shouldPanic(t *testing.T) {
 // name for logs (empty for default)
 // memory - to use databas in memory (otherwise it will be ./test/test.db)
 // listening enabled by argument
-func newNodeConfig(listen bool) (conf NodeConfig) {
-	conf = NewNodeConfig()
+func newConfig(listen bool) (conf Config) {
+	conf = NewConfig()
 	conf.Log.Debug = testing.Verbose()
+	if !testing.Verbose() {
+		conf.Log.Output = ioutil.Discard
+	}
 	conf.Listen = "127.0.0.1:0" // arbitrary assignment
 	conf.EnableListener = listen
 
@@ -51,26 +59,9 @@ func newNodeConfig(listen bool) (conf NodeConfig) {
 	return
 }
 
-func newNode(conf NodeConfig) (s *Node, err error) {
-	s, err = newNodeReg(conf, nil)
-	return
-}
-
-func newNodeReg(conf NodeConfig, reg *skyobject.Registry) (s *Node, err error) {
-	if s, err = NewNodeReg(conf, reg); err != nil {
-		return
-	}
-	if !testing.Verbose() {
-		s.Logger.SetOutput(ioutil.Discard)
-		s.pool.Logger.SetOutput(ioutil.Discard)
-		log.SetOutput(ioutil.Discard) // RPC
-	}
-	return
-}
-
 // b - listener (listens anyway)
 // a - connects to b (can listen and can not)
-func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
+func newConnectedNodes(aconf, bconf Config) (a, b *Node,
 	ac, bc *gnet.Conn, err error) {
 
 	bconf.EnableListener = true
@@ -94,21 +85,12 @@ func newConnectedNodes(aconf, bconf NodeConfig) (a, b *Node,
 		}
 	}
 
-	if a, err = newNode(aconf); err != nil {
-		return
-	}
-	if err = a.Start(); err != nil {
-		a.Close()
+	if a, err = NewNode(aconf); err != nil {
 		return
 	}
 
-	if b, err = newNode(bconf); err != nil {
+	if b, err = NewNode(bconf); err != nil {
 		a.Close()
-		return
-	}
-	if err = b.Start(); err != nil {
-		a.Close()
-		b.Close()
 		return
 	}
 

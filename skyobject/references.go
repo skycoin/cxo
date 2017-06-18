@@ -89,7 +89,7 @@ func (r References) String() (s string) {
 // Dynamic
 //
 
-// A dynamic represents dynamic reference that contains
+// A Dynamic represents dynamic reference that contains
 // reference to schema and reference to object
 type Dynamic struct {
 	Object Reference

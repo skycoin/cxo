@@ -105,7 +105,11 @@ func TestContainer_WantRegistry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, rp, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+		alice, err := r.Dynamic("cxo.User", User{"Alice", 20, nil})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp, err := r.Append(alice)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -528,6 +532,8 @@ func TestContainer_LastFullRoot(t *testing.T) {
 		}
 	})
 	t.Run("found", func(t *testing.T) {
+		defer shouldNotPanic(t) // for insurance
+
 		c := getCont()
 		pk, sk := cipher.GenerateKeyPair()
 		r, err := c.NewRoot(pk, sk)
@@ -535,9 +541,9 @@ func TestContainer_LastFullRoot(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		r.Inject("cxo.User", User{"Alice", 15, nil})
-		r.Inject("cxo.User", User{"Eva", 16, nil})
-		r.Inject("cxo.User", User{"Ammy", 17, nil})
+		r.Append(r.MustDynamic("cxo.User", User{"Alice", 15, nil}))
+		r.Append(r.MustDynamic("cxo.User", User{"Eva", 16, nil}))
+		r.Append(r.MustDynamic("cxo.User", User{"Ammy", 17, nil}))
 		full := c.LastFullRoot(pk)
 		if full == nil {
 			t.Error("misisng last full root")
@@ -615,15 +621,22 @@ func TestContainer_WantFeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
-	if err != nil {
+	//
+	var aliceUser, evaUser, ammyUser User = User{"Alice", 20, nil},
+		User{"Eva", 21, nil}, User{"Ammy", 16, nil}
+	//
+	var alice, eva, ammy Dynamic
+	if alice, err = r.Dynamic("cxo.User", aliceUser); err != nil {
 		t.Fatal(err)
 	}
-	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
-	if err != nil {
+	if eva, err = r.Dynamic("cxo.User", evaUser); err != nil {
 		t.Fatal(err)
 	}
-	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
+	if ammy, err = r.Dynamic("cxo.User", ammyUser); err != nil {
+		t.Fatal(err)
+	}
+	//
+	rp, err := r.Append(alice, eva, ammy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,9 +662,9 @@ func TestContainer_WantFeed(t *testing.T) {
 		t.Fatal("wrong wants")
 	}
 	set := map[Reference]struct{}{
-		alice.Object: struct{}{},
-		eva.Object:   struct{}{},
-		ammy.Object:  struct{}{},
+		alice.Object: {},
+		eva.Object:   {},
+		ammy.Object:  {},
 	}
 	for _, w := range want {
 		if _, ok := set[w]; !ok {
@@ -724,18 +737,28 @@ func TestContainer_GotFeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alice, _, err := r.Inject("cxo.User", User{"Alice", 20, nil})
+
+	//
+	var aliceUser, evaUser, ammyUser User = User{"Alice", 20, nil},
+		User{"Eva", 21, nil}, User{"Ammy", 16, nil}
+	//
+	var alice, eva, ammy Dynamic
+	if alice, err = r.Dynamic("cxo.User", aliceUser); err != nil {
+		t.Fatal(err)
+	}
+	if eva, err = r.Dynamic("cxo.User", evaUser); err != nil {
+		t.Fatal(err)
+	}
+	if ammy, err = r.Dynamic("cxo.User", ammyUser); err != nil {
+		t.Fatal(err)
+	}
+	//
+	rp, err := r.Append(alice, eva, ammy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eva, _, err := r.Inject("cxo.User", User{"Eva", 21, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ammy, rp, err := r.Inject("cxo.User", User{"Ammy", 16, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
+	//
+
 	// receiver
 	receiver := NewContainer(data.NewMemoryDB(), nil)
 	if r, err = receiver.AddRootPack(&rp); err != nil {
@@ -771,7 +794,7 @@ func TestContainer_GotFeed(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatal("wrong gots", got)
 	}
-	set := map[Reference]struct{}{alice.Object: struct{}{}}
+	set := map[Reference]struct{}{alice.Object: {}}
 	for _, w := range got {
 		if _, ok := set[w]; !ok {
 			t.Fatal("wrong ref")
@@ -889,17 +912,21 @@ func TestContainer_GC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.Inject("cxo.User", User{"Alice", 20, nil})
+	alice, err := r.Dynamic("cxo.User", User{"Alice", 20, nil})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.Replace([]Dynamic{
+	_, err = r.Append(alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.Replace([]Dynamic{
 		r.MustDynamic("cxo.User", User{"Eva", 21, nil}),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.Replace([]Dynamic{
+	_, err = r.Replace([]Dynamic{
 		r.MustDynamic("cxo.User", User{"Ammy", 16, nil}),
 	})
 	if err != nil {

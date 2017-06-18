@@ -221,3 +221,28 @@ func TestRegistry_slice(t *testing.T) {
 		}
 	})
 }
+
+func TestRegistry_userProvidedName(t *testing.T) {
+	t.Skip("not implemented yet")
+
+	type Info struct {
+		About string
+	}
+	type Brief struct {
+		Note string
+	}
+	type Any struct {
+		Info
+		Brief Brief
+	}
+	reg := NewRegistry()
+	reg.Register("test.Info", Info{})
+	reg.Register("test.Brief", Brief{})
+	reg.Register("test.Any", Any{})
+
+	defer shouldNotPanic(t)
+
+	reg.Done()
+
+	// TODO
+}

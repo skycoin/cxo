@@ -9,7 +9,7 @@ changes
 
 ### Done
 
-####  1:00 16 June 2017 UTC
+#### 16:15 17 June 2017 UTC
 
 - [x] change subscribe_to from optimistic to based on `SubscribeResponse`
 - [x] implement `tree` command

@@ -27,7 +27,7 @@ func rootItems(root *Root) (items []gotree.GTStructure) {
 	vals, err := root.Values()
 	if err != nil {
 		items = []gotree.GTStructure{
-			gotree.GTStructure{Name: "error: " + err.Error()},
+			{Name: "error: " + err.Error()},
 		}
 		return
 	}
@@ -46,19 +46,7 @@ func valueItem(val *Value) (item gotree.GTStructure) {
 	var err error
 	switch val.Kind() {
 	case reflect.Struct:
-		item.Name = "struct " + val.Schema().Name()
-
-		err = val.RangeFields(func(name string,
-			val *Value) (_ error) {
-
-			var field gotree.GTStructure
-			field.Name = "(field) " + name
-			field.Items = []gotree.GTStructure{
-				valueItem(val),
-			}
-			item.Items = append(item.Items, field)
-			return
-		})
+		item, err = valueItemStruct(val)
 	case reflect.Ptr:
 
 		if val.Schema().ReferenceType() == ReferenceTypeSingle {
@@ -81,7 +69,7 @@ func valueItem(val *Value) (item gotree.GTStructure) {
 			}
 		} else {
 			item.Items = []gotree.GTStructure{
-				gotree.GTStructure{
+				{
 					Name: "error: " + err.Error(),
 				},
 			}
@@ -104,50 +92,9 @@ func valueItem(val *Value) (item gotree.GTStructure) {
 			item.Name = fmt.Sprint(f)
 		}
 	case reflect.Array:
-		item.Name = val.Schema().Name()
-		if item.Name == "" {
-			// unnamed type
-			var ln int
-			if ln, err = val.Len(); err != nil {
-				break
-			}
-			if val.Schema().Elem() == nil {
-				err = ErrInvalidSchema
-				break
-			}
-			item.Name = fmt.Sprintf("[%d]", ln) + val.Schema().Elem().String()
-		}
-		err = val.RangeIndex(func(_ int, val *Value) (_ error) {
-			item.Items = append(item.Items, valueItem(val))
-			return
-		})
+		item, err = valueItemArray(val)
 	case reflect.Slice:
-		// special case for []byte
-		sch := val.Schema()
-		if sch.Kind() == reflect.Slice && sch.Elem().Kind() == reflect.Uint8 {
-			var bt []byte
-			if bt, err = val.Bytes(); err != nil {
-				break
-			}
-			item.Name = "[]byte"
-			item.Items = []gotree.GTStructure{
-				gotree.GTStructure{Name: hex.EncodeToString(bt)},
-			}
-			return
-		}
-		// including References
-		if item.Name = sch.Name(); item.Name == "" {
-			// unnamed type
-			if sch.Elem() == nil {
-				err = ErrInvalidSchema
-				break
-			}
-			item.Name = "[]" + sch.Elem().String()
-		}
-		err = val.RangeIndex(func(_ int, val *Value) (_ error) {
-			item.Items = append(item.Items, valueItem(val))
-			return
-		})
+		item, err = valueItemSlice(val)
 	case reflect.String:
 		var s string
 		if s, err = val.String(); err == nil {
@@ -159,5 +106,72 @@ func valueItem(val *Value) (item gotree.GTStructure) {
 		item.Name = "error: " + err.Error()
 		item.Items = nil // clear
 	}
+	return
+}
+
+func valueItemStruct(val *Value) (item gotree.GTStructure, err error) {
+	item.Name = "struct " + val.Schema().Name()
+
+	err = val.RangeFields(func(name string, val *Value) (_ error) {
+
+		var field gotree.GTStructure
+		field.Name = "(field) " + name
+		field.Items = []gotree.GTStructure{
+			valueItem(val),
+		}
+		item.Items = append(item.Items, field)
+		return
+	})
+	return
+}
+
+func valueItemSlice(val *Value) (item gotree.GTStructure, err error) {
+	// special case for []byte
+	sch := val.Schema()
+	if sch.Kind() == reflect.Slice && sch.Elem().Kind() == reflect.Uint8 {
+		var bt []byte
+		if bt, err = val.Bytes(); err != nil {
+			return
+		}
+		item.Name = "[]byte"
+		item.Items = []gotree.GTStructure{
+			{Name: hex.EncodeToString(bt)},
+		}
+		return
+	}
+	// including References
+	if item.Name = sch.Name(); item.Name == "" {
+		// unnamed type
+		if sch.Elem() == nil {
+			err = ErrInvalidSchema
+			return
+		}
+		item.Name = "[]" + sch.Elem().String()
+	}
+	err = val.RangeIndex(func(_ int, val *Value) (_ error) {
+		item.Items = append(item.Items, valueItem(val))
+		return
+	})
+	return
+}
+
+func valueItemArray(val *Value) (item gotree.GTStructure, err error) {
+	item.Name = val.Schema().Name()
+	if item.Name == "" {
+		// unnamed type
+		var ln int
+		if ln, err = val.Len(); err != nil {
+			return
+		}
+		if val.Schema().Elem() == nil {
+			err = ErrInvalidSchema
+			return
+		}
+		item.Name = fmt.Sprintf("[%d]", ln) + val.Schema().Elem().String()
+	}
+	err = val.RangeIndex(func(_ int, val *Value) (_ error) {
+		item.Items = append(item.Items, valueItem(val))
+		return
+	})
 	return
 }

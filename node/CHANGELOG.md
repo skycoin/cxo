@@ -12,9 +12,24 @@ changes
 - [ ] dry benchmarks
 - [ ] add long running tests
 - [ ] move `RootWalker` to skyobject package
-- [ ] move `(*Node).Start()` to `NewNodeReg` ridding out of the `Start`
 
 ### Done
+
+#### 16:15 17 June 2017 UTC
+
+- [x] move `(*Node).Start()` to `NewNodeReg`
+
+The `(*Node).Start` is deprecated and has been replaced by a stub.
+
+Also
+
+- there are changes in skyobject package
+- GC disabled by default
+
+
+And there is breaking changes:
+
+- `NodeConfig` renamed to `Config` following golang linter recommendations
 
 ####  1:00 16 June 2017 UTC
 

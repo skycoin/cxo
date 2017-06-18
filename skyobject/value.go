@@ -7,6 +7,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// Value related errors
 var (
 	ErrInvalidSchemaOrData     = errors.New("invalid schema or data")
 	ErrIndexOutOfRange         = errors.New("index out of range")
@@ -22,6 +23,7 @@ type Value struct {
 	root   *Root  // back reference to related Root
 }
 
+// IsNil retusn true if this Value represents nil
 func (v *Value) IsNil() bool {
 	return v.data == nil
 }
@@ -48,16 +50,19 @@ func (v *Value) Schema() Schema {
 
 // Reference
 
+// Static retursn Reference to obejct
 func (v *Value) Static() (ref Reference, err error) {
 	err = encoder.DeserializeRaw(v.data, &ref)
 	return
 }
 
+// Dynamic returns Dynamic reference to an obejct
 func (v *Value) Dynamic() (dr Dynamic, err error) {
 	err = encoder.DeserializeRaw(v.data, &dr)
 	return
 }
 
+// Dereference a reference
 func (v *Value) Dereference() (val *Value, err error) {
 	switch v.Schema().ReferenceType() {
 	case ReferenceTypeSingle:
@@ -86,7 +91,7 @@ func (v *Value) Dereference() (val *Value, err error) {
 	return
 }
 
-// Length of array, slice or string
+// Len of array, slice or string
 func (v *Value) Len() (l int, err error) {
 	switch v.Kind() {
 	case reflect.Array:
@@ -99,6 +104,7 @@ func (v *Value) Len() (l int, err error) {
 	return
 }
 
+// RangeIndexFunc used to itterate over array or slcie
 type RangeIndexFunc func(i int, val *Value) error
 
 // RangeIndex ranges over arrays and slices. Prefer to use this method
@@ -217,7 +223,7 @@ func (v *Value) Fields() (fs []string) {
 	return
 }
 
-// FieldByName
+// FieldByName returns struct filed by field name
 func (v *Value) FieldByName(name string) (val *Value, err error) {
 	err = v.RangeFields(func(n string, x *Value) error {
 		if n == name {
@@ -232,7 +238,7 @@ func (v *Value) FieldByName(name string) (val *Value, err error) {
 	return
 }
 
-// FieldByIndex
+// FieldByIndex returns struct field by index
 func (v *Value) FieldByIndex(i int) (val *Value, err error) {
 	var j int
 	err = v.RangeFields(func(_ string, x *Value) error {
@@ -249,6 +255,7 @@ func (v *Value) FieldByIndex(i int) (val *Value, err error) {
 	return
 }
 
+// RangeFieldsFunc used to itterate over fields of a struct
 type RangeFieldsFunc func(name string, val *Value) error
 
 // RangeFields iterate over all fields of the Value. Prefer this method
@@ -285,7 +292,7 @@ func (v *Value) RangeFields(rff RangeFieldsFunc) (err error) {
 
 // obtain
 
-// For Int8, Int16, Int32, and Int64
+// Int returns decoded int8, int16, int32, and int64
 func (v *Value) Int() (i int64, err error) {
 	switch v.Kind() {
 	case reflect.Int8:
@@ -308,7 +315,7 @@ func (v *Value) Int() (i int64, err error) {
 	return
 }
 
-// For Uint8, Uint16, Uint32, and Uint64
+// Uint return decoded uint8, uint16, uint32, and uint64
 func (v *Value) Uint() (u uint64, err error) {
 	switch v.Kind() {
 	case reflect.Uint8:
@@ -331,7 +338,7 @@ func (v *Value) Uint() (u uint64, err error) {
 	return
 }
 
-// For float32 and float64
+// Float returns decoded float32 or float64
 func (v *Value) Float() (f float64, err error) {
 	switch v.Kind() {
 	case reflect.Float32:
@@ -346,7 +353,7 @@ func (v *Value) Float() (f float64, err error) {
 	return
 }
 
-// For strings
+// String returns decoded string
 func (v *Value) String() (s string, err error) {
 	if v.Kind() == reflect.String {
 		err = encoder.DeserializeRaw(v.data, &s)
@@ -356,7 +363,7 @@ func (v *Value) String() (s string, err error) {
 	return
 }
 
-// For []byte and string
+// Bytes returns decoded []byte
 func (v *Value) Bytes() (p []byte, err error) {
 	sch := v.Schema()
 	if sch.Kind() == reflect.Slice && sch.Elem().Kind() == reflect.Uint8 {
@@ -373,7 +380,7 @@ func (v *Value) Bytes() (p []byte, err error) {
 	return
 }
 
-// For bool
+// Bool retursn decoded bool
 func (v *Value) Bool() (b bool, err error) {
 	if v.Kind() != reflect.Bool {
 		err = ErrInvalidType
@@ -404,72 +411,16 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 		}
 		n += 4 // encoded length (uint32)
 	case reflect.Slice:
-		if s.IsReference() {
-			if n, err = getLength(p); err == nil {
-				n *= len(Reference{})
-				n += 4 // length prefix
-			}
-			break
-		}
-		var l int
-		if l, err = getLength(p); err != nil {
+		if n, err = schemaSliceSize(s, p); err != nil {
 			return
 		}
-		n += 4
-		el := s.Elem()
-		if s := fixedSize(el.Kind()); s > 0 {
-			n += l * s
-		} else {
-			var m int
-			for i := 0; i < l; i++ {
-				if n >= len(p) {
-					err = ErrInvalidSchemaOrData
-					return
-				}
-				if m, err = SchemaSize(el, p[n:]); err != nil {
-					return
-				}
-				n += m
-			}
-		}
 	case reflect.Array:
-		if s.IsReference() {
-			n = len(Reference{})
-			break
-		}
-		var l int = s.Len()
-		el := s.Elem()
-		if s := fixedSize(el.Kind()); s > 0 {
-			n = l * s
-		} else {
-			var m int
-			for i := 0; i < l; i++ {
-				if n >= len(p) {
-					err = ErrInvalidSchemaOrData
-					return
-				}
-				if m, err = SchemaSize(el, p[n:]); err != nil {
-					return
-				}
-				n += m
-			}
+		if n, err = schemaArraySize(s, p); err != nil {
+			return
 		}
 	case reflect.Struct:
-		if s.IsReference() {
-			n = 2 * len(Reference{})
-			break
-		}
-		var m int
-		for _, sf := range s.Fields() {
-			ss := sf.Schema()
-			if n >= len(p) {
-				err = ErrInvalidSchemaOrData
-				return
-			}
-			if m, err = SchemaSize(ss, p[n:]); err != nil {
-				return
-			}
-			n += m
+		if n, err = schemaStructSize(s, p); err != nil {
+			return
 		}
 	default:
 		err = ErrInvalidSchema
@@ -477,6 +428,83 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 	}
 	if n > len(p) {
 		err = ErrInvalidSchemaOrData
+	}
+	return
+}
+
+func schemaSliceSize(s Schema, p []byte) (n int, err error) {
+	if s.IsReference() {
+		if n, err = getLength(p); err == nil {
+			n *= len(Reference{})
+			n += 4 // length prefix
+		}
+		return
+	}
+	var l int
+	if l, err = getLength(p); err != nil {
+		return
+	}
+	n += 4
+	el := s.Elem()
+	if s := fixedSize(el.Kind()); s > 0 {
+		n += l * s
+	} else {
+		var m int
+		for i := 0; i < l; i++ {
+			if n >= len(p) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if m, err = SchemaSize(el, p[n:]); err != nil {
+				return
+			}
+			n += m
+		}
+	}
+	return
+}
+
+func schemaArraySize(s Schema, p []byte) (n int, err error) {
+	if s.IsReference() {
+		n = len(Reference{})
+		return
+	}
+	l := s.Len()
+	el := s.Elem()
+	if s := fixedSize(el.Kind()); s > 0 {
+		n = l * s
+	} else {
+		var m int
+		for i := 0; i < l; i++ {
+			if n >= len(p) {
+				err = ErrInvalidSchemaOrData
+				return
+			}
+			if m, err = SchemaSize(el, p[n:]); err != nil {
+				return
+			}
+			n += m
+		}
+	}
+	return
+}
+
+func schemaStructSize(s Schema, p []byte) (n int, err error) {
+	if s.IsReference() {
+		n = 2 * len(Reference{})
+		return
+	}
+	var m int
+	for _, sf := range s.Fields() {
+		ss := sf.Schema()
+		if n >= len(p) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		if m, err = SchemaSize(ss, p[n:]); err != nil {
+			return
+		}
+		n += m
 	}
 	return
 }

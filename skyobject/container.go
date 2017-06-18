@@ -11,6 +11,8 @@ import (
 )
 
 var (
+	// ErrNoCoreRegistry occurs while you are trying to call NewRoot
+	// of Container that created without Registry
 	ErrNoCoreRegistry = errors.New(
 		"missing registry, Container created without registry")
 	// ErrAlreadyHaveThisRoot occurs when Container already have
@@ -151,10 +153,9 @@ func (c *Container) WantRegistry(rr RegistryReference) (want bool) {
 				if _, ok := c.registries[rr]; !ok {
 					want, stop = true, true // want
 					return
-				} else {
-					have, stop = true, true // already have
-					return
 				}
+				have, stop = true, true // already have
+				return
 			}
 			return // continue
 		})
@@ -467,10 +468,10 @@ func (c *Container) DelFeed(pk cipher.PubKey) {
 // but not returns the error
 type RangeFeedFunc func(r *Root) (err error)
 
-// RangeFeed itterates root obejcts of given feed from old to new
+// RangeFeed itterates root obejcts of given feed from old to new.
+// Given RangeFeedFunc must be read-only
 func (c *Container) RangeFeed(pk cipher.PubKey, fn RangeFeedFunc) (err error) {
 	c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
-		var err error
 		var r *Root
 		if r, err = c.unpackRoot(rp); err != nil {
 			panic(err) // critical

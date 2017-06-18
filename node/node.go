@@ -16,11 +16,19 @@ import (
 )
 
 var (
-	ErrTimeout              = errors.New("timeout")
+	// ErrTimeout occurs when a request that waits response tooks too long
+	ErrTimeout = errors.New("timeout")
+	// ErrSubscriptionRejected means that remote peer rejects our subscription
 	ErrSubscriptionRejected = errors.New("subscription rejected by remote peer")
-	ErrNilConnection        = errors.New("subscribe to nil connection")
-	ErrUnexpectedResponse   = errors.New("unexpected response")
-	ErrNonPublicPeer        = errors.New(
+	// ErrNilConnection means that you tries to subscribe or request list of
+	// feeds from a nil-connection
+	ErrNilConnection = errors.New("subscribe to nil connection")
+	// ErrUnexpectedResponse occurs if a remote peer sends any unexpected
+	// response for our request
+	ErrUnexpectedResponse = errors.New("unexpected response")
+	// ErrNonPublicPeer occurs if a remote peer can't give us list of
+	// feeds because it is not public
+	ErrNonPublicPeer = errors.New(
 		"request list of feeds from non-public peer")
 )
 
@@ -40,7 +48,7 @@ type Node struct {
 	src msgSource
 
 	// configuratios
-	conf NodeConfig
+	conf Config
 
 	// database
 	db data.DB
@@ -83,14 +91,14 @@ type Node struct {
 // NewNode creates new Node instnace using given
 // configurations. The functions creates database and
 // Container of skyobject instances internally
-func NewNode(sc NodeConfig) (s *Node, err error) {
+func NewNode(sc Config) (s *Node, err error) {
 	s, err = NewNodeReg(sc, nil)
 	return
 }
 
 // NewNodeReg creates new Node instance using given
 // skyobject.Registry to create container
-func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
+func NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node,
 	err error) {
 
 	// database
@@ -118,7 +126,7 @@ func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
 
 	s = new(Node)
 
-	s.Logger = log.NewLogger(sc.Log.Prefix, sc.Log.Debug)
+	s.Logger = log.NewLoggerByConfig(sc.Log)
 	s.conf = sc
 
 	s.db = db
@@ -179,11 +187,22 @@ func NewNodeReg(sc NodeConfig, reg *skyobject.Registry) (s *Node,
 	s.quit = make(chan struct{})
 	s.done = make(chan struct{})
 
+	if err = s.start(); err != nil {
+		s.Close()
+		s = nil
+	}
 	return
 }
 
-// Start the Node
-func (s *Node) Start() (err error) {
+// Start wes deprecated. This methods does nothing.
+//
+// Deprecated: just remove Start() invokation
+func (*Node) Start() (_ error) {
+	///
+	return
+}
+
+func (s *Node) start() (err error) {
 	s.Debugf(`starting node:
     data dir:             %s
 
@@ -315,7 +334,7 @@ func maxDuration(a, b time.Duration) time.Duration {
 func (s *Node) pingsLoop() {
 	defer s.await.Done()
 
-	var tk *time.Ticker = time.NewTicker(s.conf.PingInterval)
+	tk := time.NewTicker(s.conf.PingInterval)
 	defer tk.Stop()
 
 	for {
@@ -338,7 +357,7 @@ func (s *Node) pingsLoop() {
 func (s *Node) gcLoop() {
 	defer s.await.Done()
 
-	var tk *time.Ticker = time.NewTicker(s.conf.GCInterval)
+	tk := time.NewTicker(s.conf.GCInterval)
 	defer tk.Stop()
 
 	s.Debug("start GC loop ", s.conf.GCInterval)
@@ -373,7 +392,7 @@ func (s *Node) sendEncodedMessage(c *gnet.Conn, name string,
 		ok = true
 	case <-c.Closed():
 	default:
-		s.Print("[ERR] %s send queue full", c.Address())
+		s.Printf("[ERR] %s send queue full", c.Address())
 		c.Close()
 	}
 	return
@@ -433,8 +452,8 @@ func (s *Node) handleConnection(c *gnet.Conn) {
 	defer s.close(c)
 
 	var (
-		closed  <-chan struct{} = c.Closed()
-		receive <-chan []byte   = c.ReceiveQueue()
+		closed  = c.Closed()
+		receive = c.ReceiveQueue()
 
 		data []byte
 		msg  Msg
@@ -502,16 +521,16 @@ func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 	// (3) send  RejectSubscriptionMsg if the Node doesn't share feed
 	if accept, already := s.subscribeConn(c, msg.Feed); already == true {
 		// (2)
-		s.sendAcceptSubscriptionMsg(c, msg.Id(), msg.Feed)
+		s.sendAcceptSubscriptionMsg(c, msg.ID(), msg.Feed)
 		return
 	} else if accept == true {
 		// (1)
-		if s.sendAcceptSubscriptionMsg(c, msg.Id(), msg.Feed) {
+		if s.sendAcceptSubscriptionMsg(c, msg.ID(), msg.Feed) {
 			s.sendLastFullRoot(c, msg.Feed)
 		}
 		return
 	}
-	s.sendRejectSubscriptionMsg(c, msg.Id(), msg.Feed) // (3)
+	s.sendRejectSubscriptionMsg(c, msg.ID(), msg.Feed) // (3)
 }
 
 func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
@@ -670,8 +689,8 @@ func (s *Node) handleRejectSubscriptionMsg(c *gnet.Conn,
 func (s *Node) sendToFeed(feed cipher.PubKey, msg Msg, except *gnet.Conn) {
 
 	var (
-		data []byte = Encode(msg)            // encode once
-		name string = fmt.Sprintf("%T", msg) // name for debug logs
+		data = Encode(msg)            // encode once
+		name = fmt.Sprintf("%T", msg) // name for debug logs
 	)
 
 	s.fmx.RLock()
@@ -794,7 +813,7 @@ func (s *Node) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
 	s.rmx.Lock()
 	defer s.rmx.Unlock()
 
-	var i int = 0 // index for deleting
+	var i int // index for deleting
 	for _, fl := range s.roots {
 
 		if fl.root.RegistryReference() == reg.Reference() {
@@ -862,7 +881,7 @@ func (s *Node) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
 	s.so.Set(hash, msg.Data) // save
 
 	// check filling
-	var i int = 0 // index for deleting
+	var i int // index for deleting
 	for _, fl := range s.roots {
 
 		if fl.await == hash {
@@ -909,9 +928,9 @@ func (s *Node) handleRequestListOfFeedsMsg(c *gnet.Conn,
 	x *RequestListOfFeedsMsg) {
 
 	if s.conf.PublicServer == true {
-		s.sendListOfFeedsMsg(c, x.Id(), s.Feeds())
+		s.sendListOfFeedsMsg(c, x.ID(), s.Feeds())
 	} else {
-		s.sendNonPublicServerMsg(c, x.Id()) // reject
+		s.sendNonPublicServerMsg(c, x.ID()) // reject
 	}
 }
 
@@ -1004,7 +1023,7 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 // Public methods of the Node
 //
 
-// A Pool returns underlying *gnet.Pool.
+// Pool returns underlying *gnet.Pool.
 // It returns nil if the Node is not started
 // yet. Use methods of this Pool to manipulate
 // connections: Dial, Connection, Connections,
@@ -1055,7 +1074,7 @@ func (s *Node) isAlreadySusbcribed(c *gnet.Conn,
 
 // Subscribe to given feed. If given connection is nil, then this subscription
 // is local. Otherwise, it subscribes to a remote peer. To handle result use
-// (NodeConfig).OnAcceptSubsctiption and OnDeniedSubscription callbacks. The
+// (Config).OnAcceptSubsctiption and OnDeniedSubscription callbacks. The
 // connection must be from the gnet.Pool of the Node. To subscribe to the same
 // feed of many remote peers call the method many times for every connection
 // you want. To make the server subscribed to a feed (even if it is not
@@ -1075,7 +1094,7 @@ func (s *Node) Subscribe(c *gnet.Conn, feed cipher.PubKey) {
 	//
 	// lock: s.fmx Lock/Unlock
 	//
-	var already bool = s.addFeed(feed)
+	already := s.addFeed(feed)
 	// just return if we don't want to subscribe to feed of a remote peer
 	if c == nil {
 		return
@@ -1119,7 +1138,7 @@ func (s *Node) deleteFeedFromFilling(feed cipher.PubKey) {
 	s.rmx.Lock()
 	defer s.rmx.Unlock()
 
-	var i int = 0
+	var i int
 	for _, fl := range s.roots {
 		if fl.root.Pub() == feed {
 			continue // delete
@@ -1151,9 +1170,9 @@ func (s *Node) deleteFeed(feed cipher.PubKey) (cs map[*gnet.Conn]struct{}) {
 func (s *Node) unsubscribe(feed cipher.PubKey) {
 	// we can't use sendToFeed here
 	var (
-		msg   Msg    = s.src.NewUnsubscribeMsg(feed)
-		unsub []byte = Encode(msg)
-		name         = fmt.Sprintf("%T", msg)
+		msg   Msg = s.src.NewUnsubscribeMsg(feed)
+		unsub     = Encode(msg)
+		name      = fmt.Sprintf("%T", msg)
 	)
 	for peer := range s.deleteFeed(feed) {
 		s.sendEncodedMessage(peer, name, unsub)
@@ -1267,7 +1286,7 @@ func (s *Node) Feeds() (fs []cipher.PubKey) {
 	return
 }
 
-// Quititng returns cahnnel that closed
+// Quiting returns cahnnel that closed
 // when the Node closed
 func (s *Node) Quiting() <-chan struct{} {
 	return s.done // when quit done
@@ -1300,7 +1319,7 @@ func (s *Node) sendMsgAndWaitForResponse(c *gnet.Conn,
 	var (
 		tm *time.Timer
 		tc <-chan time.Time
-		rc chan Msg = make(chan Msg, 1) // don't block sender
+		rc = make(chan Msg, 1) // don't block sender
 	)
 
 	if timeout > 0 {
@@ -1309,8 +1328,8 @@ func (s *Node) sendMsgAndWaitForResponse(c *gnet.Conn,
 		tc = tm.C
 	}
 
-	s.addWaitingForResponse(msg.Id(), rc)
-	defer s.takeWaitingForResponse(msg.Id())
+	s.addWaitingForResponse(msg.ID(), rc)
+	defer s.takeWaitingForResponse(msg.ID())
 
 	s.sendMessage(c, msg)
 
@@ -1324,7 +1343,7 @@ func (s *Node) sendMsgAndWaitForResponse(c *gnet.Conn,
 
 // SubscribeResponse is similar to subscribe but it requires non-nil connection
 // and waits for reply from remote peer. It waits for response
-// NodeConfig.ResponseTimeout. Unlike Subsribe it can subscribe twice or
+// Config.ResponseTimeout. Unlike Subsribe it can subscribe twice or
 // many times sending mesages and waiting response
 func (s *Node) SubscribeResponse(c *gnet.Conn, feed cipher.PubKey) error {
 
@@ -1431,9 +1450,9 @@ func (s *Node) ListOfFeedsResponseTimeout(c *gnet.Conn,
 
 // RPCAddress returns address of RPC listener or an empty
 // stirng if disabled
-func (n *Node) RPCAddress() (address string) {
-	if n.rpc != nil {
-		address = n.rpc.Address()
+func (s *Node) RPCAddress() (address string) {
+	if s.rpc != nil {
+		address = s.rpc.Address()
 	}
 	return
 }

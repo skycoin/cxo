@@ -35,6 +35,19 @@ func (c ConnState) String() string {
 	return fmt.Sprintf("ConnState<%d>", c)
 }
 
+// A Conn represents connection. The Conn can has and can has
+// not underlying TCP connection. The Conn recereates connection
+// if it fails. This behaviour should be configures. There are
+// DialTimeout, RedialTimeout, MaxRedialTimeout and DialsLimit
+// configuration.Also, you can control dialing and redialing
+// using Config.OnDial callback that called when a Conn tries
+// to dial or redial. To detect current state of connection
+// use State method. The state can be ConnStateConnected,
+// ConnStateDialing and ConnStateClosed. But the state can
+// be changed any time after. If the state is ConnStateClosed
+// then it will not be changed anymore. Use Clsoe method to
+// terminate connection and wait until it release associated
+// resources (goroutines, TCP connection, buffers)
 type Conn struct {
 	address string // diaing address
 
@@ -179,26 +192,26 @@ func (c *Conn) closeConnection() {
 	}
 }
 
-func (cn *Conn) dialing() (c net.Conn, err error) {
-	cn.p.Debug("dialing to ", cn.address)
+func (c *Conn) dialing() (conn net.Conn, err error) {
+	c.p.Debug("dialing to ", c.address)
 
 	// tcp or tls
-	if cn.p.conf.TLSConfig == nil {
+	if c.p.conf.TLSConfig == nil {
 		// timeout or not
-		if cn.p.conf.DialTimeout > 0 {
-			c, err = net.DialTimeout("tcp", cn.address, cn.p.conf.DialTimeout)
+		if c.p.conf.DialTimeout > 0 {
+			conn, err = net.DialTimeout("tcp", c.address, c.p.conf.DialTimeout)
 		} else {
-			c, err = net.Dial("tcp", cn.address)
+			conn, err = net.Dial("tcp", c.address)
 		}
 	} else {
 		// timeout or not
-		if cn.p.conf.DialTimeout > 0 {
+		if c.p.conf.DialTimeout > 0 {
 			var d net.Dialer
-			d.Timeout = cn.p.conf.DialTimeout
-			c, err = tls.DialWithDialer(&d, "tcp", cn.address,
-				cn.p.conf.TLSConfig)
+			d.Timeout = c.p.conf.DialTimeout
+			conn, err = tls.DialWithDialer(&d, "tcp", c.address,
+				c.p.conf.TLSConfig)
 		} else {
-			c, err = tls.Dial("tcp", cn.address, cn.p.conf.TLSConfig)
+			conn, err = tls.Dial("tcp", c.address, c.p.conf.TLSConfig)
 		}
 	}
 	return
@@ -289,14 +302,14 @@ func (c *Conn) connectionWriter(conn net.Conn) (w io.Writer, bw *bufio.Writer) {
 	return
 }
 
-func (cn *Conn) updateConnection(c net.Conn) {
-	cn.p.Debug("update connection of ", cn.address)
+func (c *Conn) updateConnection(conn net.Conn) {
+	c.p.Debug("update connection of ", c.address)
 
-	cn.cmx.Lock()
-	defer cn.cmx.Unlock()
+	c.cmx.Lock()
+	defer c.cmx.Unlock()
 
-	cn.conn = c
-	cn.state = ConnStateConnected
+	c.conn = conn
+	c.state = ConnStateConnected
 }
 
 // update connection and trigger read and
@@ -428,7 +441,7 @@ func (c *Conn) read() {
 	defer c.Close()
 
 	var (
-		head []byte = make([]byte, 4)
+		head = make([]byte, 4)
 		body []byte
 
 		ln uint32
@@ -514,7 +527,7 @@ func (c *Conn) writeMsg(w io.Writer, body []byte) (terminate bool, err error) {
 		return // terminate everything
 	}
 
-	var head []byte = make([]byte, 4)
+	var head = make([]byte, 4)
 
 	binary.LittleEndian.PutUint32(head, uint32(len(body)))
 
@@ -639,7 +652,7 @@ DialLoop: // -------------------------------------------------------------------
 //                            an attached value                               //
 // ========================================================================== //
 
-// The Value returns value provided using SetValue method
+// Value returns value provided using SetValue method
 func (c *Conn) Value() interface{} {
 	c.vmx.Lock()
 	defer c.vmx.Unlock()
@@ -647,7 +660,7 @@ func (c *Conn) Value() interface{} {
 	return c.val
 }
 
-// The SetValue attach any value to the connection
+// SetValue attach any value to the connection
 func (c *Conn) SetValue(val interface{}) {
 	c.vmx.Lock()
 	defer c.vmx.Unlock()
@@ -729,6 +742,7 @@ func (c *Conn) Conn() net.Conn {
 //                                  close                                     //
 // ========================================================================== //
 
+// Close connection
 func (c *Conn) Close() (err error) {
 	c.closeo.Do(func() {
 		c.p.Debugf("closing %s...", c.address)

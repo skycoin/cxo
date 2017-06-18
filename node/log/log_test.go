@@ -17,7 +17,7 @@ func cleanLoggerOut(prefix string, debug bool) (l Logger, out *bytes.Buffer) {
 func TestNewLogger(t *testing.T) {
 	var l Logger
 	t.Run("prefix", func(t *testing.T) {
-		var prefix string = "prefix"
+		prefix := "prefix"
 		var out *bytes.Buffer
 		l, out = cleanLoggerOut(prefix, false)
 		l.Print()
@@ -28,11 +28,11 @@ func TestNewLogger(t *testing.T) {
 	t.Run("debug", func(t *testing.T) {
 		l = NewLogger("", false)
 		if d := l.(*logger).debug; d != false {
-			t.Errorf("wrong debug flag: want false, got %q", d)
+			t.Errorf("wrong debug flag: want false, got %#v", d)
 		}
 		l = NewLogger("", true)
 		if d := l.(*logger).debug; d != true {
-			t.Errorf("wrong debug flag: want true, got %q", d)
+			t.Errorf("wrong debug flag: want true, got %#v", d)
 		}
 	})
 }
@@ -89,13 +89,13 @@ func TestLogger_Debugf(t *testing.T) {
 }
 
 func TestLogger_SetDebug(t *testing.T) {
-	var l Logger = NewLogger("", false)
+	l := NewLogger("", false)
 	l.SetDebug(true)
 	if d := l.(*logger).debug; d != true {
-		t.Errorf("wrong debug flag: want true, got %q", d)
+		t.Errorf("wrong debug flag: want true, got %#v", d)
 	}
 	l.SetDebug(false)
 	if d := l.(*logger).debug; d != false {
-		t.Errorf("wrong debug flag: want false, got %q", d)
+		t.Errorf("wrong debug flag: want false, got %#v", d)
 	}
 }

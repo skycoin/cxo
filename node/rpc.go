@@ -52,7 +52,7 @@ func (r *RPC) Address() (address string) {
 	return
 }
 
-// Clsoe RPC server
+// Close RPC server
 func (r *RPC) Close() (err error) {
 	if r.l != nil {
 		err = r.l.Close()
@@ -81,11 +81,13 @@ func (r *RPC) Close() (err error) {
 // - Tree
 // - Terminate
 
+// Want on a feed
 func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
 	*list = r.ns.Want(feed)
 	return
 }
 
+// Got of a feed
 func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
 	*list = r.ns.Got(feed)
 	return
@@ -98,6 +100,7 @@ type ConnFeed struct {
 	Feed    cipher.PubKey
 }
 
+// Subscribe to a connection+feed
 func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
 	if cf.Address == "" {
 		r.ns.Subscribe(nil, cf.Feed)
@@ -110,6 +113,7 @@ func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
 	return errors.New("no such connection: " + cf.Address)
 }
 
+// Unsubscribe from a connection+feed
 func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
 	if cf.Address == "" {
 		r.ns.Unsubscribe(nil, cf.Feed)
@@ -122,16 +126,19 @@ func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
 	return errors.New("no such connection: " + cf.Address)
 }
 
+// Feeds of a node
 func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 	*list = r.ns.Feeds()
 	return
 }
 
+// Stat of database
 func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
 	*stat = r.ns.db.Stat()
 	return
 }
 
+// Connections of a node
 func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
 	cs := r.ns.pool.Connections()
 	if len(cs) == 0 {
@@ -145,6 +152,7 @@ func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
 	return
 }
 
+// IncomingConnections of a node
 func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
 	var l []string
 	for _, c := range r.ns.pool.Connections() {
@@ -156,6 +164,7 @@ func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
 	return
 }
 
+// OutgoingConnections of a node
 func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
 	var l []string
 	for _, c := range r.ns.pool.Connections() {
@@ -167,11 +176,13 @@ func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
 	return
 }
 
+// Connect to a remote peer
 func (r *RPC) Connect(address string, _ *struct{}) (err error) {
 	_, err = r.ns.pool.Dial(address)
 	return
 }
 
+// Disconnect from a remote peer
 func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
 	if c := r.ns.pool.Connection(address); c != nil {
 		err = c.Close()
@@ -179,12 +190,13 @@ func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
 	return errors.New("no such connection: " + address)
 }
 
-// LsiteningAddress of Node
+// ListeningAddress of Node
 func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	*address = r.ns.pool.Address()
 	return
 }
 
+// A RootInfo used by RPC
 type RootInfo struct {
 	Time   time.Time
 	Seq    uint64
