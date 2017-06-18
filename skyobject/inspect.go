@@ -24,15 +24,16 @@ func (r *Root) Inspect() (tree string) {
 }
 
 func rootItems(root *Root) (items []gotree.GTStructure) {
-	vals, err := root.Values()
-	if err != nil {
-		items = []gotree.GTStructure{
-			{Name: "error: " + err.Error()},
+	for _, dr := range root.Refs() {
+		item := gotree.GTStructure{Name: "*(dynamic) " + dr.String()}
+		if dr.IsBlank() {
+			item.Items = []gotree.GTStructure{{"nil", nil}}
+		} else if val, err := root.ValueByDynamic(dr); err != nil {
+			item.Items = []gotree.GTStructure{{Name: "error: " + err.Error()}}
+		} else {
+			item.Items = []gotree.GTStructure{valueItem(val)}
 		}
-		return
-	}
-	for _, val := range vals {
-		items = append(items, valueItem(val))
+		items = append(items, item)
 	}
 	return
 }

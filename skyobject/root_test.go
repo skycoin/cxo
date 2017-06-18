@@ -593,5 +593,143 @@ func TestRoot_GotFunc(t *testing.T) {
 
 func TestRoot_GotOfFunc(t *testing.T) {
 	// GotOfFunc(dr Dynamic, gf GotFunc) (err error)
+
 	//
+}
+
+func TestRoot_linkedList(t *testing.T) {
+
+	// element
+	type any struct {
+		Data string
+		Next *any
+	}
+
+	// stored element
+	type Any struct {
+		Data string
+		Next Reference `skyobject:"schema=Any"`
+	}
+
+	reg := NewRegistry()
+	reg.Register("Any", Any{})
+
+	c := NewContainer(data.NewMemoryDB(), reg)
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	root, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	linkedList := &any{
+		"one",
+		&any{
+			"two",
+			&any{
+				"three",
+				nil,
+			},
+		},
+	}
+
+	// find a tail of the list
+	var chain []*any
+
+	for elem := linkedList; elem != nil; elem = elem.Next {
+		chain = append(chain, elem)
+	}
+
+	// save elements of the list from tail
+	var a *any
+	var prev Reference
+	for i := len(chain) - 1; i >= 0; i-- {
+		a = chain[i]
+		prev = root.Save(Any{
+			Data: a.Data,
+			Next: prev,
+		})
+	}
+
+	sch, err := root.SchemaReferenceByName("Any")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	first := Dynamic{
+		Schema: sch,  // schema reference
+		Object: prev, // object reference
+	}
+
+	rp, err := root.Append(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := NewContainer(data.NewMemoryDB(), nil)
+	r2, err := r.AddRootPack(&rp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dr, err := DecodeRegistry(reg.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AddRegistry(dr)
+
+	// must be 4 (not 3) to test nil value dereferencing
+	for i := 0; i < 4; i++ {
+		err = r2.WantFunc(func(ref Reference) error {
+			value, _ := c.DB().Get(cipher.SHA256(ref))
+			r.DB().Add(value)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+}
+
+func TestRoot_saveDecode(t *testing.T) {
+
+	type Any struct {
+		Data string
+		Next Reference `skyobject:"schema=Any"`
+	}
+
+	a := Any{Data: "data"}
+
+	reg := NewRegistry()
+	reg.Register("Any", Any{})
+
+	c := NewContainer(data.NewMemoryDB(), reg)
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	root, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dr, err := root.Dynamic("Any", a)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sr, err := root.SchemaReferenceByName("Any")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if dr.Schema != sr {
+		t.Error("wrong schema in dynamic or returned by SchemaReferenceByName")
+	}
+
+	if dr.Object != root.Save(a) {
+		t.Error("wrong reference in dynamic or returned by root.Save")
+	}
+
 }

@@ -283,23 +283,24 @@ func Test_tree(t *testing.T) {
 	}
 
 	const want = `(root) %s
-└── struct Group
-    ├── (field) Name
-    │   └── Just an average Group
-    └── (field) Users
-        └── []User
-            ├── *(static) ff1eaf416e8281b398693ce5934af57482493622e4e2978c751e8b12542f04cb
-            │   └── struct User
-            │       ├── (field) Name
-            │       │   └── Bob Simple
-            │       └── (field) Age
-            │           └── 40
-            └── *(static) 915fbaac74e9a55c9ed7050a829d117d8734d0444e3543b8d67557ed9ae813bc
-                └── struct User
-                    ├── (field) Name
-                    │   └── Jim Cobley
-                    └── (field) Age
-                        └── 80
+└── *(dynamic) {49f23bbacc44219be9971cb1e9d70826b3c7eec100c247af82d814255225daf1, 941f946a0ddceaef8aeeee0a8e48ae3579d3cbd18c3de6e0319ced87ab41612a}
+    └── struct Group
+        ├── (field) Name
+        │   └── Just an average Group
+        └── (field) Users
+            └── []User
+                ├── *(static) ff1eaf416e8281b398693ce5934af57482493622e4e2978c751e8b12542f04cb
+                │   └── struct User
+                │       ├── (field) Name
+                │       │   └── Bob Simple
+                │       └── (field) Age
+                │           └── 40
+                └── *(static) 915fbaac74e9a55c9ed7050a829d117d8734d0444e3543b8d67557ed9ae813bc
+                    └── struct User
+                        ├── (field) Name
+                        │   └── Jim Cobley
+                        └── (field) Age
+                            └── 80
 
 `
 
