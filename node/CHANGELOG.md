@@ -15,6 +15,10 @@ changes
 
 ### Done
 
+#### 22:00 19 June 2017 UTC
+
+- add linked list example
+
 #### 16:15 17 June 2017 UTC
 
 - [x] move `(*Node).Start()` to `NewNodeReg`
