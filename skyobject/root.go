@@ -585,6 +585,9 @@ func (r *Root) wantFunc(wf WantFunc) (err error) {
 }
 
 func wantValue(v *Value) (err error) {
+	if v.IsNil() {
+		return
+	}
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:
 		err = v.RangeIndex(func(_ int, d *Value) error {

@@ -3,10 +3,7 @@ package node_test
 import (
 	"fmt"
 	"log"
-	"reflect"
 	"time"
-
-	"github.com/disiqueira/gotree"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -28,7 +25,7 @@ type Group struct {
 	Users  skyobject.References `skyobject:"schema=cxo.User"`
 }
 
-func Example() {
+func Example_sourceDestination() {
 
 	// feed and owner
 
@@ -36,14 +33,14 @@ func Example() {
 
 	// launch
 
-	src, err := SourceNode(feed, owner)
+	src, err := SourceNodeSrcDst(feed, owner)
 	if err != nil {
 		log.Print(err)
 		return
 	}
 	defer src.Close()
 
-	dst, err := DestinationNode(feed, src.Pool().Address())
+	dst, err := DestinationNodeSrcDst(feed, src.Pool().Address())
 	if err != nil {
 		log.Print(err)
 		return
@@ -57,7 +54,7 @@ func Example() {
 
 }
 
-func SourceNode(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
+func SourceNodeSrcDst(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 	err error) {
 
 	// registry
@@ -88,17 +85,17 @@ func SourceNode(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 
 	// don't block
 
-	go generate(src, feed, owner)
+	go generateSrcDst(src, feed, owner)
 
 	return
 
 }
 
-func generate(src *node.Node, feed cipher.PubKey, owner cipher.SecKey) {
+func generateSrcDst(src *node.Node, feed cipher.PubKey, owner cipher.SecKey) {
 
 	defer src.Close()
 
-	// for tis example (never need in real case)
+	// for this example (never need in real case)
 	time.Sleep(1 * time.Second)
 
 	// container
@@ -145,7 +142,7 @@ func generateGroup(i int, cnt *node.Container, root *node.Root) {
 
 }
 
-func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
+func DestinationNodeSrcDst(feed cipher.PubKey, address string) (dst *node.Node,
 	err error) {
 
 	// config
@@ -159,7 +156,14 @@ func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
 
 	// while a root object and all related objects received
 	conf.OnRootFilled = func(root *node.Root) {
-		go printTree(root)
+		// don't block messages handling;
+		// it's not nessesary for this example, but
+		// if you want to perform a long running
+		// task in this callback, then you need
+		// to keep in mind that this callback
+		// blocks goroutine that handles incoming
+		// messages from this connection
+		go printTreeSrcDst(root)
 	}
 
 	// node
@@ -187,191 +191,103 @@ func DestinationNode(feed cipher.PubKey, address string) (dst *node.Node,
 
 }
 
-func printTree(root *node.Root) {
+func printTreeSrcDst(root *node.Root) {
 
 	fmt.Println("----")
 	defer fmt.Println("----")
 
-	var rt gotree.GTStructure
-
-	hash := root.Hash()
-	rt.Name = hash.String()
-
-	rt.Items = rootItems(root)
-
-	gotree.PrintTree(rt)
+	fmt.Println(root.Inspect())
 }
 
-func rootItems(root *node.Root) (items []gotree.GTStructure) {
-	vals, err := root.Values()
-	if err != nil {
-		items = []gotree.GTStructure{
-			{Name: "error: " + err.Error()},
-		}
-		return
-	}
-	for _, val := range vals {
-		items = append(items, valueItem(val))
-	}
-	return
-}
-
-func valueItem(val *skyobject.Value) (item gotree.GTStructure) {
-	if val.IsNil() {
-		item.Name = "nil"
-		return
-	}
-
-	var err error
-	switch val.Kind() {
-	case reflect.Struct:
-		item.Name = "struct " + val.Schema().Name()
-
-		err = val.RangeFields(func(name string,
-			val *skyobject.Value) (_ error) {
-
-			var field gotree.GTStructure
-			field.Name = "(field) " + name
-			field.Items = []gotree.GTStructure{
-				valueItem(val),
-			}
-			item.Items = append(item.Items, field)
-			return
-		})
-	case reflect.Ptr:
-		// static or dyncmic reference
-		item.Name = "*" // TODO: add reference hash
-		if val, err = val.Dereference(); err == nil {
-			item.Items = []gotree.GTStructure{
-				valueItem(val),
-			}
-		} else {
-			item.Items = []gotree.GTStructure{
-				{
-					Name: "error: " + err.Error(),
-				},
-			}
-
-		}
-		return
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		// TODO
-	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		var u uint64
-		if u, err = val.Uint(); err == nil {
-			item.Name = fmt.Sprint(u)
-		}
-	case reflect.Float32, reflect.Float64:
-		// TODO
-	case reflect.Array:
-		// TODO
-	case reflect.Slice:
-		// including skyobject.References
-		item.Name = "[]" + val.Schema().Elem().Name()
-		err = val.RangeIndex(func(i int, val *skyobject.Value) (_ error) {
-			item.Items = append(item.Items, valueItem(val))
-			return
-		})
-	case reflect.String:
-		var s string
-		if s, err = val.String(); err == nil {
-			item.Name = s
-		}
-
-	}
-	if err != nil {
-		item.Name = "error: " + err.Error()
-		item.Items = nil // clear
-	}
-	return
-}
-
-/* ***** **** *** ** *
+/*
 
 Output:
 --------------------------------------------------------------------------------
-[SRC] 22:18:04 node.go:266: listen on 127.0.0.1:46101
+[SRC] 00:46:08 node.go:284: listen on 127.0.0.1:43579
 ----
-f2590990ccf98334700623af22d2a040fa40f9472e087014ecf33d9941099cdd
-└── struct cxo.Group
-    ├── (field) Name
-    │   └── Group #0
-    ├── (field) Leader
-    │   └── *
-    │       └── struct cxo.User
-    │           ├── (field) Name
-    │           │   └── Elisabet Bathory
-    │           └── (field) Age
-    │               └── 30
-    └── (field) Users
-        └── []cxo.User
-            ├── *
-            │   └── struct cxo.User
-            │       ├── (field) Name
-            │       │   └── Alice #0
-            │       └── (field) Age
-            │           └── 19
-            └── *
-                └── struct cxo.User
-                    ├── (field) Name
-                    │   └── Eva #0
-                    └── (field) Age
-                        └── 21
+(root) 4b3995a446da275db1f2e20d15454e3636eb936a6dcbca78de985cad70e4cb1b
+└── *(dynamic) {a1cab7ccf5bed7c4fcf21fb6bdcfb304f042264a3e45946c812ce84d587ca02b, 137f4a9c68b1c5c21458b962187d66e9948fe8a658d87fbdec2c692aff0c0c89}
+    └── struct cxo.Group
+        ├── (field) Name
+        │   └── Group #0
+        ├── (field) Leader
+        │   └── *(static) f0e08559a53eff8d33061396d0515416beccc234dc6496275b7a1712e7a5d865
+        │       └── struct cxo.User
+        │           ├── (field) Name
+        │           │   └── Elisabet Bathory
+        │           └── (field) Age
+        │               └── 30
+        └── (field) Users
+            └── []cxo.User
+                ├── *(static) 39c2abd5512a56d8d3ff64430a4268356b964e6377a82ab3e8e0e2b7c8d9b926
+                │   └── struct cxo.User
+                │       ├── (field) Name
+                │       │   └── Alice #0
+                │       └── (field) Age
+                │           └── 19
+                └── *(static) 2effedfc0530f310366603a79669802c8af518e8f29e2768949aeb1039365462
+                    └── struct cxo.User
+                        ├── (field) Name
+                        │   └── Eva #0
+                        └── (field) Age
+                            └── 21
 
 ----
 ----
-f47d8dd3c4cae83ddd3e99cece193350ce37b26bbc5c007dd5bffd7cde57b73f
-├── struct cxo.Group
-│   ├── (field) Name
-│   │   └── Group #0
-│   ├── (field) Leader
-│   │   └── *
-│   │       └── struct cxo.User
-│   │           ├── (field) Name
-│   │           │   └── Elisabet Bathory
-│   │           └── (field) Age
-│   │               └── 30
-│   └── (field) Users
-│       └── []cxo.User
-│           ├── *
-│           │   └── struct cxo.User
-│           │       ├── (field) Name
-│           │       │   └── Alice #0
-│           │       └── (field) Age
-│           │           └── 19
-│           └── *
-│               └── struct cxo.User
-│                   ├── (field) Name
-│                   │   └── Eva #0
-│                   └── (field) Age
-│                       └── 21
-└── struct cxo.Group
-    ├── (field) Name
-    │   └── Group #1
-    ├── (field) Leader
-    │   └── *
-    │       └── struct cxo.User
-    │           ├── (field) Name
-    │           │   └── Elisabet Bathory
-    │           └── (field) Age
-    │               └── 30
-    └── (field) Users
-        └── []cxo.User
-            ├── *
-            │   └── struct cxo.User
-            │       ├── (field) Name
-            │       │   └── Alice #1
-            │       └── (field) Age
-            │           └── 20
-            └── *
-                └── struct cxo.User
-                    ├── (field) Name
-                    │   └── Eva #1
-                    └── (field) Age
-                        └── 22
+(root) 7ac6fee78fd7202f870af2bcc3ba4e09fe00068ed1c3b527e1440aff331de553
+├── *(dynamic) {a1cab7ccf5bed7c4fcf21fb6bdcfb304f042264a3e45946c812ce84d587ca02b, 137f4a9c68b1c5c21458b962187d66e9948fe8a658d87fbdec2c692aff0c0c89}
+│   └── struct cxo.Group
+│       ├── (field) Name
+│       │   └── Group #0
+│       ├── (field) Leader
+│       │   └── *(static) f0e08559a53eff8d33061396d0515416beccc234dc6496275b7a1712e7a5d865
+│       │       └── struct cxo.User
+│       │           ├── (field) Name
+│       │           │   └── Elisabet Bathory
+│       │           └── (field) Age
+│       │               └── 30
+│       └── (field) Users
+│           └── []cxo.User
+│               ├── *(static) 39c2abd5512a56d8d3ff64430a4268356b964e6377a82ab3e8e0e2b7c8d9b926
+│               │   └── struct cxo.User
+│               │       ├── (field) Name
+│               │       │   └── Alice #0
+│               │       └── (field) Age
+│               │           └── 19
+│               └── *(static) 2effedfc0530f310366603a79669802c8af518e8f29e2768949aeb1039365462
+│                   └── struct cxo.User
+│                       ├── (field) Name
+│                       │   └── Eva #0
+│                       └── (field) Age
+│                           └── 21
+└── *(dynamic) {a1cab7ccf5bed7c4fcf21fb6bdcfb304f042264a3e45946c812ce84d587ca02b, 2e9ce252ebc836d41abfdbb3555d5d791c9e5bd702e865434222a5b2d05ca279}
+    └── struct cxo.Group
+        ├── (field) Name
+        │   └── Group #1
+        ├── (field) Leader
+        │   └── *(static) f0e08559a53eff8d33061396d0515416beccc234dc6496275b7a1712e7a5d865
+        │       └── struct cxo.User
+        │           ├── (field) Name
+        │           │   └── Elisabet Bathory
+        │           └── (field) Age
+        │               └── 30
+        └── (field) Users
+            └── []cxo.User
+                ├── *(static) 58a436f55033d7c8f6b29e81955f63e387d2076fdf5752da2f6576e5edb10ee0
+                │   └── struct cxo.User
+                │       ├── (field) Name
+                │       │   └── Alice #1
+                │       └── (field) Age
+                │           └── 20
+                └── *(static) 5b6cd2e396ab946c85d6d10c63785572ec9094afea6669134ebe494ccc33bbf4
+                    └── struct cxo.User
+                        ├── (field) Name
+                        │   └── Eva #1
+                        └── (field) Age
+                            └── 22
 
 ----
-[DST] 22:18:07 conn.go:461: [ERR] 127.0.0.1:46101 reading error: EOF
+[DST] 00:46:11 conn.go:474: [ERR] 127.0.0.1:43579 reading error: EOF
 --------------------------------------------------------------------------------
 
 */
