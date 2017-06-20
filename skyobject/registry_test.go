@@ -17,24 +17,6 @@ func shouldNotPanic(t *testing.T) {
 	}
 }
 
-type User struct {
-	Name   string
-	Age    uint32
-	Hidden []byte `enc:"-"`
-}
-
-type Group struct {
-	Name    string
-	Leader  Reference  `skyobject:"schema=cxo.User"`
-	Members References `skyobject:"schema=cxo.User"`
-	Curator Dynamic
-}
-
-type Developer struct {
-	Name   string
-	GitHub string
-}
-
 func TestNewRegistry(t *testing.T) {
 	r := NewRegistry()
 	if r.done != false {

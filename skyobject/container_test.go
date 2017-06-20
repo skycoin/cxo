@@ -124,9 +124,56 @@ func TestContainer_WantRegistry(t *testing.T) {
 			t.Error("missing want")
 		}
 	})
+	t.Run("panic", func(t *testing.T) {
+		// unable to test
+	})
+	t.Run("many registries", func(t *testing.T) {
+		reg1 := NewRegistry()
+		reg1.Register("User", User{})
+		reg2 := getRegisty()
+		s := NewContainer(data.NewMemoryDB(), nil)
+		s.AddRegistry(reg1)
+		s.AddRegistry(reg2)
+		pk, sk := cipher.GenerateKeyPair()
+		r1, err := s.NewRootReg(pk, sk, reg1.Reference())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp1, err := r1.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		r2, err := s.NewRootReg(pk, sk, reg2.Reference())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rp2, err := r2.Touch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := NewContainer(data.NewMemoryDB(), nil)
+		if _, err := d.AddRootPack(&rp1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.AddRootPack(&rp2); err != nil {
+			t.Fatal(err)
+		}
+		if !d.WantRegistry(reg1.Reference()) {
+			t.Error("don't want registry")
+		}
+		if !d.WantRegistry(reg2.Reference()) {
+			t.Error("don't want registry")
+		}
+	})
 }
 
 func TestContainer_Registries(t *testing.T) {
+	t.Run("no", func(t *testing.T) {
+		c := NewContainer(data.NewMemoryDB(), nil)
+		if c.Registries() != nil {
+			t.Fatal("unexpected registries")
+		}
+	})
 	t.Run("core", func(t *testing.T) {
 		reg := NewRegistry()
 		c := NewContainer(data.NewMemoryDB(), reg)
