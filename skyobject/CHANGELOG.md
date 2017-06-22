@@ -5,8 +5,7 @@ changes
 
 - [ ] add ability to remove all non-full root objects
 - [ ] move `node.Rootwalker` here
-- [ ] add tests for `(*Container).RangeFeed`
-- [ ] add tests for `(*Container).RootByHash`
+
 
 ### Done
 
@@ -14,6 +13,8 @@ changes
 
 - [x] add test for `(*Root).Index`
 - [x] add test for `(*Root).Slice`
+- [x] add tests for `(*Container).RangeFeed`
+- [x] add tests for `(*Container).RootByHash`
 
 and
 
