@@ -276,10 +276,43 @@ func TestRoot_Get(t *testing.T) {
 
 func TestRoot_Save(t *testing.T) {
 	// Save(i interface{}) Reference
+
+	//
 }
 
 func TestRoot_SaveArray(t *testing.T) {
 	// SaveArray(i ...interface{}) References
+	users := []User{
+		{"Alice", 19, nil},
+		{"Eva", 20, nil},
+		{"Ammy", 21, nil},
+	}
+	refs := make([]cipher.SHA256, 0, 3)
+	for _, u := range users {
+		refs = append(refs, cipher.SumSHA256(encoder.Serialize(u)))
+	}
+	c := getCont()
+	pk, sk := cipher.GenerateKeyPair()
+	root, err := c.newRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := root.SaveArray(users[0], users[1], users[2])
+	for i, s := range saved {
+		// check references
+		if cipher.SHA256(s) != refs[i] {
+			t.Error("wrong reference saved")
+		}
+		// check database
+		if _, ok := c.DB().Get(cipher.SHA256(s)); !ok {
+			t.Error("missing in database")
+		}
+	}
+	// check nil
+	if root.SaveArray() != nil {
+		t.Error("empty slice created")
+	}
+
 }
 
 func TestRoot_Dynamic(t *testing.T) {
