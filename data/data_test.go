@@ -855,3 +855,7 @@ func TestData_Close(t *testing.T) {
 		//
 	})
 }
+
+func TestData_RangeFeedDelete(t *testing.T) {
+	//
+}

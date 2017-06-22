@@ -513,6 +513,18 @@ func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	c.db.DelRootsBefore(pk, seq)
 }
 
+// RemoveAllNonFullRoots removes all non-full root objects of a feed from
+// database. The method required by a node to clean up during shutdow. If
+// there are any non-full roots then a node are not able to fill them next
+// time and it's better to remove them to reduce datbase size. The method
+// doesn't remove related objects. Use GC method to do that
+func (c *Container) RemoveAllNonFullRoots(pk cipher.PubKey) {
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
+	// TODO
+}
+
 // GC removes all unused objects, including Root objects and Registries.
 // If given argument is false, then GC deletes all root objects before
 // last full root of a feed. If you want to keep all roots, then

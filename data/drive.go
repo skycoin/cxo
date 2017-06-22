@@ -127,19 +127,26 @@ func (d *driveDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
 		o := t.Bucket(objectsBucket)
 		c := o.Cursor()
 		var key cipher.SHA256
+		// seek loop
 		for k, _ := c.First(); k != nil; k, _ = c.Seek(key[:]) {
-		Loop:
-			copy(key[:], k)
-			if fn(key) {
-				if e = c.Delete(); e != nil {
+			for {
+				copy(key[:], k)
+				if fn(key) {
+					if e = c.Delete(); e != nil {
+						return
+					}
+					// coninue seek loop, because after deleting
+					// we have got invalid cusor and we need to
+					// call Seek to make it valid; the Seek will
+					// points to next item, because current one
+					// has been deleted
+					break
+				}
+				// just get next item
+				if k, _ = c.Next(); k == nil {
 					return
 				}
-				continue
 			}
-			if k, _ = c.Next(); k == nil {
-				break
-			}
-			goto Loop
 		}
 		return
 	})
@@ -325,6 +332,61 @@ func (d *driveDB) RangeFeedReverse(pk cipher.PubKey,
 	})
 }
 
+func (d *driveDB) RangeFeedDelete(pk cipher.PubKey,
+	fn func(rp *RootPack) (del bool)) {
+
+	d.update(func(t *bolt.Tx) (err error) {
+		f := t.Bucket(feedsBucket).Bucket(pk[:])
+		if f == nil {
+			return
+		}
+
+		var rp RootPack
+		var hash cipher.SHA256
+
+		r := t.Bucket(rootsBucket)
+		c := f.Cursor()
+
+		// seek loop
+		for _, hashb := c.First(); hashb != nil; _, hashb = c.Seek(hash[:]) {
+			for {
+				copy(hash[:], hashb)
+
+				value := r.Get(hashb)
+				if value == nil {
+					panic("missing root") // critical
+				}
+				if err := encoder.DeserializeRaw(value, &rp); err != nil {
+					panic(err) // critical
+				}
+
+				if fn(&rp) {
+					if err = r.Delete(hashb); err != nil {
+						return
+					}
+					if err = c.Delete(); err != nil {
+						return
+					}
+					// coninue seek loop, because after deleting
+					// we have got invalid cusor and we need to
+					// call Seek to make it valid; the Seek will
+					// points to next item, because current one
+					// has been deleted
+					break
+				}
+
+				// just get next item
+				if _, hashb = c.Next(); hashb == nil {
+					return // done
+				}
+
+			}
+		}
+
+		return
+	})
+}
+
 //
 // Roots
 //
@@ -346,6 +408,7 @@ func (d *driveDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
 	return
 }
 
+// TODO: optimize
 func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	d.update(func(t *bolt.Tx) (_ error) {
 		fb := t.Bucket(feedsBucket)
