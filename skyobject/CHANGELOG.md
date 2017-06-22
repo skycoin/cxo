@@ -5,13 +5,16 @@ changes
 
 - [ ] add ability to remove all non-full root objects
 - [ ] move `node.Rootwalker` here
-- [ ] fix user-provided-schema-name issue #98
 - [ ] add tests for `(*Container).RangeFeed`
 - [ ] add tests for `(*Container).RootByHash`
 - [ ] add test for `(*Root).Index`
 - [ ] add test for `(*Root).Slice`
 
 ### Done
+
+####  4:15 22 June 2017 UTC
+
+- [x] fix user-provided-schema-name issue #98
 
 #### 22:00 19 June 2017 UTC
 
