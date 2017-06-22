@@ -7,10 +7,18 @@ changes
 - [ ] move `node.Rootwalker` here
 - [ ] add tests for `(*Container).RangeFeed`
 - [ ] add tests for `(*Container).RootByHash`
-- [ ] add test for `(*Root).Index`
-- [ ] add test for `(*Root).Slice`
 
 ### Done
+
+#### ...
+
+- [x] add test for `(*Root).Index`
+- [x] add test for `(*Root).Slice`
+
+and
+
+- add test for `(*Root).Len`
+
 
 ####  4:15 22 June 2017 UTC
 

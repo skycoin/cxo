@@ -766,3 +766,92 @@ func TestRoot_saveDecode(t *testing.T) {
 	}
 
 }
+
+func getRoot(t *testing.T) *Root {
+	c := getCont()
+	pk, sk := cipher.GenerateKeyPair()
+	root, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestRoot_Slice(t *testing.T) {
+	r := getRoot(t)
+	if _, err := r.Slice(-1, 1); err == nil {
+		t.Error("missing error")
+	} else if err != ErrIndexOutOfRange {
+		t.Error("unexpected error")
+	}
+	usr := r.MustDynamic("cxo.User", User{})
+	r.Append(usr)
+	drs, err := r.Slice(0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drs) != 1 {
+		t.Fatal(err)
+	}
+	if drs[0] != usr {
+		t.Error("wrong reference")
+	}
+	alice := r.MustDynamic("cxo.User", User{"Alice", 19, nil})
+	drs[0] = alice
+	if refs := r.Refs(); len(refs) != 1 && refs[0] != alice {
+		t.Error("can't modify slice")
+	}
+	if _, err := r.Slice(1, 1); err != nil {
+		t.Error(err)
+	}
+	if _, err := r.Slice(0, 0); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestRoot_Index(t *testing.T) {
+	r := getRoot(t)
+	if _, err := r.Index(-1); err == nil {
+		t.Error("missing error")
+	}
+	if _, err := r.Index(0); err == nil {
+		t.Error("missing error")
+	}
+	usr := r.MustDynamic("cxo.User", User{})
+	r.Append(usr)
+	if el, err := r.Index(0); err != nil {
+		t.Error(err)
+	} else if el != usr {
+		t.Error("wrong value")
+	}
+	alice := r.MustDynamic("cxo.User", User{"Alice", 19, nil})
+	r.Append(alice)
+	if el, err := r.Index(1); err != nil {
+		t.Error(err)
+	} else if el != alice {
+		t.Error("wrong value")
+	}
+	if _, err := r.Index(2); err == nil {
+		t.Error("missing error")
+	}
+}
+
+func TestRoot_Len(t *testing.T) {
+	r := getRoot(t)
+	if r.Len() != 0 {
+		t.Error("invalid Len")
+	}
+	usr := r.MustDynamic("cxo.User", User{})
+	r.Append(usr)
+	if r.Len() != 1 {
+		t.Error("invalid length")
+	}
+	r.Append(usr)
+	if r.Len() != 2 {
+		t.Error("invalid length")
+	}
+	r.Replace(nil)
+	if r.Len() != 0 {
+		t.Error("invalid Len")
+	}
+}
