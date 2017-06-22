@@ -405,41 +405,36 @@ func (d *driveDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
 	return
 }
 
-// TODO: optimize
 func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
-	d.update(func(t *bolt.Tx) (_ error) {
-		fb := t.Bucket(feedsBucket)
-		f := fb.Bucket(pk[:])
+	d.update(func(t *bolt.Tx) (err error) {
+		f := t.Bucket(feedsBucket).Bucket(pk[:])
 		if f == nil {
 			return
 		}
 
-		// collect
-
-		type sh struct{ s, h []byte }
-
-		del := []sh{}
-		err := f.ForEach(func(seqb, hashb []byte) error {
-			if btou(seqb) < seq {
-				del = append(del, sh{seqb, hashb})
-			}
-			return nil
-		})
-		if err != nil {
-			panic(err) // critical
-		}
-
-		// delete
-
 		r := t.Bucket(rootsBucket)
-		for _, x := range del {
+		c := f.Cursor()
 
-			if e := f.Delete(x.s); e != nil {
-				panic(e) // critical
+		// seek loop
+		for seqb, hashb := c.First(); hashb != nil; seqb, hashb = c.Seek(seqb) {
+			if btou(seqb) >= seq {
+				return // we're done
 			}
-			if e := r.Delete(x.h); e != nil {
-				panic(e) // critical
+			value := r.Get(hashb)
+			if value == nil {
+				panic("missing root") // critical
 			}
+			if err = r.Delete(hashb); err != nil {
+				return // critical
+			}
+			if err = c.Delete(); err != nil {
+				return // critical
+			}
+			// coninue seek loop, because after deleting
+			// we have got invalid cusor and we need to
+			// call Seek to make it valid; the Seek will
+			// points to next item, because current one
+			// has been deleted
 		}
 
 		return
