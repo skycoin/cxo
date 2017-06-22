@@ -205,7 +205,6 @@ func TestRegistry_slice(t *testing.T) {
 }
 
 func TestRegistry_userProvidedName(t *testing.T) {
-	t.Skip("not implemented yet")
 
 	type Info struct {
 		About string

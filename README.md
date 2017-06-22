@@ -1,8 +1,13 @@
 CX Object System
 ================
 
+<!--
+
 [![Build Status](https://travis-ci.org/logrusorgru/cxo.svg)](https://travis-ci.org/logrusorgru/cxo)
 [![Coverage Status](https://coveralls.io/repos/logrusorgru/cxo/badge.svg?branch=master)](https://coveralls.io/r/logrusorgru/cxo?branch=master)
+
+-->
+
 [![GoReportCard](https://goreportcard.com/badge/skycoin/cxo)](https://goreportcard.com/report/skycoin/cxo)
 
 Specs: https://pad.riseup.net/p/cxo

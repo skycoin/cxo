@@ -30,9 +30,9 @@ var ErrInvalidEncodedSchema = errors.New("invalid encoded schema")
 //     // use all other methods of the Registry
 //     // except Register
 //
-// NewContainer and NewContainerDB calls Done implicitly.
+// NewContainer calls Done implicitly.
 // I.e. there are four steps (1) create, (2) register all
-// types need (3) call Done (or pass to NewContainer*),
+// types need (3) call Done (or pass to the NewContainer),
 // (4) use all other methods of Registry
 // And (4) step is thread safe because the other methods
 // are read only. A server-side container can remove Registry
@@ -42,13 +42,24 @@ type Registry struct {
 	ref  RegistryReference          // reference to the registry
 	reg  map[string]Schema          // by name
 	srf  map[SchemaReference]Schema // by reference (for Dynamic references)
+
+	// local
+	tn map[reflect.Type]string // type -> registered name
+}
+
+// create registry without tn map
+func newRegistry() (r *Registry) {
+	r = new(Registry)
+	r.reg = make(map[string]Schema)
+	r.srf = make(map[SchemaReference]Schema)
+	return
 }
 
 // NewRegistry creates fresh empty registry
 func NewRegistry() (r *Registry) {
-	r = new(Registry)
-	r.reg = make(map[string]Schema)
-	r.srf = make(map[SchemaReference]Schema)
+	r = newRegistry()
+
+	r.tn = make(map[reflect.Type]string) // local
 	return
 }
 
@@ -63,7 +74,7 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 	if err = encoder.DeserializeRaw(b, &res); err != nil {
 		return
 	}
-	r = NewRegistry()
+	r = newRegistry()
 	for _, re := range res {
 		s, err = decodeSchema(re.Schema)
 		r.reg[re.Name] = s
@@ -73,16 +84,14 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 	return
 }
 
-// Register a struct type using provided name
+// Register a struct type using provided name. It panics if something
+// wrong. It can register any invalid type and panic later during Done
 func (r *Registry) Register(name string, i interface{}) {
 	if r.done {
-		panic("registration was closed")
+		panic("registration has been closed")
 	}
 	if name == "" {
 		panic("empty name")
-	}
-	if strings.ContainsAny(name, "=,") {
-		panic("invalid symbols in name (comma or equal-sign")
 	}
 	typ := typeOf(i)
 	switch typ {
@@ -90,20 +99,41 @@ func (r *Registry) Register(name string, i interface{}) {
 		panic("can't register reference type")
 	default:
 	}
-	s := r.getSchema(typ)
-	if !s.IsRegistered() {
-		panic("can't register this type") // only named structures
-	}
-	// set registered name instead of type name (not nessessary)
-	s.(*structSchema).name = []byte(name)
 
-	if rr, ok := r.reg[name]; ok {
-		if rr.Reference() != s.Reference() {
-			panic("another type already registered with the name")
+	for _, n := range r.tn {
+		if n == name {
+			panic("this name already registered")
 		}
-	} else {
-		r.reg[name] = s // store: name -> Scehma
 	}
+
+	r.tn[typ] = name
+}
+
+// range over registered types, and create schemas
+func (r *Registry) register() {
+
+	for typ, name := range r.tn {
+
+		s := r.getSchema(typ)
+
+		// only named structures
+		if !s.IsRegistered() {
+			panic("can't register type: " + typ.Name())
+		}
+
+		// set registered name instead of type name (not nessessary)
+		s.(*structSchema).name = []byte(name)
+
+		if rr, ok := r.reg[name]; ok {
+			if rr.Reference() != s.Reference() {
+				panic("another type already registered with the name")
+			}
+		} else {
+			r.reg[name] = s // store: name -> Scehma
+		}
+
+	}
+
 }
 
 // Done closes registration
@@ -113,6 +143,8 @@ func (r *Registry) Done() {
 	}
 
 	r.done = true
+
+	r.register()
 
 	filled := make(map[Schema]struct{})
 	for _, sch := range r.reg {
@@ -250,65 +282,115 @@ func (r *Registry) schemaByName(name string) (s Schema, err error) {
 	return
 }
 
-func (r *Registry) getSchema(typ reflect.Type) Schema {
-	s := new(schema)
-	s.kind = typ.Kind()
-	if typ.Name() != "" { // if named
-		s.name = []byte(typ.Name())
+// use (reflect.Type).Name() or name provided to Register;
+// if there aren't, then return nil
+func (r *Registry) typeName(typ reflect.Type) []byte {
+	if name, ok := r.tn[typ]; ok {
+		return []byte(name)
 	}
+	if name := typ.Name(); name != "" {
+		return []byte(name)
+	}
+	return nil
+}
+
+func (r *Registry) getSchema(typ reflect.Type) Schema {
+
+	s := new(schema)
+
+	s.kind = typ.Kind()
+	s.name = r.typeName(typ)
+
 	switch typ.Kind() {
+
 	case reflect.Bool, reflect.Int8, reflect.Uint8,
 		reflect.Int16, reflect.Uint16,
 		reflect.Int32, reflect.Uint32, reflect.Float32,
 		reflect.Int64, reflect.Uint64, reflect.Float64,
 		reflect.String:
+
 		// do nothing for flat types
+
 		return s
+
 	case reflect.Slice:
-		// get schema of element of the slice
+
+		// get schema of element
+
 		ss := new(sliceSchema)
 		ss.schema = *s
-		if el := r.getSchema(typ.Elem()); el.IsRegistered() {
+
+		el := r.getSchema(typ.Elem())
+
+		if el.IsRegistered() {
 			ss.elem = &schema{SchemaReference{}, el.Kind(), el.RawName()}
-		} else {
-			ss.elem = el
+			return ss
 		}
+
+		ss.elem = el
 		return ss
+
 	case reflect.Array:
-		// get length and schema of element of the array
+
+		// get schema of element and length
+
 		as := new(arraySchema)
 		as.schema = *s
-		if el := r.getSchema(typ.Elem()); el.IsRegistered() {
-			as.elem = &schema{SchemaReference{}, el.Kind(), el.RawName()}
-		} else {
-			as.elem = el
-		}
 		as.length = typ.Len()
+
+		el := r.getSchema(typ.Elem())
+
+		if el.IsRegistered() {
+			as.elem = &schema{SchemaReference{}, el.Kind(), el.RawName()}
+			return as
+		}
+
+		as.elem = el
 		return as
+
 	case reflect.Struct:
+
+		// get schemas of fields
+
 		ss := new(structSchema)
 		ss.schema = *s
+
 		for i, nf := 0, typ.NumField(); i < nf; i++ {
+
 			sf := typ.Field(i)
 			if sf.Tag.Get("enc") == "-" || sf.PkgPath != "" || sf.Name == "_" {
 				continue
 			}
 			ss.fields = append(ss.fields, r.getField(sf))
+
 		}
+
 		return ss
+
 	default:
-		panic("invlaid type: " + typ.String())
 	}
+
+	panic("invlaid type: " + typ.String())
+
 }
 
 func (r *Registry) getField(sf reflect.StructField) Field {
+
 	f := new(field)
+
 	f.name = []byte(sf.Name)
 	f.tag = []byte(sf.Tag)
-	t := sf.Type
+
+	t := sf.Type // reflect.Type
+
 	switch t {
+
 	case singleRef:
+
+		// reference
+
 		tagRef := tagReference(sf.Tag)
+
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaReference{},
@@ -317,8 +399,13 @@ func (r *Registry) getField(sf reflect.StructField) Field {
 			typ:  ReferenceTypeSingle,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
 		}
+
 		return f
+
 	case sliceRef:
+
+		// references
+
 		tagRef := tagReference(sf.Tag)
 		f.schema = &referenceSchema{
 			schema: schema{
@@ -328,8 +415,13 @@ func (r *Registry) getField(sf reflect.StructField) Field {
 			typ:  ReferenceTypeSlice,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
 		}
+
 		return f
+
 	case dynamicRef:
+
+		// dynamic reference
+
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaReference{},
@@ -337,15 +429,20 @@ func (r *Registry) getField(sf reflect.StructField) Field {
 			},
 			typ: ReferenceTypeDynamic,
 		}
+
 		return f
+
 	default:
 	}
+
 	if s := r.getSchema(sf.Type); s.IsRegistered() {
 		f.schema = &schema{SchemaReference{}, s.Kind(), s.RawName()}
 	} else {
 		f.schema = s
 	}
+
 	return f
+
 }
 
 func tagReference(tag reflect.StructTag) string {
