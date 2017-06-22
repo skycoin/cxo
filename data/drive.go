@@ -128,7 +128,7 @@ func (d *driveDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
 		c := o.Cursor()
 		var key cipher.SHA256
 		// seek loop
-		for k, _ := c.First(); k != nil; k, _ = c.Seek(key[:]) {
+		for k, _ := c.First(); k != nil; k, _ = c.Seek(k) {
 			for {
 				copy(key[:], k)
 				if fn(key) {
@@ -342,16 +342,13 @@ func (d *driveDB) RangeFeedDelete(pk cipher.PubKey,
 		}
 
 		var rp RootPack
-		var hash cipher.SHA256
 
 		r := t.Bucket(rootsBucket)
 		c := f.Cursor()
 
 		// seek loop
-		for _, hashb := c.First(); hashb != nil; _, hashb = c.Seek(hash[:]) {
+		for seqb, hashb := c.First(); hashb != nil; seqb, hashb = c.Seek(seqb) {
 			for {
-				copy(hash[:], hashb)
-
 				value := r.Get(hashb)
 				if value == nil {
 					panic("missing root") // critical
@@ -376,7 +373,7 @@ func (d *driveDB) RangeFeedDelete(pk cipher.PubKey,
 				}
 
 				// just get next item
-				if _, hashb = c.Next(); hashb == nil {
+				if seqb, hashb = c.Next(); hashb == nil {
 					return // done
 				}
 

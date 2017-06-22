@@ -3,11 +3,14 @@ changes
 
 ### TODO
 
-- [ ] optimize DelRootsBefore of boltdb
-- [ ] add tests for RangeFeedDelete method
+- [ ] optimize `DelRootsBefore` of boltdb
 
 ### Done
 
 #### ...
 
-- [ ] implement RangeFeedDelete method
+- [x] implement `RangeFeedDelete` method
+- [x] add tests for `RangeFeedDelete` method
+- [x] add tests for `RangeDelete`
+- [x] add tests for `AddFeed`
+- [x] add tests for `HasFeed`

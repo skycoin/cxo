@@ -38,12 +38,11 @@ func testDataDel(t *testing.T, db DB) {
 }
 
 func TestData_Del(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Del
-		testDataDel(t, db)
-		//
+		testDataDel(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -52,11 +51,10 @@ func TestData_Del(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Del
-		//
+
 		testDataDel(t, db)
-		//
 	})
+
 }
 
 func testDataGet(t *testing.T, db DB) {
@@ -72,13 +70,11 @@ func testDataGet(t *testing.T, db DB) {
 }
 
 func TestData_Get(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Get
-		//
-		testDataGet(t, db)
-		//
+		testDataGet(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -87,11 +83,10 @@ func TestData_Get(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Get
-		//
+
 		testDataGet(t, db)
-		//
 	})
+
 }
 
 func testDataSet(t *testing.T, db DB) {
@@ -106,13 +101,11 @@ func testDataSet(t *testing.T, db DB) {
 }
 
 func TestData_Set(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Set
-		//
-		testDataSet(t, db)
-		//
+		testDataSet(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -121,11 +114,10 @@ func TestData_Set(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Set
-		//
+
 		testDataSet(t, db)
-		//
 	})
+
 }
 
 func testDataAdd(t *testing.T, db DB) {
@@ -142,13 +134,11 @@ func testDataAdd(t *testing.T, db DB) {
 }
 
 func TestData_Add(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Add
-		//
-		testDataAdd(t, db)
-		//
+		testDataAdd(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -157,11 +147,10 @@ func TestData_Add(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Add
-		//
+
 		testDataAdd(t, db)
-		//
 	})
+
 }
 
 func testDataIsExists(t *testing.T, db DB) {
@@ -176,13 +165,11 @@ func testDataIsExists(t *testing.T, db DB) {
 }
 
 func TestData_IsExist(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// IsExist
-		//
-		testDataIsExists(t, db)
-		//
+		testDataIsExists(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -191,11 +178,10 @@ func TestData_IsExist(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// IsExist
-		//
+
 		testDataIsExists(t, db)
-		//
 	})
+
 }
 
 func testDataRange(t *testing.T, db DB) {
@@ -233,13 +219,11 @@ func testDataRange(t *testing.T, db DB) {
 }
 
 func TestData_Range(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Range
-		//
-		testDataRange(t, db)
-		//
+		testDataRange(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -248,11 +232,10 @@ func TestData_Range(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Range
-		//
+
 		testDataRange(t, db)
-		//
 	})
+
 }
 
 //
@@ -300,13 +283,11 @@ func testDataFeeds(t *testing.T, db DB) {
 }
 
 func TestData_Feeds(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Feeds
-		//
-		testDataFeeds(t, db)
-		//
+		testDataFeeds(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -315,11 +296,10 @@ func TestData_Feeds(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Feeds
-		//
+
 		testDataFeeds(t, db)
-		//
 	})
+
 }
 
 func testDataDelFeed(t *testing.T, db DB) {
@@ -342,13 +322,11 @@ func testDataDelFeed(t *testing.T, db DB) {
 }
 
 func TestData_DelFeed(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// DelFeed
-		//
-		testDataDelFeed(t, db)
-		//
+		testDataDelFeed(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -357,11 +335,10 @@ func TestData_DelFeed(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// DelFeed
-		//
+
 		testDataDelFeed(t, db)
-		//
 	})
+
 }
 
 func testRootError(t *testing.T, re *RootError, rp *RootPack,
@@ -381,6 +358,7 @@ func testDataAddRoot(t *testing.T, db DB) {
 	var rp RootPack
 	rp.Hash = cipher.SumSHA256(rp.Root) // nil
 	pk, _ := cipher.GenerateKeyPair()
+
 	t.Run("seq 0 prev", func(t *testing.T) {
 		rp.Prev = cipher.SumSHA256([]byte("any")) // unexpected prev reference
 		if err := db.AddRoot(pk, &rp); err == nil {
@@ -391,6 +369,7 @@ func testDataAddRoot(t *testing.T, db DB) {
 			testRootError(t, re, &rp, pk)
 		}
 	})
+
 	t.Run("seq 1 no prev", func(t *testing.T) {
 		rp.Seq = 1
 		rp.Prev = cipher.SHA256{} // missing prev. reference
@@ -402,6 +381,7 @@ func testDataAddRoot(t *testing.T, db DB) {
 			testRootError(t, re, &rp, pk)
 		}
 	})
+
 	t.Run("wrong hash", func(t *testing.T) {
 		// reset
 		rp.Seq = 0
@@ -416,6 +396,7 @@ func testDataAddRoot(t *testing.T, db DB) {
 			testRootError(t, re, &rp, pk)
 		}
 	})
+
 	t.Run("add", func(t *testing.T) {
 		// actual hash
 		rp.Hash = cipher.SumSHA256(rp.Root)
@@ -428,9 +409,11 @@ func testDataAddRoot(t *testing.T, db DB) {
 			t.Error("wrong root saved by hash")
 		}
 	})
+
 	if t.Failed() {
 		return
 	}
+
 	t.Run("already exists", func(t *testing.T) {
 		if err := db.AddRoot(pk, &rp); err == nil {
 			t.Error("misisng error")
@@ -438,16 +421,15 @@ func testDataAddRoot(t *testing.T, db DB) {
 			t.Error("wrong error")
 		}
 	})
+
 }
 
 func TestData_AddRoot(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// AddRoot
-		//
-		testDataAddRoot(t, db)
-		//
+		testDataAddRoot(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -456,11 +438,10 @@ func TestData_AddRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// AddRoot
-		//
+
 		testDataAddRoot(t, db)
-		//
 	})
+
 }
 
 func testRootPack(t *testing.T, rp1, rp2 *RootPack) {
@@ -516,13 +497,11 @@ func testLastRoot(t *testing.T, db DB) {
 }
 
 func TestData_LastRoot(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// LastRoot
-		//
-		testLastRoot(t, db)
-		//
+		testLastRoot(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -531,11 +510,10 @@ func TestData_LastRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// LastRoot
-		//
+
 		testLastRoot(t, db)
-		//
 	})
+
 }
 
 // returns RootPack that contains dummy Root filed,
@@ -602,13 +580,11 @@ func testRangeFeed(t *testing.T, db DB) {
 }
 
 func TestData_RangeFeed(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// RangeFeed
-		//
-		testRangeFeed(t, db)
-		//
+		testRangeFeed(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -617,11 +593,10 @@ func TestData_RangeFeed(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// RangeFeed
-		//
+
 		testRangeFeed(t, db)
-		//
 	})
+
 }
 
 func testRangeFeedReverese(t *testing.T, db DB) {
@@ -678,13 +653,11 @@ func testRangeFeedReverese(t *testing.T, db DB) {
 }
 
 func TestData_RangeFeedReverse(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// RangeFeedReverse
-		//
-		testRangeFeedReverese(t, db)
-		//
+		testRangeFeedReverese(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -693,11 +666,10 @@ func TestData_RangeFeedReverse(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// RangeFeedReverse
-		//
+
 		testRangeFeedReverese(t, db)
-		//
 	})
+
 }
 
 //
@@ -722,13 +694,11 @@ func testGetRoot(t *testing.T, db DB) {
 }
 
 func TestData_GetRoot(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// GetRoot
-		//
-		testGetRoot(t, db)
-		//
+		testGetRoot(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -737,14 +707,14 @@ func TestData_GetRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// GetRoot
-		//
+
 		testGetRoot(t, db)
-		//
 	})
+
 }
 
 func testDelRootsBefore(t *testing.T, db DB) {
+
 	// fill
 	pk, _ := cipher.GenerateKeyPair()
 	rps := []RootPack{
@@ -752,12 +722,14 @@ func testDelRootsBefore(t *testing.T, db DB) {
 		getRootPack(1, "two"),
 		getRootPack(2, "three"),
 	}
+
 	for _, rp := range rps {
 		if err := db.AddRoot(pk, &rp); err != nil {
 			t.Error(err)
 			return
 		}
 	}
+
 	// del before 2
 	db.DelRootsBefore(pk, 2)
 	if s := db.Stat().Feeds; len(s) != 1 {
@@ -769,6 +741,7 @@ func testDelRootsBefore(t *testing.T, db DB) {
 	} else if _, ok := db.GetRoot(rps[2].Hash); !ok {
 		t.Error("missing expected root")
 	}
+
 	// del all
 	db.DelRootsBefore(pk, 9000)
 	if len(db.Feeds()) == 0 {
@@ -778,13 +751,11 @@ func testDelRootsBefore(t *testing.T, db DB) {
 }
 
 func TestData_DelRootsBefore(t *testing.T) {
+
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// DelRootsBefore
-		//
-		testDelRootsBefore(t, db)
-		//
+		testDelRootsBefore(t, NewMemoryDB())
 	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -793,11 +764,10 @@ func TestData_DelRootsBefore(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// DelRootsBefore
-		//
+
 		testDelRootsBefore(t, db)
-		//
 	})
+
 }
 
 //
@@ -809,25 +779,13 @@ func TestData_Stat(t *testing.T) {
 	t.Skip("not implemented")
 
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Stat
-		//
-		_ = db
-		//
+		// TODO: implement
 	})
+
 	t.Run("drive", func(t *testing.T) {
-		dbFile := testPath(t)
-		defer os.Remove(dbFile)
-		db, err := NewDriveDB(dbFile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer db.Close()
-		// Stat
-		//
-		_ = db
-		//
+		// TODO: implement
 	})
+
 }
 
 func TestData_Close(t *testing.T) {
@@ -835,12 +793,83 @@ func TestData_Close(t *testing.T) {
 	t.Skip("not implemented")
 
 	t.Run("mem", func(t *testing.T) {
-		db := NewMemoryDB()
-		// Close
-		//
-		_ = db
-		//
+		// TODO: implement
 	})
+
+	t.Run("drive", func(t *testing.T) {
+		// TODO: implement
+	})
+
+}
+
+func testRangeFeedDelete(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	t.Run("empty", func(t *testing.T) {
+		var called int
+		db.RangeFeedDelete(pk, func(rp *RootPack) (_ bool) {
+			called++
+			return
+		})
+		if called != 0 {
+			t.Error("has been called for empty feed")
+		}
+	})
+
+	// fill
+	rps := []RootPack{
+		getRootPack(0, "one"),
+		getRootPack(1, "two"),
+		getRootPack(2, "three"),
+	}
+
+	for _, rp := range rps {
+		if err := db.AddRoot(pk, &rp); err != nil {
+			t.Error(err)
+			return
+		}
+	}
+
+	t.Run("order", func(t *testing.T) {
+		var i uint64
+		db.RangeFeedDelete(pk, func(rp *RootPack) (_ bool) {
+			if rp.Seq != i {
+				t.Error("wrong order")
+			}
+			i++
+			return
+		})
+	})
+
+	t.Run("full", func(t *testing.T) {
+
+		var called int
+		db.RangeFeedDelete(pk, func(rp *RootPack) (del bool) {
+			called++
+			return rp.Seq == 1 // delete
+		})
+		if called != len(rps) {
+			t.Errorf("has been called wrong times, expected %d, called %d",
+				len(rps), called)
+		}
+		if feeds := db.Stat().Feeds; len(feeds) != 0 {
+			if feeds[pk].Roots != 2 {
+				t.Error("hasn't been deleted")
+			}
+		} else {
+			t.Error("missing feed")
+		}
+	})
+
+}
+
+func TestData_RangeFeedDelete(t *testing.T) {
+
+	t.Run("memory", func(t *testing.T) {
+		testRangeFeedDelete(t, NewMemoryDB())
+	})
+
 	t.Run("drive", func(t *testing.T) {
 		dbFile := testPath(t)
 		defer os.Remove(dbFile)
@@ -849,13 +878,177 @@ func TestData_Close(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		// Close
-		//
-		_ = db
-		//
+
+		testRangeFeedDelete(t, db)
 	})
+
 }
 
-func TestData_RangeFeedDelete(t *testing.T) {
-	//
+func testRangeDelete(t *testing.T, db DB) {
+	// generate objects
+	content := []string{
+		"one",
+		"two",
+		"three",
+		"four",
+	}
+	objects := make(map[cipher.SHA256][]byte, len(content))
+	for _, c := range content {
+		b := []byte(c)
+		objects[cipher.SumSHA256(b)] = b
+	}
+	// fill database
+	for k, v := range objects {
+		db.Set(k, v)
+	}
+
+	// range count
+	t.Run("count", func(t *testing.T) {
+		var called int
+		db.RangeDelete(func(cipher.SHA256) (_ bool) {
+			called++
+			return
+		})
+		if called != len(content) {
+			t.Errorf("has been called wrong times, expected %d, got %d",
+				len(content), called)
+		}
+	})
+
+	// delete one
+	t.Run("delete one", func(t *testing.T) {
+		var called int
+		var one cipher.SHA256
+
+		for k, v := range objects {
+			if string(v) == "one" {
+				one = k
+				break
+			}
+		}
+
+		db.RangeDelete(func(key cipher.SHA256) (_ bool) {
+			called++
+			return key == one
+		})
+
+		if called != len(content) {
+			t.Errorf("has been called wrong times, expected %d, got %d",
+				len(content), called)
+		}
+
+		if db.Stat().Objects != len(objects)-1 {
+			t.Error("undeleted")
+		}
+
+		// save the one back for next tests
+		db.Set(one, objects[one])
+
+	})
+
+	// delete all
+	t.Run("delete all", func(t *testing.T) {
+		var called int
+		db.RangeDelete(func(k cipher.SHA256) (del bool) {
+			called++
+			_, del = objects[k]
+			return
+		})
+		if called != len(objects) {
+			t.Errorf("has been called wrong times, expected %d, got %d",
+				len(objects), called)
+		}
+		if db.Stat().Objects != 0 {
+			t.Error("undeleted")
+		}
+	})
+
+}
+
+func TestData_RangeDelete(t *testing.T) {
+
+	t.Run("memory", func(t *testing.T) {
+		testRangeDelete(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		dbFile := testPath(t)
+		defer os.Remove(dbFile)
+		db, err := NewDriveDB(dbFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+
+		testRangeDelete(t, db)
+	})
+
+}
+
+func testAddFeed(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+	db.AddFeed(pk)
+	if !db.HasFeed(pk) {
+		t.Error("missing feed")
+	}
+}
+
+func TestData_AddFeed(t *testing.T) {
+
+	t.Run("memory", func(t *testing.T) {
+		testAddFeed(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		dbFile := testPath(t)
+		defer os.Remove(dbFile)
+		db, err := NewDriveDB(dbFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+
+		testAddFeed(t, db)
+	})
+
+}
+
+func testHasFeed(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	if db.HasFeed(pk) {
+		t.Error("has unexisting feed")
+	}
+
+	rp := getRootPack(0, "ha-ha")
+
+	if err := db.AddRoot(pk, &rp); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !db.HasFeed(pk) {
+		t.Error("missing feed")
+	}
+
+}
+
+func TestData_HasFeed(t *testing.T) {
+
+	t.Run("memory", func(t *testing.T) {
+		testHasFeed(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		dbFile := testPath(t)
+		defer os.Remove(dbFile)
+		db, err := NewDriveDB(dbFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+
+		testHasFeed(t, db)
+	})
+
 }
