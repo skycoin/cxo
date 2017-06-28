@@ -57,6 +57,7 @@ type Root struct {
 func (r *Root) IsReadOnly() (yep bool) {
 	r.RLock()
 	defer r.RUnlock()
+
 	yep = r.sec == (cipher.SecKey{})
 	return
 }
@@ -68,6 +69,7 @@ func (r *Root) IsReadOnly() (yep bool) {
 func (r *Root) IsAttached() (yep bool) {
 	r.RLock()
 	defer r.RUnlock()
+
 	yep = r.attached
 	return
 }
@@ -79,6 +81,7 @@ func (r *Root) IsAttached() (yep bool) {
 func (r *Root) Edit(sk cipher.SecKey) {
 	r.Lock()
 	defer r.Unlock()
+
 	r.sec = sk
 }
 
@@ -87,6 +90,7 @@ func (r *Root) Edit(sk cipher.SecKey) {
 func (r *Root) Registry() (reg *Registry, err error) {
 	r.RLock()
 	defer r.RUnlock()
+
 	reg, err = r.registry()
 	return
 }
@@ -114,6 +118,7 @@ func (r *Root) RegistryReference() RegistryReference {
 func (r *Root) Touch() (data.RootPack, error) {
 	r.Lock()
 	defer r.Unlock()
+
 	return r.touch()
 }
 
@@ -134,6 +139,7 @@ func (r *Root) touch() (rp data.RootPack, err error) {
 func (r *Root) Seq() uint64 {
 	r.RLock()
 	defer r.RUnlock()
+
 	return r.seq
 }
 
@@ -141,6 +147,7 @@ func (r *Root) Seq() uint64 {
 func (r *Root) Time() int64 {
 	r.RLock()
 	defer r.RUnlock()
+
 	return r.time
 }
 
@@ -153,6 +160,7 @@ func (r *Root) Pub() cipher.PubKey {
 func (r *Root) Sig() cipher.Sig {
 	r.RLock()
 	defer r.RUnlock()
+
 	return r.sig
 }
 
@@ -160,6 +168,7 @@ func (r *Root) Sig() cipher.Sig {
 func (r *Root) Hash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
+
 	rr := RootReference(r.hash)
 	return rr
 }
@@ -173,6 +182,7 @@ func (r *Root) Hash() RootReference {
 func (r *Root) PrevHash() RootReference {
 	r.RLock()
 	defer r.RUnlock()
+
 	rr := RootReference(r.prev)
 	return rr
 }
@@ -184,6 +194,7 @@ func (r *Root) PrevHash() RootReference {
 func (r *Root) IsFull() bool {
 	r.RLock()
 	defer r.RUnlock()
+
 	if r.full {
 		return true
 	}
@@ -212,6 +223,7 @@ func (r *Root) IsFull() bool {
 func (r *Root) Encode() (rp data.RootPack) {
 	r.RLock()
 	defer r.RUnlock()
+
 	rp = r.encode()
 	return
 }
@@ -247,6 +259,7 @@ func (r *Root) encode() (rp data.RootPack) {
 func (r *Root) Sign() (sig cipher.Sig) {
 	r.Lock()
 	defer r.Unlock()
+
 	sig = r.encode().Sig
 	return
 }
@@ -315,8 +328,10 @@ func (r *Root) Inject(schemaName string, i interface{}) (inj Dynamic,
 	if inj, err = r.Dynamic(schemaName, i); err != nil {
 		return
 	}
+
 	r.Lock()
 	defer r.Unlock()
+
 	r.refs = append(r.refs, inj)
 	rp, err = r.touch()
 	return
@@ -338,8 +353,10 @@ func (r *Root) InjectMany(schemaName string, i ...interface{}) (injs []Dynamic,
 		}
 		injs = append(injs, inj)
 	}
+
 	r.Lock()
 	defer r.Unlock()
+
 	r.refs = append(r.refs, injs...)
 	rp, err = r.touch()
 	return
@@ -372,13 +389,13 @@ func (r *Root) Len() int {
 // Index returns Dynamic reference by index. The error
 // can only be ErrIndexOutOfRange
 func (r *Root) Index(i int) (dr Dynamic, err error) {
+	r.RLock()
+	defer r.RUnlock()
+
 	if i < 0 || i >= len(r.refs) {
 		err = ErrIndexOutOfRange
 		return
 	}
-
-	r.RLock()
-	defer r.RUnlock()
 
 	dr = r.refs[i]
 	return
@@ -390,13 +407,13 @@ func (r *Root) Index(i int) (dr Dynamic, err error) {
 // To get safe slice use Refs method. The error can only be
 // ErrIndexOutOfRange
 func (r *Root) Slice(i, j int) (drs []Dynamic, err error) {
-	if i < 0 || i >= len(r.refs) || j < 0 || j >= len(r.refs) || j < i {
+	r.RLock()
+	defer r.RUnlock()
+
+	if i < 0 || i > len(r.refs) || j < 0 || j > len(r.refs) || j < i {
 		err = ErrIndexOutOfRange
 		return
 	}
-
-	r.RLock()
-	defer r.RUnlock()
 
 	drs = r.refs[i:j]
 	return
@@ -487,6 +504,7 @@ func (r *Root) ValueByStatic(schemaName string, ref Reference) (val *Value,
 func (r *Root) Values() (vals []*Value, err error) {
 	r.RLock()
 	defer r.RUnlock()
+
 	if len(r.refs) == 0 {
 		return
 	}
@@ -549,6 +567,7 @@ type WantFunc func(Reference) error
 func (r *Root) WantFunc(wf WantFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+
 	if r.full {
 		return // the Root is full
 	}
@@ -618,6 +637,7 @@ type GotFunc func(Reference) error
 func (r *Root) GotFunc(gf GotFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+
 	var val *Value
 	for _, dr := range r.refs {
 		if val, err = r.ValueByDynamic(dr); err != nil {
@@ -652,6 +672,7 @@ func (r *Root) GotFunc(gf GotFunc) (err error) {
 func (r *Root) GotOfFunc(dr Dynamic, gf GotFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+
 	var val *Value
 	if val, err = r.ValueByDynamic(dr); err != nil {
 		if _, ok := err.(*MissingObjectError); ok {
@@ -682,6 +703,7 @@ type RefsFunc func(Reference) (skip bool, err error)
 func (r *Root) RefsFunc(rf RefsFunc) (err error) {
 	r.RLock()
 	defer r.RUnlock()
+
 	var val *Value
 	var skip bool
 	for _, dr := range r.refs {

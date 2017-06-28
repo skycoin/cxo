@@ -7,13 +7,18 @@ changes
 - [ ] improve documentation
 - [ ] add RPC methods to see conn->feeds and feed->conns
 - [ ] add `OnDropRoot` callback
-- [ ] add ability to remove non-full root objects that will not be filled
 - [ ] add more tests
 - [ ] dry benchmarks
 - [ ] add long running tests
 - [ ] move `RootWalker` to skyobject package
 
 ### Done
+
+#### 10:00 28 June 2017
+
+- [x] add ability to remove non-full root objects that will not be filled
+
+All non-full root objects will be removed from database during Close
 
 #### 22:00 19 June 2017 UTC
 

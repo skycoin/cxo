@@ -308,19 +308,35 @@ func (s *Node) start() (err error) {
 
 // Close the Node
 func (s *Node) Close() (err error) {
+
 	s.quito.Do(func() {
 		close(s.quit)
 	})
+
 	err = s.pool.Close()
 
 	if s.conf.EnableRPC {
 		s.rpc.Close()
 	}
+
 	s.await.Wait()
-	s.db.Close() // <- close database after all (otherwise, it causes panicing)
+
+	// we have to close boltdb once
 	s.doneo.Do(func() {
+
+		// clean up database
+		for feed := range s.feeds {
+			s.so.RemoveNonFullRoots(feed)
+		}
+		s.so.GC(true) // true == preserve root objects
+
+		// close database after all, otherwise, it panics
+		s.db.Close()
+
+		// close the Quiting channel
 		close(s.done)
 	})
+
 	return
 }
 

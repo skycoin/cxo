@@ -513,6 +513,48 @@ func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) {
 	c.db.DelRootsBefore(pk, seq)
 }
 
+// RemoveNonFullRoots removes all non-full root objects of a feed from
+// database. The method required by a node to clean up during shutdown. If
+// there are any non-full roots then a node are not able to fill them next
+// time and it's better to remove them to reduce datbase size. The method
+// doesn't remove related objects. Use GC method to do that
+func (c *Container) RemoveNonFullRoots(pk cipher.PubKey) {
+	c.dbmx.Lock()
+	defer c.dbmx.Unlock()
+
+	// TODO (kostyarin): optimisation
+	// -------------------------------------------------------------------------
+	//       We can't call r.IsFull() inside RangeFeedDelete because of
+	//       database locks. So, this approach is slow, because we have to
+	//       range a feed twice
+	// -------------------------------------------------------------------------
+
+	// build map of non-full roots
+	nonFull := make(map[cipher.SHA256]struct{})
+
+	// collect root objects
+	c.db.RangeFeed(pk, func(rp *data.RootPack) (_ bool) {
+		var r *Root
+		var err error
+		if r, err = c.unpackRoot(rp); err != nil {
+			panic(err) // critical
+		}
+		r.attached = true
+		// But, we can call IsFull from if database locked for reading
+		if r.IsFull() {
+			return
+		}
+		nonFull[cipher.SHA256(r.Hash())] = struct{}{}
+		return
+	})
+
+	// delete
+	c.db.RangeFeedDelete(pk, func(rp *data.RootPack) (del bool) {
+		_, del = nonFull[rp.Hash]
+		return
+	})
+}
+
 // GC removes all unused objects, including Root objects and Registries.
 // If given argument is false, then GC deletes all root objects before
 // last full root of a feed. If you want to keep all roots, then

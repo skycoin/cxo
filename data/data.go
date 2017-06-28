@@ -58,6 +58,9 @@ type DB interface {
 	// RangeFeedReverse is same as RangeFeed, but order
 	// is reversed
 	RangeFeedReverse(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
+	// RangeFeedDelete itterates a feed and deletes all root object for which
+	// given function returns true
+	RangeFeedDelete(pk cipher.PubKey, fn func(rp *RootPack) (del bool))
 
 	//
 	// Roots

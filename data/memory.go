@@ -254,6 +254,34 @@ func (d *memoryDB) RangeFeedReverse(pk cipher.PubKey,
 	}
 }
 
+func (d *memoryDB) RangeFeedDelete(pk cipher.PubKey,
+	fn func(rp *RootPack) (del bool)) {
+
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	roots := d.feeds[pk]
+	if len(roots) == 0 {
+		return // empty feed
+	}
+
+	var o = make(order, 0, len(roots))
+	for seq := range roots {
+		o = append(o, seq)
+	}
+	sort.Sort(o)
+
+	// ordered
+	for _, seq := range o {
+		rp := d.roots[roots[seq]]
+		if fn(rp) {
+			delete(d.roots, roots[seq])
+			delete(roots, seq)
+		}
+	}
+
+}
+
 //
 // Roots
 //

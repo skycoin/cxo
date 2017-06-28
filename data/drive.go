@@ -127,19 +127,26 @@ func (d *driveDB) RangeDelete(fn func(key cipher.SHA256) (del bool)) {
 		o := t.Bucket(objectsBucket)
 		c := o.Cursor()
 		var key cipher.SHA256
-		for k, _ := c.First(); k != nil; k, _ = c.Seek(key[:]) {
-		Loop:
-			copy(key[:], k)
-			if fn(key) {
-				if e = c.Delete(); e != nil {
+		// seek loop
+		for k, _ := c.First(); k != nil; k, _ = c.Seek(k) {
+			for {
+				copy(key[:], k)
+				if fn(key) {
+					if e = c.Delete(); e != nil {
+						return
+					}
+					// coninue seek loop, because after deleting
+					// we have got invalid cusor and we need to
+					// call Seek to make it valid; the Seek will
+					// points to next item, because current one
+					// has been deleted
+					break
+				}
+				// just get next item
+				if k, _ = c.Next(); k == nil {
 					return
 				}
-				continue
 			}
-			if k, _ = c.Next(); k == nil {
-				break
-			}
-			goto Loop
 		}
 		return
 	})
@@ -325,6 +332,58 @@ func (d *driveDB) RangeFeedReverse(pk cipher.PubKey,
 	})
 }
 
+func (d *driveDB) RangeFeedDelete(pk cipher.PubKey,
+	fn func(rp *RootPack) (del bool)) {
+
+	d.update(func(t *bolt.Tx) (err error) {
+		f := t.Bucket(feedsBucket).Bucket(pk[:])
+		if f == nil {
+			return
+		}
+
+		var rp RootPack
+
+		r := t.Bucket(rootsBucket)
+		c := f.Cursor()
+
+		// seek loop
+		for seqb, hashb := c.First(); hashb != nil; seqb, hashb = c.Seek(seqb) {
+			for {
+				value := r.Get(hashb)
+				if value == nil {
+					panic("missing root") // critical
+				}
+				if err := encoder.DeserializeRaw(value, &rp); err != nil {
+					panic(err) // critical
+				}
+
+				if fn(&rp) {
+					if err = r.Delete(hashb); err != nil {
+						return
+					}
+					if err = c.Delete(); err != nil {
+						return
+					}
+					// coninue seek loop, because after deleting
+					// we have got invalid cusor and we need to
+					// call Seek to make it valid; the Seek will
+					// points to next item, because current one
+					// has been deleted
+					break
+				}
+
+				// just get next item
+				if seqb, hashb = c.Next(); hashb == nil {
+					return // done
+				}
+
+			}
+		}
+
+		return
+	})
+}
+
 //
 // Roots
 //
@@ -347,39 +406,35 @@ func (d *driveDB) GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool) {
 }
 
 func (d *driveDB) DelRootsBefore(pk cipher.PubKey, seq uint64) {
-	d.update(func(t *bolt.Tx) (_ error) {
-		fb := t.Bucket(feedsBucket)
-		f := fb.Bucket(pk[:])
+	d.update(func(t *bolt.Tx) (err error) {
+		f := t.Bucket(feedsBucket).Bucket(pk[:])
 		if f == nil {
 			return
 		}
 
-		// collect
-
-		type sh struct{ s, h []byte }
-
-		del := []sh{}
-		err := f.ForEach(func(seqb, hashb []byte) error {
-			if btou(seqb) < seq {
-				del = append(del, sh{seqb, hashb})
-			}
-			return nil
-		})
-		if err != nil {
-			panic(err) // critical
-		}
-
-		// delete
-
 		r := t.Bucket(rootsBucket)
-		for _, x := range del {
+		c := f.Cursor()
 
-			if e := f.Delete(x.s); e != nil {
-				panic(e) // critical
+		// seek loop
+		for seqb, hashb := c.First(); hashb != nil; seqb, hashb = c.Seek(seqb) {
+			if btou(seqb) >= seq {
+				return // we're done
 			}
-			if e := r.Delete(x.h); e != nil {
-				panic(e) // critical
+			value := r.Get(hashb)
+			if value == nil {
+				panic("missing root") // critical
 			}
+			if err = r.Delete(hashb); err != nil {
+				return // critical
+			}
+			if err = c.Delete(); err != nil {
+				return // critical
+			}
+			// coninue seek loop, because after deleting
+			// we have got invalid cusor and we need to
+			// call Seek to make it valid; the Seek will
+			// points to next item, because current one
+			// has been deleted
 		}
 
 		return

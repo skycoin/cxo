@@ -1003,3 +1003,86 @@ func TestContainer_GC(t *testing.T) {
 		t.Error("core registry removed")
 	}
 }
+
+func TestContainer_RangeFeed(t *testing.T) {
+	c := getCont()
+	pk, sk := cipher.GenerateKeyPair()
+
+	t.Run("empty feed", func(t *testing.T) {
+		var called int
+		err := c.RangeFeed(pk, func(*Root) (_ error) {
+			called++
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+		if called != 0 {
+			t.Error("unexpected calling of RageFeedFunc")
+		}
+	})
+
+	root, err := c.NewRoot(pk, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	alice := root.MustDynamic("cxo.User", User{"Alice", 19, nil})
+	eva := root.MustDynamic("cxo.User", User{"Eva", 21, nil})
+	ammy := root.MustDynamic("cxo.User", User{"Ammy", 23, nil})
+
+	root.Append(alice)
+	root.Replace([]Dynamic{eva})
+	root.Replace([]Dynamic{ammy})
+
+	t.Run("stop range", func(t *testing.T) {
+		err := c.RangeFeed(pk, func(*Root) error {
+			return ErrStopRange
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("order", func(t *testing.T) {
+		var called int
+		order := []Dynamic{alice, eva, ammy}
+		err := c.RangeFeed(pk, func(r *Root) (_ error) {
+			if dr, err := r.Index(0); err != nil {
+				return err
+			} else if called >= len(order) {
+				t.Error("called too many times")
+				return ErrStopRange
+			} else if dr != order[called] {
+				t.Error("wrong order")
+				return ErrStopRange
+			}
+			called++
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+		if called != 3 {
+			t.Error("too few/many times called")
+		}
+	})
+
+}
+
+func TestContainer_RootByHash(t *testing.T) {
+	r := getRoot(t)
+	c := r.cnt // container of the root
+
+	r.Append(r.MustDynamic("cxo.User", User{}))
+
+	gr, ok := c.RootByHash(r.Hash())
+	if !ok {
+		t.Fatal("misisng")
+	}
+
+	if gr.Hash() != r.Hash() {
+		t.Error("wrong root given")
+	}
+
+}
