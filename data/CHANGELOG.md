@@ -8,7 +8,7 @@ changes
 
 ### Done
 
-#### ...
+#### 10:00 28 June 2017
 
 - [x] implement `RangeFeedDelete` method
 - [x] add tests for `RangeFeedDelete` method
