@@ -14,7 +14,7 @@ import (
 
 //
 // Linked list: use skyobject.Reference instead of pointer. So,
-// we can't use double-linked-list becasue of back reference
+// we can't use double-linked-list because of back reference
 //
 
 // real linked list
