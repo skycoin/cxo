@@ -76,7 +76,7 @@ type Node struct {
 
 	// connections
 	pool *gnet.Pool
-	rpc  *RPC // rpc server
+	rpc  *rpcServer // rpc server
 
 	// closing
 	quit  chan struct{}

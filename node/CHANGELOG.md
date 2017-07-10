@@ -14,6 +14,10 @@ changes
 
 ### Done
 
+#### ...
+
+- [x] rid out of RPC logs `method * has wrong number of ins: *`
+
 #### 10:00 28 June 2017
 
 - [x] add ability to remove non-full root objects that will not be filled

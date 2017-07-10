@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -24,6 +26,10 @@ ok      github.com/logrusorgru/cxo/node 73.241s
 //
 // TODO: DRY
 //
+
+var (
+	emptyEncodedRootPackLen = int64(len(encoder.Serialize(data.RootPack{})))
+)
 
 func benchmarkNodeSrcDstEmptyRootsMemory(b *testing.B) {
 
@@ -87,6 +93,7 @@ func benchmarkNodeSrcDstEmptyRootsMemory(b *testing.B) {
 	}
 
 	// run
+	b.SetBytes(emptyEncodedRootPackLen)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// update
@@ -172,6 +179,7 @@ func benchmarkNodeSrcDstEmptyRootsBoltDB(b *testing.B) {
 	}
 
 	// run
+	b.SetBytes(emptyEncodedRootPackLen)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// update
@@ -291,6 +299,7 @@ func benchmarkNodePassThroughEmptyRootsMemory(b *testing.B) {
 	}
 
 	// run
+	b.SetBytes(emptyEncodedRootPackLen)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// update
@@ -411,6 +420,7 @@ func benchmarkNodePassThroughEmptyRootsBoltDB(b *testing.B) {
 	}
 
 	// run
+	b.SetBytes(emptyEncodedRootPackLen)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// update

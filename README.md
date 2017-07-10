@@ -3,8 +3,8 @@ CX Object System
 
 <!--
 
-[![Build Status](https://travis-ci.org/logrusorgru/cxo.svg)](https://travis-ci.org/logrusorgru/cxo)
-[![Coverage Status](https://coveralls.io/repos/logrusorgru/cxo/badge.svg?branch=master)](https://coveralls.io/r/logrusorgru/cxo?branch=master)
+[![Build Status](https://travis-ci.org/skycoin/cxo.svg)](https://travis-ci.org/skycoin/cxo)
+[![Coverage Status](https://coveralls.io/repos/skycoin/cxo/badge.svg?branch=master)](https://coveralls.io/r/skycoin/cxo?branch=master)
 
 -->
 

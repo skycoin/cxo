@@ -23,16 +23,20 @@ type RPC struct {
 	ns *Node
 }
 
-func newRPC(s *Node) (r *RPC) {
-	r = new(RPC)
+type rpcServer struct {
+	*RPC
+}
+
+func newRPC(s *Node) (r *rpcServer) {
+	r = new(rpcServer)
+	r.RPC = new(RPC)
 	r.ns = s
 	r.rs = rpc.NewServer()
 	return
 }
 
-// Start RPC server
-func (r *RPC) Start(address string) (err error) {
-	r.rs.RegisterName("cxo", r)
+func (r *rpcServer) Start(address string) (err error) {
+	r.rs.RegisterName("cxo", r.RPC)
 	if r.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
@@ -44,16 +48,14 @@ func (r *RPC) Start(address string) (err error) {
 	return
 }
 
-// Address of RPC server
-func (r *RPC) Address() (address string) {
+func (r *rpcServer) Address() (address string) {
 	if r.l != nil {
 		address = r.l.Addr().String()
 	}
 	return
 }
 
-// Close RPC server
-func (r *RPC) Close() (err error) {
+func (r *rpcServer) Close() (err error) {
 	if r.l != nil {
 		err = r.l.Close()
 	}
