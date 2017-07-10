@@ -13,6 +13,17 @@ import (
 
 /*
 
+1. run
+    go test -bench . -benchtime 10s | tee bench-`git rev-parse HEAD`.out
+2. compare with previous
+    (go get -u golang.org/x/perf/cmd/benchstat)
+    benchstat previous.out bench-`git rev-parse HEAD`.out
+
+
+*/
+
+/*
+
 $ go test -bench . -benchtime 10s
 BenchmarkNode_srcDst/empty_roots_memory-4       10000    2390448 ns/op  100237 B/op  1690 allocs/op
 BenchmarkNode_srcDst/empty_roots_boltdb-4         100  113579500 ns/op  135854 B/op  1911 allocs/op

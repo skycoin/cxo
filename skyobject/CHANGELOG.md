@@ -6,6 +6,7 @@ changes
 - [ ] move `node.Rootwalker` here
 - [ ] add test for `RemoveNonFullRoots`
 - [ ] move to new approach of handling Root objects
+- [ ] add `Schema.HasReferences() bool` method for performance
 
 
 ### Done

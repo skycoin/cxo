@@ -33,6 +33,10 @@ gui/static/dev/
 cover.out
 cover.html
 
+# any *.out file
+
+*.out
+
 # executables
 
 cmd/cxocli/cxocli
