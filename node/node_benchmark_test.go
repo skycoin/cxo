@@ -17,7 +17,7 @@ import (
     go test -bench . -benchtime 10s | tee bench-`git rev-parse HEAD`.out
 2. compare with previous
     (go get -u golang.org/x/perf/cmd/benchstat)
-    benchstat previous.out bench-`git rev-parse HEAD`.out
+    benchstat __previous__.out bench-`git rev-parse HEAD`.out
 
 
 */
@@ -282,7 +282,7 @@ func benchmarkNodePassThroughEmptyRootsMemory(b *testing.B) {
 
 	var root *Root
 
-	// becasu we're not using "core registry" we need be sure that
+	// because we're not using "core registry" we need be sure that
 	// GC doesn't cleans our registry until we create first root object
 	cnt.LockGC()
 	{
