@@ -22,16 +22,16 @@ var (
 
 // A Container represents ...
 type Container struct {
-	// lock database (for GC)
-	dbmx sync.RWMutex
-	db   data.DB // databse
+	db data.DB // databse
 
 	// lock registries
 	rmx          sync.RWMutex
 	coreRegistry *Registry // registry witch which the container was created
 	registries   map[RegistryReference]*Registry
 
-	gcmx sync.Mutex
+	// memory cache (to keep fresh objects)
+	cmx   sync.RWMutex
+	cache map[cipher.SHA256][]byte
 }
 
 // NewContainer creates new Container using given databse and
@@ -79,6 +79,7 @@ func (c *Container) AddRegistry(reg *Registry) {
 	// converted to cipher.SHA256 and then to []byte
 	// anyway (it doesn't make sense, the Set method
 	// requires it to be type of Reference)
+	// (TODO: cache + GC)
 	c.Set(Reference(reg.Reference()), reg.Encode()) // store
 
 	c.rmx.Lock()

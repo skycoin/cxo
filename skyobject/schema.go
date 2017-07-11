@@ -40,6 +40,10 @@ type Schema interface {
 	IsReference() bool            // is the schema is reference
 	ReferenceType() ReferenceType // type of the reference if it is a reference
 
+	// HasReferences returns true if this Schema is a reference or contains
+	// references on any level deep
+	HasReferences() bool
+
 	IsNil() bool // is the schema a nil
 
 	Kind() reflect.Kind // Kind of the Schema
@@ -87,6 +91,10 @@ func (s *schema) Reference() SchemaReference {
 		s.ref = SchemaReference(cipher.SumSHA256(s.Encode()))
 	}
 	return s.ref
+}
+
+func (s *schema) HasReferences() bool {
+	return false
 }
 
 func (s *schema) Kind() reflect.Kind {
@@ -147,6 +155,10 @@ type referenceSchema struct {
 	elem Schema
 }
 
+func (r *referenceSchema) HasReferences() bool {
+	return true // by design
+}
+
 func (r *referenceSchema) IsReference() bool {
 	return true
 }
@@ -198,6 +210,10 @@ func (r *referenceSchema) String() string {
 type sliceSchema struct {
 	schema
 	elem Schema
+}
+
+func (s *sliceSchema) HasReferences() bool {
+	return s.elem.HasReferences()
 }
 
 func (s *sliceSchema) Elem() Schema {
@@ -266,6 +282,13 @@ func (a *arraySchema) String() string {
 type structSchema struct {
 	schema
 	fields []Field
+}
+
+func (r *structSchema) HasReferences() (has bool) {
+	for _, fl := range r.fields {
+		has = has | fl.Schema().HasReferences()
+	}
+	return
 }
 
 func (s *structSchema) Fields() []Field {
