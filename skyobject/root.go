@@ -228,6 +228,9 @@ type WantFunc func(Reference) error
 // returned by the WantFunc stops itteration. It the error
 // is ErrStopRange then WantFunc returns nil. Otherwise
 // it returns the error
+//
+// TODO (kostyarin): use (Schema).HasReference() method to
+// speed up the method
 func (r *Root) WantFunc(wf WantFunc) (err error) {
 	if r.full {
 		return // the Root is full

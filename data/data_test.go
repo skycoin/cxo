@@ -10,6 +10,10 @@ import (
 	// "github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+//
+// helper functions
+//
+
 func testPath(t *testing.T) string {
 	fl, err := ioutil.TempFile("", "test")
 	if err != nil {
@@ -20,7 +24,205 @@ func testPath(t *testing.T) string {
 }
 
 //
-// objects
+// Tests
+//
+
+//
+// DB
+//
+
+func TestDB_View(t *testing.T) {
+	// View(func(t Tx) error) (err error)
+
+	//
+}
+
+func TestDB_Update(t *testing.T) {
+	// Update(func(t Tx) error) (err error)
+
+	//
+}
+
+func TestDB_Stat(t *testing.T) {
+	// Stat() (s Stat)
+
+	//
+}
+
+func TestDB_Close(t *testing.T) {
+	// Close() (err error)
+
+	//
+}
+
+//
+// Tx
+//
+
+func TestTx_Objects(t *testing.T) {
+	// Objects() Objects
+
+	//
+}
+
+func TestTx_Feeds(t *testing.T) {
+	// Feeds() Feeds
+
+	//
+}
+
+//
+// Objects
+//
+
+func TestObjects_Del(t *testing.T) {
+	// Del(key cipher.SHA256)
+
+	//
+}
+
+func TestObjects_Get(t *testing.T) {
+	// Get(key cipher.SHA256) (value []byte, ok bool)
+
+	//
+}
+
+func TestObjects_Set(t *testing.T) {
+	// Set(key cipher.SHA256, value []byte)
+
+	//
+}
+
+func TestObjects_Add(t *testing.T) {
+	// Add(value []byte) cipher.SHA256
+
+	//
+}
+
+func TestObjects_IsExists(t *testing.T) {
+	// IsExists(key cipher.SHA256)
+
+	//
+}
+
+func TestObjects_Range(t *testing.T) {
+	// Range(func(key cipher.SHA256, value []byte) (stop bool))
+
+	//
+}
+
+func TestObjects_RangeDel(t *testing.T) {
+	// RangeDel(func(key cipher.SHA256, value []byte) (del, stop bool))
+
+	//
+}
+
+//
+// Feeds
+//
+
+func TestFeeds_Add(t *testing.T) {
+	// Add(pk cipher.PubKey)
+
+	//
+}
+
+func TestFeeds_Del(t *testing.T) {
+	// Del(pk cipher.PubKey)
+
+	//
+}
+
+func TestFeeds_IsExists(t *testing.T) {
+	// IsExists(pk cipher.PubKey)
+
+	//
+}
+
+func TestFeeds_List(t *testing.T) {
+	// List() []cipher.PubKey
+
+	//
+}
+
+func TestFeeds_Range(t *testing.T) {
+	// Range(func(pk cipher.PubKey) (stop bool))
+
+	//
+}
+
+func TestFeeds_RangeDel(t *testing.T) {
+	// RangeDel(func(pk cipher.PubKey) (del, stop bool))
+
+	//
+}
+
+func TestFeeds_Roots(t *testing.T) {
+	// Roots(pk cipher.PubKey) Roots
+
+	//
+}
+
+//
+// Roots
+//
+
+func TestRoots_Feed(t *testing.T) {
+	// Feed() cipher.PubKey
+
+	//
+}
+
+func TestRoots_Add(t *testing.T) {
+	// Add(rp *RootPack) (err error)
+
+	//
+}
+
+func TestRoots_Last(t *testing.T) {
+	// Last() (rp *RootPack, ok bool)
+
+	//
+}
+
+func TestRoots_Get(t *testing.T) {
+	// Get(seq uint64) (rp *RootPack, ok bool)
+
+	//
+}
+
+func TestRoots_Del(t *testing.T) {
+	// Del(seq uint64)
+
+	//
+}
+
+func TestRoots_Range(t *testing.T) {
+	// Range(func(rp *RootPack) (stop bool))
+
+	//
+}
+
+func TestRoots_Reverse(t *testing.T) {
+	// Reverse(fn func(rp *RootPack) (stop bool))
+
+	//
+}
+
+func TestRoots_RangeDelete(t *testing.T) {
+	// RangeDelete(fn func(rp *RootPack) (del, stop bool))
+
+	//
+}
+
+func TestRoots_DelBefore(t *testing.T) {
+	// DelBefore(seq uint64)
+
+	//
+}
+
+//
+// Old
 //
 
 func testDataDel(t *testing.T, db DB) {

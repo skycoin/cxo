@@ -28,14 +28,10 @@ type Container struct {
 	rmx          sync.RWMutex
 	coreRegistry *Registry // registry witch which the container was created
 	registries   map[RegistryReference]*Registry
-
-	// memory cache (to keep fresh objects)
-	cmx   sync.RWMutex
-	cache map[cipher.SHA256][]byte
 }
 
 // NewContainer creates new Container using given databse and
-// optional Registry. If Registry is no nil, then the registry
+// optional Registry. If Registry is not nil, then the registry
 // will be used to create Root objects by NewRoot. The registry
 // is just usablility trick. You can create a Container without
 // registry, add a Registry using AddRegistry method and
@@ -140,9 +136,6 @@ func (c *Container) unpackRoot(rp *data.RootPack) (r *Root, err error) {
 
 // WantRegistry returns true if given registry wanted by the Container
 func (c *Container) WantRegistry(rr RegistryReference) (want bool) {
-
-	// don't need to lock database because we don't change it
-
 	var have bool
 	for _, pk := range c.db.Feeds() {
 		c.db.RangeFeed(pk, func(rp *data.RootPack) (stop bool) {
@@ -179,66 +172,6 @@ func (c *Container) Registries() (rrs []RegistryReference) {
 	rrs = make([]RegistryReference, 0, len(c.registries))
 	for rr := range c.registries {
 		rrs = append(rrs, rr)
-	}
-	return
-}
-
-// Get object by Reference
-func (c *Container) Get(ref Reference) (data []byte, ok bool) {
-
-	// don't need to lock database, because we don't change it
-
-	data, ok = c.db.Get(cipher.SHA256(ref))
-	return
-}
-
-// Set adds given value to database using given reference
-// as key for the value
-func (c *Container) Set(ref Reference, p []byte) {
-
-	// we need to lock database, because of GC
-	c.dbmx.Lock()
-	defer c.dbmx.Unlock()
-
-	c.db.Set(cipher.SHA256(ref), p)
-}
-
-// save objects
-
-func (c *Container) save(i interface{}) (ref Reference) {
-	data := encoder.Serialize(i)
-	hash := cipher.SumSHA256(data)
-
-	// we need to lock database, because of GC
-	c.dbmx.Lock()
-	defer c.dbmx.Unlock()
-
-	c.db.Set(hash, data)
-	ref = Reference(hash)
-	return
-}
-
-func (c *Container) saveArray(i ...interface{}) (refs References) {
-	if len(i) == 0 {
-		return // don't create empty slice
-	}
-
-	var data []byte
-	var hash cipher.SHA256
-
-	refs = make(References, 0, len(i)) // prepare
-
-	// we need to lock database, because of GC
-	c.dbmx.Lock()
-	defer c.dbmx.Unlock()
-
-	for _, e := range i {
-		data = encoder.Serialize(e)
-		hash = cipher.SumSHA256(data)
-
-		c.db.Set(hash, data)
-
-		refs = append(refs, Reference(hash))
 	}
 	return
 }

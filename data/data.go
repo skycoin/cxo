@@ -1,85 +1,142 @@
 package data
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// ErrRootAlreadyExists oocurs when you try to save root object
-// that already exist in database. The error required for
-// networking to omit unnessesary work
-var ErrRootAlreadyExists = errors.New("root already exists")
+// common errors
+var (
+	// ErrRootAlreadyExists oocurs when you try to save root object
+	// that already exist in database. The error required for
+	// networking to omit unnessesary work
+	ErrRootAlreadyExists = errors.New("root already exists")
+	// ErrNotFound occurs where any requested object doesn't exist in
+	// database
+	ErrNotFound = errors.New("not found")
+	// ErrStopRange used by Range, RangeDelete and Reverse functions
+	// to stop itterating. It's error never bubbles up
+	ErrStopRange = errors.New("stop range")
+)
+
+// ViewObjects represents read-only bucket of objects
+type ViewObjects interface {
+	// Get obejct by key. It retuns nil if requested object
+	// doesn't exists. Retuned slice valid only inside current
+	// transaction. To get long lived copy use GetCopy
+	Get(key cipher.SHA256) (value []byte)
+	// GetCopy similar to Get, but it returns long lived object
+	GetCopy(key cipher.SHA256) (value []byte)
+	// IsExist returns true if object with given hash persist in database
+	IsExist(key cipher.SHA256) (ok bool)
+	// Range over all objects. Use ErrStopRange to break itteration
+	Range(func(key cipher.SHA256, value []byte) error) (err error)
+}
+
+// UpdateObjects represents read-write bucket of objects
+type UpdateObjects interface {
+	ViewObjects
+
+	Del(key cipher.SHA256) (err error) // delete by key
+	// Set key->value pair
+	Set(key cipher.SHA256, value []byte) (err error)
+	// Add value getting key
+	Add(value []byte) (key cipher.SHA256, err error)
+
+	// SetMap performs Set for each element of given map.
+	// The method sorts given data by key increasing performance
+	SetMap(map[cipher.SHA256][]byte) (err error)
+
+	// RangeDel used for deleting
+	RangeDel(func(key cipher.SHA256, value []byte) (del bool, err error)) error
+}
+
+// ViewFeeds represents read-only bucket of feeds
+type ViewFeeds interface {
+	IsExist(pk cipher.PubKey) (ok bool) // persistence check
+	List() (list []cipher.PubKey)       // list of all
+
+	Range(func(pk cipher.PubKey) error) (err error) // itterrate
+
+	// Roots of given feed. This method returns nil if
+	// given feed doesn't exist
+	Roots(pk cipher.PubKey) ViewRoots
+}
+
+// Feeds represents bucket of feeds
+type UpdateFeeds interface {
+	//
+	// inherited from ViewFeeds
+	//
+	IsExist(pk cipher.PubKey) (ok bool)
+	List() (list []cipher.PubKey)
+	Range(func(pk cipher.PubKey) error) (err error)
+
+	Add(pk cipher.PubKey) (err error) // add
+	Del(pk cipher.PubKey) (err error) // delete
+
+	RangeDel(func(pk cipher.PubKey) (del bool, err error)) error // delete
+
+	// Roots of given feed. This method returns nil if
+	// given feed doesn't exist
+	Roots(pk cipher.PubKey) UpdateRoots
+}
+
+// ViewRoots represents read-only bucket of Roots
+type ViewRoots interface {
+	Feed() cipher.PubKey // feed of this Roots
+
+	// Last returns last root of this feed.
+	// It returns nil if feed doen't contains any
+	// root object
+	Last() (rp *RootPack)
+	Get(seq uint64) (rp *RootPack) // get by seq
+
+	// Range itterates root objects ordered
+	// by seq from oldest to newest
+	Range(func(rp *RootPack) (err error)) error
+	// Revers is the same as Range in reversed order
+	Reverse(fn func(rp *RootPack) (err error)) error
+}
+
+// UpdateRoots represents read-write bucket of Root obejcts
+type UpdateRoots interface {
+	ViewRoots
+
+	Add(rp *RootPack) (err error) // add
+	Del(seq uint64) (err error)   // delete by seq
+
+	// RangeDelete used to delete Root obejcts
+	RangeDel(fn func(rp *RootPack) (del bool, err error)) error
+
+	// DelBefore deletes root objects of given feed
+	// before given seq number (exclusive)
+	DelBefore(seq uint64) (err error)
+}
+
+// A Tv represents read-only transaction
+type Tv interface {
+	Objects() ViewObjects // access objects
+	Feeds() ViewFeeds     // access feeds
+}
+
+// A Tu represents read-write transaction
+type Tu interface {
+	Objects() UpdateObjects // access objects
+	Feeds() UpdateFeeds     // access feeds
+
+}
 
 // A DB is common database interface
 type DB interface {
-
-	//
-	// Objects and Schemas
-	//
-
-	// Del deletes by key
-	Del(key cipher.SHA256)
-	// Get by key
-	Get(key cipher.SHA256) (value []byte, ok bool)
-	// Set value using its precalculated key
-	Set(key cipher.SHA256, value []byte)
-	// Add value returning its key
-	Add(value []byte) cipher.SHA256
-	// IsExist check persistence of a value by key
-	IsExist(key cipher.SHA256) (ok bool)
-	// Range over all objects and schemas (read only)
-	Range(func(key cipher.SHA256, value []byte) (stop bool))
-	// RangeDelete used to delete objects
-	RangeDelete(func(key cipher.SHA256) (del bool))
-
-	//
-	// Feeds
-	//
-
-	// AddFeed appends empty feed or does nothing if
-	// given feed already exists in database
-	AddFeed(pk cipher.PubKey)
-	// HasFeed returns true if database contains given feed
-	HasFeed(pk cipher.PubKey) (has bool)
-	// Feeds returns list of feeds
-	Feeds() []cipher.PubKey
-	// DelFeed deletes feed and all related root objects.
-	// The method doesn't remove related objects and schemas
-	DelFeed(pk cipher.PubKey)
-	// AddRoot to feed. AddRoot adds feed if it doesn't exist
-	AddRoot(pk cipher.PubKey, rp *RootPack) (err error)
-	// LastRoot returns last root of a feed
-	LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool)
-	// RangeFeed itterate root objects of tgiven feed
-	// ordered by seq from oldest to newest
-	RangeFeed(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
-	// RangeFeedReverse is same as RangeFeed, but order
-	// is reversed
-	RangeFeedReverse(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
-	// RangeFeedDelete itterates a feed and deletes all root object for which
-	// given function returns true
-	RangeFeedDelete(pk cipher.PubKey, fn func(rp *RootPack) (del bool))
-
-	//
-	// Roots
-	//
-
-	// GetRoot by hash
-	GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool)
-	// DelRootsBefore deletes root objects of given feed
-	// before given seq number (exclusive)
-	DelRootsBefore(pk cipher.PubKey, seq uint64)
-
-	//
-	// Other methods
-	//
-
-	// Stat of the DB
-	Stat() (s Stat)
-	// Close the DB
-	Close() (err error)
+	View(func(t Tv) error) (err error)   // perform a read only transaction
+	Update(func(t Tu) error) (err error) // perform a read-write transaction
+	Stat() (s Stat)                      // statistic
+	Close() (err error)                  // clsoe database
 }
 
 // A RootPack represents encoded root object with signature,
@@ -130,4 +187,35 @@ func newRootError(pk cipher.PubKey, rp *RootPack, descr string) (r *RootError) {
 		seq:   rp.Seq,
 		descr: descr,
 	}
+}
+
+type keyValue struct {
+	key cipher.SHA256
+	val []byte
+}
+
+type keyValues []keyValue
+
+// for sorting
+
+func (k keyValues) Len() int { return len(k) }
+
+func (k keyValues) Less(i, j int) bool {
+	return bytes.Compare(k[i].key[:], k[j].key[:]) == -1
+}
+
+func (k keyValues) Swap(i, j int) {
+	k[i], k[j] = k[j], k[i]
+}
+
+func sortMap(m map[cipher.SHA256][]byte) (slice keyValues) {
+	if len(m) == 0 {
+		return // nil
+	}
+	slice = make([]keyValue, 0, len(m))
+	for k, v := range m {
+		slice = append(slice, keyValue{k, v})
+	}
+	sort.Sort(slice)
+	return
 }
