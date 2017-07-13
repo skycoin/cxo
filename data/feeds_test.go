@@ -8,10 +8,22 @@ import (
 // ViewFeeds
 //
 
+func testViewFeedsIsExist(t *testing.T, db DB) {
+	//
+}
+
 func TestViewFeeds_IsExist(t *testing.T) {
 	// IsExist(pk cipher.PubKey) (ok bool)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewFeedsIsExist(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewFeedsIsExist(t, db)
+	})
 
 }
 
