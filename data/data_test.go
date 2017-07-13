@@ -333,10 +333,74 @@ func TestViewObjects_Get(t *testing.T) {
 
 }
 
+func testViewObjectsGetCopy(t *testing.T, db DB) {
+
+	// TODO (kostyarin): how to be sure that returned slice
+	//                   is long-lived and will not be modified
+	//                   after transaction? fuzz? I hate fuzz tests!
+
+	value := []byte("any")
+	key := cipher.SumSHA256(value)
+
+	t.Run("not exists", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			objs := tx.Objects()
+
+			if objs.GetCopy(key) != nil {
+				t.Error("got unexisting value")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	err := db.Update(func(tx Tu) (_ error) {
+		return tx.Objects().Set(key, value)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("exists", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			objs := tx.Objects()
+
+			got := objs.GetCopy(key)
+
+			if got == nil {
+				t.Error("missing value")
+				return
+			}
+
+			if bytes.Compare(got, value) != 0 {
+				t.Error("wrong value")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
 func TestViewObjects_GetCopy(t *testing.T) {
 	// GetCopy(key cipher.SHA256) (value []byte)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewObjectsGetCopy(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewObjectsGetCopy(t, db)
+	})
 
 }
 
