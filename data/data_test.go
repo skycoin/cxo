@@ -87,6 +87,41 @@ func testSortedObjects(input ...string) (to testObjectKeyValues) {
 	return
 }
 
+// testOrderedPublicKeys retursn slice with two generated
+// public keys in ascending order
+func testOrderedPublicKeys() []cipher.PubKey {
+	// add feeds
+	pk1, _ := cipher.GenerateKeyPair()
+	pk2, _ := cipher.GenerateKeyPair()
+
+	// be sure that keys are not equal
+	for pk1 == pk2 {
+		pk2, _ = cipher.GenerateKeyPair()
+	}
+
+	// oreder
+	if bytes.Compare(pk2[:], pk1[:]) < 0 { // if pk2 < pk1
+		pk1, pk2 = pk2, pk1 // swap
+	}
+
+	return []cipher.PubKey{pk1, pk2}
+}
+
+func testComparePublicKeyLists(t *testing.T, a, b []cipher.PubKey) {
+	if len(a) != len(b) {
+		t.Error("wrong list length")
+		return
+	}
+	for i, ax := range a {
+		if bx := b[i]; bx != ax {
+			t.Errorf("wrong item %d: want %s, got %s",
+				i,
+				ax.Hex(), // shortHex(
+				bx.Hex()) // shortHex(
+		}
+	}
+}
+
 //
 // Tests
 //

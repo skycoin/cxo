@@ -63,8 +63,10 @@ func (m *memoryDB) Stat() (s Stat) {
 				return true // (continue) is not a root object
 			}
 
-			var pk cipher.PubKey
-			copy(pk[:], []byte(spl[1]))
+			pk, err := cipher.PubKeyFromHex(spl[1])
+			if err != nil {
+				panic(err)
+			}
 
 			fs := s.Feeds[pk]
 			fs.Roots++
@@ -120,7 +122,7 @@ type memoryObjects struct {
 }
 
 func (m *memoryObjects) key(key cipher.SHA256) string {
-	return "object:" + string(key[:])
+	return "object:" + key.Hex()
 }
 
 func (m *memoryObjects) Set(key cipher.SHA256, value []byte) (err error) {
@@ -165,14 +167,19 @@ func (m *memoryObjects) SetMap(mp map[cipher.SHA256][]byte) (err error) {
 	return
 }
 
+func (m *memoryObjects) getKey(k string) cipher.SHA256 {
+	cp, err := cipher.SHA256FromHex(strings.TrimPrefix(k, "object:"))
+	if err != nil {
+		panic(err)
+	}
+	return cp
+}
+
 func (m *memoryObjects) Range(
 	fn func(key cipher.SHA256, value []byte) error) (err error) {
 
-	var cp cipher.SHA256
-
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
-		copy(cp[:], strings.TrimPrefix(k, "object:"))
-		if err = fn(cp, []byte(v)); err != nil {
+		if err = fn(m.getKey(k), []byte(v)); err != nil {
 			if err == ErrStopRange {
 				err = nil
 			}
