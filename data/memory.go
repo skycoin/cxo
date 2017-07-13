@@ -169,7 +169,7 @@ func (m *memoryObjects) Range(
 	var cp cipher.SHA256
 
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
-		copy(cp[:], k)
+		copy(cp[:], strings.TrimPrefix(k, "object:"))
 		if err = fn(cp, []byte(v)); err != nil {
 			if err == ErrStopRange {
 				err = nil
@@ -188,7 +188,7 @@ func (m *memoryObjects) RangeDel(
 	var del bool
 
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
-		copy(cp[:], k)
+		copy(cp[:], strings.TrimPrefix(k, "object:"))
 		if del, err = fn(cp, []byte(v)); err != nil {
 			if err == ErrStopRange {
 				err = nil
