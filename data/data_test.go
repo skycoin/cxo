@@ -1,7 +1,7 @@
 package data
 
 import (
-	//"bytes"
+	"bytes"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -266,10 +266,70 @@ func TestTu_Feeds(t *testing.T) {
 // ViewObjects
 //
 
+func testViewObjectsGet(t *testing.T, db DB) {
+
+	value := []byte("any")
+	key := cipher.SumSHA256(value)
+
+	t.Run("not exists", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			objs := tx.Objects()
+
+			if objs.Get(key) != nil {
+				t.Error("got unexisting value")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	err := db.Update(func(tx Tu) (_ error) {
+		return tx.Objects().Set(key, value)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("exists", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			objs := tx.Objects()
+
+			got := objs.Get(key)
+
+			if got == nil {
+				t.Error("missing value")
+				return
+			}
+
+			if bytes.Compare(got, value) != 0 {
+				t.Error("wrong value")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
 func TestViewObjects_Get(t *testing.T) {
 	// Get(key cipher.SHA256) (value []byte)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewObjectsGet(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewObjectsGet(t, db)
+	})
 
 }
 

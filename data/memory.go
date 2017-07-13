@@ -134,8 +134,10 @@ func (m *memoryObjects) Del(key cipher.SHA256) (err error) {
 }
 
 func (m *memoryObjects) Get(key cipher.SHA256) []byte {
-	val, _ := m.tx.Get(m.key(key))
-	return []byte(val)
+	if val, _ := m.tx.Get(m.key(key)); len(val) != 0 {
+		return []byte(val)
+	}
+	return nil
 }
 
 func (m *memoryObjects) GetCopy(key cipher.SHA256) []byte {
