@@ -148,17 +148,58 @@ func TestDB_Close(t *testing.T) {
 // Tv
 //
 
+func testTvObjects(t *testing.T, db DB) {
+	err := db.View(func(tx Tv) (_ error) {
+		if tx.Objects() == nil {
+			t.Error("Tv.Objects returns nil")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	return
+}
+
 func TestTv_Objects(t *testing.T) {
 	// Objects() ViewObjects
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testTvObjects(t, NewMemoryDB())
+	})
 
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testTvObjects(t, db)
+	})
+
+}
+
+func testTvFeeds(t *testing.T, db DB) {
+	err := db.View(func(tx Tv) (_ error) {
+		if tx.Feeds() == nil {
+			t.Error("Tv.Feeds returns nil")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 func TestTv_Feeds(t *testing.T) {
 	// Feeds() ViewFeeds
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testTvFeeds(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testTvFeeds(t, db)
+	})
 
 }
 
@@ -166,17 +207,58 @@ func TestTv_Feeds(t *testing.T) {
 // Tu
 //
 
+func testTuObjects(t *testing.T, db DB) {
+	err := db.Update(func(tx Tu) (_ error) {
+		if tx.Objects() == nil {
+			t.Error("Tu.Objects returns nil")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	return
+}
+
 func TestTu_Objects(t *testing.T) {
 	// Objects() UpdateObjects
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testTuObjects(t, NewMemoryDB())
+	})
 
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testTuObjects(t, db)
+	})
+
+}
+
+func testTuFeeds(t *testing.T, db DB) {
+	err := db.Update(func(tx Tu) (_ error) {
+		if tx.Feeds() == nil {
+			t.Error("Tu.Feeds returns nil")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 func TestTu_Feeds(t *testing.T) {
 	// Feeds() UpdateFeeds
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testTuFeeds(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testTuFeeds(t, db)
+	})
 
 }
 
