@@ -189,6 +189,9 @@ func (m *memoryObjects) RangeDel(
 	var cp cipher.SHA256
 	var del bool
 
+	// See TODO note below
+	collect := []string{}
+
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
 		copy(cp[:], strings.TrimPrefix(k, "object:"))
 		if del, err = fn(cp, []byte(v)); err != nil {
@@ -198,12 +201,29 @@ func (m *memoryObjects) RangeDel(
 			return false // break
 		}
 		if del {
-			if _, err = m.tx.Delete(k); err != nil {
-				return false // break
-			}
+			// TODO (kostyarin): feature was requested, check it out
+
+			// Waiting for
+			//
+			// https://github.com/tidwall/buntdb/issues/24
+			//
+			// if _, err = m.tx.Delete(k); err != nil {
+			//	return false // break
+			// }
+
+			// Until #24 of buntdb is open, use this
+			collect = append(collect, k)
+
 		}
 		return true // continue
 	})
+
+	for _, k := range collect {
+		if _, err = m.tx.Delete(k); err != nil {
+			return
+		}
+	}
+
 	return
 }
 

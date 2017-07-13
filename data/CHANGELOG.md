@@ -1,11 +1,6 @@
 changes
 =======
 
-### TODO
-
-- [ ] add test for `Stat` method _(low priority)_
-- [ ] add test for `Close` method _(low priority)_
-
 ### Done
 
 #### ...
