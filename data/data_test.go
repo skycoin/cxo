@@ -1,7 +1,7 @@
 package data
 
 import (
-	"bytes"
+	//"bytes"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -14,6 +14,12 @@ import (
 // helper functions
 //
 
+func shouldNotPanic(t *testing.T) {
+	if err := recover(); err != nil {
+		t.Error("unexpected panic:", err)
+	}
+}
+
 func testPath(t *testing.T) string {
 	fl, err := ioutil.TempFile("", "test")
 	if err != nil {
@@ -21,6 +27,32 @@ func testPath(t *testing.T) string {
 	}
 	defer fl.Close()
 	return fl.Name()
+}
+
+func testDriveDB(t *testing.T) (db DB, cleanUp func()) {
+	dbFile := testPath(t)
+	db, err := NewDriveDB(dbFile)
+	if err != nil {
+		os.Remove(dbFile)
+		t.Fatal(err)
+	}
+	cleanUp = func() {
+		db.Close()
+		os.Remove(dbFile)
+	}
+	return
+}
+
+// returns RootPack that contains dummy Root field,
+// the field can't be used to encode/decode
+func getRootPack(seq uint64, content string) (rp RootPack) {
+	rp.Seq = seq
+	if seq != 0 {
+		rp.Prev = cipher.SumSHA256([]byte("any"))
+	}
+	rp.Root = []byte(content)
+	rp.Hash = cipher.SumSHA256(rp.Root)
+	return
 }
 
 //
@@ -31,199 +63,429 @@ func testPath(t *testing.T) string {
 // DB
 //
 
-func TestDB_View(t *testing.T) {
-	// View(func(t Tx) error) (err error)
+func testDBView(t *testing.T, db DB) {
+	t.Skip("(TODO) not implemenmted yet")
+}
 
-	//
+func TestDB_View(t *testing.T) {
+	// View(func(t Tv) error) (err error)
+
+	t.Run("memory", func(t *testing.T) {
+		testDBView(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testDBView(t, db)
+	})
+
+}
+
+func testDBUpdate(t *testing.T, db DB) {
+	t.Skip("(TODO) not implemented yet")
 }
 
 func TestDB_Update(t *testing.T) {
-	// Update(func(t Tx) error) (err error)
+	// Update(func(t Tu) error) (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testDBUpdate(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testDBUpdate(t, db)
+	})
+
+}
+
+func testDBStat(t *testing.T, db DB) {
+	t.Skip("(TODO) not implemented yet")
 }
 
 func TestDB_Stat(t *testing.T) {
 	// Stat() (s Stat)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testDBStat(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testDBStat(t, db)
+	})
+
+}
+
+func testDBClose(t *testing.T, db DB) {
+	if err := db.Close(); err != nil {
+		t.Error("closing error:", err)
+	}
+	// Close can be called many times
+	defer shouldNotPanic(t)
+	db.Close()
 }
 
 func TestDB_Close(t *testing.T) {
 	// Close() (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testDBClose(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testDBClose(t, db)
+	})
+
 }
 
 //
-// Tx
+// Tv
 //
 
-func TestTx_Objects(t *testing.T) {
-	// Objects() Objects
+func TestTv_Objects(t *testing.T) {
+	// Objects() ViewObjects
 
 	//
+
 }
 
-func TestTx_Feeds(t *testing.T) {
-	// Feeds() Feeds
+func TestTv_Feeds(t *testing.T) {
+	// Feeds() ViewFeeds
 
 	//
-}
 
-//
-// Objects
-//
-
-func TestObjects_Del(t *testing.T) {
-	// Del(key cipher.SHA256)
-
-	//
-}
-
-func TestObjects_Get(t *testing.T) {
-	// Get(key cipher.SHA256) (value []byte, ok bool)
-
-	//
-}
-
-func TestObjects_Set(t *testing.T) {
-	// Set(key cipher.SHA256, value []byte)
-
-	//
-}
-
-func TestObjects_Add(t *testing.T) {
-	// Add(value []byte) cipher.SHA256
-
-	//
-}
-
-func TestObjects_IsExists(t *testing.T) {
-	// IsExists(key cipher.SHA256)
-
-	//
-}
-
-func TestObjects_Range(t *testing.T) {
-	// Range(func(key cipher.SHA256, value []byte) (stop bool))
-
-	//
-}
-
-func TestObjects_RangeDel(t *testing.T) {
-	// RangeDel(func(key cipher.SHA256, value []byte) (del, stop bool))
-
-	//
 }
 
 //
-// Feeds
+// Tu
 //
 
-func TestFeeds_Add(t *testing.T) {
-	// Add(pk cipher.PubKey)
+func TestTu_Objects(t *testing.T) {
+	// Objects() UpdateObjects
 
 	//
+
 }
 
-func TestFeeds_Del(t *testing.T) {
-	// Del(pk cipher.PubKey)
+func TestTu_Feeds(t *testing.T) {
+	// Feeds() UpdateFeeds
 
 	//
-}
 
-func TestFeeds_IsExists(t *testing.T) {
-	// IsExists(pk cipher.PubKey)
-
-	//
-}
-
-func TestFeeds_List(t *testing.T) {
-	// List() []cipher.PubKey
-
-	//
-}
-
-func TestFeeds_Range(t *testing.T) {
-	// Range(func(pk cipher.PubKey) (stop bool))
-
-	//
-}
-
-func TestFeeds_RangeDel(t *testing.T) {
-	// RangeDel(func(pk cipher.PubKey) (del, stop bool))
-
-	//
-}
-
-func TestFeeds_Roots(t *testing.T) {
-	// Roots(pk cipher.PubKey) Roots
-
-	//
 }
 
 //
-// Roots
+// ViewObjects
 //
 
-func TestRoots_Feed(t *testing.T) {
+func TestViewObjects_Get(t *testing.T) {
+	// Get(key cipher.SHA256) (value []byte)
+
+	//
+
+}
+
+func TestViewObjects_GetCopy(t *testing.T) {
+	// GetCopy(key cipher.SHA256) (value []byte)
+
+	//
+
+}
+
+func TestViewObjects_IsExist(t *testing.T) {
+	// IsExist(key cipher.SHA256) (ok bool)
+
+	//
+
+}
+
+func TestViewObjects_Range(t *testing.T) {
+	// Range(func(key cipher.SHA256, value []byte) error) (err error)
+
+	//
+
+}
+
+//
+// UpdateObjects
+//
+
+// inherited from ViewObjects
+
+func TestUpdateObjects_Get(t *testing.T) {
+	// Get(key cipher.SHA256) (value []byte)
+
+	//
+
+}
+
+func TestUpdateObjects_GetCopy(t *testing.T) {
+	// GetCopy(key cipher.SHA256) (value []byte)
+
+	//
+
+}
+
+func TestUpdateObjects_IsExist(t *testing.T) {
+	// IsExist(key cipher.SHA256) (ok bool)
+
+	//
+
+}
+
+func TestUpdateObjects_Range(t *testing.T) {
+	// Range(func(key cipher.SHA256, value []byte) error) (err error)
+
+	//
+
+}
+
+// UpdateObjects
+
+func TestUpdateObjects_Del(t *testing.T) {
+	// Del(key cipher.SHA256) (err error)
+
+	//
+
+}
+
+func TestUpdateObjects_Set(t *testing.T) {
+	// Set(key cipher.SHA256, value []byte) (err error)
+
+	//
+
+}
+
+func TestUpdateObjects_Add(t *testing.T) {
+	// Add(value []byte) (key cipher.SHA256, err error)
+
+	//
+
+}
+
+func TestUpdateObjects_SetMap(t *testing.T) {
+	// SetMap(map[cipher.SHA256][]byte) (err error)
+
+	//
+
+}
+
+func TestUpdateObjects_RangeDel(t *testing.T) {
+	// RangeDel(
+	//     func(key cipher.SHA256, value []byte) (del bool, err error)) error
+
+	//
+
+}
+
+//
+// ViewFeeds
+//
+
+func TestViewFeeds_IsExist(t *testing.T) {
+	// IsExist(pk cipher.PubKey) (ok bool)
+
+	//
+
+}
+
+func TestViewFeeds_List(t *testing.T) {
+	// List() (list []cipher.PubKey)
+
+	//
+
+}
+
+func TestViewFeeds_Range(t *testing.T) {
+	// Range(func(pk cipher.PubKey) error) (err error)
+
+	//
+
+}
+
+func TestViewFeeds_Roots(t *testing.T) {
+	// Roots(pk cipher.PubKey) ViewRoots
+
+	//
+
+}
+
+//
+// UpdateFeeds
+//
+
+func TestUpdateFeeds_IsExist(t *testing.T) {
+	// IsExist(pk cipher.PubKey) (ok bool)
+
+	//
+
+}
+
+func TestUpdateFeeds_List(t *testing.T) {
+	// List() (list []cipher.PubKey)
+
+	//
+
+}
+
+func TestUpdateFeeds_Range(t *testing.T) {
+	// Range(func(pk cipher.PubKey) error) (err error)
+
+	//
+
+}
+
+func TestUpdateFeeds_Add(t *testing.T) {
+	// Add(pk cipher.PubKey) (err error)
+
+	//
+
+}
+
+func TestUpdateFeeds_Del(t *testing.T) {
+	// Del(pk cipher.PubKey) (err error)
+
+	//
+
+}
+
+func TestUpdateFeeds_RangeDel(t *testing.T) {
+	// RangeDel(func(pk cipher.PubKey) (del bool, err error)) error
+
+	//
+
+}
+
+func TestUpdateFeeds_Roots(t *testing.T) {
+	// Roots(pk cipher.PubKey) UpdateRoots
+
+	//
+
+}
+
+//
+// ViewRoots
+//
+
+func TestViewRoots_Feed(t *testing.T) {
 	// Feed() cipher.PubKey
 
 	//
+
 }
 
-func TestRoots_Add(t *testing.T) {
+func TestViewRoots_Last(t *testing.T) {
+	// Last() (rp *RootPack)
+
+	//
+
+}
+
+func TestViewRoots_Get(t *testing.T) {
+	// Get(seq uint64) (rp *RootPack)
+
+	//
+
+}
+
+func TestViewRoots_Range(t *testing.T) {
+	// Range(func(rp *RootPack) (err error)) error
+
+	//
+
+}
+
+func TestViewRoots_Reverse(t *testing.T) {
+	// Reverse(fn func(rp *RootPack) (err error)) error
+
+	//
+
+}
+
+//
+// UpdateRoots
+//
+
+// inherited from ViewRoots
+
+func TestUpdateRoots_Feed(t *testing.T) {
+	// Feed() cipher.PubKey
+
+	//
+
+}
+
+func TestUpdateRoots_Last(t *testing.T) {
+	// Last() (rp *RootPack)
+
+	//
+
+}
+
+func TestUpdateRoots_Get(t *testing.T) {
+	// Get(seq uint64) (rp *RootPack)
+
+	//
+
+}
+
+func TestUpdateRoots_Range(t *testing.T) {
+	// Range(func(rp *RootPack) (err error)) error
+
+	//
+
+}
+
+func TestUpdateRoots_Reverse(t *testing.T) {
+	// Reverse(fn func(rp *RootPack) (err error)) error
+
+	//
+
+}
+
+// UpdateRoots
+
+func TestUpdateRoots_Add(t *testing.T) {
 	// Add(rp *RootPack) (err error)
 
 	//
+
 }
 
-func TestRoots_Last(t *testing.T) {
-	// Last() (rp *RootPack, ok bool)
+func TestUpdateRoots_Del(t *testing.T) {
+	// Del(seq uint64) (err error)
 
 	//
+
 }
 
-func TestRoots_Get(t *testing.T) {
-	// Get(seq uint64) (rp *RootPack, ok bool)
+func TestUpdateRoots_RangeDel(t *testing.T) {
+	// RangeDel(fn func(rp *RootPack) (del bool, err error)) error
 
 	//
+
 }
 
-func TestRoots_Del(t *testing.T) {
-	// Del(seq uint64)
+func TestUpdateRoots_DelBefore(t *testing.T) {
+	// DelBefore(seq uint64) (err error)
 
 	//
+
 }
 
-func TestRoots_Range(t *testing.T) {
-	// Range(func(rp *RootPack) (stop bool))
+/*
 
-	//
-}
-
-func TestRoots_Reverse(t *testing.T) {
-	// Reverse(fn func(rp *RootPack) (stop bool))
-
-	//
-}
-
-func TestRoots_RangeDelete(t *testing.T) {
-	// RangeDelete(fn func(rp *RootPack) (del, stop bool))
-
-	//
-}
-
-func TestRoots_DelBefore(t *testing.T) {
-	// DelBefore(seq uint64)
-
-	//
-}
-
+// -----------------------------------------------------------------------------
 //
 // Old
 //
+// -----------------------------------------------------------------------------
 
 func testDataDel(t *testing.T, db DB) {
 	key := db.Add([]byte("hey ho"))
@@ -716,18 +978,6 @@ func TestData_LastRoot(t *testing.T) {
 		testLastRoot(t, db)
 	})
 
-}
-
-// returns RootPack that contains dummy Root filed,
-// the field can't be used to encode/decode
-func getRootPack(seq uint64, content string) (rp RootPack) {
-	rp.Seq = seq
-	if seq != 0 {
-		rp.Prev = cipher.SumSHA256([]byte("any"))
-	}
-	rp.Root = []byte(content)
-	rp.Hash = cipher.SumSHA256(rp.Root)
-	return
 }
 
 func testRangeFeed(t *testing.T, db DB) {
@@ -1254,3 +1504,5 @@ func TestData_HasFeed(t *testing.T) {
 	})
 
 }
+
+*/
