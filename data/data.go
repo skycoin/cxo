@@ -41,7 +41,9 @@ type ViewObjects interface {
 type UpdateObjects interface {
 	ViewObjects
 
-	Del(key cipher.SHA256) (err error) // delete by key
+	// Del deletes object by key. It never returns
+	// "not found" error.
+	Del(key cipher.SHA256) (err error)
 	// Set key->value pair
 	Set(key cipher.SHA256, value []byte) (err error)
 	// Add value getting key

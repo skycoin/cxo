@@ -129,7 +129,9 @@ func (m *memoryObjects) Set(key cipher.SHA256, value []byte) (err error) {
 }
 
 func (m *memoryObjects) Del(key cipher.SHA256) (err error) {
-	_, err = m.tx.Delete(m.key(key))
+	if _, err = m.tx.Delete(m.key(key)); err == buntdb.ErrNotFound {
+		err = nil
+	}
 	return
 }
 
