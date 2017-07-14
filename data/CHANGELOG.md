@@ -7,7 +7,7 @@ changes
 
 - [x] refactoring
 
-TODO: changes
+All db API has been changed. See godoc for details.
 
 #### 10:00 28 June 2017
 

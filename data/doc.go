@@ -1,6 +1,5 @@
 // Package data represents CXO database. The package includes in-memory
-// database and on-drive database. Both databases implements the same interface
-// and can be replaced any time.
+// database and on-drive database. Both databases implements the same interface.
 //
 // The DB is ACID and uses transactions, that can be rolled back.
 // There are read-only and read-write transactions. See docs for

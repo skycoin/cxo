@@ -25,7 +25,7 @@ var (
 
 // ViewObjects represents read-only bucket of objects
 type ViewObjects interface {
-	// Get obejct by key. It retuns nil if requested object
+	// Get obejct by key. It returns nil if requested object
 	// doesn't exists. Retuned slice valid only inside current
 	// transaction. To get long lived copy use GetCopy
 	Get(key cipher.SHA256) (value []byte)

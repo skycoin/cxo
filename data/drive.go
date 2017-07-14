@@ -25,7 +25,7 @@ var (
 //  - feeds   pubkey -> (roots) { seq -> root }
 type driveDB struct {
 	bolt   *bolt.DB
-	closeo sync.Once // boltdb panics when Close closed datbase
+	closeo sync.Once // boltdb panics when Close closed database
 }
 
 // NewDriveDB creates new database using given path
