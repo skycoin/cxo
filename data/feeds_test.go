@@ -398,8 +398,7 @@ func testUpdateFeedsDel(t *testing.T, db DB) {
 	})
 
 	// add feed and roots
-	testFillWithExampleFeed(t, pk, db)
-	if t.Failed() {
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
 		return
 	}
 

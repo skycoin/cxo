@@ -41,12 +41,19 @@ func testFillWithExampleFeed(t *testing.T, pk cipher.PubKey, db DB) {
 func testViewRootsFeed(t *testing.T, db DB) {
 	pk, _ := cipher.GenerateKeyPair()
 
-	testFillWithExampleFeed(t, pk, db)
-	if t.Failed() {
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
 		return
 	}
 
-	//
+	err := db.View(func(tx Tv) (_ error) {
+		if tx.Feeds().Roots(pk).Feed() != pk {
+			t.Error("wrong feed of Roots")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
 
 }
 
@@ -65,31 +72,345 @@ func TestViewRoots_Feed(t *testing.T) {
 
 }
 
+func testViewRootsLast(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	// add empty feed
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			if tx.Feeds().Roots(pk).Last() != nil {
+				t.Error("got last root of empty feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	t.Run("full", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			rp := tx.Feeds().Roots(pk).Last()
+			if rp == nil {
+				t.Error("misisng last root")
+				return
+			}
+			if rp.Seq != 2 {
+				t.Error("wrong last root")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+}
+
 func TestViewRoots_Last(t *testing.T) {
 	// Last() (rp *RootPack)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewRootsLast(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewRootsLast(t, db)
+	})
+
+}
+
+func testViewRootsGet(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	// add empty feed
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			if roots.Get(0) != nil {
+				t.Error("got a root of empty feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	t.Run("full", func(t *testing.T) {
+		err = db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			for _, u := range []uint64{0, 1, 2} {
+				if rp := roots.Get(u); rp == nil {
+					t.Error("missing root")
+				} else if rp.Seq != u {
+					t.Error("got with wrong seq")
+				}
+			}
+			if roots.Get(1050) != nil {
+				t.Error("got unexisting root")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 
 }
 
 func TestViewRoots_Get(t *testing.T) {
 	// Get(seq uint64) (rp *RootPack)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewRootsGet(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewRootsGet(t, db)
+	})
+
+}
+
+func testViewRootsRange(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	// add empty feed
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			var called int
+			err := roots.Range(func(rp *RootPack) (_ error) {
+				called++
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 0 {
+				t.Error("ranges over empty feed (no roots)")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	t.Run("full", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			var called int
+			err := roots.Range(func(rp *RootPack) (_ error) {
+				if called > 2 {
+					t.Error("called too many times")
+					return ErrStopRange
+				}
+				if rp.Seq != uint64(called) {
+					t.Error("wrong order")
+				}
+				called++
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 3 {
+				t.Error("called wrong times")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("stop range", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			var called int
+			err := roots.Range(func(rp *RootPack) error {
+				called++
+				return ErrStopRange
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 1 {
+				t.Error("ErrStopRange doesn't stop the Range")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 
 }
 
 func TestViewRoots_Range(t *testing.T) {
 	// Range(func(rp *RootPack) (err error)) error
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewRootsRange(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewRootsRange(t, db)
+	})
+
+}
+
+func testViewRootsReverse(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	// add empty feed
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			var called int
+			err := roots.Reverse(func(rp *RootPack) (_ error) {
+				called++
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 0 {
+				t.Error("ranges over empty feed (no roots)")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	t.Run("full", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			var called int
+			err := roots.Reverse(func(rp *RootPack) (_ error) {
+				if called > 2 {
+					t.Error("called too many times")
+					return ErrStopRange
+				}
+				if rp.Seq != uint64(2-called) {
+					t.Error("wrong order")
+				}
+				called++
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 3 {
+				t.Error("called wrong times")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("stop range", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			var called int
+			err := roots.Reverse(func(rp *RootPack) error {
+				called++
+				return ErrStopRange
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 1 {
+				t.Error("ErrStopRange doesn't stop the Reverse range")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 
 }
 
 func TestViewRoots_Reverse(t *testing.T) {
 	// Reverse(fn func(rp *RootPack) (err error)) error
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewRootsReverse(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewRootsReverse(t, db)
+	})
 
 }
 
@@ -136,17 +457,106 @@ func TestUpdateRoots_Reverse(t *testing.T) {
 
 // UpdateRoots
 
+func testUpdateRootsAdd(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	// add empty feed
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// don't test Hash/Prev/Seq etc (seems to be depricated)
+
+	rp := getRootPack(0, "yo-ho-ho")
+
+	t.Run("add", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			if err := roots.Add(&rp); err != nil {
+				t.Error(err)
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if t.Failed() {
+		return
+	}
+
+	t.Run("already exists", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+
+			if err := roots.Add(&rp); err == nil {
+				t.Error("misisng error")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
 func TestUpdateRoots_Add(t *testing.T) {
 	// Add(rp *RootPack) (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateRootsAdd(t, NewMemoryDB())
+	})
 
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateRootsAdd(t, db)
+	})
+
+}
+
+func testUpdateRootsDel(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	err := db.Update(func(tx Tu) (_ error) {
+		roots := tx.Feeds().Roots(pk)
+		if err := roots.Del(0); err != nil {
+			t.Error(err)
+		}
+		if err := roots.Del(0); err != nil {
+			t.Error(err)
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 func TestUpdateRoots_Del(t *testing.T) {
 	// Del(seq uint64) (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateRootsDel(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateRootsDel(t, db)
+	})
 
 }
 

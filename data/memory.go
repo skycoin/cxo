@@ -477,7 +477,9 @@ func (m *memoryRoots) Get(seq uint64) (rp *RootPack) {
 }
 
 func (m *memoryRoots) Del(seq uint64) (err error) {
-	_, err = m.tx.Delete(m.key(seq))
+	if _, err = m.tx.Delete(m.key(seq)); err == buntdb.ErrNotFound {
+		err = nil
+	}
 	return
 }
 
