@@ -2,10 +2,13 @@ package data
 
 import (
 	"bytes"
+	"errors"
 	"io/ioutil"
 	"os"
 	"sort"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	// "github.com/skycoin/skycoin/src/cipher/encoder"
@@ -15,9 +18,27 @@ import (
 // helper functions
 //
 
+const TM time.Duration = 50 * time.Millisecond
+
 func shouldNotPanic(t *testing.T) {
 	if err := recover(); err != nil {
 		t.Error("unexpected panic:", err)
+	}
+}
+
+func receiveTimeout(t *testing.T, c <-chan struct{}, tm time.Duration) {
+	select {
+	case <-c:
+	case <-time.After(tm):
+		t.Error("locked (timeout)")
+	}
+}
+
+func sendTimeout(t *testing.T, c chan<- struct{}, tm time.Duration) {
+	select {
+	case c <- struct{}{}:
+	case <-time.After(tm):
+		t.Error("locked (timeout)")
 	}
 }
 
@@ -131,7 +152,39 @@ func testComparePublicKeyLists(t *testing.T, a, b []cipher.PubKey) {
 //
 
 func testDBView(t *testing.T, db DB) {
-	t.Skip("(TODO) not implemenmted yet")
+
+	t.Run("concurent", func(t *testing.T) {
+		wg := new(sync.WaitGroup)
+
+		v1 := make(chan struct{}, 1)
+		v2 := make(chan struct{}, 1)
+
+		concurent := func(wg *sync.WaitGroup, sc, rc chan struct{}) {
+			defer wg.Done()
+
+			err := db.View(func(tx Tv) (_ error) {
+				sc <- struct{}{}
+				receiveTimeout(t, rc, TM)
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		}
+
+		wg.Add(2)
+
+		go concurent(wg, v1, v2)
+		go concurent(wg, v2, v1)
+
+		wg.Wait()
+
+	})
+
+	t.Run("update lock", func(t *testing.T) {
+		t.Skip("boltdb allows simultaneous Update and View")
+	})
+
 }
 
 func TestDB_View(t *testing.T) {
@@ -150,7 +203,32 @@ func TestDB_View(t *testing.T) {
 }
 
 func testDBUpdate(t *testing.T, db DB) {
-	t.Skip("(TODO) not implemented yet")
+
+	var key cipher.SHA256
+
+	ae := errors.New("just an average error to rollback this transaction")
+
+	err := db.Update(func(tx Tu) (err error) {
+		key, err = tx.Objects().Add([]byte("a value"))
+		if err != nil {
+			return
+		}
+		return ae
+	})
+	if err != ae {
+		t.Error(err)
+	}
+
+	err = db.View(func(tx Tv) (_ error) {
+		if tx.Objects().Get(key) != nil {
+			t.Error("doesn't rolled back")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
 }
 
 func TestDB_Update(t *testing.T) {
@@ -169,7 +247,66 @@ func TestDB_Update(t *testing.T) {
 }
 
 func testDBStat(t *testing.T, db DB) {
-	t.Skip("(TODO) not implemented yet")
+
+	t.Run("empty", func(t *testing.T) {
+		stat := db.Stat()
+		if stat.Objects != 0 {
+			t.Error("objects in empty db")
+		}
+		if stat.Space != 0 {
+			t.Error("non-zero space of empty db")
+		}
+		if stat.Feeds != nil {
+			t.Error("feeds in empty db")
+		}
+	})
+
+	// fill with objects
+	objects := []string{"one", "two", "three", "c4"}
+	err := db.Update(func(tx Tu) (_ error) {
+		objs := tx.Objects()
+		for _, s := range objects {
+			if _, err := objs.Add([]byte(s)); err != nil {
+				return err
+			}
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("objects", func(t *testing.T) {
+		stat := db.Stat()
+		if stat.Objects != len(objects) {
+			t.Error("wrong amount of objects")
+		}
+		if stat.Space == 0 {
+			t.Error("wrong space")
+		}
+	})
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	t.Run("feeds", func(t *testing.T) {
+		stat := db.Stat()
+		if stat.Feeds == nil {
+			t.Error("missing feed in stat")
+			return
+		}
+		if fs, ok := stat.Feeds[pk]; !ok {
+			t.Error("mising feed in stat")
+		} else if fs.Roots != 3 {
+			t.Error("wrong root count")
+		} else if fs.Space == 0 {
+			t.Error("wrong amount of space of roots")
+		}
+	})
 }
 
 func TestDB_Stat(t *testing.T) {

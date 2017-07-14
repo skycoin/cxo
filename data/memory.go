@@ -604,10 +604,10 @@ func utos(u uint64) string {
 	return hex.EncodeToString(b)
 }
 
-func stou(s string) uint64 {
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		panic(err)
-	}
-	return binary.BigEndian.Uint64(b)
-}
+// func stou(s string) uint64 {
+// 	b, err := hex.DecodeString(s)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	return binary.BigEndian.Uint64(b)
+// }
