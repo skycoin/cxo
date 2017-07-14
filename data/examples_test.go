@@ -86,6 +86,10 @@ func Example() {
 		return
 	})
 
+	//
+	// roots
+	//
+
 	fmt.Println()
 	fmt.Println("Roots:")
 
