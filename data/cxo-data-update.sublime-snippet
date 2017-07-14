@@ -1,0 +1,10 @@
+<snippet>
+	<content><![CDATA[
+Update(func(tx data.Tu) (${1:_} error) {
+	${2:code}
+	return
+})
+]]></content>
+	<tabTrigger>dbupdate</tabTrigger>
+	<scope>source.go</scope>
+</snippet>

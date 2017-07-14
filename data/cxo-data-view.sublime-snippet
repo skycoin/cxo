@@ -1,0 +1,10 @@
+<snippet>
+	<content><![CDATA[
+View(func(tx data.Tv) (${1:_} error) {
+	${2:code}
+	return
+})
+]]></content>
+	<tabTrigger>dbview</tabTrigger>
+	<scope>source.go</scope>
+</snippet>

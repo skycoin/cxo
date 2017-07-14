@@ -53,7 +53,9 @@ type UpdateObjects interface {
 	// The method sorts given data by key increasing performance
 	SetMap(map[cipher.SHA256][]byte) (err error)
 
-	// RangeDel used for deleting
+	// RangeDel used for deleting. If given function returns del = true
+	// then this object will be removed. Use ErrStopRange to break
+	// the Range
 	RangeDel(func(key cipher.SHA256, value []byte) (del bool, err error)) error
 }
 
@@ -62,26 +64,41 @@ type ViewFeeds interface {
 	IsExist(pk cipher.PubKey) (ok bool) // persistence check
 	List() (list []cipher.PubKey)       // list of all
 
-	Range(func(pk cipher.PubKey) error) (err error) // itterrate
+	// Range itterates all feeds. Use ErrStopRange to break
+	// the Range
+	Range(func(pk cipher.PubKey) error) (err error)
 
 	// Roots of given feed. This method returns nil if
-	// given feed doesn't exist
+	// given feed doesn't exist. Use this method to access
+	// root objects
 	Roots(pk cipher.PubKey) ViewRoots
 }
 
-// Feeds represents bucket of feeds
+// UpdateFeeds represents bucket of feeds
 type UpdateFeeds interface {
+
 	//
 	// inherited from ViewFeeds
 	//
+
 	IsExist(pk cipher.PubKey) (ok bool)
 	List() (list []cipher.PubKey)
 	Range(func(pk cipher.PubKey) error) (err error)
 
-	Add(pk cipher.PubKey) (err error) // add
-	Del(pk cipher.PubKey) (err error) // delete
+	//
+	// change feed/roots
+	//
 
-	RangeDel(func(pk cipher.PubKey) (del bool, err error)) error // delete
+	// Add an empty feed
+	Add(pk cipher.PubKey) (err error)
+	// Del deletes given feed and all roos.
+	// It never returns "not found" error
+	Del(pk cipher.PubKey) (err error)
+
+	// RangeDel itterates all feeds. If given function returns del = true
+	// then this feed will be deleted with all roots. Use ErrStopRange
+	// to break the ReangeDel
+	RangeDel(func(pk cipher.PubKey) (del bool, err error)) error
 
 	// Roots of given feed. This method returns nil if
 	// given feed doesn't exist
@@ -93,15 +110,18 @@ type ViewRoots interface {
 	Feed() cipher.PubKey // feed of this Roots
 
 	// Last returns last root of this feed.
-	// It returns nil if feed doen't contains any
-	// root object
+	// It returns nil if feed is empty
 	Last() (rp *RootPack)
-	Get(seq uint64) (rp *RootPack) // get by seq
+	// Get a root object by seq number
+	Get(seq uint64) (rp *RootPack)
 
-	// Range itterates root objects ordered
-	// by seq from oldest to newest
+	// Range itterates all root objects ordered
+	// by seq from oldest to newest. Use ErrStopRange
+	// to break the Range
 	Range(func(rp *RootPack) (err error)) error
-	// Revers is the same as Range in reversed order
+	// Revers is the same as Range in reversed order.
+	// E.g. it itterates all root objects ordered by seq
+	// from newest (latest) to oldest
 	Reverse(fn func(rp *RootPack) (err error)) error
 }
 
@@ -109,14 +129,23 @@ type ViewRoots interface {
 type UpdateRoots interface {
 	ViewRoots
 
-	Add(rp *RootPack) (err error) // add
-	Del(seq uint64) (err error)   // delete by seq
+	// Add a root object. It returns ErrRootAlreadyExists
+	// if root with the same seq number already exists
+	Add(rp *RootPack) (err error)
+	// Del deletes root object by seq number. It never
+	// returns "not found" error
+	Del(seq uint64) (err error)
 
-	// RangeDelete used to delete Root obejcts
+	// RangeDelete used to delete Root obejcts.
+	// If given function returns del = true, then
+	// this root will b edeleted. Use ErrStopRange
+	// to break the RangeDel
 	RangeDel(fn func(rp *RootPack) (del bool, err error)) error
 
 	// DelBefore deletes root objects of given feed
-	// before given seq number (exclusive)
+	// before given seq number (exclusive).
+	// For example: for set of roots [0, 1, 2, 3],
+	// the DelBefore(2) removes 0 and 1
 	DelBefore(seq uint64) (err error)
 }
 
