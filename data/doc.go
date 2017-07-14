@@ -3,8 +3,8 @@
 //
 // The DB is ACID and uses transactions, that can be rolled back.
 // There are read-only and read-write transactions. See docs for
-// DB.View, DB.Update and Tv, Tu. The Tv is read-only transaction
-// and Tu is read-write transaction.
+// DB.View, DB.Update and Tv, Tu. The Tv is read-only transaction,
+// the Tu is read-write transaction.
 //
 // Any transaction allows access to Objects, Feeds and Roots (through Feeds).
 // Approx. schema is:
