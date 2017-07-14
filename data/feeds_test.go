@@ -398,25 +398,8 @@ func testUpdateFeedsDel(t *testing.T, db DB) {
 	})
 
 	// add feed and roots
-	err = db.Update(func(tx Tu) (err error) {
-		feeds := tx.Feeds()
-		if err = feeds.Add(pk); err != nil {
-			return
-		}
-		roots := feeds.Roots(pk)
-		for _, rp := range []RootPack{
-			getRootPack(0, "hey"),
-			getRootPack(1, "hoy"),
-			getRootPack(2, "gde kon' moy voronoy"),
-		} {
-			if err = roots.Add(&rp); err != nil {
-				return
-			}
-		}
-		return
-	})
-	if err != nil {
-		t.Error(err)
+	testFillWithExampleFeed(t, pk, db)
+	if t.Failed() {
 		return
 	}
 
@@ -454,7 +437,104 @@ func TestUpdateFeeds_Del(t *testing.T) {
 }
 
 func testUpdateFeedsRangeDel(t *testing.T, db DB) {
-	// -------------------------------------------------------------------------
+
+	t.Run("no feeds", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			feeds := tx.Feeds()
+
+			var called int
+			feeds.RangeDel(func(cipher.PubKey) (_ bool, _ error) {
+				called++
+				return
+			})
+
+			if called != 0 {
+				t.Error("ranges without feeds")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	// add feeds
+	pks := testOrderedPublicKeys()
+	err := db.Update(func(tx Tu) (err error) {
+		feeds := tx.Feeds()
+		for _, pk := range pks {
+			if err = feeds.Add(pk); err != nil {
+				return
+			}
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("delete", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			feeds := tx.Feeds()
+
+			var called int
+			order := []cipher.PubKey{}
+
+			err = feeds.RangeDel(func(pk cipher.PubKey) (del bool, err error) {
+				if called > 2 {
+					t.Error("wront times called")
+					return false, ErrStopRange
+				}
+				order = append(order, pk)
+				del = pk == pks[1]
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			testComparePublicKeyLists(t, pks, order)
+
+			if feeds.IsExist(pks[1]) == true {
+				t.Error("RangeDel doesn't delete a feed")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	// add removed feed
+	err = db.Update(func(tx Tu) (err error) {
+		return tx.Feeds().Add(pks[1])
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("stop range", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			feeds := tx.Feeds()
+
+			var called int
+			feeds.RangeDel(func(cipher.PubKey) (_ bool, _ error) {
+				called++
+				return false, ErrStopRange
+			})
+
+			if called != 1 {
+				t.Error("ErrStopRange doesn't stop the RangeDel")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
 }
 
 func TestUpdateFeeds_RangeDel(t *testing.T) {
