@@ -224,10 +224,57 @@ func TestViewFeeds_Range(t *testing.T) {
 
 }
 
+func testViewFeedsRoots(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	t.Run("no feed", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			if tx.Feeds().Roots(pk) != nil {
+				t.Error("got Roots of unexisting feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	// add
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Run("got", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			if roots == nil {
+				t.Error("missing roots")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
 func TestViewFeeds_Roots(t *testing.T) {
 	// Roots(pk cipher.PubKey) ViewRoots
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testViewFeedsRoots(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewFeedsRoots(t, db)
+	})
 
 }
 
@@ -238,48 +285,243 @@ func TestViewFeeds_Roots(t *testing.T) {
 func TestUpdateFeeds_IsExist(t *testing.T) {
 	// IsExist(pk cipher.PubKey) (ok bool)
 
-	//
+	t.Skip("inherited from ViewFeeds")
 
 }
 
 func TestUpdateFeeds_List(t *testing.T) {
 	// List() (list []cipher.PubKey)
 
-	//
+	t.Skip("inherited from ViewFeeds")
 
 }
 
 func TestUpdateFeeds_Range(t *testing.T) {
 	// Range(func(pk cipher.PubKey) error) (err error)
 
-	//
+	t.Skip("inherited from ViewFeeds")
+
+}
+
+func testUpdateFeedsAdd(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	t.Run("add", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			if err := tx.Feeds().Add(pk); err != nil {
+				t.Error(err)
+			}
+			if tx.Feeds().IsExist(pk) == false {
+				t.Error("can't add a feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("twice", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			if err := tx.Feeds().Add(pk); err != nil {
+				t.Error(err)
+			}
+			if tx.Feeds().IsExist(pk) == false {
+				t.Error("can't add a feed twice")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 
 }
 
 func TestUpdateFeeds_Add(t *testing.T) {
 	// Add(pk cipher.PubKey) (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateFeedsAdd(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateFeedsAdd(t, db)
+	})
+
+}
+
+func testUpdateFeedsDel(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	t.Run("not exist", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			feeds := tx.Feeds()
+			if err := feeds.Del(pk); err != nil {
+				t.Error(err)
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	// add
+	err := db.Update(func(tx Tu) (_ error) {
+		feeds := tx.Feeds()
+		return feeds.Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("delete", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			feeds := tx.Feeds()
+			if err := feeds.Del(pk); err != nil {
+				t.Error(err)
+			}
+			if feeds.IsExist(pk) == true {
+				t.Error("can't delete a feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	// add feed and roots
+	err = db.Update(func(tx Tu) (err error) {
+		feeds := tx.Feeds()
+		if err = feeds.Add(pk); err != nil {
+			return
+		}
+		roots := feeds.Roots(pk)
+		for _, rp := range []RootPack{
+			getRootPack(0, "hey"),
+			getRootPack(1, "hoy"),
+			getRootPack(2, "gde kon' moy voronoy"),
+		} {
+			if err = roots.Add(&rp); err != nil {
+				return
+			}
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("roots", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			feeds := tx.Feeds()
+			if err := feeds.Del(pk); err != nil {
+				t.Error(err)
+			}
+			if feeds.IsExist(pk) == true {
+				t.Error("can't delete a feed with roots")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 
 }
 
 func TestUpdateFeeds_Del(t *testing.T) {
 	// Del(pk cipher.PubKey) (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateFeedsDel(t, NewMemoryDB())
+	})
 
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateFeedsDel(t, db)
+	})
+
+}
+
+func testUpdateFeedsRangeDel(t *testing.T, db DB) {
+	// -------------------------------------------------------------------------
 }
 
 func TestUpdateFeeds_RangeDel(t *testing.T) {
 	// RangeDel(func(pk cipher.PubKey) (del bool, err error)) error
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateFeedsRangeDel(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateFeedsRangeDel(t, db)
+	})
+
+}
+
+func testUpdateFeedsRoots(t *testing.T, db DB) {
+
+	pk, _ := cipher.GenerateKeyPair()
+
+	t.Run("no feed", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			if tx.Feeds().Roots(pk) != nil {
+				t.Error("got Roots of unexisting feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	// add
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Run("got", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			if roots == nil {
+				t.Error("missing roots")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
 
 }
 
 func TestUpdateFeeds_Roots(t *testing.T) {
 	// Roots(pk cipher.PubKey) UpdateRoots
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateFeedsRoots(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateFeedsRoots(t, db)
+	})
 
 }

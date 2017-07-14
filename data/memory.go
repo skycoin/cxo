@@ -248,6 +248,9 @@ func (m *memoryFeeds) Add(pk cipher.PubKey) (err error) {
 
 func (m *memoryFeeds) Del(pk cipher.PubKey) (err error) {
 	if _, err = m.tx.Delete(m.key(pk)); err != nil {
+		if err == buntdb.ErrNotFound {
+			err = nil
+		}
 		return
 	}
 

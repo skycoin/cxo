@@ -272,8 +272,13 @@ func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 	return
 }
 
-func (d *driveFeeds) Del(pk cipher.PubKey) error {
-	return d.bk.DeleteBucket(pk[:])
+func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
+	if err = d.bk.DeleteBucket(pk[:]); err != nil {
+		if err == bolt.ErrBucketNotFound {
+			err = nil
+		}
+	}
+	return
 }
 
 func (d *driveFeeds) IsExist(pk cipher.PubKey) bool {
