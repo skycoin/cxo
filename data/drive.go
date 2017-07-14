@@ -438,7 +438,7 @@ func (d *driveRoots) Last() (rp *RootPack) {
 
 func (d *driveRoots) Get(seq uint64) (rp *RootPack) {
 	seqb := utob(seq)
-	_, data := d.bk.Cursor().Seek(seqb)
+	data := d.bk.Get(seqb)
 	if data == nil {
 		return // nil
 	}
@@ -499,7 +499,7 @@ func (d *driveRoots) RangeDel(fn func(rp *RootPack) (bool, error)) (err error) {
 	c := d.bk.Cursor()
 
 	// seek loop
-	for k, v := c.First(); k != nil; c.Seek(k) {
+	for k, v := c.First(); k != nil; k, v = c.Seek(k) {
 
 		// next loop
 		for {

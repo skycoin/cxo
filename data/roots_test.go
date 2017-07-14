@@ -560,16 +560,153 @@ func TestUpdateRoots_Del(t *testing.T) {
 
 }
 
+func testUpdateRootsRangeDel(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	// add empty feed
+	err := db.Update(func(tx Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			var called int
+			err := roots.RangeDel(func(*RootPack) (_ bool, _ error) {
+				called++
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 0 {
+				t.Error("ranges over empty feed")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	t.Run("full", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			var called int
+			err := roots.RangeDel(func(rp *RootPack) (del bool, err error) {
+				if called > 2 {
+					t.Error("called too many times")
+					return false, ErrStopRange
+				}
+				if rp.Seq != uint64(called) {
+					t.Error("wrong order")
+				}
+				del = (rp.Seq == 1)
+				called++
+				return
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 3 {
+				t.Error("wrong times called")
+			}
+			if roots.Get(1) != nil {
+				t.Error("not deleted")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("stop range", func(t *testing.T) {
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			var called int
+			err := roots.RangeDel(func(*RootPack) (bool, error) {
+				called++
+				return false, ErrStopRange
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			if called != 1 {
+				t.Error("ErrStopRange doesn't stop the RangeDel")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
 func TestUpdateRoots_RangeDel(t *testing.T) {
 	// RangeDel(fn func(rp *RootPack) (del bool, err error)) error
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateRootsRangeDel(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateRootsRangeDel(t, db)
+	})
+
+}
+
+func testUpdateRootsDelBefore(t *testing.T, db DB) {
+	pk, _ := cipher.GenerateKeyPair()
+
+	if testFillWithExampleFeed(t, pk, db); t.Failed() {
+		return
+	}
+
+	err := db.Update(func(tx Tu) (_ error) {
+		roots := tx.Feeds().Roots(pk)
+
+		if err := roots.DelBefore(2); err != nil {
+			t.Error(err)
+			return
+		}
+		if roots.Get(0) != nil {
+			t.Error("not deleted")
+		}
+		if roots.Get(1) != nil {
+			t.Error("not deleted")
+		}
+
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
 
 }
 
 func TestUpdateRoots_DelBefore(t *testing.T) {
 	// DelBefore(seq uint64) (err error)
 
-	//
+	t.Run("memory", func(t *testing.T) {
+		testUpdateRootsDelBefore(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testUpdateRootsDelBefore(t, db)
+	})
 
 }

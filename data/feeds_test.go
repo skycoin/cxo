@@ -486,7 +486,7 @@ func testUpdateFeedsRangeDel(t *testing.T, db DB) {
 					return false, ErrStopRange
 				}
 				order = append(order, pk)
-				del = pk == pks[1]
+				del = (pk == pks[1])
 				return
 			})
 			if err != nil {
