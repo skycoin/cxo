@@ -3,13 +3,23 @@ changes
 
 ### TODO
 
-- [ ] move `node.Rootwalker` here
-- [ ] add test for `RemoveNonFullRoots`
-- [ ] move to new approach of handling Root objects
-- [ ] add `Schema.HasReferences() bool` method for performance
-
 
 ### Done
+
+#### ...
+
+- [x] refactoring
+
+TODO: changes
+
+Including
+
+- [x] move `node.Rootwalker` here
+- [x] add test for `RemoveNonFullRoots`
+- [x] move to new approach of handling Root objects
+- [x] add `Schema.HasReferences() bool` method for performance
+
+
 
 #### 10:00 28 June 2017
 

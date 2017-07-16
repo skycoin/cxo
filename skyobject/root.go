@@ -22,19 +22,16 @@ var (
 	ErrMissingSecretKey = errors.New("missing secret key")
 )
 
-// A RootTemplate used to create new Root object
-type RootTemplate struct {
+// A RootCore used to create new Root object
+type RootCore struct {
 	Reg  RegistryReference // registry of schemas of this Root
 	Refs []Dynamic         // branches
 	Pub  cipher.PubKey     // feed
-
-	// prepare to save
-	objects map[cipher.SHA256][]byte
 }
 
 // A Root represents root object of a feed
 type Root struct {
-	RootTemplate // user provided fields
+	RootCore // user provided fields
 
 	Time time.Time // timestamp or time.Time{}
 	Seq  uint64    // seq number

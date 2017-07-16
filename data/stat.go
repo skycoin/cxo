@@ -28,7 +28,9 @@ type Stat struct {
 	Space Space `json:"space"`
 
 	// Feeds represents statistic
-	// of root objects by feed
+	// of root objects by feed. This
+	// map is nil if database
+	// doesn't contains feeds
 	Feeds map[cipher.PubKey]FeedStat `json:"feeds"` // feeds
 }
 
