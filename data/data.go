@@ -31,7 +31,7 @@ type ViewObjects interface {
 	Get(key cipher.SHA256) (value []byte)
 	// GetCopy similar to Get, but it returns long lived object
 	GetCopy(key cipher.SHA256) (value []byte)
-	// IsExist returns true if object with given hash persist in database
+	// IsExist returns true if object with given hash presence in database
 	IsExist(key cipher.SHA256) (ok bool)
 	// Range over all objects. Use ErrStopRange to break itteration
 	Range(func(key cipher.SHA256, value []byte) error) (err error)
@@ -61,7 +61,7 @@ type UpdateObjects interface {
 
 // ViewFeeds represents read-only bucket of feeds
 type ViewFeeds interface {
-	IsExist(pk cipher.PubKey) (ok bool) // persistence check
+	IsExist(pk cipher.PubKey) (ok bool) // presence check
 	List() (list []cipher.PubKey)       // list of all
 
 	// Range itterates all feeds. Use ErrStopRange to break

@@ -286,7 +286,7 @@ type structSchema struct {
 
 func (r *structSchema) HasReferences() (has bool) {
 	for _, fl := range r.fields {
-		has = has | fl.Schema().HasReferences()
+		has = has || fl.Schema().HasReferences()
 	}
 	return
 }

@@ -2,134 +2,114 @@ package skyobject
 
 import (
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-//
-// RgistryReference
-//
-
-// RegistryReference represents unique identifier of
-// a Registry. The id is hash of encoded registry
-type RegistryReference cipher.SHA256
-
-// IsBlank returns true if the reference is blank
-func (r *RegistryReference) IsBlank() bool {
-	return *r == (RegistryReference{})
-}
-
-// String implements fmt.Stringer interface
-func (r *RegistryReference) String() string {
-	return cipher.SHA256(*r).Hex()
-}
-
-//
-// SchemaReference
-//
-
-// A SchemaReference represents reference to Schema
-type SchemaReference cipher.SHA256
-
-// IsBlank returns true if the reference is blank
-func (s *SchemaReference) IsBlank() bool {
-	return *s == (SchemaReference{})
-}
-
-// String implements fmt.Stringer interface
-func (s *SchemaReference) String() string {
-	return cipher.SHA256(*s).Hex()
-}
-
-//
-// Reference
-//
-
-// A Reference represents reference to object
-type Reference cipher.SHA256
-
-// IsBlank returns true if the reference is blank
-func (r *Reference) IsBlank() bool {
-	return *r == (Reference{})
-}
-
-// String implements fmt.Stringer interface
-func (r *Reference) String() string {
-	return cipher.SHA256(*r).Hex()
-}
+const (
+	RefsDegree int32 = 8 // default degree of References' Merkle tree
+)
 
 //
 // References
 //
 
-// A References represents list of references to objects
-type References []Reference
+// A References represents list of references to
+// objects. A References is not thread safe
+type References struct {
+	Degree int32 // degree (hashes per leaf, hashes per branch)
+	Len    int32 // amount of non-zero elements
 
-// IsBlank returns true if the reference is blank
-func (r References) IsBlank() bool {
-	return len(r) == 0
+	Nodes []RefsNode // branches
 }
 
-// String implements fmt.Stringer interface
-func (r References) String() (s string) {
-	if len(r) == 0 {
-		s = "[]"
+// A RefsNode is internal
+type RefsNode struct {
+	// Len of the branch or leaf. It'f length of
+	// Hashes without zeroes
+	Len int32
+	// IsLeaf is true if the RefsNode is a leaf
+	IsLeaf bool
+	// Nodes of the branch
+	Nodes []RefsNode `enc:"-"`
+	// Hashes of the leaf
+	Hashes []Reference
+}
+
+// Insert appends given reference to the end
+// of the References
+func (r *References) Insert(ref Reference) {
+	//
+}
+
+// Delete removes first reference
+func (r *References) Delete(ref Reference) {
+	//
+}
+
+// RangeReferencesFunc is itterator over a References.
+// Use ErrStopRnge to terminate itteration
+type RangeReferencesFunc func(i int, ref References) error
+
+// Range over the References from first element to last.
+// It's not safe to modify the Referencs inside the Range
+func (r *References) Range(rrf RangeReferencesFunc) (err error) {
+	if r.Len == 0 {
 		return
 	}
-	s = "["
-	for i, x := range r {
-		s += x.String()
-		if i < len(r)-1 {
-			s += ", "
-		}
+	if _, err = rangeOverRefsNodes(0, r.Nodes, rff); err == ErrStopRange {
+		err = nil
 	}
-	s += "]"
 	return
 }
 
-//
-// Dynamic
-//
+// rangeOverRefsNode itterates over []RefsNode and calls
+// given RangeReferencesFunc function for every non-zero
+// reference. It returns error if any. If error is nil
+// then j keeps advancing of index
+func rangeOverRefsNodes(i int, rn []RefsNode,
+	rff RangeReferencesFunc) (j int, err error) {
 
-// A Dynamic represents dynamic reference that contains
-// reference to schema and reference to object
-type Dynamic struct {
-	Object Reference
-	Schema SchemaReference
-}
+	for _, node := range rn {
 
-// IsBlank returns true if the reference is blank
-func (d *Dynamic) IsBlank() bool {
-	return d.Schema.IsBlank() && d.Object.IsBlank()
-}
+		if node.Len == 0 {
+			continue
+		}
 
-// IsValid returns true if the Dynamic is blank, full
-// or hash reference to shcema only. A Dynamic isinvalid if
-// it has reference to object but deosn't have reference to
-// shcema
-func (d *Dynamic) IsValid() bool {
-	if d.Schema.IsBlank() {
-		return d.Object.IsBlank()
+		if len(node.Hashes) > 0 { // leaf
+
+			for _, hash := range node.Hashes {
+				if hash == (Reference{}) { // zero
+					continue
+				}
+				if err = rff(i, hash); err != nil {
+					return
+				}
+				i++
+			}
+
+		} else { // branch
+
+			if j, err = rangeOverRefsNodes(i, node.Nodes, rff); err != nil {
+				return
+			}
+			i += j
+
+		}
+
 	}
-	return true
+
+	j = i
+
+	return
 }
-
-// String implements fmt.Stringer interface
-func (d *Dynamic) String() string {
-	return "{" + d.Schema.String() + ", " + d.Object.String() + "}"
-}
-
-//
-// Root
-//
-
-// A RootReference represents reference to Root oobject
-type RootReference cipher.SHA256
 
 // IsBlank returns true if the reference is blank
-func (r *RootReference) IsBlank() bool {
-	return *r == (RootReference{})
+func (r *References) IsBlank() bool {
+	return r.Len == 0
 }
 
 // String implements fmt.Stringer interface
-func (r *RootReference) String() string {
-	return cipher.SHA256(*r).Hex()
+func (r *References) String() (s string) {
+	// TODO
+	return
 }

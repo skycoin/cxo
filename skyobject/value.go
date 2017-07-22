@@ -16,11 +16,37 @@ var (
 	ErrInvalidSchema           = errors.New("invalid schema")
 )
 
-// Value represtns any value
-type Value struct {
+// A Value represents any value including references
+type Value interface {
+	IsNil() bool
+
+	Kind() reflect.Kind
+	Schema() Schema
+
+	Dereference() (val *Value)
+
+	Len() (l int)
+	RangeIndex(rif RangeIndexFunc)
+	Index(i int) (val *Value)
+
+	FieldNum() int
+	Fields() (fs []string)
+	FieldByName(name string) (val *Value)
+	FieldByIndex(i int) (val *Value)
+	RangeFields(rff RangeFieldsFunc)
+
+	Int() (i int64)
+	Uint() (u uint64)
+	Float() (f float64)
+	String() (s string)
+	Bytes() (p []byte)
+	Bool() (b bool)
+}
+
+// value represtns any value
+type value struct {
 	data   []byte // encoded object
 	schema Schema // schema of the Value
-	root   *Root  // back reference to related Root
 }
 
 // IsNil retusn true if this Value represents nil
@@ -66,25 +92,25 @@ func (v *Value) Dynamic() (dr Dynamic, err error) {
 func (v *Value) Dereference() (val *Value, err error) {
 	switch v.Schema().ReferenceType() {
 	case ReferenceTypeSingle:
-		var ref Reference
-		if ref, err = v.Static(); err != nil {
-			return
-		}
-		if ref.IsBlank() {
-			val = &Value{nil, v.Schema().Elem(), v.root}
-			return // nil-value with schema
-		}
-		if data, ok := v.root.Get(ref); !ok {
-			err = &MissingObjectError{ref}
-		} else {
-			val = &Value{data, v.Schema().Elem(), v.root}
-		}
+		// var ref Reference
+		// if ref, err = v.Static(); err != nil {
+		// 	return
+		// }
+		// if ref.IsBlank() {
+		// 	val = &Value{nil, v.Schema().Elem(), v.root}
+		// 	return // nil-value with schema
+		// }
+		// if data, ok := v.root.Get(ref); !ok {
+		// 	err = &MissingObjectError{ref}
+		// } else {
+		// 	val = &Value{data, v.Schema().Elem(), v.root}
+		// }
 	case ReferenceTypeDynamic:
-		var dr Dynamic
-		if dr, err = v.Dynamic(); err != nil {
-			return
-		}
-		val, err = v.root.ValueByDynamic(dr)
+		// var dr Dynamic
+		// if dr, err = v.Dynamic(); err != nil {
+		// 	return
+		// }
+		// val, err = v.root.ValueByDynamic(dr)
 	default:
 		err = ErrInvalidType
 	}
