@@ -194,14 +194,6 @@ func NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node,
 	return
 }
 
-// Start wes deprecated. This methods does nothing.
-//
-// Deprecated: just remove Start() invokation
-func (*Node) Start() (_ error) {
-	///
-	return
-}
-
 func (s *Node) start() (err error) {
 	s.Debugf(`starting node:
     data dir:             %s

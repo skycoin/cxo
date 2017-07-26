@@ -8,34 +8,49 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/log"
 )
 
+// common errors
 var (
 	ErrStopRange = errors.New("stop range")
 )
 
+// A Container represents container of Root
+// objects
 type Container struct {
+	log.Logger
+
 	db data.DB
 
 	coreRegistry *Registry
 
 	rmx  sync.RWMutex
 	regs map[RegistryReference]*Registry
+
+	filler *Filler // related filler
 }
 
 // NewContainer by given database (required) and Registry
 // (optional). Given Registry will be CoreRegsitry of the
 // Container
-func NewContainer(db data.DB, reg *Registry) (c *Container) {
+func NewContainer(db data.DB, conf *Config) (c *Container) {
+
 	if db == nil {
 		panic("missing data.DB")
 	}
+
+	if conf == nil {
+		conf = NewConfig()
+	}
+
 	c = new(Container)
+	c.Logger = log.NewLogger(conf.Log)
 	c.regs = make(map[RegistryReference]*Registry)
 
-	if reg != nil {
-		c.coreRegistry = reg
-		if err = c.AddRegistry(reg); err != nil {
+	if conf.Registry != nil {
+		c.coreRegistry = conf.Registry
+		if err = c.AddRegistry(conf.Registry); err != nil {
 			c.db.Close() // to be safe
 			panic(err)   // fatality
 		}
@@ -52,7 +67,7 @@ func (c *Container) saveRegistry(reg *Registry) error {
 	})
 }
 
-// AddRegistry to the Container and save it database until
+// AddRegistry to the Container and save it into database until
 // it removed by CelanUp
 func (c *Container) AddRegistry(reg *Registry) (err error) {
 	c.rmx.Lock()
@@ -69,6 +84,26 @@ func (c *Container) AddRegistry(reg *Registry) (err error) {
 // DB returns underlying data.DB
 func (c *Container) DB() data.DB {
 	return c.db
+}
+
+// Set saves single object into database
+func (c *Container) Set(hash cipher.SHA256, data []byte) (err error) {
+	return c.db.Update(func(tx data.Tu) (_ error) {
+		return tx.Objects().Set(hash, data)
+	})
+}
+
+// Get returns data by hash. Result is nil if data not found
+func (c *Container) Get(hash cipher.SHA256) (value []byte) {
+	err := c.db.View(func(tx data.Tv) (_ error) {
+		value = tx.Objects().Get(hash)
+		return
+	})
+	if err != nil {
+		c.db.Close() // to be safe (don't corrupt database-file)
+		c.Fatalf("[ALERT] database error: %v", err)
+	}
+	return
 }
 
 // CoreRegisty of the Container or nil if

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -491,8 +492,8 @@ func schemaSliceSize(s Schema, p []byte) (n int, err error) {
 }
 
 func schemaArraySize(s Schema, p []byte) (n int, err error) {
-	if s.IsReference() {
-		n = len(Reference{})
+	if s.IsReference() { // Reference
+		n = len(cipher.SHA256{})
 		return
 	}
 	l := s.Len()
@@ -516,8 +517,8 @@ func schemaArraySize(s Schema, p []byte) (n int, err error) {
 }
 
 func schemaStructSize(s Schema, p []byte) (n int, err error) {
-	if s.IsReference() {
-		n = 2 * len(Reference{})
+	if s.IsReference() { // Dynamic
+		n = 2 * len(cipher.SHA256{})
 		return
 	}
 	var m int

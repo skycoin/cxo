@@ -16,22 +16,21 @@ const (
 // A References represents list of references to
 // objects. A References is not thread safe
 type References struct {
-	Degree int32 // degree (hashes per leaf, hashes per branch)
-	Len    int32 // amount of non-zero elements
+	Degree uint32 // degree (hashes per leaf, hashes per branch)
+	Len    uint32 // amount of non-zero elements
 
 	Nodes []RefsNode // branches
+
+	sch Schema `enc:"-"` // schema of the References
 }
 
 // A RefsNode is internal
 type RefsNode struct {
-	// Len of the branch or leaf. It'f length of
-	// Hashes without zeroes
-	Len int32
 	// IsLeaf is true if the RefsNode is a leaf
 	IsLeaf bool
 	// Nodes of the branch
 	Nodes []RefsNode `enc:"-"`
-	// Hashes of the leaf
+	// Hashes of the next branches or References of leafs
 	Hashes []Reference
 }
 
@@ -51,7 +50,7 @@ func (r *References) Delete(ref Reference) {
 type RangeReferencesFunc func(i int, ref References) error
 
 // Range over the References from first element to last.
-// It's not safe to modify the Referencs inside the Range
+// It's not safe to modify the References inside the Range
 func (r *References) Range(rrf RangeReferencesFunc) (err error) {
 	if r.Len == 0 {
 		return
