@@ -64,6 +64,11 @@ func (r *Reference) IsBlank() bool {
 	return r.Hash == (cipher.SHA256{})
 }
 
+// Short returns first 7 bytes of Stirng
+func (r *Reference) Short() string {
+	return r.Hash.Hex()[:7]
+}
+
 // String implements fmt.Stringer interface
 func (r *Reference) String() string {
 	return r.Hash.Hex()

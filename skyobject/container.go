@@ -67,6 +67,17 @@ func (c *Container) saveRegistry(reg *Registry) error {
 	})
 }
 
+// add registry that already saved in database
+func (c *Container) addRegistry(reg *Registry) {
+	c.rmx.Lock()
+	defer c.rmx.Unlock()
+
+	if _, ok := c.regs[reg.Reference()]; !ok {
+		c.regs[reg.Reference()] = reg
+	}
+	return
+}
+
 // AddRegistry to the Container and save it into database until
 // it removed by CelanUp
 func (c *Container) AddRegistry(reg *Registry) (err error) {

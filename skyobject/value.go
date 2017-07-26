@@ -423,7 +423,26 @@ func (v *Value) Bool() (b bool, err error) {
 
 // SchemaSize returns size that holds encoded data of the schema
 func SchemaSize(s Schema, p []byte) (n int, err error) {
+
+	if s.IsReference() {
+
+		switch rt := sch.ReferenceType(); rt {
+		case ReferenceTypeSingle:
+			return len(cipher.SHA256{}) // legth of encoded Reference{}
+		case ReferenceTypeSlice: // because it's a complex struct
+			if n, err = schemaStructSize(s, p); err != nil {
+				return
+			}
+		case ReferenceTypeDynamic:
+			return 2 * len(cipher.SHA256{}) // length of encoded Dynamic{}
+		}
+
+		err = fmt.Errorf("[ERR] reference with invalid ReferenceType: %d", rt)
+		return
+	}
+
 	switch s.Kind() {
+
 	case reflect.Bool, reflect.Int8, reflect.Uint8:
 		n = 1
 	case reflect.Int16, reflect.Uint16:
@@ -432,41 +451,41 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 		n = 4
 	case reflect.Int64, reflect.Uint64, reflect.Float64:
 		n = 8
+
 	case reflect.String:
 		if n, err = getLength(p); err != nil {
 			return
 		}
 		n += 4 // encoded length (uint32)
+
 	case reflect.Slice:
 		if n, err = schemaSliceSize(s, p); err != nil {
 			return
 		}
+
 	case reflect.Array:
 		if n, err = schemaArraySize(s, p); err != nil {
 			return
 		}
+
 	case reflect.Struct:
 		if n, err = schemaStructSize(s, p); err != nil {
 			return
 		}
+
 	default:
 		err = ErrInvalidSchema
 		return
 	}
+
 	if n > len(p) {
 		err = ErrInvalidSchemaOrData
 	}
+
 	return
 }
 
 func schemaSliceSize(s Schema, p []byte) (n int, err error) {
-	if s.IsReference() {
-		if n, err = getLength(p); err == nil {
-			n *= len(Reference{})
-			n += 4 // length prefix
-		}
-		return
-	}
 	var l int
 	if l, err = getLength(p); err != nil {
 		return
@@ -492,10 +511,6 @@ func schemaSliceSize(s Schema, p []byte) (n int, err error) {
 }
 
 func schemaArraySize(s Schema, p []byte) (n int, err error) {
-	if s.IsReference() { // Reference
-		n = len(cipher.SHA256{})
-		return
-	}
 	l := s.Len()
 	el := s.Elem()
 	if s := fixedSize(el.Kind()); s > 0 {
@@ -517,10 +532,6 @@ func schemaArraySize(s Schema, p []byte) (n int, err error) {
 }
 
 func schemaStructSize(s Schema, p []byte) (n int, err error) {
-	if s.IsReference() { // Dynamic
-		n = 2 * len(cipher.SHA256{})
-		return
-	}
 	var m int
 	for _, sf := range s.Fields() {
 		ss := sf.Schema()
