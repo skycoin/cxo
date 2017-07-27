@@ -306,6 +306,17 @@ func (r *Registry) SchemaByName(name string) (Schema, error) {
 	return r.schemaByName(name)
 }
 
+// Types returns Types of the Registry. If this regsitry creaded using
+// DecodeRegistry (received from network) then result will not
+// be valid (empty maps). The Types used to pack/unpack CX objects
+// directly from and to golang values. You should not modify the
+// maps of the Types
+func (r *Registry) Types() (ts Types) {
+	ts.Direct = r.nt
+	ts.Inverse = r.tn
+	return
+}
+
 // range over registered types, and create schemas
 func (r *Registry) register(reg *Reg) {
 

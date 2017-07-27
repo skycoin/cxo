@@ -17,89 +17,81 @@ const (
 // objects. A References is not thread safe
 type References struct {
 	Degree uint32 // degree (hashes per leaf, hashes per branch)
-	Len    uint32 // amount of non-zero elements
+	Len    uint32 // amount of non-zero elements of the tree
+	Depth  uint32 // depth of the tree
 
-	Nodes []RefsNode // branches
+	// the Depth allows to determine end of branches, that
+	// is begining of leafs; leafs contains references to
+	// elements of the References array instead of
+	// references to RefsNode
 
-	sch Schema `enc:"-"` // schema of the References
+	// depth * degree = elems (including zero elements)
+
+	Nodes []RefsNode // branches (if Depth == 0, then this is leafs)
+
+	sch   Schema                      `enc:"-"` // schema of the References
+	index map[cipher.SHA256]Reference `enc:"-"` // hash-table index
+
+	cache map[cipher.SHA256][]byte `enc:"-"` // insert cache
+
+	// TODO (kostyarin): cahnges
 }
 
 // A RefsNode is internal
 type RefsNode struct {
-	// IsLeaf is true if the RefsNode is a leaf
-	IsLeaf bool
-	// Nodes of the branch
-	Nodes []RefsNode `enc:"-"`
+	// Len is amount of non-zero elements of the branch
+	Len uint32
 	// Hashes of the next branches or References of leafs
 	Hashes []Reference
+
+	// Nodes of the branch (for unpack a branch, range and walk)
+	Nodes []RefsNode `enc:"-"`
+
+	sch Schema `enc:"-"` // schema inherited from References
+
+	// TODO (kostyarin): changes
 }
 
-// Insert appends given reference to the end
-// of the References
-func (r *References) Insert(ref Reference) {
+// insert Reference to []RefsNode returning ok = true and new
+// or the same []RefsNode slcie
+func (r *References) insert(depth int, ns []RefsNode,
+	ref Reference) (nn []RefsNode, ok bool) {
+
+	if len(ns) == 0 {
+		var an []RefsNode = ns
+		for i := 0; i < depth; i++ {
+			//
+		}
+	}
+
+}
+
+// increase depth + 1
+func (r *References) deeper() {
+	ndepth := int(r.Depth) + 1 // new depth
 	//
 }
 
-// Delete removes first reference
-func (r *References) Delete(ref Reference) {
-	//
-}
+func (r *References) rangeNodes(d int, ns []RefsNode,
+	rangeFunc func(ref Reference)) {
 
-// RangeReferencesFunc is itterator over a References.
-// Use ErrStopRnge to terminate itteration
-type RangeReferencesFunc func(i int, ref References) error
-
-// Range over the References from first element to last.
-// It's not safe to modify the References inside the Range
-func (r *References) Range(rrf RangeReferencesFunc) (err error) {
-	if r.Len == 0 {
+	if d == 0 { // leafs
+		for _, n := range ns {
+			for _, ref := range n.Hashes {
+				rangeFunc(ref)
+			}
+		}
 		return
 	}
-	if _, err = rangeOverRefsNodes(0, r.Nodes, rff); err == ErrStopRange {
-		err = nil
-	}
+
+	//
+
 	return
+
 }
 
-// rangeOverRefsNode itterates over []RefsNode and calls
-// given RangeReferencesFunc function for every non-zero
-// reference. It returns error if any. If error is nil
-// then j keeps advancing of index
-func rangeOverRefsNodes(i int, rn []RefsNode,
-	rff RangeReferencesFunc) (j int, err error) {
-
-	for _, node := range rn {
-
-		if node.Len == 0 {
-			continue
-		}
-
-		if len(node.Hashes) > 0 { // leaf
-
-			for _, hash := range node.Hashes {
-				if hash == (Reference{}) { // zero
-					continue
-				}
-				if err = rff(i, hash); err != nil {
-					return
-				}
-				i++
-			}
-
-		} else { // branch
-
-			if j, err = rangeOverRefsNodes(i, node.Nodes, rff); err != nil {
-				return
-			}
-			i += j
-
-		}
-
-	}
-
-	j = i
-
-	return
+func (r *References) IsValid() bool {
+	return r.Degree >= 2 && (r.Degree*r.Depth <= r.Len)
 }
 
 // IsBlank returns true if the reference is blank
