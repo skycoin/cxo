@@ -2,10 +2,13 @@ package skyobject
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
 
 // common packing and unpacking errors
@@ -23,7 +26,7 @@ const (
 	ViewOnly                           // don't allow modifications
 	GoTypes                            // pack/unpack from/to golang-values
 
-	Default Flag = MerkleTree | GoTypes
+	Default Flag = GoTypes
 )
 
 // A Types represents mapping from registered names
@@ -46,6 +49,8 @@ type Pack struct {
 	r   *Root
 	reg *Registry
 
+	root *WalkNode
+
 	flags Flag // packing flags
 
 	types *Types // types mapping
@@ -58,7 +63,9 @@ type Pack struct {
 // instead of Reference
 
 // get by hash from cache or from database
-func (p *Pack) get(key cipher.SHA256) (val []byte) {
+// the method returns error if object not
+// found
+func (p *Pack) get(key cipher.SHA256) (val []byte, err error) {
 	var ok bool
 	if val, ok = p.unsaved[key]; ok {
 		return
@@ -67,10 +74,15 @@ func (p *Pack) get(key cipher.SHA256) (val []byte) {
 		return
 	}
 	// ignore DB error
-	p.c.DB().View(func(tx data.Tv) (_ error) {
+	err = p.c.DB().View(func(tx data.Tv) (_ error) {
 		val = tx.Objects().Get(key)
 		return
 	})
+
+	if err == nil && val == nil {
+		err = fmt.Errorf("object [%s] not found", key.Hex()[:7])
+	}
+
 	return
 }
 
@@ -156,6 +168,13 @@ func (p *Pack) Save() (err error) {
 // unpack entire tree if appropriate flag is set
 func (p *Pack) init() (err error) {
 
+	// create WalkNode of Root
+
+	p.root = &WalkNode{
+		root: true,
+		pack: p,
+	}
+
 	// Do we need to unpack entire tree?
 
 	if p.flags&EntireTree == 0 {
@@ -215,56 +234,249 @@ func (p *Pack) testSchemaReference(schr SchemaReference) {
 	}
 }
 
+func (p *Pack) dynamicFromInterface(obj interface{}) (dr Dynamic) {
+	var ok bool
+	if dr, ok = obj.(Dynamic); !ok {
+		// create Dynamic from the obj
+		dr = p.dynamicFromObj(obj)
+	} else {
+		// check possible end-user mistakes to
+		// make his life easer
+		p.testSchemaReference(dr.Schema)
+	}
+	return
+}
+
+func (p *Pack) dynamicFromObj(obj interface{}) (dr Dynamic) {
+
+	typ := typeOf(obj)
+
+	if name, ok := p.types.Inverse[typ]; !ok {
+		//
+	} else if sch, err := p.reg.SchemaByName(name); err != nil {
+		p.c.DB().Close()
+		p.c.Panicf(`wrong Types of Pack:
+    schema name found in Types, but schema by the name not found in Registry
+    error:                  %s
+    registry reference:     %s
+    schema name:            %s
+    reflect.Type of obejct: %s`,
+			err,
+			p.reg.Reference().Short(),
+			name,
+			typ.String())
+	}
+
+	key, val := p.save(obj)
+	var ref Reference
+
+	//
+
+	dr.Object = ref
+	return
+}
+
 // Append another Dynamic referenc to Refs of
 // underlying Root. If the Pack created with
 // Types then you can use any object of
 // registered, otherwise it must be
 // instance of Dynamic
 func (p *Pack) Append(obj interface{}) {
-	var dr Dynamic
-	var ok bool
-
-	if dr, ok = obj.(Dynamic); !ok {
-
-		//
-
-	} else {
-		// check possible end-user mistakes to
-		// make his life easer
-		p.testSchemaReference(dr.Schema)
-	}
-
+	dr := p.dynamicFromInterface(obj)
+	dr.attach(p.root)
 	p.r.Refs = append(p.r.Refs, dr) // append
 }
 
+// Pop removes last Dynamic reference of
+// underlying Root.Refs returning it.
+// The returned Dynamic will be detached
+// and you can use it anywhere else until
+// the Pack is alive. For example you can
+// append it to the underlying Root later.
+// The detching is necessary for golang GC
+// to collect the result (Dynamic) if it is
+// no longer needed. The Pop method is
+// opposite to Append. The method returns
+// blank Dynamic reference that (can't be used)
+// if the Root.Refs is empty
+func (p *Pack) Pop() (dr Dynamic, err error) {
+
+	if len(p.r.Refs) == 0 {
+		return
+	}
+
+	dr = p.r.Refs[len(p.r.Refs)-1] // get last
+
+	if dr.walkNode == nil {
+		// packed, we need to unpack it
+		if err = p.unpackDynamic(&dr, p.root); err != nil {
+			dr = Dynamic{} // blank Dynamic
+			return
+		}
+	}
+
+	// remove the dr from Root.Refs
+
+	p.r.Refs[len(p.r.Refs)-1] = Dynamic{} // clear for GC
+	p.r.Refs = p.r.Refs[:len(p.r.Refs)-1] // reduce length
+
+	//
+
+	dr.attach(p.root)
+	return
+
+}
+
+func (p *Pack) unpackToGo(sch Schema, val []byte) (obj interface{}, err error) {
+	var typ reflect.Type
+	var ok bool
+
+	if typ, ok = p.types.Direct[dr.walkNode.sch.Name()]; !ok {
+		err = fmt.Errorf("missing reflect.Type of %q schema in Types.Direct",
+			sch.Name())
+		return
+	}
+
+	ptr := reflect.New(typ)
+
+	if _, err = encoder.DeserializeRawToValue(val, ptr); err != nil {
+		return
+	}
+
+	obj = reflect.Indirect(ptr).Interface()
+
+	return
+}
+
+func (p *Pack) unpackDynamic(dr *Dynamic, upper *WalkNode) (err error) {
+
+	if dr.walkNode == nil {
+		dr.walkNode = new(WalkNode)
+	}
+
+	// is the dr valid?
+
+	if !dr.IsValid() {
+		return ErrInvalidDynamicReference
+	}
+
+	// does the dr contain any?
+
+	if dr.IsBlank() {
+		// no schema, no object
+		dr.walkNode.attach(upper) // last step
+		return
+	}
+
+	// not blank, but object can be nil anyway
+
+	// schema
+
+	dr.walkNode.sch, err = p.reg.SchemaByReference(dr.Schema)
+	if err != nil {
+		return
+	}
+
+	// is there an object
+	if dr.Object == (cipher.SHA256{}) {
+		// no object (nil)
+		dr.walkNode.attach(upper) // last step
+		return
+	}
+
+	// get object from database
+
+	var val []byte
+	if val, err = p.get(dr.Object); err != nil {
+		return
+	}
+
+	// unpack to golang value or to Value
+
+	if p.flags&GoTypes != 0 {
+		// golang value
+		dr.walkNode.value, err = p.unpackToGo(dr.walkNode.sch, val)
+	} else {
+		// Value (skyobject.Value)
+		dr.walkNode.value, err = p.unpackToValue(dr.walkNode.sch, val)
+	}
+
+	if err != nil {
+		return
+	}
+
+	dr.walkNode.attach(upper) // last step
+	return
+
+}
+
+// Save and object getting Reference to it
+func (p *Pack) Reference(obj interface{}) (ref Reference) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// Dynamic creates Dynamic by given object. The call of
+// the method only allowed if the Pack created with Types
+func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
+	// TODO (kostyarin): implement
+	return
+}
+
+func (p *Pack) References(objs ...interface{}) (refs References) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// TODO (kostyarin): lowercase it
+//
+// A WalkNode is internl type and likely to
+// be removed to lowercased walkNode
 type WalkNode struct {
-	// TODO (kostyarin): reference, upper node
+	value interface{} // golang value or Value (skyobject.Value)
 
-	value interface{} // golang value or Value
+	root bool // true if the node represents Root
 
-	upper WalkNode // upper node
-	pack  *Pack    // back reference to related Pack
+	sch     Schema    // schema of the value
+	upper   *WalkNode // upper node
+	unsaved bool      // true if the node new or changed
+	pack    *Pack     // back reference to related Pack
 }
 
 // Value of the node. It returns nil if the node
 // represents nil (empty reference for example).
 // It returns golang value if related Pack created
 // with appropriate flags. In other cases it returns
-// Value (skyobject.Value)
+// Value (skyobject.Value). The method returns nil
+// if the node represents Root obejct. Use methods
+// of Pack (such as Append, Pop) to access  and
+// modify Root
 func (w *WalkNode) Value() (obj interface{}) {
 	return w.value
 }
 
-// SetValue replaces underlying value with given one.
-// ViewOnly flag of related Pack doesn't affect this
-// method. New value will be set. But it never be
-// saved. Any skyobject.Value can't be passed to
-// the method
-func (w *WalkNode) SetValue(obj interface{}) {
-	key, val := w.Pack().save(obj)
-	//
-	typ := typeOf(obj)
+// TODO (kostyarin): remove the method
+//
+// // SetValue replaces underlying value with given one.
+// // ViewOnly flag of related Pack doesn't affect this
+// // method. New value will be set. But it never be
+// // saved. It's safe to pass a Value (skyobject.Value)
+// // It's impossible to SetValue it the node represents
+// // Root obejct, in this case the method does nothing
+// func (w *WalkNode) SetValue(obj interface{}) {
+//
+// 	if w.root == true {
+// 		return
+// 	}
+//
+// 	// TODO (kostyarin): implement the fucking method
+//
+// }
 
+// Schema of the node. It can be nil if underlyng
+// value is nil (for example blank Dynamic referecne)
+func (w *WalkNode) Schema() Schema {
+	return w.sch
 }
 
 // Pack returns related Pack
@@ -273,7 +485,31 @@ func (w *WalkNode) Pack() *Pack {
 }
 
 // Upper returns upper (closer to root) node.
-// It returns nil if this node is root
+// It returns nil if this node is root. And it
+// returns nil if the node has been detached
+// from its upper node
 func (w *WalkNode) Upper() (upper WalkNode) {
 	return w.upper
+}
+
+func (w *WalkNode) attach(upper *WalkNode) {
+	if upper == nil {
+		w.upper = nil
+	} else {
+		w.upper = upper
+		w.pack = upper.pack
+		w.unsave() // mark as changed
+	}
+}
+
+// mark the node and all
+// nodes above as changed
+func (w *WalkNode) unsave() {
+	// using non-recursive algorithm
+	for up, i := w, 0; up != nil; up, i = up.upper, i+1 {
+		if i > 0 && up.unsaved == true {
+			break
+		}
+		up.unsaved = true
+	}
 }

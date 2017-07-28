@@ -4,55 +4,50 @@ import (
 	"reflect"
 )
 
-type value struct{}
-
-func (value) Kind() reflect.Kind { return reflect.Invalid }
-func (value) Schema() Schema     { return nilSchema }
-
-func (value) Dereference() Value { return nil }
-
-func (value) Len() (ln int)                   { return }
-func (value) RangeIndex(RangeIndexFunc) error { return ErrInvalidType }
-func (value) Index(int) Value                 { return nil }
-
-func (value) FieldNum() (n int)           { return }
-func (value) Fields() (fs []string)       { return }
-func (value) FieldByName(string) Value    { return nil }
-func (value) FieldByIndex(int) Value      { return nil }
-func (value) RangeFields(RangeFieldsFunc) { return ErrInvalidType }
-
-func (value) Int() (int64, error)     { return 0, ErrInvalidType }
-func (value) Uint() (uint64, error)   { return 0, ErrInvalidType }
-func (value) Float() (float64, error) { return 0, ErrInvalidType }
-func (value) String() (string, error) { return "", ErrInvalidType }
-func (value) Bytes() ([]byte, error)  { return nil, ErrInvalidType }
-func (value) Bool() (bool, error)     { return false, ErrInvalidType }
-
-type valueSchema struct {
-	value
+type value struct {
 	schema Schema
+	data   []byte
 }
 
-func (v *valueSchema) Kind() reflect.Kind {
-	if v.schema.IsReference() && v.schema.Kind() != reflect.Slice {
-		return reflect.Ptr // single or dynamic
+func (v *value) Kind() reflect.Kind {
+	sch := v.Schema()
+	if sch.IsReference() && sch.ReferenceType() == ReferenceTypeSlice {
+		return reflect.Slice
 	}
-	return v.schema.Kind()
+	return sch.Kind()
 }
 
-func (v *valueSchema) Schema() Schema {
-	return v.schema
-}
+func (v *value) Schema() Schema { return v.schema }
+func (v *value) Data() []byte   { return v.data }
+
+func (*value) Dereference() Value { return nil }
+
+func (*value) Len() (ln int)                   { return }
+func (*value) RangeIndex(RangeIndexFunc) error { return ErrInvalidType }
+func (*value) Index(int) Value                 { return nil }
+
+func (*value) FieldNum() (n int)                 { return }
+func (*value) Fields() (fs []string)             { return }
+func (*value) FieldByName(string) Value          { return nil }
+func (*value) FieldByIndex(int) Value            { return nil }
+func (*value) RangeFields(RangeFieldsFunc) error { return ErrInvalidType }
+
+func (*value) Int() (_ int64)     { return }
+func (*value) Uint() (_ uint64)   { return }
+func (*value) Float() (_ float64) { return }
+func (*value) String() (_ string) { return }
+func (*value) Bytes() (_ []byte)  { return }
+func (*value) Bool() (_ bool)     { return }
 
 type intValue struct {
-	valueSchema
+	value
 	val int64
 }
 
 func (i *intValue) Int() int64 { return i.val }
 
 type uintValue struct {
-	valueSchema
+	value
 	val uint64
 }
 
@@ -61,7 +56,7 @@ func (u *uintValue) Uint() uint64 {
 }
 
 type floatValue struct {
-	valueSchema
+	value
 	val float64
 }
 
@@ -70,7 +65,7 @@ func (f *floatValue) Float() float64 {
 }
 
 type stringValue struct {
-	valueSchema
+	value
 	val []byte
 }
 
@@ -83,7 +78,7 @@ func (s *stringValue) Bytes() []byte {
 }
 
 type bytesValue struct {
-	valueSchema
+	value
 	val []byte
 }
 
@@ -92,7 +87,7 @@ func (b *bytesValue) Bytes() []byte {
 }
 
 type boolValue struct {
-	valueSchema
+	value
 	val bool
 }
 
@@ -106,7 +101,7 @@ type structField struct {
 }
 
 type structValue struct {
-	valueSchema
+	value
 	fields []structField
 }
 
@@ -154,7 +149,7 @@ func (v *structValue) RangeFields(rff RangeFieldsFunc) (err error) {
 }
 
 type sliceValue struct {
-	valueSchema
+	value
 	vals []Value
 }
 
@@ -181,9 +176,11 @@ func (s *sliceValue) Index(i int) Value {
 	return nil
 }
 
+// TODO: proper references
+
 type ptrValue struct {
-	valueSchema
-	value Value // dereference
+	value
+	reference Value // dereference
 }
 
 func (p *ptrValue) Dereference() Value {

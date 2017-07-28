@@ -18,6 +18,8 @@ var (
 	ErrInvalidArgument                    = errors.New("invalid argument")
 	ErrMissingTypesButGoTypesFlagProvided = errors.New(
 		"missing Types maps, but GoTypes flag provided")
+	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
+	ErrMissingInverseMapInTypes = errors.New("missing Inverse map in Types")
 )
 
 // A Container represents container of Root
@@ -192,7 +194,17 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 			err = ErrMissingTypesButGoTypesFlagProvided
 			return
 		}
-		//
+	}
+
+	if types != nil {
+		if types.Direct == nil {
+			err = ErrMissingDirectMapInTypes
+			return
+		}
+		if types.Inverse == nil {
+			err = ErrMissingInverseMapInTypes
+			return
+		}
 	}
 
 	// check registry presence

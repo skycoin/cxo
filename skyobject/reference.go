@@ -60,9 +60,9 @@ func (r SchemaReference) Short() string {
 type Reference struct {
 	Hash cipher.SHA256 // hash of the reference
 
-	value interface{} `enc:"-"` // unpacked value or nil
-	pack  *Pack       `enc:"-"` // related pack
-	upper *WalkNode   `enc:"-"` // WlakNode if attached
+	// internals
+
+	walkNode *WalkNode `enc:"-"` // walkNode of this Reference
 }
 
 // IsBlank returns true if the Reference is blank
@@ -85,37 +85,8 @@ func (r *Reference) Eq(x *Reference) bool {
 	return r.Hash == x.Hash
 }
 
-// Schema of the Reference. It can be nil
-func (r *Reference) Schema() Schema {
-	return r.sch
-}
-
-// IsChanged returns ture if the Reference has
-// been changed. It also returns true if underlying
-// (referenced) value has been changed
-func (r *Reference) IsChanged() bool {
-	return r.changed
-}
-
-// Set new value, changing the reference
-func (r *Reference) Set(val interface{}) (err error) {
-
-	// TODO
-
-	switch vv := val.(type) {
-	case *Reference:
-		r.Hash = vv.Hash
-		r.value = vv.value
-		r.changed = true
-	case cipher.SHA256:
-		r.Hash = vv
-		r.value = nil
-		r.changed = true
-	default:
-		//
-	}
-	return
-
+func (r *Reference) attach(upper *WalkNode) {
+	r.walkNode.attach(upper)
 }
 
 //
@@ -125,8 +96,12 @@ func (r *Reference) Set(val interface{}) (err error) {
 // A Dynamic represents dynamic reference that contains
 // reference to schema and reference to object
 type Dynamic struct {
-	Object Reference
-	Schema SchemaReference
+	Object cipher.SHA256   // reference to object
+	Schema SchemaReference // reference to Schema
+
+	// internals
+
+	walkNode *WalkNode // WalkNode of this Dynamic
 }
 
 // IsBlank returns true if the reference is blank
@@ -155,4 +130,6 @@ func (d *Dynamic) Eq(x *Dynamic) bool {
 	return d.Schema == x.Schema && d.Object.Eq(&x.Object)
 }
 
-// TODO: Set, IsCahnged, Schema (?)
+func (d *Dynamic) attach(upper *WalkNode) {
+	d.walkNode.attach(upper)
+}

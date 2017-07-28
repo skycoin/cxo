@@ -15,6 +15,8 @@ var (
 )
 
 var (
+	// TODO (kostyarin): rename to typeOfReference, tyoeOfReferences, etc,
+	//                   to make the code more clear
 	singleRef  = typeOf(Reference{})
 	sliceRef   = typeOf(References{})
 	dynamicRef = typeOf(Dynamic{})
