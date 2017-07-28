@@ -7,7 +7,7 @@ import (
 // config related constants
 const (
 	Prefix       string = "[skyobject] " // default log prefix
-	MerkleDegree uint32 = 8              // default References' degree
+	MerkleDegree uint32 = 16             // default References' degree
 )
 
 // A Config represents oconfigurations

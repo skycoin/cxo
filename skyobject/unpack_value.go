@@ -13,24 +13,24 @@ import (
 func (p *Pack) unpackToValue(sch Schema, val []byte) (obj Value, err error) {
 
 	if sch.IsReference() {
-		// special case for referecnes
+		return p.unpackRefereneToValue(sch, val)
 	}
 
 	switch sch.Kind() {
 	case reflect.Bool:
-		obj, err = newBoolValue(sch, val)
+		return newBoolValue(sch, val)
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		obj, err = newIntValue(sch, val)
+		return newIntValue(sch, val)
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		obj, err = newUintValue(sch, val)
+		return newUintValue(sch, val)
 	case reflect.Float32, reflect.Float64:
-		obj, err = newFloatValue(sch, val)
+		return newFloatValue(sch, val)
 	case reflect.String:
-		obj, err = newStringValue(sch, val)
+		return newStringValue(sch, val)
 	case reflect.Array, reflect.Slice:
-		obj, err = nweSliceValue(sch, val)
+		return p.newSliceValue(sch, val)
 	case reflect.Struct:
-		//
+		return newStructValue(sch, val)
 	default:
 		err = fmt.Errorf("invalid Kind <%s> of Schema %q",
 			sch.Kind().String(),
@@ -147,7 +147,7 @@ func newStringValue(sch Schema, val []byte) (obj Value, err error) {
 	return
 }
 
-func newSliceValue(sch Schema, val []byte) (obj Value, err error) {
+func (p *Pack) newSliceValue(sch Schema, val []byte) (obj Value, err error) {
 
 	el := sch.Elem()
 	if el == nil {
@@ -179,6 +179,116 @@ func newSliceValue(sch Schema, val []byte) (obj Value, err error) {
 		}
 		shift = 4
 	}
+
+	var iobj Value
+	var sv sliceValue
+
+	sv.value = value{sch, val}
+	sv.vals = make([]Value, 0, ln)
+
+	if s := fixedSize(el.Kind()); s < 0 {
+		for i := 0; i < ln; i++ {
+			if shift+s > len(val) {
+				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
+				return
+			}
+			if iobj, err = p.unpackToValue(el, val[shift:shift+s]); err != nil {
+				return
+			}
+			sv.vals = append(sv.value, iobj)
+			shift += s
+		}
+	} else {
+		for i := 0; i < ln; i++ {
+			if shift >= len(val) {
+				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
+				return
+			}
+			if m, err = SchemaSize(el, val[shift:]); err != nil {
+				return
+			}
+			if iobj, err = p.unpackToValue(el, val[shift:shift+m]); err != nil {
+				return
+			}
+			sv.vals = append(sv.value, iobj)
+			shift += m
+		}
+	}
+
+	obj = &sv
+
+	return
+}
+
+func unexpectedEndOfArraySliceError(sch, el Schema, i, ln int) (err error) {
+	// detailed error
+	var kindOf string
+	if sch.Kind() == reflect.Array {
+		kindOf = "array"
+	} else {
+		kindOf = "slice"
+	}
+	err = fmt.Errorf("unexpected end of encoded %s at index %d, "+
+		"schema: '%s', element: '%s', length %d",
+		kindOf,
+		i,
+		sch.String(),
+		el.Kind().String(),
+		ln)
+	return
+}
+
+func (p *Pack) newStructValue(sch Schema, val []byte) (obj Value, err error) {
+
+	var (
+		shift int
+		s     int
+		fobj  Value       // Value of a field
+		sv    structValue // the obj
+	)
+
+	sv.value = value{sch, val}
+	sv.fields = make([]structField, 0, len(sch.Fields()))
+
+	for _, f := range sch.Fields() {
+
+		if shift >= len(val) {
+			// detailed error
+			err = fmt.Errorf("unexpected end of encoded struct '%s' "+
+				"at field '%s', schema of field: '%s'",
+				sch.String(),
+				f.Name(),
+				f.Schema().String())
+			return
+		}
+
+		if s, err = SchemaSize(f.Schema(), val[shift:]); err != nil {
+			return
+		}
+
+		fobj, err = p.unpackToValue(f.Schema(), val, val[shift:shift+s])
+		if err != nil {
+			return
+		}
+
+		sv.fields = append(sv.fields, structField{
+			name: f.Name(),
+			val:  fobj,
+		})
+
+		shift += s
+
+	}
+
+	obj = &sv
+
+	return
+}
+
+func (p *Pack) unpackRefereneToValue(sch Schema, val []byte) (obj Value,
+	err error) {
+
+	// TODO (kostyarin): implement
 
 	return
 }

@@ -318,7 +318,7 @@ func (f *Filler) fillDataReferences(sch Schema, val []byte) (err error) {
 	}
 
 	for _, rn := range refs.Nodes {
-		if err = f.fillRefsNode(sch, rn); err != nil {
+		if err = f.fillRefsNode(refs.Depth, sch, rn); err != nil {
 			return
 		}
 	}
@@ -327,9 +327,11 @@ func (f *Filler) fillDataReferences(sch Schema, val []byte) (err error) {
 
 }
 
-func (f *Filler) fillRefsNode(sch Schema, rn RefsNode) (err error) {
+func (f *Filler) fillRefsNode(depth uint32, sch Schema,
+	rn RefsNode) (err error) {
 
-	if rn.IsLeaf {
+	if depth == 0 {
+		// the leaf
 		for _, hash := range rn.Hashes {
 			if err = f.fillReference(sch, Reference{Hash: hash}); err != nil {
 				return
@@ -338,8 +340,10 @@ func (f *Filler) fillRefsNode(sch Schema, rn RefsNode) (err error) {
 		return
 	}
 
+	depth-- // go deepper
+
 	for _, hash := range rn.Hashes {
-		if err = f.fillHashRefsNode(sch, hash); err != nil {
+		if err = f.fillHashRefsNode(depth, sch, hash); err != nil {
 			return
 		}
 	}
@@ -348,7 +352,8 @@ func (f *Filler) fillRefsNode(sch Schema, rn RefsNode) (err error) {
 
 }
 
-func (f *Filler) fillHashRefsNode(sch Schema, hash cipher.SHA256) (err error) {
+func (f *Filler) fillHashRefsNode(depth uint32, sch Schema,
+	hash cipher.SHA256) (err error) {
 
 	if hash == (cipher.SHA256{}) {
 		return // empty reference
@@ -364,7 +369,7 @@ func (f *Filler) fillHashRefsNode(sch Schema, hash cipher.SHA256) (err error) {
 		return
 	}
 
-	return f.fillHashRefsNode(sch, rn)
+	return f.fillRefsNode(depth, sch, rn)
 }
 
 func (f *Filler) fillDataDynamic(val []byte) (err error) {
