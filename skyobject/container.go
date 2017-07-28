@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -13,7 +14,10 @@ import (
 
 // common errors
 var (
-	ErrStopRange = errors.New("stop range")
+	ErrStopRange                          = errors.New("stop range")
+	ErrInvalidArgument                    = errors.New("invalid argument")
+	ErrMissingTypesButGoTypesFlagProvided = errors.New(
+		"missing Types maps, but GoTypes flag provided")
 )
 
 // A Container represents container of Root
@@ -130,6 +134,101 @@ func (c *Container) Registry(rr RegistryReference) *Registry {
 	defer c.rmx.RUnlock()
 
 	return c.regs[rr]
+}
+
+func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
+	var rp *data.RootPack
+	err = c.db.View(func(tx data.Tv) (err error) {
+		roots := tx.Feeds().Roots(pk)
+		if roots == nil {
+			return data.ErrNotFound
+		}
+		rp := roots.Get(seq)
+		return
+	})
+	if err != nil {
+		return
+	}
+	//
+	return
+}
+
+// Unpack given Root obejct. Use flags by your needs. To use GoTypes
+// flag, provide Types instance, for example:
+//
+//     r, err := c.Root(pk, 500)
+//     if err != nil {
+//         // handle error
+//         return
+//     }
+//
+//     theFlagsIUsuallyUse := EntireMerkleTrees |
+//         EntireTree |
+//         HashTableIndex |
+//         GoTypes
+//
+//     pack, err := c.Unpack(r, theFlagsIUsuallyUse, &c.CoreRegistry().Types())
+//     if err != nil {
+//         // handle error
+//         return
+//     }
+//
+//     // use the pack
+//
+// If the EntireTree flag provided then given Root (entire tree) will be
+// unpacked inside the Unpack method call
+func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
+	err error) {
+
+	// check arguments
+
+	if r == nil {
+		err = ErrInvalidArgument
+		return
+	}
+
+	if flags & GoTypes {
+		if types == nil {
+			err = ErrMissingTypesButGoTypesFlagProvided
+			return
+		}
+		//
+	}
+
+	// check registry presence
+
+	if r.Reg == (RegistryReference{}) {
+		err = ErrEmptyRegsitryReference
+		return
+	}
+
+	pack = new(Pack)
+	pack.r = r
+
+	if pack.reg = c.Registry(r.Reg); pack.reg == nil {
+		err = fmt.Errorf("missing registry [%s] of Root %s",
+			r.Reg.Short(),
+			r.PH())
+		pack = nil // release for GC
+		return
+	}
+
+	// create the pack
+
+	pack.flags = flags
+	pack.types = types
+
+	pack.cache = make(map[cipher.SHA256][]byte)
+	pack.unsaved = make(map[cipher.SHA256][]byte)
+
+	pack.c = c
+
+	if err = pack.init(); err != nil { // initialize
+		pack = nil // release for GC
+	}
+
+	return
+
 }
 
 // CelanUp removes unused objects from database

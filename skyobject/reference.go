@@ -25,6 +25,11 @@ func (r RegistryReference) String() string {
 	return cipher.SHA256(r).Hex()
 }
 
+// Short returns first seven bytes of String
+func (r RegistryReference) Short() string {
+	return r.String()[:7]
+}
+
 //
 // SchemaReference
 //
@@ -42,6 +47,11 @@ func (s SchemaReference) String() string {
 	return cipher.SHA256(s).Hex()
 }
 
+// Short returns first seven bytes of String
+func (r SchemaReference) Short() string {
+	return r.String()[:7]
+}
+
 //
 // Reference
 //
@@ -50,13 +60,9 @@ func (s SchemaReference) String() string {
 type Reference struct {
 	Hash cipher.SHA256 // hash of the reference
 
-	value   interface{} `enc:"-"` // underlying value (set or unpacked)
-	changed bool        `enc:"-"` // has been changed if true
-
-	upper interface{} `enc:"-"` // reference to upper node (todo)
-
-	sch Schema       `enc:"-"` // schema of the reference (can be nil)
-	pu  PackUnpacker `enc:"-"` // pack/unpack
+	value interface{} `enc:"-"` // unpacked value or nil
+	pack  *Pack       `enc:"-"` // related pack
+	upper *WalkNode   `enc:"-"` // WlakNode if attached
 }
 
 // IsBlank returns true if the Reference is blank

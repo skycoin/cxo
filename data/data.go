@@ -42,7 +42,9 @@ type UpdateObjects interface {
 	ViewObjects
 
 	// Del deletes object by key. It never returns
-	// "not found" error.
+	// "not found" error. The Del is low level method
+	// and you should not use it. Otherwise, it can
+	// break some things of skyobject package
 	Del(key cipher.SHA256) (err error)
 	// Set key->value pair
 	Set(key cipher.SHA256, value []byte) (err error)
@@ -55,7 +57,8 @@ type UpdateObjects interface {
 
 	// RangeDel used for deleting. If given function returns del = true
 	// then this object will be removed. Use ErrStopRange to break
-	// the Range
+	// the Range. The RangeDel is low level method and you should not
+	// use it. Otherwise, it can break some things of skyobject packge
 	RangeDel(func(key cipher.SHA256, value []byte) (del bool, err error)) error
 }
 
@@ -183,6 +186,13 @@ type RootPack struct {
 
 	Hash cipher.SHA256 // hash of the Root filed
 	Sig  cipher.Sig    // signature of the Hash field
+
+	// TODO (kostyarin): move the field from here making it
+	//                   machine local
+	// IsFull is true if the Root has all related objects in
+	// this DB. The field is temporary added and likely to
+	// be moved outside the RootPack
+	IsFull bool
 }
 
 // A RootError represents error that can be returned by AddRoot method
