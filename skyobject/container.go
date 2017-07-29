@@ -105,7 +105,7 @@ func (c *Container) DB() data.DB {
 
 // Set saves single object into database
 func (c *Container) Set(hash cipher.SHA256, data []byte) (err error) {
-	return c.db.Update(func(tx data.Tu) (_ error) {
+	return c.db.Update(func(tx data.Tu) error {
 		return tx.Objects().Set(hash, data)
 	})
 }
@@ -140,7 +140,7 @@ func (c *Container) Registry(rr RegistryReference) *Registry {
 
 func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 	var rp *data.RootPack
-	err = c.db.View(func(tx data.Tv) (err error) {
+	err = c.db.View(func(tx data.Tv) (_ error) {
 		roots := tx.Feeds().Roots(pk)
 		if roots == nil {
 			return data.ErrNotFound
@@ -178,7 +178,8 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 //     // use the pack
 //
 // If the EntireTree flag provided then given Root (entire tree) will be
-// unpacked inside the Unpack method call
+// unpacked inside the Unpack method call. Unpack wihtout GoTypes
+// flag will not wrok, because the feature is not implemented yet
 func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 	err error) {
 
@@ -194,6 +195,11 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 			err = ErrMissingTypesButGoTypesFlagProvided
 			return
 		}
+	} else {
+		// TODO (kostyarin): provide a way to unpack to Value
+		//                   if there are not Types
+		err = errors.New("not possible to unpack wihtout GoTypes yet, cheese")
+		return
 	}
 
 	if types != nil {

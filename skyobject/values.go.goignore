@@ -7,20 +7,16 @@ import (
 type value struct {
 	schema Schema
 	data   []byte
-}
 
-func (v *value) Kind() reflect.Kind {
-	sch := v.Schema()
-	if sch.IsReference() && sch.ReferenceType() == ReferenceTypeSlice {
-		return reflect.Slice
-	}
-	return sch.Kind()
+	wn *WalkNode
 }
 
 func (v *value) Schema() Schema { return v.schema }
 func (v *value) Data() []byte   { return v.data }
 
-func (*value) Dereference() Value { return nil }
+func (v *value) Reference() (_ *Reference)   { return }
+func (v *value) Dynamic() (_ *Dynamic)       { return }
+func (v *value) References() (_ *References) { return }
 
 func (*value) Len() (ln int)                   { return }
 func (*value) RangeIndex(RangeIndexFunc) error { return ErrInvalidType }
@@ -38,6 +34,10 @@ func (*value) Float() (_ float64) { return }
 func (*value) String() (_ string) { return }
 func (*value) Bytes() (_ []byte)  { return }
 func (*value) Bool() (_ bool)     { return }
+
+func (v *value) wlkNode() *WalkNode {
+	return v.wn
+}
 
 type intValue struct {
 	value
@@ -98,6 +98,8 @@ func (b *boolValue) Bool() bool {
 type structField struct {
 	name string
 	val  Value
+
+	walkNode *WalkNode // WalkNode of the field
 }
 
 type structValue struct {
@@ -176,13 +178,71 @@ func (s *sliceValue) Index(i int) Value {
 	return nil
 }
 
-// TODO: proper references
+// references
 
-type ptrValue struct {
-	value
-	reference Value // dereference
+// stub for all references
+type refStubValue struct {
+	data []byte
 }
 
-func (p *ptrValue) Dereference() Value {
-	return p.value
+func (r *refStubValue) Data() []byte { return r.data }
+
+func (*refStubValue) Reference() (_ *Reference)   { return }
+func (*refStubValue) Dynamic() (_ *Dynamic)       { return }
+func (*refStubValue) References() (_ *References) { return }
+
+func (*refStubValue) Len() (ln int)                   { return }
+func (*refStubValue) RangeIndex(RangeIndexFunc) error { return ErrInvalidType }
+func (*refStubValue) Index(int) Value                 { return nil }
+
+func (*refStubValue) FieldNum() (n int)                 { return }
+func (*refStubValue) Fields() (fs []string)             { return }
+func (*refStubValue) FieldByName(string) Value          { return nil }
+func (*refStubValue) FieldByIndex(int) Value            { return nil }
+func (*refStubValue) RangeFields(RangeFieldsFunc) error { return ErrInvalidType }
+
+func (*refStubValue) Int() (_ int64)     { return }
+func (*refStubValue) Uint() (_ uint64)   { return }
+func (*refStubValue) Float() (_ float64) { return }
+func (*refStubValue) String() (_ string) { return }
+func (*refStubValue) Bytes() (_ []byte)  { return }
+func (*refStubValue) Bool() (_ bool)     { return }
+
+type refValue struct {
+	refStubValue
+	ref Reference
+}
+
+func (r *refValue) Reference() (ref *Reference) {
+	return &r.ref
+}
+
+func (r *refValue) walkNode() *WalkNode {
+	return r.ref.walkNode
+}
+
+type refsValue struct {
+	refStubValue
+	refs References
+}
+
+func (r *refsValue) References() (refs *References) {
+	return r.refs
+}
+
+func (r *refsValue) walkNode() *WalkNode {
+	return r.refs.walkNode
+}
+
+type drValue struct {
+	refStubValue
+	dr Dynamic
+}
+
+func (d *drValue) Dynamic() (ref *Dynamic) {
+	return &d.dr
+}
+
+func (r *drValue) walkNode() *WalkNode {
+	return r.dr.walkNode
 }

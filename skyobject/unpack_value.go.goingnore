@@ -10,10 +10,11 @@ import (
 
 // unpack to Value
 
-func (p *Pack) unpackToValue(sch Schema, val []byte) (obj Value, err error) {
+func (p *Pack) unpackToValue(upper *WalkNode, sch Schema,
+	val []byte) (obj Value, err error) {
 
 	if sch.IsReference() {
-		return p.unpackRefereneToValue(sch, val)
+		return p.unpackRefereneToValue(upper, sch, val)
 	}
 
 	switch sch.Kind() {
@@ -28,9 +29,9 @@ func (p *Pack) unpackToValue(sch Schema, val []byte) (obj Value, err error) {
 	case reflect.String:
 		return newStringValue(sch, val)
 	case reflect.Array, reflect.Slice:
-		return p.newSliceValue(sch, val)
+		return p.newSliceValue(upper, sch, val)
 	case reflect.Struct:
-		return newStructValue(sch, val)
+		return newStructValue(upper, sch, val)
 	default:
 		err = fmt.Errorf("invalid Kind <%s> of Schema %q",
 			sch.Kind().String(),
@@ -147,7 +148,8 @@ func newStringValue(sch Schema, val []byte) (obj Value, err error) {
 	return
 }
 
-func (p *Pack) newSliceValue(sch Schema, val []byte) (obj Value, err error) {
+func (p *Pack) newSliceValue(upper *WalkNode, sch Schema,
+	val []byte) (obj Value, err error) {
 
 	el := sch.Elem()
 	if el == nil {
@@ -184,6 +186,17 @@ func (p *Pack) newSliceValue(sch Schema, val []byte) (obj Value, err error) {
 	var sv sliceValue
 
 	sv.value = value{sch, val}
+
+	// set up WalkNode of the array/slice
+	// if it can contain referecnes
+	if sch.HasReferences() {
+		sv.value.wn = &WalkNode{
+			sch:   sch,
+			upper: upper,
+			pack:  p,
+		}
+	}
+
 	sv.vals = make([]Value, 0, ln)
 
 	if s := fixedSize(el.Kind()); s < 0 {
@@ -192,7 +205,8 @@ func (p *Pack) newSliceValue(sch Schema, val []byte) (obj Value, err error) {
 				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
 				return
 			}
-			if iobj, err = p.unpackToValue(el, val[shift:shift+s]); err != nil {
+			iobj, err = p.unpackToValue(sv.value.wn, el, val[shift:shift+s])
+			if err != nil {
 				return
 			}
 			sv.vals = append(sv.value, iobj)
@@ -207,7 +221,8 @@ func (p *Pack) newSliceValue(sch Schema, val []byte) (obj Value, err error) {
 			if m, err = SchemaSize(el, val[shift:]); err != nil {
 				return
 			}
-			if iobj, err = p.unpackToValue(el, val[shift:shift+m]); err != nil {
+			iobj, err = p.unpackToValue(sv.value.wn, el, val[shift:shift+m])
+			if err != nil {
 				return
 			}
 			sv.vals = append(sv.value, iobj)
@@ -266,7 +281,7 @@ func (p *Pack) newStructValue(sch Schema, val []byte) (obj Value, err error) {
 			return
 		}
 
-		fobj, err = p.unpackToValue(f.Schema(), val, val[shift:shift+s])
+		fobj, err = p.unpackToValue(sv.value.wn, f.Schema(), val[shift:shift+s])
 		if err != nil {
 			return
 		}
@@ -285,10 +300,106 @@ func (p *Pack) newStructValue(sch Schema, val []byte) (obj Value, err error) {
 	return
 }
 
-func (p *Pack) unpackRefereneToValue(sch Schema, val []byte) (obj Value,
-	err error) {
+func (p *Pack) unpackRefereneToValue(upper *WalkNode, sch Schema,
+	val []byte) (obj Value, err error) {
 
-	// TODO (kostyarin): implement
+	switch rt := sch.ReferenceType(); rt {
+	case ReferenceTypeSingle:
+		obj, err = unpackReferenceToValue(upper, sch, val)
+	case ReferenceTypeSlice:
+		obj, err = unpackReferencesToValue(upper, sch, val)
+	case ReferenceTypeDynamic:
+		obj, err = unpackDynamicToValue(upper, sch, val)
+	}
+
+	// default
+
+	err = fmt.Errorf("invalid schema (%s): reference with invalid type %d",
+		sch.String(),
+		rt)
+	return
+}
+
+func (p *Pack) unpackReferenceToValue(upper *WalkNode, sch Schema,
+	val []byte) (obj Value, err error) {
+
+	var ref Reference
+	if err = encoder.DeserializeRaw(val, &ref); err != nil {
+		return
+	}
+
+	var rv refValue
+	rv.data = val
+
+	ref.walkNode = &WalkNode{
+		sch:   sch,
+		upper: upper,
+		pack:  p,
+	}
+
+	if p.flags&EntireTree != 0 {
+		// TODO (kostayrin): implement appropriate method of Reference
+		//                   and call it here
+	}
+
+	rv.ref = ref
+	obj = &rv
+
+	return
+}
+
+func (p *Pack) unpackReferencesToValue(upper *WalkNode, sch Schema,
+	val []byte) (obj Value, err error) {
+
+	var refs References
+	if err = encoder.DeserializeRaw(val, &refs); err != nil {
+		return
+	}
+
+	var rv refsValue
+	rv.data = val
+
+	refs.walkNode = &WalkNode{
+		sch:   sch,
+		upper: upper,
+		pack:  p,
+	}
+
+	if p.flags&EntireTree != 0 {
+		// TODO (kostayrin): implement appropriate method of References
+		//                   and call it here
+	}
+
+	rv.refs = refs
+	obj = &rv
+
+	return
+}
+
+func (p *Pack) unpackDynamicToValue(upper *WalkNode, sch Schema,
+	val []byte) (obj Value, err error) {
+
+	var dr Dynamic
+	if err = encoder.DeserializeRaw(val, &dr); err != nil {
+		return
+	}
+
+	var dv drValue
+	dv.data = val
+
+	dv.walkNode = &WalkNode{
+		sch:   sch,
+		upper: upper,
+		pack:  p,
+	}
+
+	if p.flags&EntireTree != 0 {
+		// TODO (kostayrin): implement appropriate method of Dynamic
+		//                   and call it here
+	}
+
+	dv.dr = dr
+	obj = &dv
 
 	return
 }

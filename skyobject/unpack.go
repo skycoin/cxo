@@ -13,7 +13,8 @@ import (
 
 // common packing and unpacking errors
 var (
-	ErrViewOnlyTree = errors.New("view only tree")
+	ErrViewOnlyTree    = errors.New("view only tree")
+	ErrIndexOutOfRange = errors.New("index out of range")
 )
 
 // A Flag represents unpacking flags
@@ -141,7 +142,9 @@ func (p *Pack) del(key cipher.SHA256) {
 // }
 
 // Save all cahnges in DB
-func (p *Pack) Save() (err error) {
+func (p *Pack) Save() (root data.RootPack, err error) {
+
+	// setup timestamp and seq number
 
 	// single transaction required (to perform rollback on error)
 
@@ -177,13 +180,10 @@ func (p *Pack) init() (err error) {
 
 	// Do we need to unpack entire tree?
 
-	if p.flags&EntireTree == 0 {
-		return // do nothing carefully
+	if p.flags&EntireTree != 0 {
+		// unpack all possible
+		_, err = p.Refs()
 	}
-
-	// unpack all possible
-
-	//
 
 	return
 }
@@ -197,94 +197,77 @@ func (p *Pack) Registry() *Registry { return p.reg }
 // Flags of the Pack
 func (p *Pack) Flags() Flag { return p.flags }
 
+//
+// unpack Root.Refs
+//
+
 // Refs returns unpacked references of underlying
 // Root. It's not equal to pack.Root().Refs, becaue
-// the method returns unpacked references
-func (p *Pack) Refs() []Dynamic {
-	//
-}
+// the method returns unpacked references. Actually
+// the method makes the same referenes "unpacked"
+func (p *Pack) Refs() (drs []Dynamic, err error) {
 
-// RefByIndex returns one of Root.Refs. If ok is false
-// then it's about index out of range error. It's easy to
-// use (*Pack).Refs() method to get all Dynamic references
-// of underlying Root. But if the tree is not unpacked
-// entirely then you can unpack it partially (depending
-// your needs) using this method
-func (p *Pack) RefByIndex(i int) (dr Dynamic, ok bool) {
-	//
-}
-
-// SetRefByIndex replaces one of Root.Refs with given obejct.
-// If it returns false, then it's about index out of range.
-// You can use any object of registered if the Pack created
-// with Types. Otherwise the obj must to be Dynamic
-func (p *Pack) SetRefByIndex(i int, obj interface{}) (ok bool) {
-	//
-}
-
-func (p *Pack) testSchemaReference(schr SchemaReference) {
-	if dr.Schema != (SchemaReference{}) {
-		if _, err := p.reg.SchemaByReference(dr.Schema); err != nil {
-			// tobe safe (don't corrupt DB)
-			p.c.DB().Close()
-			p.c.Panic("unexpected schema referene in given Dynamic [%s]:",
-				dr.Schema.Short(),
-				err)
+	for i := range p.r.Refs {
+		if dr.walkNode == nil {
+			if _, err = p.r.Refs[i].Value(); err != nil {
+				return
+			}
 		}
 	}
-}
 
-func (p *Pack) dynamicFromInterface(obj interface{}) (dr Dynamic) {
-	var ok bool
-	if dr, ok = obj.(Dynamic); !ok {
-		// create Dynamic from the obj
-		dr = p.dynamicFromObj(obj)
-	} else {
-		// check possible end-user mistakes to
-		// make his life easer
-		p.testSchemaReference(dr.Schema)
-	}
 	return
 }
 
-func (p *Pack) dynamicFromObj(obj interface{}) (dr Dynamic) {
+// RefByIndex returns one of Root.Refs. The error can
+// be ErrIndexOutOfRange. It's easy to use (*Pack).Refs()
+// method to get all Dynamic references of underlying
+// Root. But if the tree is not unpacked entirely then
+// you can unpack it partially (depending  your needs)
+// using this method
+func (p *Pack) RefByIndex(i int) (dr Dynamic, err error) {
 
-	typ := typeOf(obj)
-
-	if name, ok := p.types.Inverse[typ]; !ok {
-		//
-	} else if sch, err := p.reg.SchemaByName(name); err != nil {
-		p.c.DB().Close()
-		p.c.Panicf(`wrong Types of Pack:
-    schema name found in Types, but schema by the name not found in Registry
-    error:                  %s
-    registry reference:     %s
-    schema name:            %s
-    reflect.Type of obejct: %s`,
-			err,
-			p.reg.Reference().Short(),
-			name,
-			typ.String())
+	if i < 0 || i >= len(p.r.Refs) {
+		err = ErrIndexOutOfRange
+		return
 	}
 
-	key, val := p.save(obj)
-	var ref Reference
+	if p.r.Refs[i].walkNode == nil {
+		_, err = p.r.Refs[i].Value() // unpack
+	}
 
-	//
-
-	dr.Object = ref
+	dr = p.r.Refs[i]
 	return
 }
 
-// Append another Dynamic referenc to Refs of
+// Append another Dynamic reference to Refs of
 // underlying Root. If the Pack created with
 // Types then you can use any object of
 // registered, otherwise it must be
-// instance of Dynamic
-func (p *Pack) Append(obj interface{}) {
-	dr := p.dynamicFromInterface(obj)
-	dr.attach(p.root)
+// instance of Dynamic. If Root.Refs is unpacked
+// then this method reattaches them to new
+// slice (created by append). Thus, a developer
+// doesn't need to care about it
+func (p *Pack) Append(obj interface{}) (err error) {
+	var dr Dynamic
+
+	wn := new(walkNode)
+	wn.pack = p
+
+	dr.walkNode = wn
+
+	if err = dr.SetValue(obj); err != nil {
+		return
+	}
+
 	p.r.Refs = append(p.r.Refs, dr) // append
+
+	// reattach
+
+	for i, dr := range p.r.Refs {
+		if dr.walkNode != nil {
+			dr.Attach(p.r.Refs, i)
+		}
+	}
 }
 
 // Pop removes last Dynamic reference of
@@ -293,12 +276,13 @@ func (p *Pack) Append(obj interface{}) {
 // and you can use it anywhere else until
 // the Pack is alive. For example you can
 // append it to the underlying Root later.
-// The detching is necessary for golang GC
+// The detaching is necessary for golang GC
 // to collect the result (Dynamic) if it is
 // no longer needed. The Pop method is
 // opposite to Append. The method returns
 // blank Dynamic reference that (can't be used)
-// if the Root.Refs is empty
+// if the Root.Refs is empty. The result wil be
+// unpacked
 func (p *Pack) Pop() (dr Dynamic, err error) {
 
 	if len(p.r.Refs) == 0 {
@@ -308,11 +292,12 @@ func (p *Pack) Pop() (dr Dynamic, err error) {
 	dr = p.r.Refs[len(p.r.Refs)-1] // get last
 
 	if dr.walkNode == nil {
-		// packed, we need to unpack it
-		if err = p.unpackDynamic(&dr, p.root); err != nil {
-			dr = Dynamic{} // blank Dynamic
-			return
-		}
+		wn := new(walkNode)
+		wn.pack = p
+		dr.walkNode = wn
+		_, err = dr.Value() // unpack
+	} else {
+		dr.Detach()
 	}
 
 	// remove the dr from Root.Refs
@@ -320,92 +305,6 @@ func (p *Pack) Pop() (dr Dynamic, err error) {
 	p.r.Refs[len(p.r.Refs)-1] = Dynamic{} // clear for GC
 	p.r.Refs = p.r.Refs[:len(p.r.Refs)-1] // reduce length
 
-	//
-
-	dr.attach(p.root)
-	return
-
-}
-
-func (p *Pack) unpackToGo(sch Schema, val []byte) (obj interface{}, err error) {
-	var typ reflect.Type
-	var ok bool
-
-	if typ, ok = p.types.Direct[dr.walkNode.sch.Name()]; !ok {
-		err = fmt.Errorf("missing reflect.Type of %q schema in Types.Direct",
-			sch.Name())
-		return
-	}
-
-	ptr := reflect.New(typ)
-
-	if _, err = encoder.DeserializeRawToValue(val, ptr); err != nil {
-		return
-	}
-
-	obj = reflect.Indirect(ptr).Interface()
-
-	return
-}
-
-func (p *Pack) unpackDynamic(dr *Dynamic, upper *WalkNode) (err error) {
-
-	if dr.walkNode == nil {
-		dr.walkNode = new(WalkNode)
-	}
-
-	// is the dr valid?
-
-	if !dr.IsValid() {
-		return ErrInvalidDynamicReference
-	}
-
-	// does the dr contain any?
-
-	if dr.IsBlank() {
-		// no schema, no object
-		dr.walkNode.attach(upper) // last step
-		return
-	}
-
-	// not blank, but object can be nil anyway
-
-	// schema
-
-	dr.walkNode.sch, err = p.reg.SchemaByReference(dr.Schema)
-	if err != nil {
-		return
-	}
-
-	// is there an object
-	if dr.Object == (cipher.SHA256{}) {
-		// no object (nil)
-		dr.walkNode.attach(upper) // last step
-		return
-	}
-
-	// get object from database
-
-	var val []byte
-	if val, err = p.get(dr.Object); err != nil {
-		return
-	}
-
-	// unpack to golang value or to Value
-
-	if p.flags&GoTypes != 0 {
-		// golang value
-		dr.walkNode.value, err = p.unpackToGo(dr.walkNode.sch, val)
-	} else {
-		// Value (skyobject.Value)
-		dr.walkNode.value, err = p.unpackToValue(dr.walkNode.sch, val)
-	}
-
-	if err != nil {
-		return
-	}
-
-	dr.walkNode.attach(upper) // last step
 	return
 
 }
@@ -416,100 +315,22 @@ func (p *Pack) Reference(obj interface{}) (ref Reference) {
 	return
 }
 
-// Dynamic creates Dynamic by given object. The call of
-// the method only allowed if the Pack created with Types
+// Dynamic creates Dynamic by given object. The obj can
+// be another Dynamic reference or goalgn value (if the Pack
+// created with Types). The method panics on first error
+// (for example: type of obj is not registered). Passing
+// nil returns blank Dynamic
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
-	// TODO (kostyarin): implement
+	wn := new(walkNode)
+	wn.pack = p
+
+	dr.walkNode = wn
+
+	_, err := dr.SetValue(obj)
 	return
 }
 
 func (p *Pack) References(objs ...interface{}) (refs References) {
 	// TODO (kostyarin): implement
 	return
-}
-
-// TODO (kostyarin): lowercase it
-//
-// A WalkNode is internl type and likely to
-// be removed to lowercased walkNode
-type WalkNode struct {
-	value interface{} // golang value or Value (skyobject.Value)
-
-	root bool // true if the node represents Root
-
-	sch     Schema    // schema of the value
-	upper   *WalkNode // upper node
-	unsaved bool      // true if the node new or changed
-	pack    *Pack     // back reference to related Pack
-}
-
-// Value of the node. It returns nil if the node
-// represents nil (empty reference for example).
-// It returns golang value if related Pack created
-// with appropriate flags. In other cases it returns
-// Value (skyobject.Value). The method returns nil
-// if the node represents Root obejct. Use methods
-// of Pack (such as Append, Pop) to access  and
-// modify Root
-func (w *WalkNode) Value() (obj interface{}) {
-	return w.value
-}
-
-// TODO (kostyarin): remove the method
-//
-// // SetValue replaces underlying value with given one.
-// // ViewOnly flag of related Pack doesn't affect this
-// // method. New value will be set. But it never be
-// // saved. It's safe to pass a Value (skyobject.Value)
-// // It's impossible to SetValue it the node represents
-// // Root obejct, in this case the method does nothing
-// func (w *WalkNode) SetValue(obj interface{}) {
-//
-// 	if w.root == true {
-// 		return
-// 	}
-//
-// 	// TODO (kostyarin): implement the fucking method
-//
-// }
-
-// Schema of the node. It can be nil if underlyng
-// value is nil (for example blank Dynamic referecne)
-func (w *WalkNode) Schema() Schema {
-	return w.sch
-}
-
-// Pack returns related Pack
-func (w *WalkNode) Pack() *Pack {
-	return w.pack
-}
-
-// Upper returns upper (closer to root) node.
-// It returns nil if this node is root. And it
-// returns nil if the node has been detached
-// from its upper node
-func (w *WalkNode) Upper() (upper WalkNode) {
-	return w.upper
-}
-
-func (w *WalkNode) attach(upper *WalkNode) {
-	if upper == nil {
-		w.upper = nil
-	} else {
-		w.upper = upper
-		w.pack = upper.pack
-		w.unsave() // mark as changed
-	}
-}
-
-// mark the node and all
-// nodes above as changed
-func (w *WalkNode) unsave() {
-	// using non-recursive algorithm
-	for up, i := w, 0; up != nil; up, i = up.upper, i+1 {
-		if i > 0 && up.unsaved == true {
-			break
-		}
-		up.unsaved = true
-	}
 }

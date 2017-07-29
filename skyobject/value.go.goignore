@@ -19,17 +19,16 @@ var (
 
 // A Value represents any value including references
 type Value interface {
-	// Kind of the Value. It returns reflect.Prt for
-	// Reference and Dynamic, and refelct.Slice for
-	// References
-	Kind() reflect.Kind
-
 	Schema() Schema // schema
 	Data() []byte   // encoded value
 
-	// references
+	// references (pointers to underlying references)
 
-	Dereference() Value // TOOD (kostyarin): dereference properly
+	// TODO (kostayrin): pointers or not?
+
+	Reference() *Reference
+	Dynamic() *Dynamic
+	References() *References
 
 	// arrays and slices (except []byte)
 
@@ -53,6 +52,9 @@ type Value interface {
 	String() string // string
 	Bytes() []byte  // []byte
 	Bool() bool     // bool
+
+	// WalkNode of the Value
+	walkNode() *WalkNode
 }
 
 // RangeIndexFunc used to itterate over array or slcie

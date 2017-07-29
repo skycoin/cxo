@@ -53,7 +53,10 @@ type References struct {
 
 	// internals
 
-	refsPackNode *refsPackNode `enc:"-"`
+	walkNode *WalkNode   `enc:"-"` // walking
+	place    *References `enc:"-"` // palce of the References
+
+	refsPackNode *refsPackNode `enc:"-"` // unpack
 }
 
 // A RefsNode is internal
