@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -50,13 +51,10 @@ type Pack struct {
 	r   *Root
 	reg *Registry
 
-	root *WalkNode
-
 	flags Flag // packing flags
 
 	types *Types // types mapping
 
-	cache   map[cipher.SHA256][]byte
 	unsaved map[cipher.SHA256][]byte
 }
 
@@ -69,9 +67,6 @@ type Pack struct {
 func (p *Pack) get(key cipher.SHA256) (val []byte, err error) {
 	var ok bool
 	if val, ok = p.unsaved[key]; ok {
-		return
-	}
-	if val, ok = p.cache[key]; ok {
 		return
 	}
 	// ignore DB error
@@ -90,61 +85,44 @@ func (p *Pack) get(key cipher.SHA256) (val []byte, err error) {
 // calculate hash and perform 'set'
 func (p *Pack) add(val []byte) (key cipher.SHA256) {
 	key = cipher.SumSHA256(val)
-	p.Set(key, val)
+	p.set(key, val)
 	return
 }
 
 // save encoded CX object (key (hash), value []byte)
 func (p *Pack) set(key cipher.SHA256, val []byte) {
-	if _, ok := p.cache[key]; ok {
-		return
-	}
 	p.unsaved[key] = val
 }
 
+// TORM (kostyarin): never used
+//
 // save interface and get its key and encoded value
 func (p *Pack) save(obj interface{}) (key cipher.SHA256, val []byte) {
-	data = encoder.Serialize(obj)
-	key = cipher.SumSHA256(data)
-	p.Set(key, val)
+	val = encoder.Serialize(obj)
+	key = p.add(val)
 	return
 }
 
-//delete from cach and unsaved objects
+// delete from unsaved objects (TORM (kostyarin): never used)
 func (p *Pack) del(key cipher.SHA256) {
-	delete(p.cache, key)
 	delete(p.unsaved, key)
 }
 
-// TORM (kostyarin): useless because of (*Container).CleanUp
-//
-// // Sync internal cache with DB. The
-// // method allways returns ErrViewOnly if
-// // the Pack created with ViewOnly flag.
-// // In other cases, the error will be DB
-// // error or nil.
-// func (p *Pack) Sync() (err error) {
-//
-// 	if p.flags&ViewOnly != 0 {
-// 		return ErrViewOnlyTree // can't sync view only
-// 	}
-//
-// 	err = p.c.DB().Update(func(tx data.Tu) (err error) {
-// 		return tx.Objects().SetMap(p.unsaved)
-// 	})
-// 	if err == nil {
-// 		for key, val := range p.unsaved {
-// 			p.cache[key] = val
-// 			delete(p.unsaved, key)
-// 		}
-// 	}
-// 	return
-// }
-
-// Save all cahnges in DB
+// Save all cahnges in DB returning packed updated Root.
+// Use the result to publish upates (node package related)
 func (p *Pack) Save() (root data.RootPack, err error) {
 
+	// TODO (kostyarin): track saving time and put it into
+	//                   statistic of Container
+
+	if p.flags&ViewOnly != 0 {
+		err = ErrViewOnlyTree // can't save view only tree
+		return
+	}
+
 	// setup timestamp and seq number
+	p.r.Time = time.Now().UnixNano() //
+	//
 
 	// single transaction required (to perform rollback on error)
 
@@ -163,6 +141,13 @@ func (p *Pack) Save() (root data.RootPack, err error) {
 		return
 	})
 
+	if err == nil {
+		for key, val := range p.unsaved {
+			p.cache[key] = val
+			delete(p.unsaved, key)
+		}
+	}
+
 	return
 
 }
@@ -170,21 +155,11 @@ func (p *Pack) Save() (root data.RootPack, err error) {
 // Initialize the Pack. It creates Root WalkNode and
 // unpack entire tree if appropriate flag is set
 func (p *Pack) init() (err error) {
-
-	// create WalkNode of Root
-
-	p.root = &WalkNode{
-		root: true,
-		pack: p,
-	}
-
 	// Do we need to unpack entire tree?
-
 	if p.flags&EntireTree != 0 {
 		// unpack all possible
 		_, err = p.Refs()
 	}
-
 	return
 }
 
@@ -281,7 +256,7 @@ func (p *Pack) Append(obj interface{}) (err error) {
 // no longer needed. The Pop method is
 // opposite to Append. The method returns
 // blank Dynamic reference that (can't be used)
-// if the Root.Refs is empty. The result wil be
+// if the Root.Refs is empty. The result will be
 // unpacked
 func (p *Pack) Pop() (dr Dynamic, err error) {
 
@@ -333,4 +308,23 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 func (p *Pack) References(objs ...interface{}) (refs References) {
 	// TODO (kostyarin): implement
 	return
+}
+
+func (p *Pack) unpack(sch Schema, hash cipher.SHA256) (value interface{},
+	err error) {
+
+	var val []byte
+	if val, err = p.get(hash); err != nil {
+		return
+	}
+
+	if p.flags&GoTypes != 0 {
+		value, err = p.unpackToGo(sch.Name(), val)
+	} else {
+		// TODO (kostyarin): implement other unpacking methods
+		panic("not implemented yet")
+	}
+
+	return
+
 }

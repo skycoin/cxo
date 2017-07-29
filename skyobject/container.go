@@ -27,7 +27,11 @@ var (
 type Container struct {
 	log.Logger
 
+	conf Config
+
 	db data.DB
+
+	trackSeq
 
 	coreRegistry *Registry
 
@@ -53,6 +57,29 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 	c = new(Container)
 	c.Logger = log.NewLogger(conf.Log)
 	c.regs = make(map[RegistryReference]*Registry)
+
+	// copy configs
+	c.conf.MerkleDegree = conf.MerkleDegree
+
+	// initialize trackSeq
+	trackSeq.init()
+
+	// range over feeds of DB and fill up the trackSeq
+	err := db.View(func(tx data.Tv) error {
+		feeds := tx.Feeds()
+		return feeds.Range(func(pk cipher.PubKey) (_ error) {
+			if rp := feeds.Roots(pk).Last(); rp != nil {
+				c.trackSeq.addFeed(pk, rp.Seq)
+			}
+			return
+		})
+	})
+
+	if err != nil {
+		db.Close()
+		c.Panic("unexpected database error: ", err)
+		return
+	}
 
 	if conf.Registry != nil {
 		c.coreRegistry = conf.Registry

@@ -24,6 +24,16 @@ type walkNode struct {
 	pack *Pack  // back reference to related Pack
 }
 
+func (w *walkNode) set(i interface{}) {
+
+	if w.place != nil {
+		val := reflect.ValueOf(i)
+		val = reflect.Indirect(val)
+		w.place.Set(val)
+	}
+
+}
+
 // func (w *walkNode) unsave() {
 // 	// using non-recursive algorithm
 // 	for up, i := w, 0; up != nil; up, i = up.upper, i+1 {
