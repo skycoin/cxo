@@ -141,7 +141,7 @@ type UpdateRoots interface {
 
 	// RangeDelete used to delete Root obejcts.
 	// If given function returns del = true, then
-	// this root will b edeleted. Use ErrStopRange
+	// this root will be deleted. Use ErrStopRange
 	// to break the RangeDel
 	RangeDel(fn func(rp *RootPack) (del bool, err error)) error
 

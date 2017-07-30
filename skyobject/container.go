@@ -52,6 +52,9 @@ type Container struct {
 // NewContainer by given database (required) and Registry
 // (optional). Given Registry will be CoreRegsitry of the
 // Container
+//
+// TODO (kostyarin): move the db argument to Config creating
+// in-memory DB by default (if nil)
 func NewContainer(db data.DB, conf *Config) (c *Container) {
 
 	if db == nil {
@@ -103,30 +106,28 @@ func (c *Container) initSeqTrackStat() {
 
 			roots := feeds.Roots(pk)
 
-			var total, full int  // total roots, full roots
 			var seq, last uint64 // last seq and seq of last full
 			var hasLast bool     // really has last full root (if last is 0)
 
-			err = roots.Range(func(rp *data.RootPack) (_ error) {
-				total++
+			err = roots.Reverse(func(rp *data.RootPack) (_ error) {
+				if seq == 0 {
+					seq = rp.Seq
+				}
 				if rp.IsFull {
 					last, hasLast = rp.Seq, true
-					full++
+					return data.ErrStopRange // break
 				}
-				seq = rp.Seq
-				return
+				return // continue, finding last full
 			})
 
 			if err != nil {
 				return
 			}
 
-			c.stat.addRoot(pk, full, true)
-			c.stat.addRoot(pk, total-full, false)
-
 			c.trackSeq.setSeq(pk, seq)
 			if hasLast {
 				c.trackSeq.setFull(pk, last, true)
+				return
 			}
 
 		})
@@ -328,153 +329,60 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 // CelanUp removes unused objects from database
 func (c *Container) CleanUp(keepRoots bool) (err error) {
 
-	// TODO (kostyarin): reduce function complexity
-
+	// avoid simultaneous CleanUps,
+	// otherwise timing would be wrong
 	c.cleanmx.Lock()
 	defer c.cleanmx.Unlock()
 
 	tp := time.Now()
 	var elapsed, verboseElapsed time.Duration
 
-	// hash -> needed?
+	// hash -> needed (> 0)
 	coll := make(map[cipher.SHA256]int)
 
-	// TODO (kostyarin): removing of roots should affect c.stat
-	//
 	// remove roots before (seq of last full)
 	collRoots := make(map[cipher.PubKey]uint64)
 
-	//
-	// collect
-	//
+	// we have to use single transaction
 
-	err = c.DB().View(func(tx data.Tv) error {
-		feeds := tx.Feeds()
-		objs := tx.Objects()
+	err = c.DB().Update(func(tx data.Tu) (_ error) {
 
-		// first of all: collect all known objects
+		//
+		// collect
+		//
 
-		err = objs.Range(func(key cipher.SHA256) (_ error) {
-			coll[key] = 0
-			return
-		})
+		err = c.cleanUpCollect(tx, coll, collRoots, keepRoots)
 
 		if err != nil {
+			c.Debugf(CleanUpPin,
+				"CleanUp failed after collecting, took: %v, error: %v",
+				time.Now().Sub(tp),
+				err)
 			return
 		}
 
-		// range over roots
+		if c.Logger.Pins()&CleanUpVerbosePin != 0 {
+			verboseElapsed = time.Now().Sub(tp)
+			c.Debugf(CleanUpVerbosePin, "CleanUp collecting took: ",
+				verboseElapsed)
+		}
 
-		return feeds.Range(func(pk cipher.PubKey) (err error) {
+		//
+		// delete
+		//
 
-			roots := feeds.Roots(pk)
-
-			var lastFull uint64
-			var hasLastFull bool
-
-			err = roots.Reverse(func(rp *data.RootPack) (_ error) {
-
-				if rp.IsFull {
-					lastFull, hasLastFull = rp.Seq, true
-					if !keepRoots {
-						// we will delete roots below last full
-						return data.ErrStopRange
-					}
-				}
-
-				var r Root
-
-				// TODO (kostyarin): unpack the RootPack
-
-				c.knowsAbout(&r, objs, func(hash cipher.SHA256) (deeper bool,
-					err error) {
-
-					if coll[hash] == 0 {
-						coll[hash] = 1
-						return true, nil // go deeper
-					}
-					return // already known the object
-				})
-
-				// ignore all possible errors of the knowsAbout
-				// becasue we need to walk through all Roots
-				//
-				// TOTH (kostyarin): ignore? or be strict?
-
-				return
-			})
-
-			if hasLastFull && !keepRoots {
-				collRoots[pk] = lastFull
+		for k, v := range coll {
+			if v != 0 {
+				delete(coll, k) // remove necessary objects from the map
 			}
+		}
 
-			return
+		if len(coll) != 0 && len(collRoots) != 0 {
+			err = c.cleanUpRemove(tx, coll, collRoots, keepRoots)
+		}
 
-		})
-
-	})
-
-	if err != nil {
-		c.Debugf(CleanUpPin,
-			"CleanUp failed after collecting, tooks: %v, error: %v",
-			time.Now().Sub(tp),
-			err)
 		return
-	}
-
-	if c.Logger.Pins()&CleanUpVerbosePin != 0 {
-		verboseElapsed = time.Now().Sub(tp)
-		c.Debugf(CleanUpVerbosePin, "CleanUp collecting tooks: ",
-			verboseElapsed)
-	}
-
-	//
-	// delete
-	//
-
-	for k, v := range coll {
-		if v != 0 {
-			delete(coll, k) // remove necessary object from the map
-		}
-	}
-
-	// TODO (kostyarin): remove unused registries
-
-	if len(coll) != 0 && len(collRoots) != 0 {
-
-		// sort the coll (to be faster, because of B+tree)
-		sl := newSortedListOfHashes(coll)
-		coll = nil // GC
-
-		err = c.DB().Update(func(tx data.Tu) (err error) {
-
-			// remove roots first
-
-			if len(collRoots) > 0 {
-				feeds := tx.Feeds()
-				for pk, before := range collRoots {
-					if roots := feeds.Roots(pk); roots != nil {
-						if err = roots.DelBefore(before); err != nil {
-							return
-						}
-					}
-				}
-			}
-
-			if len(sl) > 0 {
-				objs := tx.Objects()
-				// TOTH (kostyarin): "range sl + Del" vs. "RangeDel + map"
-				for _, key := range sl {
-					if err = objs.Del(key); err != nil {
-						return
-					}
-				}
-			}
-
-			return
-		})
-
-	}
+	})
 
 	elapsed = time.Now().Sub(tp)
 	c.stat.addCleanUp(elapsed)
@@ -486,12 +394,117 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 
 	if c.Logger.Pins()&CleanUpVerbosePin != 0 {
 		verboseElapsed = time.Now().Sub(tp) - verboseElapsed
-		c.Debugf(CleanUpVerbosePin, "CleanUp removing tooks: ",
+		c.Debugf(CleanUpVerbosePin, "CleanUp removing took: ",
 			verboseElapsed)
 	}
 
 	c.Debugln(CleanUpPin, "CleanUp", elapsed)
 	return
+}
+
+func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
+	collRoots map[cipher.PubKey]uint64, keepRoots bool) error {
+
+	feeds := tx.Feeds()
+	objs := tx.Objects()
+
+	// range over roots
+
+	return feeds.Range(func(pk cipher.PubKey) (err error) {
+
+		roots := feeds.Roots(pk)
+
+		var lastFull uint64
+		var hasLastFull bool
+
+		err = roots.Reverse(func(rp *data.RootPack) (err error) {
+
+			if rp.IsFull {
+				lastFull, hasLastFull = rp.Seq, true
+				if !keepRoots {
+					// we will delete roots below last full
+					return data.ErrStopRange
+				}
+			}
+
+			var r *Root
+			if r, err = c.unpackRoot(rp); err != nil {
+				return
+			}
+
+			c.knowsAbout(&r, objs, func(hash cipher.SHA256) (deeper bool,
+				err error) {
+
+				if _, ok := coll[hash]; !ok {
+					coll[hash] = 1
+					return true, nil // go deeper
+				}
+				return // already known the object
+			})
+
+			// ignore all possible errors of the knowsAbout
+			// becasue we need to walk through all Roots
+			//
+			// TOTH (kostyarin): ignore? or be strict?
+
+			return
+		})
+
+		if hasLastFull && !keepRoots {
+			collRoots[pk] = lastFull
+		}
+
+		return
+
+	})
+
+}
+
+func (c *Container) cleanUpRemove(tx data.Tu, coll map[cipher.SHA256]int,
+	collRoots map[cipher.PubKey]int, keepRoots bool) error {
+
+	// remove unused registries
+
+	c.cleanUpRemoveRegistries(coll)
+
+	// remove roots
+
+	if len(collRoots) > 0 {
+		feeds := tx.Feeds()
+		for pk, before := range collRoots {
+			if roots := feeds.Roots(pk); roots != nil {
+				if err = roots.DelBefore(before); err != nil {
+					return
+				}
+			}
+		}
+	}
+
+	// remove objects
+
+	if len(sl) > 0 {
+		objs := tx.Objects()
+		return objs.RangeDel(func(key cipher.SHA256) (del bool, _ error) {
+			if _, ok := coll[key]; !ok {
+				del = true
+			}
+			return
+		})
+	}
+
+	return
+}
+
+func (c *Container) cleanUpRemoveRegistries(coll map[cipher.SHA256]int) {
+	c.rmx.Lock()
+	defer c.rmx.Unlock()
+
+	for k := range c.regs {
+		if _, ok := coll[cipher.SHA256(k)]; !ok {
+			delete(c.regs, k)
+			c.stat.addRegistry(-1)
+		}
+	}
 }
 
 func (c *Container) cleanUpByInterval() {
@@ -519,6 +532,41 @@ func (c *Container) cleanUpByInterval() {
 	}
 }
 
+func (c *Container) unpackRoot(rp *data.RootPack) (r *Root, err error) {
+	r = new(Root)
+	if err = encoder.DeserializeRaw(rp.Root, r); err != nil {
+		// detailed error
+		err = fmt.Errorf("error decoding root"+
+			" (feed %s, seq %d, hash %s): %v",
+			pk.Hex()[:7],
+			rp.Seq,
+			rp.Hash.Hex()[:7],
+			err)
+		r = nil
+	}
+	return
+}
+
+// removeNonFullRoots removes all non-full
+// Root objects from database
+func (c *Container) removeNonFullRoots() error {
+
+	// don't perform simultaneously with CleanUp
+	c.cleanmx.Lock()
+	defer c.cleanmx.Unlock()
+
+	return c.DB().Update(func(tx data.Tu) error {
+		feeds := tx.Feeds()
+		return feeds.Range(func(pk cipher.PubKey) error {
+			roots := feeds.Roots(pk)
+			return roots.RangeDel(func(rp *data.RootPack) (del bool, _ error) {
+				del = !rp.IsFull
+				return
+			})
+		})
+	})
+}
+
 // Close the Container. The
 // closing doesn't close DB
 func (c *Container) Close() error {
@@ -530,7 +578,11 @@ func (c *Container) Close() error {
 	})
 	c.await.Wait()
 
-	// TODO (kostyarin): remove non-full roots
+	if !c.conf.KeepNonFull {
+		if err := c.removeNonFullRoots(); err != nil {
+			c.Print("[ERR] error removing non-full roots:", err)
+		}
+	}
 
 	// and remove all possible
 	return c.CleanUp(c.conf.KeepRoots)

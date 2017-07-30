@@ -19,6 +19,8 @@ const (
 	CleanUpPin        log.Pin = 1 << iota // show time of CleanUp in logs
 	PackSavePin                           // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
+
+	EncoderPin // encoding/decoding errors
 )
 
 // A Config represents oconfigurations
@@ -67,7 +69,7 @@ func NewConfig() (conf *Config) {
 
 	conf.Log = log.NewConfig()
 	conf.Log.Prefix = Prefix
-	conf.Log.Pins = CleanUpPin | PackSavePin
+	conf.Log.Pins = CleanUpPin | PackSavePin | EncoderPin
 
 	// stat
 

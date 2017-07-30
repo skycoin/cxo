@@ -14,8 +14,7 @@ type rollavg func(time.Duration) time.Duration
 type Stat struct {
 	mx sync.Mutex
 
-	Feeds      map[cipher.PubKey]FeedStat // amount of roots per feed
-	Registries int                        // amount of unpacked registries
+	Registries int // amount of unpacked registries
 
 	Save    time.Duration // avg time of pack.Save() call
 	CleanUp time.Duration // avg time of c.CleanUp() call
@@ -28,16 +27,10 @@ type Stat struct {
 	cleanUp  rollavg // avg time of c.CleanUp() call (GC)
 }
 
-type FeedStat struct {
-	Total int
-	Full  int
-}
-
 func (s *Stat) init(samples int) {
 	if samples <= 0 {
 		samples = StatSamples // default
 	}
-	s.Feeds = make(map[cipher.PubKey]FeedStat)
 	s.packSave = rolling(samples)
 	s.cleanUp = rolling(samples)
 }
@@ -54,20 +47,6 @@ func (s *Stat) addCleanUp(dur time.Duration) {
 	defer s.mx.Unlock()
 
 	s.CleanUp = s.cleanUp(dur)
-}
-
-func (s *Stat) addRoot(pk cipher.PubKey, delta int, full bool) {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-
-	fs := s.Feeds[pk]
-
-	fs.Total += delta
-	if full {
-		fs.Full += delta
-	}
-
-	s.Feeds[pk] = fs
 }
 
 func (s *Stat) addRegistry(delta int) {
