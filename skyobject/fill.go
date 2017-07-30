@@ -151,19 +151,19 @@ func (f *Filler) fillDynamic(dr Dynamic) (err error) {
 		return
 	}
 	var sch Schema
-	if sch, err = f.reg.SchemaByReference(dr.Schema); err != nil {
+	if sch, err = f.reg.SchemaByReference(dr.SchemaRef); err != nil {
 		return
 	}
 	return f.fillReference(sch, dr.Object)
 }
 
-func (f *Filler) fillReference(sch Schema, ref Reference) (err error) {
-	if ref.IsBlank() {
-		return
+func (f *Filler) fillReference(sch Schema, ref cipher.SHA256) (err error) {
+	if ref == (cipher.SHA256{}) {
+		return // blank (represents nil)
 	}
 	var val []byte
 	var ok bool
-	if val, ok := f.get(ref.Hash); !ok {
+	if val, ok := f.get(ref); !ok {
 		return
 	}
 	return f.fillData(sch, val)

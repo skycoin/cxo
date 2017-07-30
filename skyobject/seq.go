@@ -5,34 +5,68 @@ import (
 	"sync"
 )
 
+type trackedFeed struct {
+	lastSeq  uint64 // last seq
+	lastFull uint64 // seq of last full root
+	hasFull  bool   // really has last full root (if lastFull is 0)
+}
+
 // track seq number per root (feed)
 type trackSeq struct {
 	mx sync.Mutex
 
 	// feed -> last
-	track map[cipher.PubKey]uint64
+	track map[cipher.PubKey]trackedFeed
 }
 
 func (t *trackSeq) init() {
-	t.track = make(map[cipher.PubKey]uint64)
+	t.track = make(map[cipher.PubKey]trackedFeed)
 }
 
-// addFeed or repalce last seq of existing one
-func (t *trackSeq) addFeed(pk cipher.PubKey, seq uint64) {
+// set seq of a feed
+func (t *trackSeq) setSeq(pk cipher.PubKey, seq uint64) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	t.track[pk] = seq
+	tf := t.track[pk]
+
+	tf.lastSeq = seq
+	t.track[pk] = tf
 }
 
-// take seq number of a feed, incrementing it after; method
-// creates feed returning zero if no such feed
-func (t *trackSeq) take(pk cipher.PubKey) (seq uint64) {
+// get seq and increment
+func (t *trackSeq) takeSeq(pk cipher.PubKey) (seq uint64) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	seq = t.track[pk]
-	t.track[pk] = seq + 1
+	tf := t.track[pk]
+	seq = tf.lastSeq
 
+	tf.lastSeq++
+	t.track[pk] = tf
+
+	return
+}
+
+// set seq of last full of a feed
+func (t *trackSeq) setFull(pk cipher.PubKey, seq uint64, ok bool) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	tf := t.track[pk]
+
+	tf.lastFull = seq
+	tf.hasFull = ok
+	t.track[pk] = tf
+}
+
+// seq of last full root
+func (t *trackSeq) getFull(pk cipher.PubKey) (seq uint64, ok bool) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	tf := t.track[pk]
+	seq = tf.lastFull
+	ok = tf.hasFull
 	return
 }

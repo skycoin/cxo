@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -32,6 +33,7 @@ type Container struct {
 	db data.DB
 
 	trackSeq
+	stat Stat
 
 	coreRegistry *Registry
 
@@ -39,6 +41,12 @@ type Container struct {
 	regs map[RegistryReference]*Registry
 
 	filler *Filler // related filler
+
+	cleanmx sync.Mutex // clean up mutex
+
+	closeq chan struct{}
+	closeo sync.Once
+	await  sync.WaitGroup
 }
 
 // NewContainer by given database (required) and Registry
@@ -55,31 +63,16 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 	}
 
 	c = new(Container)
+
+	c.closeq = make(chan struct{})
+
 	c.Logger = log.NewLogger(conf.Log)
 	c.regs = make(map[RegistryReference]*Registry)
 
 	// copy configs
-	c.conf.MerkleDegree = conf.MerkleDegree
+	c.conf = *conf
 
-	// initialize trackSeq
-	trackSeq.init()
-
-	// range over feeds of DB and fill up the trackSeq
-	err := db.View(func(tx data.Tv) error {
-		feeds := tx.Feeds()
-		return feeds.Range(func(pk cipher.PubKey) (_ error) {
-			if rp := feeds.Roots(pk).Last(); rp != nil {
-				c.trackSeq.addFeed(pk, rp.Seq)
-			}
-			return
-		})
-	})
-
-	if err != nil {
-		db.Close()
-		c.Panic("unexpected database error: ", err)
-		return
-	}
+	c.initSeqTrackStat()
 
 	if conf.Registry != nil {
 		c.coreRegistry = conf.Registry
@@ -89,7 +82,61 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 		}
 	}
 
+	if c.conf.CleanUp > 0 {
+		c.await.Add(1)
+		c.cleanUpByInterval()
+	}
+
 	return
+}
+
+func (c *Container) initSeqTrackStat() {
+	// initialize trackSeq
+	c.trackSeq.init()
+	c.stat.init(c.conf.StatSamples)
+
+	// range over feeds of DB and fill up the trackSeq
+	err := db.View(func(tx data.Tv) error {
+		feeds := tx.Feeds()
+
+		return feeds.Range(func(pk cipher.PubKey) (err error) {
+
+			roots := feeds.Roots(pk)
+
+			var total, full int  // total roots, full roots
+			var seq, last uint64 // last seq and seq of last full
+			var hasLast bool     // really has last full root (if last is 0)
+
+			err = roots.Range(func(rp *data.RootPack) (_ error) {
+				total++
+				if rp.IsFull {
+					last, hasLast = rp.Seq, true
+					full++
+				}
+				seq = rp.Seq
+				return
+			})
+
+			if err != nil {
+				return
+			}
+
+			c.stat.addRoot(pk, full, true)
+			c.stat.addRoot(pk, total-full, false)
+
+			c.trackSeq.setSeq(pk, seq)
+			if hasLast {
+				c.trackSeq.setFull(pk, last, true)
+			}
+
+		})
+
+	})
+
+	if err != nil {
+		db.Close()
+		c.Panic("unexpected database error: ", err)
+	}
 }
 
 // saveRegistry in database
@@ -107,6 +154,7 @@ func (c *Container) addRegistry(reg *Registry) {
 
 	if _, ok := c.regs[reg.Reference()]; !ok {
 		c.regs[reg.Reference()] = reg
+		c.stat.addRegistry(1)
 	}
 	return
 }
@@ -120,6 +168,7 @@ func (c *Container) AddRegistry(reg *Registry) (err error) {
 	if _, ok := c.regs[reg.Reference()]; !ok {
 		if err = c.saveRegistry(reg); err == nil {
 			c.regs[reg.Reference()] = reg
+			c.stat.addRegistry(1)
 		}
 	}
 	return
@@ -277,7 +326,50 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 }
 
 // CelanUp removes unused objects from database
-func CleanUp() (err error) {
-	// TODO
+func (c *Container) CleanUp(keepRoots bool) (err error) {
+
+	c.cleanmx.Lock()
+	defer c.cleanmx.Unlock()
+
+	tp := time.Now()
+
+	objs := make(map[cipher.SHA256]int)
+
+	// TODO (kostyarin): got method required
+
+	elapsed := time.Now().Sub(tp)
+	c.stat.addCleanUp(elapsed)
+
+	if err != nil {
+		c.Debugf(CleanUpPin, "CleanUp failed after %v: %v", elapsed, err)
+		return
+	}
+
+	c.Debugln(CleanUpPin, "CleanUp", elapsed)
 	return
+}
+
+func (c *Container) cleanUpByInterval() {
+	defer c.await.Done()
+
+	c.Debug(CleanUpPin, "start cleaning loop by ", c.conf.CleanUp)
+	defer c.Debug(CleanUpPin, "stop cleaning loop")
+
+	tk := time.NewTicker(c.conf.CleanUp)
+	defer tk.Stop()
+
+	tick := tk.C
+
+	var err error
+
+	for {
+		select {
+		case <-tick:
+			if err = c.CleanUp(c.conf.KeepRoots); err != nil {
+				c.Print("[ERR] CleanUp error", err)
+			}
+		case <-c.closeq:
+			return
+		}
+	}
 }

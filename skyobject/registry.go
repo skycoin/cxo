@@ -296,7 +296,7 @@ func (r *Registry) Reference() RegistryReference {
 func (r *Registry) SchemaByReference(sr SchemaReference) (s Schema, err error) {
 	var ok bool
 	if s, ok = r.srf[sr]; !ok {
-		err = fmt.Errorf("miisng schema %q", sr.String())
+		err = fmt.Errorf("missng schema %q", sr.String())
 	}
 	return
 }
