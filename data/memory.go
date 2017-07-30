@@ -483,6 +483,18 @@ func (m *memoryRoots) Del(seq uint64) (err error) {
 	return
 }
 
+func (m *memoryRoots) MarkFull(seq uint64) (err error) {
+	rp := m.Get(seq)
+	if rp == nil {
+		return ErrNotFound
+	}
+	rp.IsFull = true
+	data := encValue(encoder.Serialize(rp))
+	key := m.key(rp.Seq) // feed:pk:seq
+	_, _, err = m.tx.Set(key, data, nil)
+	return
+}
+
 func (m *memoryRoots) Range(fn func(rp *RootPack) error) (err error) {
 
 	var rp *RootPack

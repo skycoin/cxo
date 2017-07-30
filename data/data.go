@@ -133,11 +133,16 @@ type UpdateRoots interface {
 	ViewRoots
 
 	// Add a root object. It returns ErrRootAlreadyExists
-	// if root with the same seq number already exists
+	// if root with the same seq number already exists.
+	// The method doesn't modify rp. And if rp.IsFull is
+	// true then it will be saved as full
 	Add(rp *RootPack) (err error)
 	// Del deletes root object by seq number. It never
 	// returns "not found" error
 	Del(seq uint64) (err error)
+	// MarkFull marks root with given seq as full.
+	// The method can return ErrNotFound
+	MarkFull(seq uint64) (err error)
 
 	// RangeDelete used to delete Root obejcts.
 	// If given function returns del = true, then

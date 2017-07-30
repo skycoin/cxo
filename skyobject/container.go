@@ -35,18 +35,20 @@ type Container struct {
 	trackSeq
 	stat Stat
 
+	// registries
+
 	coreRegistry *Registry
 
 	rmx  sync.RWMutex
 	regs map[RegistryReference]*Registry
 
-	filler *Filler // related filler
+	// clean up
 
 	cleanmx sync.Mutex // clean up mutex
 
-	closeq chan struct{}
-	closeo sync.Once
-	await  sync.WaitGroup
+	closeq chan struct{}  //
+	closeo sync.Once      // clean up by interval
+	await  sync.WaitGroup //
 }
 
 // NewContainer by given database (required) and Registry
@@ -54,7 +56,7 @@ type Container struct {
 // Container
 //
 // TODO (kostyarin): move the db argument to Config creating
-// in-memory DB by default (if nil)
+// in-memory DB by default (if nil). Think about panics
 func NewContainer(db data.DB, conf *Config) (c *Container) {
 
 	if db == nil {
@@ -586,4 +588,22 @@ func (c *Container) Close() error {
 
 	// and remove all possible
 	return c.CleanUp(c.conf.KeepRoots)
+}
+
+//
+// feeds
+//
+
+// AddFeed. The method never retruns "already exists" errors
+func (c *Container) AddFeed(pk cipher.PubKey) error {
+	return c.DB().Update(func(tx data.Tu) error {
+		return tx.Feeds().Add(pk)
+	})
+}
+
+// DelFeed. The method never returns "not found" errors
+func (c *Container) DelFeed(pk cipher.PubKey) error {
+	return c.DB().Update(func(tx data.Tu) error {
+		return tx.Feeds().Del(pk)
+	})
 }

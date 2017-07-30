@@ -454,6 +454,15 @@ func (d *driveRoots) Del(seq uint64) error {
 	return d.bk.Delete(seqb)
 }
 
+func (d *driveRoots) MarkFull(seq uint64) (err error) {
+	rp := d.Get(seq)
+	if rp == nil {
+		return ErrNotFound
+	}
+	rp.IsFull = true
+	return d.bk.Put(utob(seq), encoder.Serialize(rp))
+}
+
 func (d *driveRoots) Range(fn func(rp *RootPack) error) (err error) {
 
 	var rp *RootPack

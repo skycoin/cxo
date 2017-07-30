@@ -73,6 +73,7 @@ func (f *Filler) drop(err error) {
 }
 
 func (f *Filler) full() {
+	// TODO (kostyarin): mark as full
 	f.fullq <- f.r
 }
 

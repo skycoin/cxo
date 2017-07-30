@@ -43,7 +43,8 @@ type Config struct {
 	// (wiki: 'moving average')
 	StatSamples int
 
-	// CleanUp by provided interval. Set to 0 to disable
+	// CleanUp by provided interval. Set to 0 to disable. The
+	// cleaning can be stopped by (*Container).Close() only
 	CleanUp time.Duration
 
 	// KeepRoots instead of removing. By default (e.g. if it is false)
