@@ -7,11 +7,18 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+// A Stat represents Container statistic
+type Stat struct {
+	Registries int           // amount of unpacked registries
+	Save       time.Duration // avg time of pack.Save() call
+	CleanUp    time.Duration // avg time of c.CleanUp() call
+}
+
 // rolling average of duration
 type rollavg func(time.Duration) time.Duration
 
-// A Stat represents Container statistic
-type Stat struct {
+// statistic
+type stat struct {
 	mx sync.Mutex
 
 	Registries int // amount of unpacked registries
@@ -27,7 +34,7 @@ type Stat struct {
 	cleanUp  rollavg // avg time of c.CleanUp() call (GC)
 }
 
-func (s *Stat) init(samples int) {
+func (s *stat) init(samples int) {
 	if samples <= 0 {
 		samples = StatSamples // default
 	}
@@ -35,21 +42,21 @@ func (s *Stat) init(samples int) {
 	s.cleanUp = rolling(samples)
 }
 
-func (s *Stat) addPackSave(dur time.Duration) {
+func (s *stat) addPackSave(dur time.Duration) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 
 	s.Save = s.packSave(dur)
 }
 
-func (s *Stat) addCleanUp(dur time.Duration) {
+func (s *stat) addCleanUp(dur time.Duration) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 
 	s.CleanUp = s.cleanUp(dur)
 }
 
-func (s *Stat) addRegistry(delta int) {
+func (s *stat) addRegistry(delta int) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 
@@ -77,4 +84,20 @@ func rolling(n int) rollavg {
 		return time.Duration(average)
 	}
 
+}
+
+// informational copy of the stat
+func (s *stat) Stat() (cp Stat) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+
+	cp.Registries = s.Registries
+	cp.Save = s.Save
+	cp.CleanUp = s.CleanUp
+	return
+}
+
+// Stat of Container
+func (c *Container) Stat() Stat {
+	return c.stat.Stat()
 }

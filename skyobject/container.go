@@ -33,7 +33,7 @@ type Container struct {
 	db data.DB
 
 	trackSeq
-	stat Stat
+	stat
 
 	// registries
 
