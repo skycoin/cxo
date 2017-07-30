@@ -20,8 +20,10 @@ type getter interface {
 // knowsAbout calls given knowsAboutFunc for every (not really) object of
 // given Root. The method never returns "missing object" or "missing registry"
 // errors. Use 'deeper' reply of knowsAboutFunc to control how deep an object
-// should be inspected
-func (c *Container) knowsAbout(r *Root, g getter, fn knowsAboutFunc) (err error) {
+// should be inspected. The given knowsAboutFunc will never been called
+// with empty hash
+func (c *Container) knowsAbout(r *Root, g getter,
+	fn knowsAboutFunc) (err error) {
 
 	// 1) registry
 

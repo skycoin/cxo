@@ -328,21 +328,106 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 // CelanUp removes unused objects from database
 func (c *Container) CleanUp(keepRoots bool) (err error) {
 
+	// TODO (kostyarin): reduce function complexity
+
 	c.cleanmx.Lock()
 	defer c.cleanmx.Unlock()
 
 	tp := time.Now()
+	var elapsed, verboseElapsed time.Duration
 
-	objs := make(map[cipher.SHA256]int)
+	// hash -> needed?
+	coll := make(map[cipher.SHA256]int)
+	// remove roots before (seq of last full)
+	collRoots := make(map[cipher.PubKey]uint64)
 
-	// TODO (kostyarin): got method required
+	//
+	// collect
+	//
 
-	elapsed := time.Now().Sub(tp)
+	err = c.DB().View(func(tx data.Tv) error {
+		feeds := tx.Feeds()
+		objs := tx.Objects()
+
+		return feeds.Range(func(pk cipher.PubKey) (err error) {
+			roots := feeds.Roots(pk)
+
+			var lastFull uint64
+			var hasLastFull bool
+
+			err = roots.Range(func(rp *data.RootPack) (_ error) {
+
+				if rp.IsFull {
+					lastFull, hasLastFull = rp.Seq, true
+				}
+
+				var r Root
+
+				// TODO (kostyarin): unpack the RootPack
+
+				c.knowsAbout(&r, objs, func(hash cipher.SHA256) (deeper bool,
+					err error) {
+
+					if _, ok := coll[hash]; !ok {
+						coll[hash] = 1
+						return true, nil // go deeper
+					}
+					return // already known the object
+				})
+
+				// ignore all possible errors of the knowsAbout
+				// becasue we need to walk through all Roots
+				//
+				// TOTH (kostyarin): ignore? or be strict?
+
+				return
+			})
+
+			if hasLastFull && !keepRoots {
+				collRoots[pk] = lastFull
+			}
+
+			return
+
+		})
+
+	})
+
+	if err != nil {
+		c.Debugf(CleanUpPin,
+			"CleanUp failed after collecting, tooks: %v, error: %v",
+			time.Now().Sub(tp),
+			err)
+		return
+	}
+
+	if c.Logger.Pins()&CleanUpVerbosePin != 0 {
+		verboseElapsed = time.Now().Sub(tp)
+		c.Debugf(CleanUpVerbosePin, "CleanUp collecting tooks: ",
+			verboseElapsed)
+	}
+
+	//
+	// delete
+	//
+
+	err = c.DB().Update(func(tx data.Tu) (_ error) {
+		//
+		return
+	})
+
+	elapsed = time.Now().Sub(tp)
 	c.stat.addCleanUp(elapsed)
 
 	if err != nil {
 		c.Debugf(CleanUpPin, "CleanUp failed after %v: %v", elapsed, err)
 		return
+	}
+
+	if c.Logger.Pins()&CleanUpVerbosePin != 0 {
+		verboseElapsed = time.Now().Sub(tp) - verboseElapsed
+		c.Debugf(CleanUpVerbosePin, "CleanUp removing tooks: ",
+			verboseElapsed)
 	}
 
 	c.Debugln(CleanUpPin, "CleanUp", elapsed)
@@ -352,8 +437,8 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 func (c *Container) cleanUpByInterval() {
 	defer c.await.Done()
 
-	c.Debug(CleanUpPin, "start cleaning loop by ", c.conf.CleanUp)
-	defer c.Debug(CleanUpPin, "stop cleaning loop")
+	c.Debug(CleanUpPin, "start CleanUp loop by ", c.conf.CleanUp)
+	defer c.Debug(CleanUpPin, "stop CleanUp loop")
 
 	tk := time.NewTicker(c.conf.CleanUp)
 	defer tk.Stop()
@@ -366,10 +451,27 @@ func (c *Container) cleanUpByInterval() {
 		select {
 		case <-tick:
 			if err = c.CleanUp(c.conf.KeepRoots); err != nil {
-				c.Print("[ERR] CleanUp error", err)
+				c.Print("[ERR] CleanUp error: ", err)
 			}
 		case <-c.closeq:
 			return
 		}
 	}
+}
+
+// Close the Container. The
+// closing doesn't close DB
+func (c *Container) Close() error {
+
+	// close cleanUpByInterval
+
+	c.closeo.Do(func() {
+		close(c.closeq)
+	})
+	c.await.Wait()
+
+	// TODO (kostyarin): remove non-full roots
+
+	// and remove all possible
+	return c.CleanUp(c.conf.KeepRoots)
 }
