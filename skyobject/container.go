@@ -338,6 +338,9 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 
 	// hash -> needed?
 	coll := make(map[cipher.SHA256]int)
+
+	// TODO (kostyarin): removing of roots should affect c.stat
+	//
 	// remove roots before (seq of last full)
 	collRoots := make(map[cipher.PubKey]uint64)
 
@@ -349,16 +352,34 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 		feeds := tx.Feeds()
 		objs := tx.Objects()
 
+		// first of all: collect all known objects
+
+		err = objs.Range(func(key cipher.SHA256) (_ error) {
+			coll[key] = 0
+			return
+		})
+
+		if err != nil {
+			return
+		}
+
+		// range over roots
+
 		return feeds.Range(func(pk cipher.PubKey) (err error) {
+
 			roots := feeds.Roots(pk)
 
 			var lastFull uint64
 			var hasLastFull bool
 
-			err = roots.Range(func(rp *data.RootPack) (_ error) {
+			err = roots.Reverse(func(rp *data.RootPack) (_ error) {
 
 				if rp.IsFull {
 					lastFull, hasLastFull = rp.Seq, true
+					if !keepRoots {
+						// we will delete roots below last full
+						return data.ErrStopRange
+					}
 				}
 
 				var r Root
@@ -368,7 +389,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 				c.knowsAbout(&r, objs, func(hash cipher.SHA256) (deeper bool,
 					err error) {
 
-					if _, ok := coll[hash]; !ok {
+					if coll[hash] == 0 {
 						coll[hash] = 1
 						return true, nil // go deeper
 					}
@@ -411,10 +432,49 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 	// delete
 	//
 
-	err = c.DB().Update(func(tx data.Tu) (_ error) {
-		//
-		return
-	})
+	for k, v := range coll {
+		if v != 0 {
+			delete(coll, k) // remove necessary object from the map
+		}
+	}
+
+	// TODO (kostyarin): remove unused registries
+
+	if len(coll) != 0 && len(collRoots) != 0 {
+
+		// sort the coll (to be faster, because of B+tree)
+		sl := newSortedListOfHashes(coll)
+		coll = nil // GC
+
+		err = c.DB().Update(func(tx data.Tu) (err error) {
+
+			// remove roots first
+
+			if len(collRoots) > 0 {
+				feeds := tx.Feeds()
+				for pk, before := range collRoots {
+					if roots := feeds.Roots(pk); roots != nil {
+						if err = roots.DelBefore(before); err != nil {
+							return
+						}
+					}
+				}
+			}
+
+			if len(sl) > 0 {
+				objs := tx.Objects()
+				// TOTH (kostyarin): "range sl + Del" vs. "RangeDel + map"
+				for _, key := range sl {
+					if err = objs.Del(key); err != nil {
+						return
+					}
+				}
+			}
+
+			return
+		})
+
+	}
 
 	elapsed = time.Now().Sub(tp)
 	c.stat.addCleanUp(elapsed)
