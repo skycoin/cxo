@@ -5,10 +5,12 @@ import (
 	"sync"
 )
 
+const (
+	inversedSeq uint64 = ^uint64(0)
+)
+
 type trackedFeed struct {
-	lastSeq  uint64 // last seq
-	lastFull uint64 // seq of last full root
-	hasFull  bool   // really has last full root (if lastFull is 0)
+	last, full uint64
 }
 
 // track seq number per root (feed)
@@ -24,49 +26,71 @@ func (t *trackSeq) init() {
 }
 
 // set seq of a feed
-func (t *trackSeq) setSeq(pk cipher.PubKey, seq uint64) {
+func (t *trackSeq) addSeq(pk cipher.PubKey, seq uint64, full bool) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	tf := t.track[pk]
 
-	tf.lastSeq = seq
+	if tf.last == inversedSeq || seq > tf.last {
+		tf.last = seq
+	}
+	if full {
+		if tf.full == inversedSeq || seq > tf.full {
+			tf.full = seq
+		}
+	}
+
 	t.track[pk] = tf
 }
 
-// get seq and increment
-func (t *trackSeq) takeSeq(pk cipher.PubKey) (seq uint64) {
+// del feed (stop tracking)
+func (t *trackSeq) delFeed(pk cipher.PubKey) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	delete(t.track, pk)
+}
+
+// TakeLastSeq increments and returns last seq of a feed. Result
+// can be 0 (despite incrementing).
+func (t *trackSeq) TakeLastSeq(pk cipher.PubKey) (seq uint64) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	tf := t.track[pk]
-	seq = tf.lastSeq
 
-	tf.lastSeq++
+	tf.last++
+	seq = tf.last
+
 	t.track[pk] = tf
-
 	return
 }
 
-// set seq of last full of a feed
-func (t *trackSeq) setFull(pk cipher.PubKey, seq uint64, ok bool) {
+// LastSeq of a feed. The 'ok' is false if feed is not tracked
+func (t *trackSeq) LastSeq(pk cipher.SHA256) (seq uint64, ok bool) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	tf := t.track[pk]
 
-	tf.lastFull = seq
-	tf.hasFull = ok
-	t.track[pk] = tf
+	if tf.last == inversedSeq {
+		return
+	}
+	seq, ok = tf.last, true
+	return
 }
 
-// seq of last full root
-func (t *trackSeq) getFull(pk cipher.PubKey) (seq uint64, ok bool) {
+// LastFullSeq of a feed. The 'ok' is false if feed is not tracked
+func (t *trackSeq) LastFullSeq(pk cipher.PubKey) (seq uint64, ok bool) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	tf := t.track[pk]
-	seq = tf.lastFull
-	ok = tf.hasFull
+
+	if tf.full == inversedSeq {
+		return
+	}
+	seq, ok = tf.full, true
 	return
 }

@@ -8,6 +8,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/skycoin/data"
 )
 
 // some of Root dropping reasons
@@ -73,7 +75,12 @@ func (f *Filler) drop(err error) {
 }
 
 func (f *Filler) full() {
-	// TODO (kostyarin): mark as full
+	if err := f.c.MarkFull(f.r); err != nil {
+		// detailed error
+		err = fmt.Errorf("can't mark root %s as full in DB", f.r.Short())
+		f.drop(err) // can't mark as full
+		return
+	}
 	f.fullq <- f.r
 }
 
@@ -393,5 +400,5 @@ type DropRootError struct {
 
 // Error implements error interface
 func (d *DropRootError) Error() string {
-	return fmt.Sprintf("drop Root %s:", d.Root.PH(), d.Err)
+	return fmt.Sprintf("drop Root %s:", d.Root.Short(), d.Err)
 }

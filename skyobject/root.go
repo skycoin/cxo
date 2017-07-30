@@ -2,6 +2,8 @@ package skyobject
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -29,10 +31,19 @@ type Root struct {
 	Prev cipher.SHA256 // hash of previous root
 }
 
-// PH retusn string like "[1a2ef33:98a7ec5]"
-// ([pub_key:root_hash]). First 7 characters
-func (r *Root) PH() string {
-	return "[" + r.Pub.Hex()[:7] + ":" + r.Hash.Hex()[:7] + "]"
+// Short retusn string like "[1a2ef33:2]" ({pub_key:seq})
+func (r *Root) Short() string {
+	return fmt.Sprintf("{%s:%d}",
+		r.Pub.Hex()[:7],
+		r.Seq)
+}
+
+// String implements fmt.Stringer interface
+func (r *Root) String() string {
+	return fmt.Sprintf("Root{%s:%d:%s}",
+		r.Pub.Hex()[:7],
+		r.Seq,
+		r.Hash.Hex()[:7])
 }
 
 // AddRoot to container. The method sets rp.IsFull to false
@@ -53,7 +64,24 @@ func (c *Container) AddRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 		return roots.Add(rp)
 	})
 	if err == nil {
-		//
+		// track seq number
+		c.trackSeq.addSeq(r.Pub, r.Seq, false)
+	}
+	return
+}
+
+// MarkFull marks given Root as full in DB
+func (c *Container) MarkFull(r *Root) (err error) {
+	err = c.DB().Update(func(tx data.Tu) error {
+		roots := tx.Feeds().Roots(r.Pub)
+		if roots == nil {
+			return ErrNoSuchFeed
+		}
+		return roots.MarkFull(r.Seq)
+	})
+	if err == nil {
+		// track last full
+		c.trackSeq.addSeq(r.Pub, r.Seq, true)
 	}
 	return
 }

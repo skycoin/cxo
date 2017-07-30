@@ -126,7 +126,7 @@ func (c *Container) initSeqTrackStat() {
 				return
 			}
 
-			c.trackSeq.setSeq(pk, seq)
+			c.trackSeq.addSeq(pk, seq, false)
 			if hasLast {
 				c.trackSeq.setFull(pk, last, true)
 				return
@@ -305,7 +305,7 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 	if pack.reg = c.Registry(r.Reg); pack.reg == nil {
 		err = fmt.Errorf("missing registry [%s] of Root %s",
 			r.Reg.Short(),
-			r.PH())
+			r.Short())
 		pack = nil // release for GC
 		return
 	}
@@ -602,8 +602,11 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 }
 
 // DelFeed. The method never returns "not found" errors
-func (c *Container) DelFeed(pk cipher.PubKey) error {
-	return c.DB().Update(func(tx data.Tu) error {
+func (c *Container) DelFeed(pk cipher.PubKey) (err error) {
+	err = c.DB().Update(func(tx data.Tu) error {
 		return tx.Feeds().Del(pk)
 	})
+	if err == nil {
+		c.trackSeq.delFeed(pk)
+	}
 }

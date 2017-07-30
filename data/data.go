@@ -159,12 +159,18 @@ type UpdateRoots interface {
 
 // A Tv represents read-only transaction
 type Tv interface {
+
+	// TODO (kostyarin): add bucket for end-user needs
+
 	Objects() ViewObjects // access objects
 	Feeds() ViewFeeds     // access feeds
 }
 
 // A Tu represents read-write transaction
 type Tu interface {
+
+	// TODO (kostyarin): add bucket for end-user needs
+
 	Objects() UpdateObjects // access objects
 	Feeds() UpdateFeeds     // access feeds
 
