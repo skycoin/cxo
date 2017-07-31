@@ -8,8 +8,8 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// given val can be encoded reference; it guaraneed by Types map:
-// we can't register a reference
+// given val can't be encoded reference; it guaraneed by
+// Types map: we can't register a reference
 func (p *Pack) unpackToGo(schemaName string, val []byte) (obj interface{},
 	err error) {
 
@@ -28,7 +28,7 @@ func (p *Pack) unpackToGo(schemaName string, val []byte) (obj interface{},
 	}
 
 	elem := ptr.Elem()
-	if err = p.setupReferencesOfGo(elem); err != nil {
+	if err = p.setupToGo(elem); err != nil {
 		return
 	}
 
@@ -37,158 +37,167 @@ func (p *Pack) unpackToGo(schemaName string, val []byte) (obj interface{},
 }
 
 // setup references of a golang-value
-func (p *Pack) setupReferencesOfGo(obj reflect.Value) (err error) {
+func (p *Pack) setupToGo(obj reflect.Value) (err error) {
 
 	switch obj.Kind() {
-	case reflect.Array:
-		err = setupReferencesOfGoArray(obj)
-	case reflect.Slice:
-		err = setupReferencesOfGoSlice(obj)
+	case reflect.Array, reflect.Slice:
+		err = setupArrayOrSliceToGo(obj)
 	case reflect.Struct:
-		err = setupReferencesOfGoStruct(obj)
+		err = setupStructToGo(obj)
 	}
 
 	return
 }
 
-// using (reflect.Value).Set
-func (p *Pack) setupReferencesRenameMe(upper, val reflect.Value) (err error) {
+// obj is parent object, idx is reflect.Value that is Dynamic;
+// for examples:
+//
+//     - struct {  A Dynamic }
+//        - the struct is obj
+//        - value of the A field is idx
+//
+//     - []Dynamic
+//       - the slice is obj
+//       - a value of the slice is idx
+//
+//     - [3]Dynamic
+//       - the array is obj
+//       - a value of the array is idx
+//
+func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 
-	switch val.Type() {
-	case singleRef:
-		ref := val.Interface().(Reference)
-
-		wn := new(walkNode)
-
-		wn.pack = p
-		wn.sch = nil // TODO (kostyarin): set up schema
-
-		if upper.Kind() == reflect.Slice {
-			//
-		} else if upper.Kind() == reflect.Struct {
-			//
-		} else { // element of an array
-			//
-		}
-
-		ref.walkNode = wn
-
-		if p.flags&EntireTree != 0 {
-			if err = p.unpackReferenceToGo(&ref); err != nil {
-				return
-			}
-		}
-
-		val.Set(relfect.ValueOf(ref))
-	case sliceRef:
-		refs := val.Interface().(References)
-		// TODO (kostyarin): set up the reference
-		val.Set(reflect.ValueOf(refs))
-	case dynamicRef:
-		dr := val.Interface().(Dynamic)
-		// TODO (kostyarin): set up the reference
-		val.Set(reflect.ValueOf(dr))
+	dr := idx.Interface().(Dynamic)
+	if dr.walkNode != nil {
+		return // already set up (skip circular references)
 	}
-	return
-}
 
-// an array can contain references only:
-//   - array of Dynamic
-//   - array of structs
-func (p *Pack) setupReferencesOfGoArray(obj reflect.Value) (err error) {
-
-	elemTyp := obj.Type().Elem()
-
-	if elemTyp == dynamicRef {
-		// TODO (kostyarin): setup dynamic reference
+	if !dr.IsValid() {
+		// detailed error
+		err = fmt.Errorf("invalid Dynamic reference %s, in %s",
+			dr.Short(), obj.Type().String())
 		return
 	}
 
-	if elemTyp.Kind() == reflect.Struct {
-		err = p.setupReferencesOfGoArrayOrSliceOfStructs(obj)
-	}
+	wn := new(walkNode)
 
-	return
+	wn.place = idx
+	wn.pack = p
 
-}
+	dr.walkNode = wn
 
-// a slice can contain references only:
-//   - slice of Dynamic
-//   - slice of structs
-func (p *Pack) setupReferencesOfGoSlice(obj reflect.Value) (err error) {
-
-	elemTyp := obj.Type().Elem()
-
-	if elemTyp == dynamicRef {
-		for i := 0; i < obj.Len(); i++ {
-			idx := obj.Index(i)
-
-			var dr Dynamic
-
-			dr = idx.Interface().(Dynamic)
-
-			if dr.walkNode != nil {
-				continue // already set up (skip circular references)
-			}
-
-			if !dr.IsValid() {
-				// detailed error
-				err = fmt.Errorf("invalid Dynamic reference %s, in %s",
-					dr.Short(), obj.Type().String())
-				return
-			}
-
-			wn := new(walkNode)
-
-			wn.place = idx
-			wn.pack = p
-
-			dr.walkNode = wn
-
-			if p.flags&EntireTree != 0 {
-
-				if _, err = dr.Schema(); err != nil { // setup schema
-					return
-				}
-				if _, err = dr.Value(); err != nil { // setup value
-					return
-				}
-
-			}
-
-			idx.Set(dr)
+	if p.flags&EntireTree != 0 {
+		if _, err = dr.Schema(); err != nil { // setup schema
+			return
 		}
-		return
-	}
-
-	if elemTyp.Kind() == reflect.Struct {
-		err = p.setupReferencesOfGoArrayOrSliceOfStructs(obj)
-	}
-
-	return
-
-}
-
-func (p *Pack) setupReferencesOfGoArrayOrSliceOfDynamic(
-	obj reflect.Value) (err error) {
-
-	for i := 0; i < obj.Len(); i++ {
-		idx := obj.Index(i)
-		// TODO (kostyarin): implement
-	}
-
-	return
-}
-
-func (p *Pack) setupReferencesOfGoArrayOrSliceOfStructs(
-	obj reflect.Value) (err error) {
-
-	for i := 0; i < obj.Len(); i++ {
-		idx := obj.Index(i)
-		if err = p.setupReferencesOfGoStruct(idx); err != nil {
+		if _, err = dr.Value(); err != nil { // setup value
 			return
 		}
 	}
+
+	idx.Set(dr)
+	return
+}
+
+//     sf  - field
+//     val - field value, type of which is Reference
+func (p *Pack) setupReferenceToGo(sf reflect.StructField,
+	val reflect.Value) (err error) {
+
+	var name string
+	if name, err = TagSchemaName(sf.Tag); err != nil {
+		return
+	}
+
+	var sch Schema
+	if sch, err = p.reg.SchemaByName(name); err != nil {
+		return
+	}
+
+	ref := val.Interface().(Reference)
+	if ref.walkNode != nil {
+		return // already set up (skip circular references)
+	}
+
+	wn := new(walkNode)
+
+	wn.sch = sch
+	wn.place = val
+	wn.pack = p
+
+	ref.walkNode = wn
+
+	if p.flags&EntireTree != 0 {
+		if _, err = ref.Value(); err != nil { // setup value
+			return
+		}
+	}
+
+	val.Set(ref)
+	return
+}
+
+func (p *Pack) setupReferencesToGo(sf reflect.StructField,
+	val reflect.Value) (err error) {
+
+	var name string
+	if name, err = TagSchemaName(sf.Tag); err != nil {
+		return
+	}
+
+	var sch Schema
+	if sch, err = p.reg.SchemaByName(name); err != nil {
+		return
+	}
+
+	refs := val.Interface().(References)
+	if refs.walkNode != nil {
+		return // already set up (skip circular references)
+	}
+
+	wn := new(walkNode)
+
+	wn.sch = sch
+	wn.place = val
+	wn.pack = p
+
+	refs.walkNode = wn
+
+	if p.flags&EntireTree != 0 {
+		if err = refs.loadFull("unpack"); err != nil { // setup value
+			return
+		}
+	}
+
+	val.Set(refs)
+	return
+}
+
+// an array or slice can contain references (we interest):
+//   - array of Dynamic
+//   - array of structs
+func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
+
+	typ := obj.Type().Elem()
+
+	if typ == dynamicRef {
+		for i := 0; i < obj.Len(); i++ {
+			idx := obj.Index(i)
+			if err = p.setupDynamicToGo(obj, idx); err != nil {
+				return
+			}
+		}
+		return
+	}
+
+	if typ.Kind() == reflect.Struct {
+		for i := 0; i < obj.Len(); i++ {
+			idx := obj.Index(i)
+			if err = p.setupStructToGo(idx); err != nil {
+				return
+			}
+		}
+	}
+
 	return
 }
 
@@ -199,23 +208,28 @@ func (p *Pack) setupReferencesOfGoArrayOrSliceOfStructs(
 //   - field of Reference
 //   - field of References
 //   - field of struct
-func (p *Pack) setupReferencesOfGoStruct(ptr reflect.Value,
-	typ reflect.Type) (err error) {
+func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 
-	// the struct can't contain pointers
+	typ := obj.Type()
 
-	//
-
-}
-
-// the ref must have walkNode
-func (p *Pack) unpackReferenceToGo(ref *Reference) (err error) {
-	if ref.IsBlank() {
-		return
-	}
-	var val []byte
-	if val, err = p.get(ref.Hash); err != nil {
-		return
+	for i := 0; i < typ.NumField(); i++ {
+		sf := typ.Field(i)
+		if sf.Tag.Get("enc") == "-" || sf.PkgPath != "" || sf.Name == "_" {
+			continue // skip unexported, unencoded and _-named fields
+		}
+		switch sf.Type {
+		case singleRef:
+			err = p.setupReferenceToGo(sf, obj.Field(i))
+		case sliceRef:
+			err = p.setupReferencesToGo(sf, obj.Field(i))
+		case dynamicRef:
+			err = p.setupDynamicToGo(obj, obj.Field(i))
+		default:
+			continue
+		}
+		if err != nil {
+			return
+		}
 	}
 
 	return

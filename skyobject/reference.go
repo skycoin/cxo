@@ -230,7 +230,7 @@ func (r *Reference) SetValue(obj interface{}) (err error) {
 
 		wn.value = obj
 		if key != r.Hash {
-			wn.unsaved = true
+			wn.unsave()
 		}
 
 		r.Hash = key
@@ -277,6 +277,8 @@ func (r *Reference) setHash(obj interface{}) (ok bool, err error) {
 		return
 	}
 
+	wn := r.walkNode // is not nil (checked by caller)
+
 	// get value from DB
 
 	var value interface{}
@@ -287,7 +289,7 @@ func (r *Reference) setHash(obj interface{}) (ok bool, err error) {
 	// set up
 
 	wn.value = value
-	wn.unsaved = true
+	wn.unsave()
 
 	r.Hash = x.Hash
 
@@ -336,7 +338,7 @@ func (r *Reference) setReference(x *Reference) (err error) {
 	// set up
 
 	wn.value = value
-	wn.unsaved = true
+	wn.unsave()
 
 	r.Hash = x.Hash
 
@@ -352,7 +354,7 @@ func (r *Reference) clear() {
 	r.Hash = cipher.SHA256{}
 	if wn := r.walkNode; wn != nil {
 		wn.value = nil
-		wn.unsaved = true // changed
+		wn.unsave() // changed
 		wn.set(r)
 	}
 }

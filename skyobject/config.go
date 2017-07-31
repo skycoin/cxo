@@ -8,8 +8,9 @@ import (
 
 // config related constants and defaults
 const (
-	Prefix       string = "[skyobject] " // default log prefix
-	MerkleDegree uint32 = 16             // default References' degree
+	Prefix            string  = "[skyobject] " // default log prefix
+	MerkleDegree      uint32  = 16             // default References' degree
+	MerkleFillPercent float64 = 0.1            // default percentage
 
 	StatSamples int           = 5                // it's enough
 	CleanUp     time.Duration = 59 * time.Second // every minute
@@ -19,8 +20,6 @@ const (
 	CleanUpPin        log.Pin = 1 << iota // show time of CleanUp in logs
 	PackSavePin                           // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
-
-	EncoderPin // encoding/decoding errors
 )
 
 // A Config represents oconfigurations
@@ -33,6 +32,22 @@ type Config struct {
 	// MerkleDegree of References' Merkle trees.
 	// The option affects new trees
 	MerkleDegree uint32
+
+	// MerkleFillPercent percentage of empty references in
+	// Merkle trees after which depth of a tree will be
+	// increased and the tree will be reconstructed.
+	//
+	// An element of tree can be deleted. In this case,
+	// the element will be zeroed. If percentage of these
+	// zero elements in tree is MerkleFillPercent then
+	// tree will be reconstructed and zero elements removed
+	// from tree
+	//
+	// The percentage measured from 0 to 1 (for example 0.1 = 10%)
+	//
+	// The option is machine local and not saved
+	// inside tree internals
+	MerkleFillPercent float64
 
 	// Log configs
 	Log log.Config // logging
@@ -65,12 +80,13 @@ func NewConfig() (conf *Config) {
 	// core configs
 
 	conf.MerkleDegree = MerkleDegree
+	conf.MerkleFillPercent = MerkleFillPercent
 
 	// logger
 
 	conf.Log = log.NewConfig()
 	conf.Log.Prefix = Prefix
-	conf.Log.Pins = CleanUpPin | PackSavePin | EncoderPin
+	conf.Log.Pins = CleanUpPin | PackSavePin
 
 	// stat
 

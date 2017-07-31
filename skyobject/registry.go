@@ -156,7 +156,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 
 		// reference
 
-		tagRef := tagReference(sf.Tag)
+		tagRef := mustTagSchemaName(sf.Tag)
 
 		f.schema = &referenceSchema{
 			schema: schema{
@@ -173,7 +173,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 
 		// references
 
-		tagRef := tagReference(sf.Tag)
+		tagRef := mustTagSchemaName(sf.Tag)
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaReference{},
@@ -428,10 +428,14 @@ func (r *Registry) finialize() {
 	r.ref = RegistryReference(cipher.SumSHA256(r.Encode()))
 }
 
-func tagReference(tag reflect.StructTag) string {
+// TagSchemaName returns schema name from given reflect.StructTag.
+// E.g. it returns "User" if tag is `skyobject:"schema=User" json:"blah"`.
+// It returns error if given tag doesn't contain the `skyobject:"schema=XXX"`
+func TagSchemaName(tag reflect.StructTag) (sch string, err error) {
 	skytag := tag.Get(TAG)
 	if skytag == "" {
-		panic(`empty skyobject tag, expected "schema=XXX`)
+		err = errors.New(`empty skyobject tag, expected "schema=XXX"`)
+		return
 	}
 	for _, part := range strings.Split(skytag, ",") {
 		if !strings.HasPrefix(part, "schema=") {
@@ -439,14 +443,26 @@ func tagReference(tag reflect.StructTag) string {
 		}
 		ss := strings.Split(part, "=")
 		if len(ss) != 2 {
-			panic("invalid schema tag: " + part)
+			err = fmt.Errorf("invalid schema tag: %q", part)
+			return
 		}
 		if ss[1] == "" {
-			panic("empty tag schema name: " + part)
+			err = fmt.Errorf("empty tag schema name: %q", part)
+			return
 		}
-		return ss[1]
+		sch = ss[1]
+		return
 	}
-	panic("invalid skyobject tag: " + skytag)
+	err = fmt.Errorf("invalid skyobject tag: %q", skytag)
+	return
+}
+
+func mustTagSchemaName(tag reflect.StructTag) string {
+	sch, err := TagSchemaName(tag)
+	if err != nil {
+		panic(err)
+	}
+	return
 }
 
 func typeOf(i interface{}) reflect.Type {

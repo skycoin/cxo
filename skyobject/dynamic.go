@@ -299,6 +299,7 @@ func (d *Dynamic) clear() {
 	if wn := d.walkNode; wn != nil {
 		wn.value = nil
 		wn.sch = nil
+		wn.unsaved = true
 		wn.set(d)
 	}
 }

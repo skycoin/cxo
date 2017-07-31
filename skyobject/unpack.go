@@ -51,8 +51,7 @@ type Pack struct {
 	r   *Root
 	reg *Registry
 
-	flags Flag // packing flags
-
+	flags Flag   // packing flags
 	types *Types // types mapping
 
 	unsaved map[cipher.SHA256][]byte
@@ -222,19 +221,29 @@ func (p *Pack) RefByIndex(i int) (dr Dynamic, err error) {
 // then this method reattaches them to new
 // slice (created by append). Thus, a developer
 // doesn't need to care about it
-func (p *Pack) Append(obj interface{}) (err error) {
-	var dr Dynamic
-
-	wn := new(walkNode)
-	wn.pack = p
-
-	dr.walkNode = wn
-
-	if err = dr.SetValue(obj); err != nil {
+func (p *Pack) Append(objs ...interface{}) (err error) {
+	if len(objs) == 0 {
 		return
 	}
 
-	p.r.Refs = append(p.r.Refs, dr) // append
+	drs := make([]Dynamic, 0, len(objs))
+
+	for _, obj := range objs {
+		var dr Dynamic
+
+		wn := new(walkNode)
+		wn.pack = p
+
+		dr.walkNode = wn
+
+		if err = dr.SetValue(obj); err != nil {
+			return
+		}
+
+		drs = append(drs, dr)
+	}
+
+	p.r.Refs = append(p.r.Refs, drs...) // append
 
 	// reattach
 
@@ -258,6 +267,8 @@ func (p *Pack) Append(obj interface{}) (err error) {
 // blank Dynamic reference that (can't be used)
 // if the Root.Refs is empty. The result will be
 // unpacked
+//
+// TODO (kostyarin): slice-like API instead of the Pop
 func (p *Pack) Pop() (dr Dynamic, err error) {
 
 	if len(p.r.Refs) == 0 {
@@ -287,6 +298,7 @@ func (p *Pack) Pop() (dr Dynamic, err error) {
 // Save and object getting Reference to it
 func (p *Pack) Reference(obj interface{}) (ref Reference) {
 	// TODO (kostyarin): implement
+	panic("not implemented yet")
 	return
 }
 
@@ -307,6 +319,7 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 
 func (p *Pack) References(objs ...interface{}) (refs References) {
 	// TODO (kostyarin): implement
+	panic("not implemented yet")
 	return
 }
 

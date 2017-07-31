@@ -315,7 +315,6 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 	pack.flags = flags
 	pack.types = types
 
-	pack.cache = make(map[cipher.SHA256][]byte)
 	pack.unsaved = make(map[cipher.SHA256][]byte)
 
 	pack.c = c

@@ -1,43 +1,169 @@
 package skyobject
 
 import (
+	"fmt"
+
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-const (
-	RefsDegree int32 = 16 // default degree of References' Merkle tree
-)
+// References represents list of references to
+// objects. The References is not thread safe
+type References struct {
+	Hash cipher.SHA256
 
-// A Changer represents a changable object
-type Changer interface {
-	Cahgne()         // mark as changed
-	IsChanged() bool // true if has been changed
+	walkNode *walkNode `enc:"-"`
+	refs     *Refs     `enc:"-"`
 }
 
-type changer struct {
-	isChanged
-	upper Changer
+// IsBlank returns true if the References represent nil
+func (r *References) IsBlank() bool {
+	return r.Hash == (cipher.SHA256{})
 }
 
-func (c *changer) Change() {
-	c.isChanged = true
-	if c.upper != nil {
-		c.upper.Cahgne()
+// Short string
+func (r *References) Short() string {
+	return r.Hash.Hex()[:7]
+}
+
+// String implements fmt.Stringer interface. The
+// method returns References.Hash.Hex()
+func (r *References) String() string {
+	return r.Hash.Hex()
+}
+
+// Eq returns true if these References equal to given
+func (r *References) Eq(x *References) bool {
+	return r.Hash == x.Hash
+}
+
+// Schema of the Referenes. It returns nil
+// if the References are not unpacked
+func (r *References) Schema() Schema {
+	if r.walkNode != nil {
+		return r.walkNode.sch
+	}
+	return nil
+}
+
+// Len returns length of the References
+func (r *References) Len() (ln int, err error) {
+	if r.refs == nil {
+		//
+	}
+	return
+}
+
+// RefByIndex returns Reference by index
+func (r *References) RefByIndex(i int) (ref Reference, err error) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// DelByIndex delete element by index. You can also
+// get element using any method and call SetValue(nil)
+// to delete an element
+func (r *References) DelByIndex(i int) (err error) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// RefByHash returns first Reference by hash if these References contain it
+func (r *References) RefByHash(hash cipher.SHA256) (ref Reference, err error) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// LastRefByHash returns last Reference by hash if these References contain it
+func (r *References) LastRefByHash(hash cipher.SHA256) (ref Reference,
+	err error) {
+
+	// TODO (kostyarin): implement
+	return
+}
+
+// Append to tail. Arguments must be type/schema of the References.
+// Arguments can be golagn values if related Pack created with Types
+// or Reference(s). It's impossible to append nil or empty Reference
+// (it will be skipped silenty)
+func (r *References) Append(obj ...interface{}) (err error) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// Slice returns another References instance that keep values
+// of these References from i to j
+func (r *References) Slice(i, j int) (refs References, err error) {
+	// TODO (kostyarin): implement
+	return
+}
+
+// Clear the References making them blank.
+func (r *References) Clear() {
+	if r.Hash != (cipher.SHA256{}) {
+		r.Hash = (cipher.SHA256{})
+		if wn := r.walkNode; wn != nil {
+			wn.unsave()
+		}
 	}
 }
 
-func (c *changer) IsChanged() bool {
-	return c.isChanged
+// internal methods
+
+// loadFull tree
+func (r *References) loadFull(action string) (err error) {
+	var wn *walkNode
+	if wn, err = r.getWalkNode(action); err != nil {
+		return
+	}
+
+	//
+
+	return
 }
 
-//
-// References
-//
+// loadHead, e.g. load Refs
+func (r *References) loadHead(action string) (err error) {
+	var wn *walkNode
+	if wn, err = r.getWalkNode(action); err != nil {
+		return
+	}
 
-// A References represents list of references to
-// objects. A References is not thread safe
-type References struct {
+	if r.Hash == (cipher.SHA256{}) {
+		r.refs = new(Refs)   // create empty Refs
+		r.refs.walkNode = wn // walk node
+		return
+	}
+
+	var val []byte
+	if val, err = wn.pack.get(r.Hash); err != nil {
+		err = fmt.Errorf("can't %s: %v", action, err)
+		return
+	}
+
+	var refs Refs
+	if err = encoder.DeserializeRaw(val, &refs); err != nil {
+		err = fmt.Errorf("can't %s: error decoding head: %v", action, err)
+		return
+	}
+
+	refs.walkNode = wn
+	r.refs = &refs
+
+	return
+}
+
+func (r *References) getWalkNode(action string) (wn *walkNode, err error) {
+	if wn = r.walkNode; wn == nil {
+		err = fmt.Errorf("can't %s: References detached from Pack", action)
+	}
+	return
+}
+
+// References.Hash -> Refs -> Refs.Nodes -> ...
+
+// Refs is internal
+type Refs struct {
 	Degree uint32 // degree (hashes per leaf, hashes per branch)
 	Len    uint32 // amount of non-zero elements of the tree
 	Depth  uint32 // depth of the tree
@@ -49,14 +175,13 @@ type References struct {
 
 	// depth * degree = items (including zeroes)
 
-	Nodes []RefsNode // branches (if Depth == 0, then this is leafs)
+	Nodes []RefsNode // branches (if Depth == 0, then these is leafs)
 
 	// internals
 
-	walkNode *WalkNode   `enc:"-"` // walking
-	place    *References `enc:"-"` // palce of the References
-
-	refsPackNode *refsPackNode `enc:"-"` // unpack
+	// reference to walkNode of References
+	walkNode *walkNode               `enc:"-"`
+	index    map[cipher.SHA256][]int `enc:"-"` // hash-table index
 }
 
 // A RefsNode is internal
@@ -64,178 +189,35 @@ type RefsNode struct {
 	// Len is amount of non-zero elements of the branch
 	Len uint32
 
-	// Hashes of the next branches or References of leafs
+	// Hashes of the next branches or References of leafs.
+	// If the RefsNode is not a leaf then these Hashes
+	// points to another RefsNode(s). In this (non-leaf)
+	// case, only Hash field of these Refrence(s) has
+	// meaning
 	Hashes []Reference
-
-	// Nodes of the branch (for unpack a branch, range and walk)
-	Nodes []RefsNode `enc:"-"`
 
 	// internals
 
-	refsPackNode *refsPackNode `enc:"-"`
+	nodes        []RefsNode    `enc:"-"` // if it's a branch
+	refsWalkNode *refsWalkNode `enc:"-"` // track changes
 }
 
-func (r *RefsNode) insert(deep, degree int, ref Reference) (ok bool) {
-	if deep == 0 {
-		// the r is leaf
-		if len(r.Hashes) < degree { // can insert easily
-			r.Hashes = append(r.Hashes, ref)
-			r.Len++
-			//
-		}
+//
+//
+//
+
+// track changes
+type refsWalkNode struct {
+	upper    *refsWalkNode
+	unsaved  bool
+	walkNode *walkNode
+}
+
+func (r *refsWalkNode) unsave() {
+	for up := r; up != nil; up = r.upper {
+		up.unsaved = true
 	}
-	// TODO
-	return
-}
-
-// insert Reference to []RefsNode returning ok = true and new
-// or the same []RefsNode slcie
-func (r *References) insert(depth int, ns []RefsNode,
-	ref Reference) (nn []RefsNode, ok bool) {
-
-	// if depth == 0, then the ns is leafs
-	// and  contains references to objects
-
-	if depth == 0 {
-		return r.insertToLeafs(ns, ref)
+	if wn := r.walkNode; wn != nil {
+		wn.unsaved = true
 	}
-
-	// (1) no elements in the ns, create the branch
-	//     (depth length) and insert the ref as the
-	//     first element
-
-	if len(ns) == 0 {
-		var nodes []RefsNode
-		depth--
-		nodes, ok = r.insert(depth, nil, ref)
-		if !ok {
-			return // never happens
-		}
-		// ok is already true
-		nn = []RefsNode{{
-			Len:    1,
-			Hashes: nodes,
-		}}
-	}
-
-	// (2) try to find free space for the ref
-
-	//
-
-}
-
-func (r *References) insertToLeafs(ns []RefsNode, ref Reference) (nn []RefsNode,
-	ok bool) {
-
-	// may be there aren't RefsNodes
-
-	if len(ns) == 0 {
-		nn, ok = []RefsNode{{
-			Len:    1,
-			Hashes: []Reference{ref},
-		}}, true
-		return
-	}
-
-	// get last leaf
-
-	ll := ns[len(ns)-1]
-
-	// let's look at the last RefsNode (leaf)
-
-	if len(ll.Hashes) == int(r.Degree) {
-
-		// last RefsNode is full
-
-		// is len(ns) less then Degree
-		if len(ns) < int(r.Degree) {
-
-			// okay there is the place we need
-			nn, ok = append(ns, RefsNode{
-				Len:    1,
-				Hashes: []Reference{ref},
-			}), true
-			return
-
-		}
-
-		// no, we can't insert here (into the leaf) anymore
-		return // nil, false
-	}
-
-	// there is a place we can to use in the last leaf
-
-	ll.Hashes = append(ll.Hashes, ref)
-
-	nn, ok = ns, true
-	return
-
-}
-
-// increase depth + 1
-func (r *References) deeper() {
-	ndepth := int(r.Depth) + 1 // new depth
-	//
-}
-
-func (r *References) rangeNodes(d int, ns []RefsNode,
-	rangeFunc func(ref Reference)) {
-
-	if d == 0 { // leafs
-		for _, n := range ns {
-			for _, ref := range n.Hashes {
-				rangeFunc(ref)
-			}
-		}
-		return
-	}
-
-	//
-
-	return
-
-}
-
-// IsValid returns false if the References is nto valid.
-// Anyway, the Referenes can be invalid in deep, even if
-// the method returns true
-func (r *References) IsValid() bool {
-	return r.Degree >= 2 && (r.Degree*r.Depth <= r.Len)
-}
-
-// IsBlank returns true if the reference is blank
-func (r *References) IsBlank() bool {
-	return r.Len == 0
-}
-
-// String implements fmt.Stringer interface
-func (r *References) String() (s string) {
-	// TODO
-	return
-}
-
-type refsPackNode struct {
-	upper     *refsPackNode // upper node o nil for References
-	pack      *Pack         // related Pack
-	isChanged bool          // true if the node has been changed
-	unpacked  bool          // true if Nodes contains unpacked Hashes
-}
-
-// mark the ndoe as changed
-func (r *refsPackNode) change() {
-	// using non-recursive algorithm
-	for up := r; up != nil; up = up.upper {
-		up.isChanged = true
-	}
-}
-
-// TODO (kostyarin)
-func (r *refsPackNode) attach(upper *refsPackNode) {
-	r.pack = upper.pack
-	r.upper = upper
-}
-
-// TODO (kostyarin): detach pack?
-func (r *refsPackNode) detach() {
-	r.upper = nil
 }
