@@ -2,8 +2,10 @@ package skyobject
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 // knowsAboutFunc used to determine objects of a Root. If it returns
@@ -24,36 +26,26 @@ type getter interface {
 // with empty hash
 func (c *Container) knowsAbout(r *Root, g getter,
 	fn knowsAboutFunc) (err error) {
-
 	// 1) registry
-
-	var deeper bool
 	if _, err = fn(cipher.SHA256(r.Reg)); err != nil {
-		goto Return
+		if err == ErrStopRange {
+			err = nil
+		}
+		return
 	}
-
 	var reg *Registry
 	if reg = c.Registry(r.Reg); reg == nil {
 		return // return nil (no "missing Registry" errors)
 	}
-
 	// 2) refs ([]Dynamic)
-
 	var kn knowsAbout
-
 	kn.fn = fn
 	kn.g = g
 	kn.reg = reg
-
 	for _, dr := range r.Refs {
 		if err = kn.Dynamic(dr); err != nil {
 			break
 		}
-	}
-
-Return:
-	if err == ErrStopRange {
-		err = nil
 	}
 	return
 }
@@ -65,56 +57,44 @@ type knowsAbout struct {
 }
 
 func (k *knowsAbout) Dynamic(dr Dynamic) (err error) {
-
 	if !dr.IsValid() {
 		return fmt.Errorf("invalid dynamic %s", dr.Short())
 	}
-
 	if dr.Object == (cipher.SHA256{}) {
 		return // represents nil
 	}
-
 	var deeper bool
 	if deeper, err = k.fn(dr.Object); err != nil {
 		return // some error
 	}
-
 	if deeper == false {
 		return // don't inspect deeper
 	}
-
 	var sch Schema
 	if sch, err = k.reg.SchemaByReference(dr.SchemaRef); err != nil {
 		return
 	}
-
 	return k.Hash(sch, dr.Object)
 }
 
 func (k *knowsAbout) Hash(sch Schema, hash cipher.SHA256) (err error) {
-
 	if !sch.HasReferences() {
 		return // skip (no references)
 	}
-
 	var val []byte
 	if val = k.g.Get(hash); val == nil {
 		return // skip (not found)
 	}
-
 	return k.Data(sch, val)
 }
 
 func (k *knowsAbout) Data(sch Schema, val []byte) (err error) {
-
 	if !sch.HasReferences() {
 		return // skip (no references)
 	}
-
 	if sch.IsReference() {
 		return k.DataRefsSwitch(sch, val)
 	}
-
 	switch sch.Kind() {
 	case reflect.Array:
 		return k.DataArray(sch, val)
@@ -123,7 +103,6 @@ func (k *knowsAbout) Data(sch Schema, val []byte) (err error) {
 	case reflect.Struct:
 		return k.DataStruct(sch, val)
 	}
-
 	return fmt.Errorf("schema is not reference, array, slice or struct but"+
 		"HasReferenes() retruns true: %s", sch)
 }
@@ -152,11 +131,8 @@ func (k *knowsAbout) DataSlice(sch Schema, val []byte) (err error) {
 }
 
 func (k *knowsAbout) DataStruct(sch Schema, val []byte) (err error) {
-
 	var shift, s int
-
 	for i, fl := range sch.Fields() {
-
 		if shift >= len(val) {
 			err = fmt.Errorf("unexpected end of encoded struct <%s>, "+
 				"field number: %d, field name: %q, schema of field: %s",
@@ -165,19 +141,14 @@ func (k *knowsAbout) DataStruct(sch Schema, val []byte) (err error) {
 				fl.Schema())
 			return
 		}
-
 		if s, err = SchemaSize(sch, val[shift:]); err != nil {
 			return
 		}
-
 		if err = k.Data(fl.Schema(), val[shift:shift+s]); err != nil {
 			return
 		}
-
 		shift += s
-
 	}
-
 	return
 }
 
@@ -203,149 +174,96 @@ func (k *knowsAbout) rangeArraySlice(el Schema, ln int,
 }
 
 func (k *knowsAbout) DataRefsSwitch(sch Schema, val []byte) error {
-
 	switch rt := sch.ReferenceType(); rt {
 	case ReferenceTypeSingle:
-		return k.DataReference(sch, val)
+		return k.DataRef(sch, val)
 	case ReferenceTypeSlice:
-		return k.DataReferences(sch, val)
+		return k.DataRefs(sch, val)
 	case ReferenceTypeDynamic:
 		return k.DataDynamic(val)
+	default:
+		return fmt.Errorf("[ERR] reference with invalid ReferenceType: %d", rt)
 	}
-
-	return fmt.Errorf("[ERR] reference with invalid ReferenceType: %d", rt)
-
 }
 
-func (k *knowsAbout) DataReference(sch Schema, val []byte) (err error) {
-
-	var ref Reference
+func (k *knowsAbout) DataRef(sch Schema, val []byte) (err error) {
+	var ref Ref
 	if err = encoder.DeserializeRaw(val, &ref); err != nil {
 		return
 	}
-
 	el := sch.Elem()
 	if el == nil {
-		err = fmt.Errorf("[ERR] schema of Reference [%s] without element: %s",
+		err = fmt.Errorf("[ERR] schema of Ref [%s] without element: %s",
 			ref.Short(),
 			sch)
 		return
 	}
-
 	if ref.IsBlank() {
 		return
 	}
-
 	var deeper bool
 	if deeper, err = k.fn(ref.Hash); err != nil {
 		return
 	}
-
 	if deeper == false {
 		return
 	}
-
 	return k.Hash(el, ref.Hash)
-
 }
 
-func (k *knowsAbout) DataReferences(sch Schema, val []byte) (err error) {
-
-	var refs References
+func (k *knowsAbout) DataRefs(sch Schema, val []byte) (err error) {
+	var refs encodedRefs
 	if err = encoder.DeserializeRaw(val, &refs); err != nil {
 		return
 	}
-
-	if refs.IsBlank() {
-		return
-	}
-
-	for _, rn := range refs.Nodes {
-		if err = k.RefsNode(refs.Depth, sch, rn); err != nil {
+	for _, hash := range refs.Nested {
+		if err = k.RefsNode(refs.Depth, sch, hash); err != nil {
 			return
 		}
 	}
-
 	return
-
 }
 
 func (k *knowsAbout) RefsNode(depth uint32, sch Schema,
-	rn RefsNode) (err error) {
-
-	var deeper bool
-
-	if depth == 0 {
-		// the leaf
-		for _, hash := range rn.Hashes {
-
-			if hash == (cipher.SHA256{}) {
-				continue
-			}
-
-			if deeper, err = k.fn(hash); err != nil {
-				return
-			}
-			if deeper == false {
-				return
-			}
-
-			if err = k.Hash(sch, hash); err != nil {
-				return
-			}
-		}
-		return
-	}
-
-	depth-- // go deepper
-
-	for _, hash := range rn.Hashes {
-
-		if hash == (cipher.SHA256{}) {
-			continue
-		}
-
-		if deeper, err = k.fn(hash); err != nil {
-			return
-		}
-		if deeper == false {
-			return
-		}
-
-		if err = k.HashRefsNode(depth, sch, hash); err != nil {
-			return
-		}
-	}
-
-	return
-
-}
-
-func (k *knowsAbout) HashRefsNode(depth uint32, sch Schema,
 	hash cipher.SHA256) (err error) {
 
-	// hash never be empty
-
-	val, ok := k.g.get(hash)
-	if !ok {
+	if hash == (cipher.SHA256{}) {
 		return
 	}
 
-	var rn RefsNode
-	if err = encoder.DeserializeRaw(val, &rn); err != nil {
+	var deeper bool
+	if deeper, err = k.fn(hash); err != nil {
 		return
 	}
+	if deeper == false {
+		return
+	}
+	if depth == 0 { // the leaf
+		return k.Hash(sch, hash)
+	}
 
-	return k.RefsNode(depth, sch, rn)
+	var val []byte
+	if val = k.g.Get(hash); val == nil {
+		return // skip (not found)
+	}
+
+	var refs encodedRefs
+	if err = encoder.DeserializeRaw(val, &refs); err != nil {
+		return
+	}
+	for _, hash := range refs.Nested {
+		if err = k.RefsNode(depth-1, sch, hash); err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (k *knowsAbout) DataDynamic(val []byte) (err error) {
-
 	var dr Dynamic
 	if err = encoder.DeserializeRaw(val, &dr); err != nil {
 		return
 	}
-
 	return k.Dynamic(dr)
 
 }

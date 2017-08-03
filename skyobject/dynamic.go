@@ -11,8 +11,8 @@ import (
 // A Dynamic represents dynamic reference that contains
 // reference to schema and reference to object
 type Dynamic struct {
-	Object    cipher.SHA256   // reference to object
-	SchemaRef SchemaReference // reference to Schema
+	Object    cipher.SHA256 // reference to object
+	SchemaRef SchemaRef     // reference to Schema
 
 	// internals
 
@@ -21,7 +21,7 @@ type Dynamic struct {
 
 // IsBlank returns true if the reference is blank
 func (d *Dynamic) IsBlank() bool {
-	return d.SchemaRef.IsBlank() && d.Object.IsBlank()
+	return d.SchemaRef.IsBlank() && d.Object == (cipher.SHA256{})
 }
 
 // IsValid returns true if the Dynamic is blank, full
@@ -30,7 +30,7 @@ func (d *Dynamic) IsBlank() bool {
 // shcema
 func (d *Dynamic) IsValid() bool {
 	if d.SchemaRef.IsBlank() {
-		return d.Object.IsBlank()
+		return d.Object == (cipher.SHA256{})
 	}
 	return true
 }
@@ -42,12 +42,12 @@ func (d *Dynamic) Short() string {
 
 // String implements fmt.Stringer interface
 func (d *Dynamic) String() string {
-	return "{" + d.SchemaRef.String() + ", " + d.Object.String() + "}"
+	return "{" + d.SchemaRef.String() + ", " + d.Object.Hex() + "}"
 }
 
 // Eq returns true if given reference is the same as this one
 func (d *Dynamic) Eq(x *Dynamic) bool {
-	return d.SchemaRef == x.SchemaRef && d.Object.Eq(&x.Object)
+	return d.SchemaRef == x.SchemaRef && d.Object == x.Object
 }
 
 // Schema of the Dynamic. It returns nil if the Dynamic is blank
@@ -62,8 +62,7 @@ func (d *Dynamic) Schema() (sch Schema, err error) {
 		return
 	}
 
-	if wn.sch == nil {
-		// obtain schema first
+	if wn.sch == nil { // obtain schema first
 		wn.sch, err = wn.pack.reg.SchemaByReference(d.SchemaRef)
 		if err != nil {
 			return
@@ -119,21 +118,11 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 		return
 	}
 
-	if wn.pack.flags&GoTypes != 0 {
-
-		if obj, err = wn.pack.unpackToGo(wn.sch.Name(), val); err != nil {
-			return
-		}
-
-	} else {
-
-		// TODO (kostyarin): other unpacking methods
-
-		panic("not implemented yet")
+	if obj, err = wn.pack.unpackToGo(wn.sch.Name(), val); err != nil {
+		return
 	}
 
 	wn.value = obj // keep
-
 	return
 }
 
@@ -157,150 +146,104 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 		return
 	}
 
-	// is the obj Dynamic or *Dynamic
-	var odr *Dynamic
-	if x, ok := obj.(Dynamic); ok {
-		odr = &x
-	} else if x, ok := obj.(*Dynamic); ok {
-		odr = x
-	}
+	typ := typeOf(obj)
 
-	if odr != nil {
-		return d.setDynamic(odr)
-	}
+	var sch Schema
 
-	if wn.pack.flags&GoTypes != 0 {
-
-		typ := typeOf(obj)
-
-		var sch Schema
-
-		if name, ok := p.types.Inverse[typ]; !ok {
-			// detailed error
-			err = fmt.Errorf(`can't set Dynamic value:
+	if name, ok := wn.pack.types.Inverse[typ]; !ok {
+		// detailed error
+		err = fmt.Errorf(`can't set Dynamic value:
     given object not found in Types map
     reflect.Type of the object: %s`,
-				typ.String())
-			return
-		} else if sch, err = p.reg.SchemaByName(name); err != nil {
-			// dtailed error
-			err = fmt.Errorf(`wrong Types of Pack:
+			typ.String())
+		return
+	} else if sch, err = wn.pack.reg.SchemaByName(name); err != nil {
+		// dtailed error
+		err = fmt.Errorf(`wrong Types of Pack:
     schema name found in Types, but schema by the name not found in Registry
     error:                      %s
     registry reference:         %s
     schema name:                %s
     reflect.Type of the obejct: %s`,
-				err,
-				p.reg.Reference().Short(),
-				name,
-				typ.String())
+			err,
+			wn.pack.reg.Reference().Short(),
+			name,
+			typ.String())
+		return
+	}
+
+	// else everything is ok
+
+	val := reflect.ValueOf(obj)
+
+	if val.Kind() == reflect.Ptr {
+		// obj represents nil of typ
+		if val.IsNil() {
+
+			prevs := d.SchemaRef
+
+			wn.sch = sch
+			wn.value = nil
+
+			d.SchemaRef = sch.Reference()
+			d.Object = cipher.SHA256{}
+
+			wn.set(d)
+
+			// clear, but don't celar schema reference
+			if prevs != sch.Reference() || d.Object != (cipher.SHA256{}) {
+				wn.unsave()
+			}
 			return
 		}
-
-		// else everything is ok
-
-		// setup references of given obj
-
-		if err = wn.pack.setupReferencesOfGo(obj); err != nil {
-			return
-		}
-
-		// save the object getting hash back
-		key, _ := p.save(obj)
-
-		// setup
-
-		wn.sch = sch
-		wn.value = obj
-
-		if key != d.Object || d.SchemaRef != sch.Reference() {
-			wn.unsaved = true
-		}
-
-		d.SchemaRef = sch.Reference()
-		d.Object = key
-
+		val = reflect.Indirect(val) // indirect
 	} else {
-		// TODO (kostyarin): other packing methods
-		panic("not implemented yet")
+		// not a pointer (unaddressable value);
+		// make it adressable to be able to setupToGo
+		val, obj = makeAddressable(typ, val)
 	}
 
-	wn.set(d)
+	// setup references of given obj
 
-	return
-}
-
-func (d *Dynamic) setDynamic(odr *Dynamic) (err error) {
-
-	if odr.IsBlank() {
-		d.clear()
+	if err = wn.pack.setupToGo(val); err != nil {
 		return
 	}
 
-	wn := d.walkNode // valid
-
-	if !odr.IsValid() {
-		err = fmt.Errorf("argument is not valid Dynamic: %s", odr.Short())
-		return
-	}
-
-	if d.Eq(odr) {
-		return // equal Dynamic references
-	}
-
-	var sch Schema
-	var value interface{}
-
-	// schema
-
-	if d.SchemaRef != odr.SchemaRef {
-		if odr.walkNode != nil && odr.walkNode.sch != nil {
-			sch = odr.walkNode.sch
-		} else {
-			sch, err = wn.pack.reg.SchemaByReference(odr.SchemaRef)
-			if err != nil {
-				return
-			}
-		}
-	}
-
-	// value
-
-	if odr.Object != (cipher.SHA256{}) {
-		// not blank
-		if odr.walkNode != nil && odr.walkNode.value != nil {
-			value = odr.walkNode.value
-		} else {
-			if value, err = wn.pack.unpack(sch, odr.Object); err != nil {
-				return
-			}
-		}
-	}
-
-	// else: value cleared below
+	// save the object getting hash back
+	key, _ := wn.pack.save(obj)
 
 	// setup
 
-	wn.sch = schema
-	wn.value = value // set or clear value
-	wn.unsaved = true
+	prevs, prevo := d.SchemaRef, d.Object
 
-	d.SchemaRef = odr.SchemaRef
-	d.Object = odr.Object
+	wn.sch = sch
+	wn.value = obj
 
-	wn.set(d) // set to place
+	d.SchemaRef = sch.Reference()
+	d.Object = key
 
+	wn.set(d)
+
+	if d.Object != prevo || d.SchemaRef != prevs {
+		wn.unsave()
+	}
 	return
 }
 
 func (d *Dynamic) clear() {
-	d.SchemaRef = SchemaReference{}
+	prevs, prevo := d.SchemaRef, d.Object
+
+	d.SchemaRef = SchemaRef{}
 	d.Object = cipher.SHA256{}
+
 	if wn := d.walkNode; wn != nil {
 		wn.value = nil
 		wn.sch = nil
-		wn.unsaved = true
 		wn.set(d)
+
+		if d.Object != prevo || d.SchemaRef != prevs {
+			wn.unsave()
+		}
 	}
 }
 
@@ -312,17 +255,17 @@ func (d *Dynamic) Copy() (cp Dynamic) {
 	cp.Object = d.Object
 	if wn := d.walkNode; wn != nil {
 		cp.walkNode = &walkNode{
-			pack:  wn.pack,
-			sch:   wn.sch,
-			value: wn.value,
+			pack: wn.pack,
+			sch:  wn.sch,
 		}
 	}
+	return
 }
 
 // Detach the Dynamic from its place
 func (d *Dynamic) Detach() {
 	if wn := d.walkNode; wn != nil {
-		wn.place = nil
+		wn.place = reflect.Value{} // make it invalid
 	}
 }
 

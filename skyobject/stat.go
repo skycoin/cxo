@@ -3,8 +3,6 @@ package skyobject
 import (
 	"sync"
 	"time"
-
-	"github.com/skycoin/skycoin/src/cipher"
 )
 
 // A Stat represents Container statistic

@@ -22,13 +22,9 @@ var (
 type Flag int
 
 const (
-	EntireMerkleTrees Flag = 1 << iota // unpack entire Merkle trees
-	EntireTree                         // unpack all possible
-	HashTableIndex                     // use hash-table index for Merkle-trees
-	ViewOnly                           // don't allow modifications
-	GoTypes                            // pack/unpack from/to golang-values
-
-	Default Flag = GoTypes
+	EntireTree     Flag = 1 << iota // unpack all possible
+	HashTableIndex                  // use hash-table index for Merkle-trees
+	ViewOnly                        // don't allow modifications
 )
 
 // A Types represents mapping from registered names
@@ -93,8 +89,6 @@ func (p *Pack) set(key cipher.SHA256, val []byte) {
 	p.unsaved[key] = val
 }
 
-// TORM (kostyarin): never used
-//
 // save interface and get its key and encoded value
 func (p *Pack) save(obj interface{}) (key cipher.SHA256, val []byte) {
 	val = encoder.Serialize(obj)
@@ -141,10 +135,7 @@ func (p *Pack) Save() (root data.RootPack, err error) {
 	})
 
 	if err == nil {
-		for key, val := range p.unsaved {
-			p.cache[key] = val
-			delete(p.unsaved, key)
-		}
+		p.unsaved = make(map[cipher.SHA256][]byte) // clear
 	}
 
 	return
@@ -182,7 +173,7 @@ func (p *Pack) Flags() Flag { return p.flags }
 func (p *Pack) Refs() (drs []Dynamic, err error) {
 
 	for i := range p.r.Refs {
-		if dr.walkNode == nil {
+		if p.r.Refs[i].walkNode == nil {
 			if _, err = p.r.Refs[i].Value(); err != nil {
 				return
 			}
@@ -239,7 +230,6 @@ func (p *Pack) Append(objs ...interface{}) (err error) {
 		if err = dr.SetValue(obj); err != nil {
 			return
 		}
-
 		drs = append(drs, dr)
 	}
 
@@ -252,74 +242,46 @@ func (p *Pack) Append(objs ...interface{}) (err error) {
 			dr.Attach(p.r.Refs, i)
 		}
 	}
+	return
 }
 
-// Pop removes last Dynamic reference of
-// underlying Root.Refs returning it.
-// The returned Dynamic will be detached
-// and you can use it anywhere else until
-// the Pack is alive. For example you can
-// append it to the underlying Root later.
-// The detaching is necessary for golang GC
-// to collect the result (Dynamic) if it is
-// no longer needed. The Pop method is
-// opposite to Append. The method returns
-// blank Dynamic reference that (can't be used)
-// if the Root.Refs is empty. The result will be
-// unpacked
-//
-// TODO (kostyarin): slice-like API instead of the Pop
-func (p *Pack) Pop() (dr Dynamic, err error) {
+func (p *Pack) schemaOf(obj interface{}) (sch Schema, err error) {
+	typ := typeOf(obj)
 
-	if len(p.r.Refs) == 0 {
+	if name, ok := p.types.Inverse[typ]; !ok {
+		// detailed error
+		err = fmt.Errorf(
+			"can't get Schema of %T: given object not found in Types map",
+			obj)
 		return
+	} else if sch, err = p.reg.SchemaByName(name); err != nil {
+		// dtailed error
+		err = fmt.Errorf(`wrong Types of Pack:
+    schema name found in Types, but schema by the name not found in Registry
+    error:                      %s
+    registry reference:         %s
+    schema name:                %s
+    reflect.Type of the obejct: %s`,
+			err,
+			p.reg.Reference().Short(),
+			name,
+			typ.String())
 	}
-
-	dr = p.r.Refs[len(p.r.Refs)-1] // get last
-
-	if dr.walkNode == nil {
-		wn := new(walkNode)
-		wn.pack = p
-		dr.walkNode = wn
-		_, err = dr.Value() // unpack
-	} else {
-		dr.Detach()
-	}
-
-	// remove the dr from Root.Refs
-
-	p.r.Refs[len(p.r.Refs)-1] = Dynamic{} // clear for GC
-	p.r.Refs = p.r.Refs[:len(p.r.Refs)-1] // reduce length
-
-	return
-
-}
-
-// Save and object getting Reference to it
-func (p *Pack) Reference(obj interface{}) (ref Reference) {
-	// TODO (kostyarin): implement
-	panic("not implemented yet")
 	return
 }
 
-// Dynamic creates Dynamic by given object. The obj can
-// be another Dynamic reference or goalgn value (if the Pack
-// created with Types). The method panics on first error
-// (for example: type of obj is not registered). Passing
-// nil returns blank Dynamic
+// Dynamic creates Dynamic by given object. The obj must to be
+// a goalgn value of registered type. The method panics on first
+// error. Passing nil returns blank Dynamic
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	wn := new(walkNode)
 	wn.pack = p
 
 	dr.walkNode = wn
 
-	_, err := dr.SetValue(obj)
-	return
-}
-
-func (p *Pack) References(objs ...interface{}) (refs References) {
-	// TODO (kostyarin): implement
-	panic("not implemented yet")
+	if err := dr.SetValue(obj); err != nil {
+		panic(err)
+	}
 	return
 }
 
@@ -331,13 +293,16 @@ func (p *Pack) unpack(sch Schema, hash cipher.SHA256) (value interface{},
 		return
 	}
 
-	if p.flags&GoTypes != 0 {
-		value, err = p.unpackToGo(sch.Name(), val)
-	} else {
-		// TODO (kostyarin): implement other unpacking methods
-		panic("not implemented yet")
-	}
-
+	value, err = p.unpackToGo(sch.Name(), val)
 	return
+}
 
+// if val is unaddressable then, in some cases, we need to make
+// it addressable to be able to call (*Pack).setupToGo
+func makeAddressable(typ reflect.Type, val reflect.Value) (reflect.Value,
+	interface{}) {
+
+	nv := reflect.Indirect(reflect.New(typ))
+	nv.Set(val)
+	return nv, nv.Interface()
 }

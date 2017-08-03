@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -38,14 +37,12 @@ func (p *Pack) unpackToGo(schemaName string, val []byte) (obj interface{},
 
 // setup references of a golang-value
 func (p *Pack) setupToGo(obj reflect.Value) (err error) {
-
 	switch obj.Kind() {
 	case reflect.Array, reflect.Slice:
-		err = setupArrayOrSliceToGo(obj)
+		err = p.setupArrayOrSliceToGo(obj)
 	case reflect.Struct:
-		err = setupStructToGo(obj)
+		err = p.setupStructToGo(obj)
 	}
-
 	return
 }
 
@@ -93,14 +90,13 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 			return
 		}
 	}
-
-	idx.Set(dr)
+	wn.set(dr)
 	return
 }
 
 //     sf  - field
 //     val - field value, type of which is Reference
-func (p *Pack) setupReferenceToGo(sf reflect.StructField,
+func (p *Pack) setupRefToGo(sf reflect.StructField,
 	val reflect.Value) (err error) {
 
 	var name string
@@ -113,7 +109,7 @@ func (p *Pack) setupReferenceToGo(sf reflect.StructField,
 		return
 	}
 
-	ref := val.Interface().(Reference)
+	ref := val.Interface().(Ref)
 	if ref.walkNode != nil {
 		return // already set up (skip circular references)
 	}
@@ -132,11 +128,11 @@ func (p *Pack) setupReferenceToGo(sf reflect.StructField,
 		}
 	}
 
-	val.Set(ref)
+	wn.set(ref)
 	return
 }
 
-func (p *Pack) setupReferencesToGo(sf reflect.StructField,
+func (p *Pack) setupRefsToGo(sf reflect.StructField,
 	val reflect.Value) (err error) {
 
 	var name string
@@ -149,26 +145,16 @@ func (p *Pack) setupReferencesToGo(sf reflect.StructField,
 		return
 	}
 
-	refs := val.Interface().(References)
-	if refs.walkNode != nil {
+	refs := val.Interface().(Refs)
+	if refs.wn != nil {
 		return // already set up (skip circular references)
 	}
 
-	wn := new(walkNode)
-
-	wn.sch = sch
-	wn.place = val
-	wn.pack = p
-
-	refs.walkNode = wn
-
-	if p.flags&EntireTree != 0 {
-		if err = refs.loadFull("unpack"); err != nil { // setup value
-			return
-		}
+	var rr *Refs
+	if rr, err = p.getRefs(sch, refs.Hash, val); err != nil {
+		return
 	}
-
-	val.Set(refs)
+	rr.wn.set(rr)
 	return
 }
 
@@ -205,8 +191,8 @@ func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
 //   - field of Dynamic
 //   - field of array of Dynamic
 //   - field of slice of Dynamic
-//   - field of Reference
-//   - field of References
+//   - field of Ref
+//   - field of Refs
 //   - field of struct
 func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 
@@ -219,9 +205,9 @@ func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 		}
 		switch sf.Type {
 		case singleRef:
-			err = p.setupReferenceToGo(sf, obj.Field(i))
+			err = p.setupRefToGo(sf, obj.Field(i))
 		case sliceRef:
-			err = p.setupReferencesToGo(sf, obj.Field(i))
+			err = p.setupRefsToGo(sf, obj.Field(i))
 		case dynamicRef:
 			err = p.setupDynamicToGo(obj, obj.Field(i))
 		default:

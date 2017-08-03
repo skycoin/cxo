@@ -17,8 +17,8 @@ var (
 var (
 	// TODO (kostyarin): rename to typeOfReference, tyoeOfReferences, etc,
 	//                   to make the code more clear
-	singleRef  = typeOf(Reference{})
-	sliceRef   = typeOf(References{})
+	singleRef  = typeOf(Ref{})
+	sliceRef   = typeOf(Refs{})
 	dynamicRef = typeOf(Dynamic{})
 )
 
@@ -28,8 +28,8 @@ type ReferenceType int
 // possible reference
 const (
 	ReferenceTypeNone    ReferenceType = iota
-	ReferenceTypeSingle                // Reference (cipher.SHA256)
-	ReferenceTypeSlice                 // References ([]Reference)
+	ReferenceTypeSingle                // Ref (cipher.SHA256)
+	ReferenceTypeSlice                 // Refs (a'la []Ref)
 	ReferenceTypeDynamic               // Dynamic (struct{Object, Schema Ref.})
 )
 
@@ -37,7 +37,7 @@ const (
 type Schema interface {
 	// Reference of the Schema. The reference is valid after call of Done of
 	// Registry by which the Schema created
-	Reference() SchemaReference
+	Reference() SchemaRef
 
 	IsReference() bool            // is the schema is reference
 	ReferenceType() ReferenceType // type of the reference if it is a reference
@@ -70,7 +70,7 @@ var nilSchema Schema = &schema{kind: reflect.Invalid}
 // schema core
 
 type schema struct {
-	ref SchemaReference
+	ref SchemaRef
 
 	kind reflect.Kind
 	name []byte
@@ -88,9 +88,9 @@ func (s *schema) ReferenceType() ReferenceType {
 	return ReferenceTypeNone // not a reference
 }
 
-func (s *schema) Reference() SchemaReference {
-	if s.ref == (SchemaReference{}) {
-		s.ref = SchemaReference(cipher.SumSHA256(s.Encode()))
+func (s *schema) Reference() SchemaRef {
+	if s.ref == (SchemaRef{}) {
+		s.ref = SchemaRef(cipher.SumSHA256(s.Encode()))
 	}
 	return s.ref
 }
@@ -175,11 +175,11 @@ func (r *referenceSchema) Elem() Schema {
 
 func (r *referenceSchema) encodedSchema() (x encodedSchema) {
 	x.Kind = uint32(r.kind)
-	x.RefTyp = uint32(r.typ)
+	x.ReferenceType = uint32(r.typ)
 	// the schema of the Elem is registered allways
 	if r.typ != ReferenceTypeDynamic {
 		x.Elem = (&schema{
-			SchemaReference{},
+			SchemaRef{},
 			r.elem.Kind(),
 			r.elem.RawName(),
 		}).Encode()
@@ -225,7 +225,7 @@ func (s *sliceSchema) Elem() Schema {
 func (s *sliceSchema) encodedSchema() (x encodedSchema) {
 	x = s.schema.encodedSchema()
 	if el := s.elem; el.IsRegistered() {
-		x.Elem = (&schema{SchemaReference{}, el.Kind(), el.RawName()}).Encode()
+		x.Elem = (&schema{SchemaRef{}, el.Kind(), el.RawName()}).Encode()
 	} else {
 		x.Elem = s.elem.Encode()
 	}
@@ -397,12 +397,12 @@ func (f *field) String() string {
 // encoded
 
 type encodedSchema struct {
-	RefTyp uint32
-	Kind   uint32
-	Name   []byte
-	Len    uint32
-	Fields [][]byte
-	Elem   []byte // encoded schema
+	ReferenceType uint32
+	Kind          uint32
+	Name          []byte
+	Len           uint32
+	Fields        [][]byte
+	Elem          []byte // encoded schema
 }
 
 type encodedField struct {

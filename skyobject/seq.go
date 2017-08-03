@@ -68,7 +68,7 @@ func (t *trackSeq) TakeLastSeq(pk cipher.PubKey) (seq uint64) {
 }
 
 // LastSeq of a feed. The 'ok' is false if feed is not tracked
-func (t *trackSeq) LastSeq(pk cipher.SHA256) (seq uint64, ok bool) {
+func (t *trackSeq) LastSeq(pk cipher.PubKey) (seq uint64, ok bool) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 

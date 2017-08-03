@@ -15,10 +15,9 @@ import (
 
 // common errors
 var (
-	ErrStopRange                          = errors.New("stop range")
-	ErrInvalidArgument                    = errors.New("invalid argument")
-	ErrMissingTypesButGoTypesFlagProvided = errors.New(
-		"missing Types maps, but GoTypes flag provided")
+	ErrStopRange                = errors.New("stop range")
+	ErrInvalidArgument          = errors.New("invalid argument")
+	ErrMissingTypes             = errors.New("missing Types maps")
 	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
 	ErrMissingInverseMapInTypes = errors.New("missing Inverse map in Types")
 )
@@ -40,7 +39,7 @@ type Container struct {
 	coreRegistry *Registry
 
 	rmx  sync.RWMutex
-	regs map[RegistryReference]*Registry
+	regs map[RegistryRef]*Registry
 
 	// clean up
 
@@ -67,12 +66,16 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 		conf = NewConfig()
 	}
 
+	if err := conf.Validate(); err != nil {
+		panic(err)
+	}
+
 	c = new(Container)
 
 	c.closeq = make(chan struct{})
 
 	c.Logger = log.NewLogger(conf.Log)
-	c.regs = make(map[RegistryReference]*Registry)
+	c.regs = make(map[RegistryRef]*Registry)
 
 	// copy configs
 	c.conf = *conf
@@ -81,7 +84,7 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 
 	if conf.Registry != nil {
 		c.coreRegistry = conf.Registry
-		if err = c.AddRegistry(conf.Registry); err != nil {
+		if err := c.AddRegistry(conf.Registry); err != nil {
 			c.db.Close() // to be safe
 			panic(err)   // fatality
 		}
@@ -99,18 +102,13 @@ func (c *Container) initSeqTrackStat() {
 	// initialize trackSeq
 	c.trackSeq.init()
 	c.stat.init(c.conf.StatSamples)
-
 	// range over feeds of DB and fill up the trackSeq
-	err := db.View(func(tx data.Tv) error {
+	err := c.DB().View(func(tx data.Tv) error {
 		feeds := tx.Feeds()
-
 		return feeds.Range(func(pk cipher.PubKey) (err error) {
-
 			roots := feeds.Roots(pk)
-
 			var seq, last uint64 // last seq and seq of last full
 			var hasLast bool     // really has last full root (if last is 0)
-
 			err = roots.Reverse(func(rp *data.RootPack) (_ error) {
 				if seq == 0 {
 					seq = rp.Seq
@@ -121,30 +119,26 @@ func (c *Container) initSeqTrackStat() {
 				}
 				return // continue, finding last full
 			})
-
 			if err != nil {
 				return
 			}
-
 			c.trackSeq.addSeq(pk, seq, false)
 			if hasLast {
-				c.trackSeq.setFull(pk, last, true)
+				c.trackSeq.addSeq(pk, last, true)
 				return
 			}
-
+			return
 		})
-
 	})
-
 	if err != nil {
-		db.Close()
+		c.DB().Close()
 		c.Panic("unexpected database error: ", err)
 	}
 }
 
 // saveRegistry in database
 func (c *Container) saveRegistry(reg *Registry) error {
-	return db.Update(func(tx data.Tu) error {
+	return c.DB().Update(func(tx data.Tu) error {
 		objs := tx.Objects()
 		return objs.Set(cipher.SHA256(reg.Reference()), reg.Encode())
 	})
@@ -183,9 +177,9 @@ func (c *Container) DB() data.DB {
 }
 
 // Set saves single object into database
-func (c *Container) Set(hash cipher.SHA256, data []byte) (err error) {
-	return c.db.Update(func(tx data.Tu) error {
-		return tx.Objects().Set(hash, data)
+func (c *Container) Set(hash cipher.SHA256, val []byte) (err error) {
+	return c.DB().Update(func(tx data.Tu) error {
+		return tx.Objects().Set(hash, val)
 	})
 }
 
@@ -208,9 +202,9 @@ func (c *Container) CoreRegistry() *Registry {
 	return c.coreRegistry
 }
 
-// Registry by RegistryReference. It returns nil if
+// Registry by RegistryRef. It returns nil if
 // the Container doesn't contain required Registry
-func (c *Container) Registry(rr RegistryReference) *Registry {
+func (c *Container) Registry(rr RegistryRef) *Registry {
 	c.rmx.RLock()
 	defer c.rmx.RUnlock()
 
@@ -224,13 +218,17 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 		if roots == nil {
 			return data.ErrNotFound
 		}
-		rp := roots.Get(seq)
+		rp = roots.Get(seq)
 		return
 	})
 	if err != nil {
 		return
 	}
-	//
+	if rp == nil {
+		err = fmt.Errorf("root %d of %s not found", seq, pk.Hex()[:7])
+		return
+	}
+	r, err = c.unpackRoot(pk, rp)
 	return
 }
 
@@ -243,10 +241,7 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 //         return
 //     }
 //
-//     theFlagsIUsuallyUse := EntireMerkleTrees |
-//         EntireTree |
-//         HashTableIndex |
-//         GoTypes
+//     theFlagsIUsuallyUse := EntireTree | HashTableIndex
 //
 //     pack, err := c.Unpack(r, theFlagsIUsuallyUse, &c.CoreRegistry().Types())
 //     if err != nil {
@@ -268,34 +263,21 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 		err = ErrInvalidArgument
 		return
 	}
-
-	if flags & GoTypes {
-		if types == nil {
-			err = ErrMissingTypesButGoTypesFlagProvided
-			return
-		}
-	} else {
-		// TODO (kostyarin): provide a way to unpack to Value
-		//                   if there are not Types
-		err = errors.New("not possible to unpack wihtout GoTypes yet, cheese")
+	if types == nil {
+		err = ErrMissingTypes
 		return
-	}
-
-	if types != nil {
-		if types.Direct == nil {
-			err = ErrMissingDirectMapInTypes
-			return
-		}
-		if types.Inverse == nil {
-			err = ErrMissingInverseMapInTypes
-			return
-		}
+	} else if types.Direct == nil {
+		err = ErrMissingDirectMapInTypes
+		return
+	} else if types.Inverse == nil {
+		err = ErrMissingInverseMapInTypes
+		return
 	}
 
 	// check registry presence
 
-	if r.Reg == (RegistryReference{}) {
-		err = ErrEmptyRegsitryReference
+	if r.Reg == (RegistryRef{}) {
+		err = ErrEmptyRegsitryRef
 		return
 	}
 
@@ -429,11 +411,11 @@ func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
 			}
 
 			var r *Root
-			if r, err = c.unpackRoot(rp); err != nil {
+			if r, err = c.unpackRoot(pk, rp); err != nil {
 				return
 			}
 
-			c.knowsAbout(&r, objs, func(hash cipher.SHA256) (deeper bool,
+			c.knowsAbout(r, objs, func(hash cipher.SHA256) (deeper bool,
 				err error) {
 
 				if _, ok := coll[hash]; !ok {
@@ -462,7 +444,7 @@ func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
 }
 
 func (c *Container) cleanUpRemove(tx data.Tu, coll map[cipher.SHA256]int,
-	collRoots map[cipher.PubKey]int, keepRoots bool) error {
+	collRoots map[cipher.PubKey]uint64, keepRoots bool) (err error) {
 
 	// remove unused registries
 
@@ -483,9 +465,11 @@ func (c *Container) cleanUpRemove(tx data.Tu, coll map[cipher.SHA256]int,
 
 	// remove objects
 
-	if len(sl) > 0 {
+	if len(coll) > 0 {
 		objs := tx.Objects()
-		return objs.RangeDel(func(key cipher.SHA256) (del bool, _ error) {
+		return objs.RangeDel(func(key cipher.SHA256, _ []byte) (del bool,
+			_ error) {
+
 			if _, ok := coll[key]; !ok {
 				del = true
 			}
@@ -533,7 +517,9 @@ func (c *Container) cleanUpByInterval() {
 	}
 }
 
-func (c *Container) unpackRoot(rp *data.RootPack) (r *Root, err error) {
+func (c *Container) unpackRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
+	err error) {
+
 	r = new(Root)
 	if err = encoder.DeserializeRaw(rp.Root, r); err != nil {
 		// detailed error
@@ -608,4 +594,5 @@ func (c *Container) DelFeed(pk cipher.PubKey) (err error) {
 	if err == nil {
 		c.trackSeq.delFeed(pk)
 	}
+	return
 }

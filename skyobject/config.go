@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/skycoin/cxo/node/log"
@@ -8,9 +9,8 @@ import (
 
 // config related constants and defaults
 const (
-	Prefix            string  = "[skyobject] " // default log prefix
-	MerkleDegree      uint32  = 16             // default References' degree
-	MerkleFillPercent float64 = 0.1            // default percentage
+	Prefix       string = "[skyobject] " // default log prefix
+	MerkleDegree int    = 16             // default References' degree
 
 	StatSamples int           = 5                // it's enough
 	CleanUp     time.Duration = 59 * time.Second // every minute
@@ -31,23 +31,7 @@ type Config struct {
 
 	// MerkleDegree of References' Merkle trees.
 	// The option affects new trees
-	MerkleDegree uint32
-
-	// MerkleFillPercent percentage of empty references in
-	// Merkle trees after which depth of a tree will be
-	// increased and the tree will be reconstructed.
-	//
-	// An element of tree can be deleted. In this case,
-	// the element will be zeroed. If percentage of these
-	// zero elements in tree is MerkleFillPercent then
-	// tree will be reconstructed and zero elements removed
-	// from tree
-	//
-	// The percentage measured from 0 to 1 (for example 0.1 = 10%)
-	//
-	// The option is machine local and not saved
-	// inside tree internals
-	MerkleFillPercent float64
+	MerkleDegree int
 
 	// Log configs
 	Log log.Config // logging
@@ -80,7 +64,6 @@ func NewConfig() (conf *Config) {
 	// core configs
 
 	conf.MerkleDegree = MerkleDegree
-	conf.MerkleFillPercent = MerkleFillPercent
 
 	// logger
 
@@ -98,4 +81,13 @@ func NewConfig() (conf *Config) {
 	conf.KeepRoots = KeepRoots
 	conf.KeepNonFull = KeepNonFull
 	return
+}
+
+// Validate the Config
+func (c *Config) Validate() error {
+	if c.MerkleDegree <= 1 {
+		return fmt.Errorf("skyobject.Config.MerkleDegree too small: %d",
+			c.MerkleDegree)
+	}
+	return nil
 }

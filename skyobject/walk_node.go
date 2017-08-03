@@ -4,17 +4,17 @@ import (
 	"reflect"
 )
 
+type unsaver interface {
+	unsave()
+}
+
 type walkNode struct {
 	value interface{} // golang value or Value (skyobject.Value)
 
 	place reflect.Value // place of this (addressable)
 
-	// upper node if this walkNode is part of Reference that
-	// is part of References array (merkle-tree);
-	// the upper used to track changes to allow
-	// fast updating (packing, publishing) roots
-	// skipping already saved branched of References
-	upper *refsWalkNode
+	// upepr node (for References trees)
+	upper unsaver
 
 	// true if the node new or changed;
 	// false if node is a copy
@@ -25,7 +25,7 @@ type walkNode struct {
 }
 
 func (w *walkNode) set(i interface{}) {
-	if w.place != nil {
+	if w.place.IsValid() {
 		val := reflect.ValueOf(i)
 		val = reflect.Indirect(val)
 		w.place.Set(val)

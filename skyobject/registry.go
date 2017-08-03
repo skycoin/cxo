@@ -90,7 +90,7 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		el := r.getSchema(typ.Elem())
 
 		if el.IsRegistered() {
-			ss.elem = &schema{SchemaReference{}, el.Kind(), el.RawName()}
+			ss.elem = &schema{SchemaRef{}, el.Kind(), el.RawName()}
 			return ss
 		}
 
@@ -108,7 +108,7 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		el := r.getSchema(typ.Elem())
 
 		if el.IsRegistered() {
-			as.elem = &schema{SchemaReference{}, el.Kind(), el.RawName()}
+			as.elem = &schema{SchemaRef{}, el.Kind(), el.RawName()}
 			return as
 		}
 
@@ -160,7 +160,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 
 		f.schema = &referenceSchema{
 			schema: schema{
-				ref:  SchemaReference{},
+				ref:  SchemaRef{},
 				kind: t.Kind(),
 			},
 			typ:  ReferenceTypeSingle,
@@ -176,7 +176,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 		tagRef := mustTagSchemaName(sf.Tag)
 		f.schema = &referenceSchema{
 			schema: schema{
-				ref:  SchemaReference{},
+				ref:  SchemaRef{},
 				kind: t.Kind(),
 			},
 			typ:  ReferenceTypeSlice,
@@ -191,7 +191,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 
 		f.schema = &referenceSchema{
 			schema: schema{
-				ref:  SchemaReference{},
+				ref:  SchemaRef{},
 				kind: t.Kind(),
 			},
 			typ: ReferenceTypeDynamic,
@@ -203,7 +203,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 	}
 
 	if s := r.getSchema(sf.Type); s.IsRegistered() {
-		f.schema = &schema{SchemaReference{}, s.Kind(), s.RawName()}
+		f.schema = &schema{SchemaRef{}, s.Kind(), s.RawName()}
 	} else {
 		f.schema = s
 	}
@@ -213,10 +213,10 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 }
 
 type Registry struct {
-	done bool                       // stop registration and use
-	ref  RegistryReference          // reference to the registry
-	reg  map[string]Schema          // by name
-	srf  map[SchemaReference]Schema // by reference (for Dynamic references)
+	done bool                 // stop registration and use
+	ref  RegistryRef          // reference to the registry
+	reg  map[string]Schema    // by name
+	srf  map[SchemaRef]Schema // by reference (for Dynamic references)
 
 	// local (inversed tn of Reg for unpacking directly to reflect.Type)
 	nt map[string]reflect.Type // registered name -> reflect.Type
@@ -227,7 +227,7 @@ type Registry struct {
 func newRegistry() (r *Registry) {
 	r = new(Registry)
 	r.reg = make(map[string]Schema)
-	r.srf = make(map[SchemaReference]Schema)
+	r.srf = make(map[SchemaRef]Schema)
 	return
 }
 
@@ -288,12 +288,12 @@ func (r *Registry) Encode() []byte {
 }
 
 // Reference of the Registry
-func (r *Registry) Reference() RegistryReference {
+func (r *Registry) Reference() RegistryRef {
 	return r.ref
 }
 
-// SchemaByReference returns Schema by SchemaReference that is obvious.
-func (r *Registry) SchemaByReference(sr SchemaReference) (s Schema, err error) {
+// SchemaByReference returns Schema by SchemaRef that is obvious.
+func (r *Registry) SchemaByReference(sr SchemaRef) (s Schema, err error) {
 	var ok bool
 	if s, ok = r.srf[sr]; !ok {
 		err = fmt.Errorf("missng schema %q", sr.String())
@@ -420,12 +420,12 @@ func (r *Registry) finialize() {
 		r.fillSchema(sch, filled)
 	}
 
-	// fill up map by SchemaReference
+	// fill up map by SchemaRef
 	for _, sch := range r.reg {
 		r.srf[sch.Reference()] = sch
 	}
 
-	r.ref = RegistryReference(cipher.SumSHA256(r.Encode()))
+	r.ref = RegistryRef(cipher.SumSHA256(r.Encode()))
 }
 
 // TagSchemaName returns schema name from given reflect.StructTag.
@@ -462,7 +462,7 @@ func mustTagSchemaName(tag reflect.StructTag) string {
 	if err != nil {
 		panic(err)
 	}
-	return
+	return sch
 }
 
 func typeOf(i interface{}) reflect.Type {
@@ -473,7 +473,7 @@ func typeOf(i interface{}) reflect.Type {
 
 func decodeSchema(b []byte) (s Schema, err error) {
 	// type encodedSchema struct {
-	// 	RefTyp uint32
+	// 	ReferenceType uint32
 	// 	Kind   uint32
 	// 	Name   []byte
 	// 	Len    uint32
@@ -492,12 +492,12 @@ func decodeSchema(b []byte) (s Schema, err error) {
 		return
 	}
 	// is reference
-	switch ReferenceType(x.RefTyp) {
+	switch ReferenceType(x.ReferenceType) {
 	case ReferenceTypeSingle, ReferenceTypeSlice, ReferenceTypeDynamic:
 		// kind, typ, elem
 		rs := referenceSchema{}
 		rs.kind = reflect.Kind(x.Kind)
-		rs.typ = ReferenceType(x.RefTyp)
+		rs.typ = ReferenceType(x.ReferenceType)
 		if rs.typ != ReferenceTypeDynamic {
 			if rs.elem, err = decodeSchema(x.Elem); err != nil {
 				return

@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -11,11 +12,12 @@ import (
 // Value related errors
 var (
 	ErrInvalidSchemaOrData     = errors.New("invalid schema or data")
-	ErrIndexOutOfRange         = errors.New("index out of range")
 	ErrNoSuchField             = errors.New("no such field")
 	ErrInvalidDynamicReference = errors.New("invalid dynamic reference")
 	ErrInvalidSchema           = errors.New("invalid schema")
 )
+
+/*
 
 // A Value represents any value including references
 type Value interface {
@@ -63,32 +65,27 @@ type RangeIndexFunc func(i int, val *Value) error
 // RangeFieldsFunc used to itterate over fields of a struct
 type RangeFieldsFunc func(name string, val *Value) error
 
+*/
+
 //
 // utils
 //
 
 // SchemaSize returns size used by encoded data of given schema
 func SchemaSize(s Schema, p []byte) (n int, err error) {
-
 	if s.IsReference() {
-
-		switch rt := sch.ReferenceType(); rt {
-		case ReferenceTypeSingle:
-			return len(cipher.SHA256{}) // legth of encoded Reference{}
-		case ReferenceTypeSlice:
-			n, err = refSize(&References{})
-			return
+		switch rt := s.ReferenceType(); rt {
+		case ReferenceTypeSingle, ReferenceTypeSlice:
+			n = len(cipher.SHA256{}) // legth of encoded Reference{}
 		case ReferenceTypeDynamic:
-			return 2 * len(cipher.SHA256{}) // length of encoded Dynamic{}
+			n = 2 * len(cipher.SHA256{}) // length of encoded Dynamic{}
+		default:
+			err = fmt.Errorf("[ERR] reference with invalid ReferenceType: %d",
+				rt)
 		}
-
-		err = fmt.Errorf("[ERR] reference with invalid ReferenceType: %d", rt)
 		return
-
 	}
-
 	switch s.Kind() {
-
 	case reflect.Bool, reflect.Int8, reflect.Uint8:
 		n = 1
 	case reflect.Int16, reflect.Uint16:
@@ -97,45 +94,30 @@ func SchemaSize(s Schema, p []byte) (n int, err error) {
 		n = 4
 	case reflect.Int64, reflect.Uint64, reflect.Float64:
 		n = 8
-
 	case reflect.String:
 		if n, err = getLength(p); err != nil {
 			return
 		}
 		n += 4 // encoded length (uint32)
-
 	case reflect.Slice:
 		if n, err = schemaSliceSize(s, p); err != nil {
 			return
 		}
-
 	case reflect.Array:
 		if n, err = schemaArraySize(s, p); err != nil {
 			return
 		}
-
 	case reflect.Struct:
 		if n, err = schemaStructSize(s, p); err != nil {
 			return
 		}
-
 	default:
 		err = ErrInvalidSchema
 		return
 	}
-
 	if n > len(p) {
 		err = ErrInvalidSchemaOrData
 	}
-
-	return
-}
-
-// refSize returns size used by encoded reference;
-// ref argument must be pointer to Reference, References
-// or Dynamic
-func refSize(ref interface{}) (n int, err error) {
-	n, err = encoder.DeserializeRawToValue(p, reflect.ValueOf(ref))
 	return
 }
 
