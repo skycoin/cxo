@@ -246,15 +246,9 @@ func (p *Pack) SetRefByIndex(i int, obj interface{}) (err error) {
 	return
 }
 
-// Append another Dynamic reference to Refs of
-// underlying Root. If the Pack created with
-// Types then you can use any object of
-// registered, otherwise it must be
-// instance of Dynamic. If Root.Refs is unpacked
-// then this method reattaches them to new
-// slice (created by append). Thus, a developer
-// doesn't need to care about it
-func (p *Pack) Append(objs ...interface{}) (err error) {
+// Append given obejct to Refs of
+// underlying Root
+func (p *Pack) Append(objs ...interface{}) {
 	p.c.Debugln(VerbosePin, "(*Pack).Append", p.r.Short(), len(objs))
 
 	for _, obj := range objs {
@@ -291,7 +285,7 @@ func (p *Pack) schemaOf(obj interface{}) (sch Schema, err error) {
 // a goalgn value of registered type. The method panics on first
 // error. Passing nil returns blank Dynamic
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
-	p.c.Debugln(VerbosePin, "(*Pack).Dynamic", p.r.Short(), obj)
+	p.c.Debugf(VerbosePin, "(*Pack).Dynamic %s %T", p.r.Short(), obj)
 
 	wn := new(walkNode)
 	wn.pack = p

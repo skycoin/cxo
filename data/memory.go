@@ -319,21 +319,37 @@ func (m *memoryFeeds) List() (list []cipher.PubKey) {
 
 func (m *memoryFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
 
+	// waithing for #24 of buntdb
+	collect := []string{}
+
 	m.tx.AscendKeys("feed:*", func(k, v string) bool {
 
 		if len(v) != 0 {
 			return true // continue
 		}
 
+		collect = append(collect, k)
+
+		// waiting for #24 of buntdb
+
+		// if err = fn(m.getKey(k)); err != nil {
+		// 	if err == ErrStopRange {
+		// 		err = nil
+		// 	}
+		// 	return false // break
+		// }
+
+		return true // continue
+	})
+
+	for _, k := range collect {
 		if err = fn(m.getKey(k)); err != nil {
 			if err == ErrStopRange {
 				err = nil
 			}
-			return false // break
+			return
 		}
-
-		return true // continue
-	})
+	}
 
 	return
 }

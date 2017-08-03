@@ -62,19 +62,21 @@ func (p *Pack) setupToGo(obj reflect.Value) (err error) {
 //       - a value of the array is idx
 //
 func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
+
+	p.c.Debugf(VerbosePin, "setupDynamicToGo %s of %s", idx.String(),
+		obj.String())
+
 	dr := idx.Interface().(Dynamic)
-	if dr.walkNode != nil {
-		return // already set up (skip circular references)
-	}
 	if !dr.IsValid() {
 		// detailed error
 		err = fmt.Errorf("invalid Dynamic reference %s, in %s",
 			dr.Short(), obj.Type().String())
 		return
 	}
-	wn := new(walkNode)
-	wn.pack = p
-	dr.walkNode = wn
+	if dr.walkNode == nil {
+		dr.walkNode = new(walkNode)
+	}
+	dr.walkNode.pack = p
 	if p.flags&EntireTree != 0 && !dr.IsBlank() {
 		if _, err = dr.Schema(); err != nil { // setup schema
 			return
@@ -83,6 +85,7 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 			return
 		}
 	}
+	idx.Set(reflect.ValueOf(dr))
 	return
 }
 
@@ -90,6 +93,8 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 //     val - field value, type of which is Reference
 func (p *Pack) setupRefToGo(sf reflect.StructField,
 	val reflect.Value) (err error) {
+
+	p.c.Debugln(VerbosePin, "setupRefToGo", sf)
 
 	var name string
 	if name, err = TagSchemaName(sf.Tag); err != nil {
@@ -100,10 +105,10 @@ func (p *Pack) setupRefToGo(sf reflect.StructField,
 		return
 	}
 	ref := val.Interface().(Ref)
-	if ref.walkNode != nil {
-		return // already set up (skip circular references)
+	wn := ref.walkNode
+	if wn == nil {
+		wn = new(walkNode)
 	}
-	wn := new(walkNode)
 	wn.sch = sch
 	wn.pack = p
 	ref.walkNode = wn
@@ -112,6 +117,7 @@ func (p *Pack) setupRefToGo(sf reflect.StructField,
 			return
 		}
 	}
+	val.Set(reflect.ValueOf(ref))
 	return
 }
 

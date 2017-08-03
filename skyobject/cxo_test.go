@@ -26,11 +26,7 @@ func TestPack_schemaOf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if err = pack.Append(User{Name: "Alice", Age: 21}); err != nil {
-		t.Fatal(err)
-	}
-
+	pack.Append(&User{Name: "Alice", Age: 21})
 }
 
 func Test_anAverageTest(t *testing.T) {
@@ -48,9 +44,7 @@ func Test_anAverageTest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = pack.Append(&User{Name: "Alice", Age: 21}); err != nil {
-		t.Fatal(err)
-	}
+	pack.Append(&User{Name: "Alice", Age: 21})
 	if _, err := pack.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +71,7 @@ func Test_anAverageTest(t *testing.T) {
 
 	group := &Group{Name: "The Group"}
 
-	if err := pack.Append(group); err != nil {
-		t.Fatal(err)
-	}
+	pack.Append(group)
 	if _, err := pack.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -174,9 +166,7 @@ func Test_votes(t *testing.T) {
 	cv.Post = pack.Refs(threadVotes)
 	cv.Thread = pack.Refs(postVotes)
 
-	if err := pack.Append(cv); err != nil {
-		t.Fatal(err)
-	}
+	pack.Append(cv)
 
 	if _, err := pack.Save(); err != nil {
 		t.Fatal(err)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
@@ -15,7 +14,22 @@ var (
 	ErrNoSuchField             = errors.New("no such field")
 	ErrInvalidDynamicReference = errors.New("invalid dynamic reference")
 	ErrInvalidSchema           = errors.New("invalid schema")
+
+	refSize, refsSize, dynamicSize int
 )
+
+func init() {
+	for _, x := range []struct {
+		val *int
+		obj interface{}
+	}{
+		{&refSize, Ref{}},
+		{&refsSize, Refs{}},
+		{&dynamicSize, Dynamic{}},
+	} {
+		*x.val = len(encoder.Serialize(x.obj))
+	}
+}
 
 //
 // utils
@@ -25,10 +39,12 @@ var (
 func SchemaSize(s Schema, p []byte) (n int, err error) {
 	if s.IsReference() {
 		switch rt := s.ReferenceType(); rt {
-		case ReferenceTypeSingle, ReferenceTypeSlice:
-			n = len(cipher.SHA256{}) // legth of encoded Reference{}
+		case ReferenceTypeSingle:
+			return refSize, nil
+		case ReferenceTypeSlice:
+			return refsSize, nil
 		case ReferenceTypeDynamic:
-			n = 2 * len(cipher.SHA256{}) // length of encoded Dynamic{}
+			return dynamicSize, nil
 		default:
 			err = fmt.Errorf("[ERR] reference with invalid ReferenceType: %d",
 				rt)

@@ -418,6 +418,7 @@ func (i *inspector) Refs(sch Schema, val []byte) (it gotree.GTStructure) {
 		it.Name = "(refs) empty"
 		return
 	}
+	it.Name = "(refs) " + refs.Short()
 	it.Items = i.refsNode(sch, er.Depth, er)
 	return
 }
