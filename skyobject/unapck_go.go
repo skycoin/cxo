@@ -9,8 +9,8 @@ import (
 
 // given val can't be encoded reference; it guaraneed by
 // Types map: we can't register a reference
-func (p *Pack) unpackToGo(schemaName string, val []byte) (obj interface{},
-	err error) {
+func (p *Pack) unpackToGo(schemaName string,
+	val []byte) (obj interface{}, err error) {
 
 	var typ reflect.Type
 	var ok bool
@@ -20,23 +20,23 @@ func (p *Pack) unpackToGo(schemaName string, val []byte) (obj interface{},
 			schemaName)
 		return
 	}
-
 	ptr := reflect.New(typ)
 	if _, err = encoder.DeserializeRawToValue(val, ptr); err != nil {
 		return
 	}
-
 	elem := ptr.Elem()
 	if err = p.setupToGo(elem); err != nil {
 		return
 	}
-
-	obj = reflect.Indirect(ptr).Interface()
+	obj = ptr.Interface()
 	return
 }
 
 // setup references of a golang-value
 func (p *Pack) setupToGo(obj reflect.Value) (err error) {
+	if obj.Kind() == reflect.Ptr {
+		obj = obj.Elem()
+	}
 	switch obj.Kind() {
 	case reflect.Array, reflect.Slice:
 		err = p.setupArrayOrSliceToGo(obj)
@@ -62,27 +62,20 @@ func (p *Pack) setupToGo(obj reflect.Value) (err error) {
 //       - a value of the array is idx
 //
 func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
-
 	dr := idx.Interface().(Dynamic)
 	if dr.walkNode != nil {
 		return // already set up (skip circular references)
 	}
-
 	if !dr.IsValid() {
 		// detailed error
 		err = fmt.Errorf("invalid Dynamic reference %s, in %s",
 			dr.Short(), obj.Type().String())
 		return
 	}
-
 	wn := new(walkNode)
-
-	wn.place = idx
 	wn.pack = p
-
 	dr.walkNode = wn
-
-	if p.flags&EntireTree != 0 {
+	if p.flags&EntireTree != 0 && !dr.IsBlank() {
 		if _, err = dr.Schema(); err != nil { // setup schema
 			return
 		}
@@ -90,7 +83,6 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 			return
 		}
 	}
-	wn.set(dr)
 	return
 }
 
@@ -103,32 +95,23 @@ func (p *Pack) setupRefToGo(sf reflect.StructField,
 	if name, err = TagSchemaName(sf.Tag); err != nil {
 		return
 	}
-
 	var sch Schema
 	if sch, err = p.reg.SchemaByName(name); err != nil {
 		return
 	}
-
 	ref := val.Interface().(Ref)
 	if ref.walkNode != nil {
 		return // already set up (skip circular references)
 	}
-
 	wn := new(walkNode)
-
 	wn.sch = sch
-	wn.place = val
 	wn.pack = p
-
 	ref.walkNode = wn
-
-	if p.flags&EntireTree != 0 {
+	if p.flags&EntireTree != 0 && !ref.IsBlank() {
 		if _, err = ref.Value(); err != nil { // setup value
 			return
 		}
 	}
-
-	wn.set(ref)
 	return
 }
 
@@ -139,22 +122,19 @@ func (p *Pack) setupRefsToGo(sf reflect.StructField,
 	if name, err = TagSchemaName(sf.Tag); err != nil {
 		return
 	}
-
 	var sch Schema
 	if sch, err = p.reg.SchemaByName(name); err != nil {
 		return
 	}
-
 	refs := val.Interface().(Refs)
 	if refs.wn != nil {
 		return // already set up (skip circular references)
 	}
-
 	var rr *Refs
 	if rr, err = p.getRefs(sch, refs.Hash, val); err != nil {
 		return
 	}
-	rr.wn.set(rr)
+	val.Set(reflect.ValueOf(rr).Elem())
 	return
 }
 
@@ -164,7 +144,6 @@ func (p *Pack) setupRefsToGo(sf reflect.StructField,
 func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
 
 	typ := obj.Type().Elem()
-
 	if typ == dynamicRef {
 		for i := 0; i < obj.Len(); i++ {
 			idx := obj.Index(i)
@@ -183,7 +162,6 @@ func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
 			}
 		}
 	}
-
 	return
 }
 
@@ -195,11 +173,15 @@ func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
 //   - field of Refs
 //   - field of struct
 func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
-
 	typ := obj.Type()
-
 	for i := 0; i < typ.NumField(); i++ {
 		sf := typ.Field(i)
+		if sf.Type == dynamicRef {
+			if err = p.setupDynamicToGo(obj, obj.Field(i)); err != nil {
+				return
+			}
+			continue
+		}
 		if sf.Tag.Get("enc") == "-" || sf.PkgPath != "" || sf.Name == "_" {
 			continue // skip unexported, unencoded and _-named fields
 		}
@@ -208,8 +190,6 @@ func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 			err = p.setupRefToGo(sf, obj.Field(i))
 		case sliceRef:
 			err = p.setupRefsToGo(sf, obj.Field(i))
-		case dynamicRef:
-			err = p.setupDynamicToGo(obj, obj.Field(i))
 		default:
 			continue
 		}
@@ -217,6 +197,5 @@ func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 			return
 		}
 	}
-
 	return
 }

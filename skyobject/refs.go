@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	//"github.com/disiqueira/gotree"
+	"github.com/disiqueira/gotree"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -45,9 +45,9 @@ func (r *Refs) unsave() {
 	var ln int // new length
 	var ns []cipher.SHA256
 
-	if r.depth == 0 {
+	if len(r.branches) == 0 {
 		for _, h := range r.leafs {
-			if h == nil || h.Hash == (cipher.SHA256{}) {
+			if h.Hash == (cipher.SHA256{}) {
 				continue
 			}
 			ln++
@@ -61,7 +61,7 @@ func (r *Refs) unsave() {
 		}
 	} else {
 		for _, h := range r.branches {
-			if h == nil || h.Hash == (cipher.SHA256{}) {
+			if h.Hash == (cipher.SHA256{}) {
 				continue
 			}
 			ln += h.length
@@ -95,16 +95,13 @@ func (r *Refs) unsave() {
 }
 
 // unsave each leaf
-func (r *Refs) unaveAll() {
-	if r.length == 0 {
-		return
-	}
-	if r.depth == 0 {
+func (r *Refs) unaveAll(depth int) {
+	if depth == 0 {
 		r.unsave()
 		return
 	}
 	for _, rr := range r.branches {
-		rr.unaveAll()
+		rr.unaveAll(depth - 1)
 	}
 	return
 }
@@ -123,9 +120,8 @@ func (p *Pack) getRefs(sch Schema, hash cipher.SHA256,
 		r.degree = p.c.conf.MerkleDegree
 		r.length = 0
 		r.wn = &walkNode{
-			place: place,
-			sch:   sch,
-			pack:  p,
+			sch:  sch,
+			pack: p,
 		}
 		return
 	}
@@ -145,9 +141,8 @@ func (p *Pack) getRefs(sch Schema, hash cipher.SHA256,
 	r.degree = int(er.Degree)
 	r.length = int(er.Length)
 	r.wn = &walkNode{
-		place: place,
-		sch:   sch,
-		pack:  p,
+		sch:  sch,
+		pack: p,
 	}
 
 	if len(er.Nested) == 0 {
@@ -180,7 +175,6 @@ func (r *Refs) getRef(hash cipher.SHA256) (ref *Ref, err error) {
 	ref = new(Ref)
 	ref.Hash = hash
 	ref.walkNode = &walkNode{
-		place: reflect.ValueOf(ref).Elem(),
 		sch:   r.wn.sch,
 		upper: r,
 		pack:  r.wn.pack,
@@ -446,12 +440,12 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 		if err = ref.SetValue(obj); err != nil {
 			return
 		}
-		if err = r.insertRef(&ref); err != nil {
+		if err = r.insertRef(r.depth, &ref); err != nil {
 			return
 		}
 	}
 
-	r.unaveAll()
+	r.unaveAll(r.depth)
 
 	return
 }
@@ -466,7 +460,7 @@ func (r *Refs) cahngeDepth(depth int) (err error) {
 	}
 
 	err = r.Range(func(_ int, ref *Ref) (_ error) {
-		return nr.insertRef(ref)
+		return nr.insertRef(depth, ref)
 	})
 	if err != nil {
 		return
@@ -474,14 +468,13 @@ func (r *Refs) cahngeDepth(depth int) (err error) {
 
 	// don't unsave all here (caller should to do that)
 
-	*r = *nr    // replace
-	r.wn.set(r) // palce
+	*r = *nr // replace
 	return
 }
 
-func (r *Refs) insertRef(ref *Ref) (err error) {
+func (r *Refs) insertRef(depth int, ref *Ref) (err error) {
 	var ok bool
-	if ok, err = r.tryInsertRef(ref); err != nil {
+	if ok, err = r.tryInsertRef(depth, ref); err != nil {
 		return
 	}
 	if !ok {
@@ -490,8 +483,8 @@ func (r *Refs) insertRef(ref *Ref) (err error) {
 	return
 }
 
-func (r *Refs) tryInsertRef(ref *Ref) (ok bool, err error) {
-	if r.depth == 0 {
+func (r *Refs) tryInsertRef(depth int, ref *Ref) (ok bool, err error) {
+	if depth == 0 {
 		if len(r.leafs) == r.degree {
 			return // false, nil
 		}
@@ -499,7 +492,6 @@ func (r *Refs) tryInsertRef(ref *Ref) (ok bool, err error) {
 		rr := new(Ref)
 		rr.Hash = ref.Hash
 		rr.walkNode = &walkNode{
-			place: reflect.ValueOf(rr).Elem(),
 			sch:   r.wn.sch,
 			upper: r,
 			pack:  r.wn.pack,
@@ -522,7 +514,7 @@ func (r *Refs) tryInsertRef(ref *Ref) (ok bool, err error) {
 	// - try insert to last branch
 	if len(r.branches) > 0 {
 		last := r.branches[len(r.branches)-1]
-		if ok, err = last.tryInsertRef(ref); err != nil || ok == true {
+		if ok, err = last.tryInsertRef(depth-1, ref); err != nil || ok == true {
 			return
 		}
 	}
@@ -538,7 +530,7 @@ func (r *Refs) tryInsertRef(ref *Ref) (ok bool, err error) {
 		rr.upper = r
 
 		r.branches = append(r.branches, rr)
-		return rr.tryInsertRef(ref) // insert
+		return rr.tryInsertRef(depth-1, ref) // insert
 	}
 	// - return false
 	return
@@ -559,7 +551,6 @@ func (r *Refs) Clear() {
 	r.depth = 0
 	r.degree = r.wn.pack.c.conf.MerkleDegree
 	r.length = 0
-	r.wn.set(r)
 }
 
 func pow(a, b int) (p int) {
@@ -572,4 +563,29 @@ func pow(a, b int) (p int) {
 		a *= a
 	}
 	return p
+}
+
+func (r *Refs) DebugString() string {
+	var gt gotree.GTStructure
+	gt.Name = "(refs) " + r.Short()
+	gt.Items = r.debugItems(r.depth)
+	return gotree.StringTree(gt)
+}
+
+func (r *Refs) debugItems(depth int) (its []gotree.GTStructure) {
+	if depth == 0 {
+		for _, ref := range r.leafs {
+			its = append(its, gotree.GTStructure{
+				Name: "(leaf) " + ref.Hash.Hex()[:7],
+			})
+		}
+		return
+	}
+	for _, ref := range r.branches {
+		its = append(its, gotree.GTStructure{
+			Name:  "(branch) " + ref.Hash.Hex()[:7],
+			Items: ref.debugItems(depth - 1),
+		})
+	}
+	return
 }

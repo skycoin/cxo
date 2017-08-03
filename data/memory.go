@@ -138,9 +138,12 @@ func (m *memoryObjects) Del(key cipher.SHA256) (err error) {
 	return
 }
 
-func (m *memoryObjects) Get(key cipher.SHA256) []byte {
+func (m *memoryObjects) Get(key cipher.SHA256) (p []byte) {
 	if val, _ := m.tx.Get(m.key(key)); len(val) != 0 {
-		return decValue(val)
+		if p = decValue(val); len(p) == 0 {
+			p = nil
+		}
+		return
 	}
 	return nil
 }

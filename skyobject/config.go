@@ -20,6 +20,8 @@ const (
 	CleanUpPin        log.Pin = 1 << iota // show time of CleanUp in logs
 	PackSavePin                           // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
+
+	VerbosePin // to many logs to show
 )
 
 // A Config represents oconfigurations

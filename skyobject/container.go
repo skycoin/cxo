@@ -72,6 +72,8 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 
 	c = new(Container)
 
+	c.db = db
+
 	c.closeq = make(chan struct{})
 
 	c.Logger = log.NewLogger(conf.Log)
@@ -92,13 +94,15 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 
 	if c.conf.CleanUp > 0 {
 		c.await.Add(1)
-		c.cleanUpByInterval()
+		go c.cleanUpByInterval()
 	}
 
 	return
 }
 
 func (c *Container) initSeqTrackStat() {
+	c.Debug(VerbosePin, "initSeqTrackStat")
+
 	// initialize trackSeq
 	c.trackSeq.init()
 	c.stat.init(c.conf.StatSamples)
@@ -113,7 +117,7 @@ func (c *Container) initSeqTrackStat() {
 				if seq == 0 {
 					seq = rp.Seq
 				}
-				if rp.IsFull {
+				if rp.IsFull == true {
 					last, hasLast = rp.Seq, true
 					return data.ErrStopRange // break
 				}
@@ -131,6 +135,7 @@ func (c *Container) initSeqTrackStat() {
 		})
 	})
 	if err != nil {
+		c.Debug(VerbosePin, "fatal")
 		c.DB().Close()
 		c.Panic("unexpected database error: ", err)
 	}
@@ -138,6 +143,8 @@ func (c *Container) initSeqTrackStat() {
 
 // saveRegistry in database
 func (c *Container) saveRegistry(reg *Registry) error {
+	c.Debug(VerbosePin, "saveRegsitry ", reg.Reference().Short())
+
 	return c.DB().Update(func(tx data.Tu) error {
 		objs := tx.Objects()
 		return objs.Set(cipher.SHA256(reg.Reference()), reg.Encode())
@@ -146,6 +153,8 @@ func (c *Container) saveRegistry(reg *Registry) error {
 
 // add registry that already saved in database
 func (c *Container) addRegistry(reg *Registry) {
+	c.Debug(VerbosePin, "addRegistry ", reg.Reference().Short())
+
 	c.rmx.Lock()
 	defer c.rmx.Unlock()
 
@@ -159,6 +168,8 @@ func (c *Container) addRegistry(reg *Registry) {
 // AddRegistry to the Container and save it into database until
 // it removed by CelanUp
 func (c *Container) AddRegistry(reg *Registry) (err error) {
+	c.Debug(VerbosePin, "AddRegistry ", reg.Reference().Short())
+
 	c.rmx.Lock()
 	defer c.rmx.Unlock()
 
@@ -178,6 +189,8 @@ func (c *Container) DB() data.DB {
 
 // Set saves single object into database
 func (c *Container) Set(hash cipher.SHA256, val []byte) (err error) {
+	c.Debugln(VerbosePin, "Set", hash.Hex()[:7])
+
 	return c.DB().Update(func(tx data.Tu) error {
 		return tx.Objects().Set(hash, val)
 	})
@@ -185,6 +198,8 @@ func (c *Container) Set(hash cipher.SHA256, val []byte) (err error) {
 
 // Get returns data by hash. Result is nil if data not found
 func (c *Container) Get(hash cipher.SHA256) (value []byte) {
+	c.Debugln(VerbosePin, "Get", hash.Hex()[:7])
+
 	err := c.db.View(func(tx data.Tv) (_ error) {
 		value = tx.Objects().Get(hash)
 		return
@@ -199,12 +214,16 @@ func (c *Container) Get(hash cipher.SHA256) (value []byte) {
 // CoreRegisty of the Container or nil if
 // the Container created without a Regsitry
 func (c *Container) CoreRegistry() *Registry {
+	c.Debugln(VerbosePin, "CoreRegistry", c.coreRegistry != nil)
+
 	return c.coreRegistry
 }
 
 // Registry by RegistryRef. It returns nil if
 // the Container doesn't contain required Registry
 func (c *Container) Registry(rr RegistryRef) *Registry {
+	c.Debugln(VerbosePin, "Registry", rr.Short())
+
 	c.rmx.RLock()
 	defer c.rmx.RUnlock()
 
@@ -212,6 +231,8 @@ func (c *Container) Registry(rr RegistryRef) *Registry {
 }
 
 func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
+	c.Debugln(VerbosePin, "Root", pk.Hex()[:7], seq)
+
 	var rp *data.RootPack
 	err = c.db.View(func(tx data.Tv) (_ error) {
 		roots := tx.Feeds().Roots(pk)
@@ -243,7 +264,8 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 //
 //     theFlagsIUsuallyUse := EntireTree | HashTableIndex
 //
-//     pack, err := c.Unpack(r, theFlagsIUsuallyUse, &c.CoreRegistry().Types())
+//     pack, err := c.Unpack(r, theFlagsIUsuallyUse, c.CoreRegistry().Types(),
+//         cipher.SecKey{})
 //     if err != nil {
 //         // handle error
 //         return
@@ -254,8 +276,14 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 // If the EntireTree flag provided then given Root (entire tree) will be
 // unpacked inside the Unpack method call. Unpack wihtout GoTypes
 // flag will not wrok, because the feature is not implemented yet
-func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
-	err error) {
+//
+// The sk argument should not be empty if you want to modify the Root
+// and pulish changes. In any ither cases it is not necessary and can be
+// passed like cipher.SecKey{}
+func (c *Container) Unpack(r *Root, flags Flag, types *Types,
+	sk cipher.SecKey) (pack *Pack, err error) {
+
+	c.Debugln(VerbosePin, "Unpack", r.Pub.Hex()[:7], r.Seq)
 
 	// check arguments
 
@@ -300,6 +328,7 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 	pack.unsaved = make(map[cipher.SHA256][]byte)
 
 	pack.c = c
+	pack.sk = sk
 
 	if err = pack.init(); err != nil { // initialize
 		pack = nil // release for GC
@@ -309,8 +338,23 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types) (pack *Pack,
 
 }
 
+// NewRoot associated with core regsitry. It panics if the container created
+// without core regsitry
+func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
+	types *Types) (pack *Pack, err error) {
+
+	c.Debugln(VerbosePin, "NewRoot", pk.Hex()[:7])
+
+	r := new(Root)
+	r.Pub = pk
+	r.Reg = c.coreRegistry.Reference()
+	return c.Unpack(r, flags, types, sk)
+}
+
 // CelanUp removes unused objects from database
 func (c *Container) CleanUp(keepRoots bool) (err error) {
+
+	c.Debugln(VerbosePin, "CleanUp, keep roots:", keepRoots)
 
 	// avoid simultaneous CleanUps,
 	// otherwise timing would be wrong
@@ -346,7 +390,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 
 		if c.Logger.Pins()&CleanUpVerbosePin != 0 {
 			verboseElapsed = time.Now().Sub(tp)
-			c.Debugf(CleanUpVerbosePin, "CleanUp collecting took: ",
+			c.Debug(CleanUpVerbosePin, "CleanUp collecting took: ",
 				verboseElapsed)
 		}
 
@@ -377,7 +421,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 
 	if c.Logger.Pins()&CleanUpVerbosePin != 0 {
 		verboseElapsed = time.Now().Sub(tp) - verboseElapsed
-		c.Debugf(CleanUpVerbosePin, "CleanUp removing took: ",
+		c.Debug(CleanUpVerbosePin, "CleanUp removing took: ",
 			verboseElapsed)
 	}
 
@@ -520,6 +564,8 @@ func (c *Container) cleanUpByInterval() {
 func (c *Container) unpackRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 	err error) {
 
+	c.Debugln(VerbosePin, "unpackRoot", pk.Hex()[:7], rp.Seq)
+
 	r = new(Root)
 	if err = encoder.DeserializeRaw(rp.Root, r); err != nil {
 		// detailed error
@@ -537,6 +583,7 @@ func (c *Container) unpackRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 // removeNonFullRoots removes all non-full
 // Root objects from database
 func (c *Container) removeNonFullRoots() error {
+	c.Debug(VerbosePin, "removeNonFullRoots")
 
 	// don't perform simultaneously with CleanUp
 	c.cleanmx.Lock()
@@ -557,6 +604,7 @@ func (c *Container) removeNonFullRoots() error {
 // Close the Container. The
 // closing doesn't close DB
 func (c *Container) Close() error {
+	c.Debug(VerbosePin, "Close")
 
 	// close cleanUpByInterval
 
@@ -581,6 +629,8 @@ func (c *Container) Close() error {
 
 // AddFeed. The method never retruns "already exists" errors
 func (c *Container) AddFeed(pk cipher.PubKey) error {
+	c.Debugln(VerbosePin, "AddFeed", pk.Hex()[:7])
+
 	return c.DB().Update(func(tx data.Tu) error {
 		return tx.Feeds().Add(pk)
 	})
@@ -588,6 +638,8 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 
 // DelFeed. The method never returns "not found" errors
 func (c *Container) DelFeed(pk cipher.PubKey) (err error) {
+	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
+
 	err = c.DB().Update(func(tx data.Tu) error {
 		return tx.Feeds().Del(pk)
 	})

@@ -3,19 +3,22 @@ changes
 
 ### TODO
 
-- [ ] improve GC (#97)
 - [ ] improve documentation
 - [ ] add RPC methods to see conn->feeds and feed->conns
-- [ ] add `OnDropRoot` callback
 - [ ] add more tests
 - [ ] dry benchmarks
 - [ ] add long running tests
-- [ ] move `RootWalker` to skyobject package
 
 ### Done
 
 #### ...
 
+The skyobejct package has been refactored. And there are chagnes related to it
+and little improvements
+
+- [x] improve GC (#97)
+- [x] add `OnDropRoot` callback
+- [x] move `RootWalker` to skyobject package
 - [x] rid out of RPC logs `method * has wrong number of ins: *`
 
 #### 10:00 28 June 2017

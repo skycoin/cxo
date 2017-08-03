@@ -17,56 +17,6 @@ var (
 	ErrInvalidSchema           = errors.New("invalid schema")
 )
 
-/*
-
-// A Value represents any value including references
-type Value interface {
-	Schema() Schema // schema
-	Data() []byte   // encoded value
-
-	// references (pointers to underlying references)
-
-	// TODO (kostayrin): pointers or not?
-
-	Reference() *Reference
-	Dynamic() *Dynamic
-	References() *References
-
-	// arrays and slices (except []byte)
-
-	Len() (ln int)                   // length
-	RangeIndex(RangeIndexFunc) error // itterate
-	Index(int) Value                 // value by index
-
-	// structures
-
-	FieldNum() (n int)                 // number of fields
-	Fields() (fs []string)             // names of fields
-	FieldByName(string) Value          // field by name
-	FieldByIndex(int) Value            // field by index
-	RangeFields(RangeFieldsFunc) error // itterate fields
-
-	// scalar values
-
-	Int() int64     // int8, 16, 32, 64
-	Uint() uint64   // uint8, 16, 32, 64
-	Float() float64 // flaot32, 64
-	String() string // string
-	Bytes() []byte  // []byte
-	Bool() bool     // bool
-
-	// WalkNode of the Value
-	walkNode() *WalkNode
-}
-
-// RangeIndexFunc used to itterate over array or slcie
-type RangeIndexFunc func(i int, val *Value) error
-
-// RangeFieldsFunc used to itterate over fields of a struct
-type RangeFieldsFunc func(name string, val *Value) error
-
-*/
-
 //
 // utils
 //

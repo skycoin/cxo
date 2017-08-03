@@ -59,8 +59,7 @@ func (r SchemaRef) Short() string {
 
 // A Ref represents reference to object
 type Ref struct {
-	// Hash of CX object. Don't modify the
-	// field manually
+	// Hash of CX object
 	Hash cipher.SHA256
 	// internals
 	walkNode *walkNode `enc:"-"`
@@ -96,19 +95,18 @@ func (r *Ref) Schema() Schema {
 }
 
 // Value of the Ref. Result can be nil
-// if the Ref is blank
+// if the Ref is blank. The result is
+// pointer to golang value
 func (r *Ref) Value() (obj interface{}, err error) {
 	if r.IsBlank() {
 		return // nil, nil
 	}
 	wn := r.walkNode
 	if wn == nil {
-		// TODO (kostyarin): make the error global
-		err = errors.New("can't get value of Ref detached from Pack")
+		err = errors.New("can't get value of detached Ref")
 		return
 	}
-	if wn.value != nil {
-		// already have
+	if wn.value != nil { // already have
 		obj = wn.value
 		return
 	}
@@ -133,9 +131,7 @@ func (r *Ref) Value() (obj interface{}, err error) {
 // SetValue replacing the Ref with new, that points
 // to given value. It return error if type of given value
 // is not type of the Referece. Use nil to clear the
-// Ref, making it blank. Feel free to pass another
-// Ref or cipher.SHA256 (where the Ref and the
-// SHA256 checksum must be of saved object).
+// Ref, making it blank
 func (r *Ref) SetValue(obj interface{}) (err error) {
 	if obj == nil {
 		r.clear()
@@ -143,8 +139,7 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 	}
 	wn := r.walkNode
 	if wn == nil {
-		// TODO (kostyarin): make the error global
-		err = errors.New("can't set value to Ref detached from Pack")
+		err = errors.New("can't set value to detached Ref")
 		return
 	}
 	p := wn.pack
@@ -186,11 +181,9 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 			r.clear()
 			return
 		}
-		val = reflect.Indirect(val) // indirect
-	} else {
-		// not a pointer (unaddressable value);
-		// make it adressable to be able to setupToGo
-		val, obj = makeAddressable(typ, val)
+	} else { // not a pointer
+		err = errors.New("can't accept non-pointer value")
+		return
 	}
 	// setup references of given obj
 	if err = p.setupToGo(val); err != nil {
@@ -204,7 +197,6 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 	if key != prev {
 		wn.unsave()
 	}
-	wn.set(r) // set to place
 	return
 }
 
@@ -216,13 +208,10 @@ func (r *Ref) clear() {
 	if wn := r.walkNode; wn != nil {
 		wn.value = nil
 		wn.unsave() // changed
-		wn.set(r)
 	}
 }
 
-// Copy returs copy of this reference. The copy detached
-// from its place. Use this mehtod to put the reference to
-// any other place
+// Copy returs copy of this reference
 func (r *Ref) Copy() (cp Ref) {
 	cp.Hash = r.Hash
 	if wn := r.walkNode; wn != nil {
@@ -232,17 +221,4 @@ func (r *Ref) Copy() (cp Ref) {
 		}
 	}
 	return
-}
-
-// Detach this reference from its place.
-// After this call the Ref detached from
-// its place and SetValue no longer affects
-// keeper of the Ref (the place), but
-// the Ref still belongs to related Pack.
-// The Copy method returns detached Refs.
-// Detaching not clears Schema of the Ref
-func (r *Ref) Detach() {
-	if wn := r.walkNode; wn != nil {
-		wn.place = reflect.Value{}
-	}
 }

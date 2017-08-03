@@ -30,7 +30,11 @@ func (t *trackSeq) addSeq(pk cipher.PubKey, seq uint64, full bool) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	tf := t.track[pk]
+	tf, ok := t.track[pk]
+	if !ok {
+		tf.last = inversedSeq
+		tf.full = inversedSeq
+	}
 
 	if tf.last == inversedSeq || seq > tf.last {
 		tf.last = seq
@@ -58,7 +62,27 @@ func (t *trackSeq) TakeLastSeq(pk cipher.PubKey) (seq uint64) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
-	tf := t.track[pk]
+	tf, ok := t.track[pk]
+	if !ok {
+		tf.last = inversedSeq
+		tf.full = inversedSeq
+	}
+
+	tf.last++
+	seq = tf.last
+
+	t.track[pk] = tf
+	return
+}
+
+func (t *trackSeq) takeLastSeqAndLock(pk cipher.PubKey) (seq uint64) {
+	t.mx.Lock()
+
+	tf, ok := t.track[pk]
+	if !ok {
+		tf.last = inversedSeq
+		tf.full = inversedSeq
+	}
 
 	tf.last++
 	seq = tf.last

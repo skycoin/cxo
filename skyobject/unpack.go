@@ -50,7 +50,21 @@ type Pack struct {
 	flags Flag   // packing flags
 	types *Types // types mapping
 
-	unsaved map[cipher.SHA256][]byte
+	sk cipher.SecKey
+
+	unsaved   map[cipher.SHA256][]byte
+	isUnsaved bool
+}
+
+// don't save, just get k-v
+func (p *Pack) dsave(obj interface{}) (key cipher.SHA256, val []byte) {
+	val = encoder.Serialize(obj)
+	key = cipher.SumSHA256(val)
+	return
+}
+
+func (p *Pack) unsave() {
+	p.isUnsaved = true
 }
 
 // internal get/set/del/add/save methods that works with cipher.SHA256
@@ -101,45 +115,67 @@ func (p *Pack) del(key cipher.SHA256) {
 	delete(p.unsaved, key)
 }
 
-// Save all cahnges in DB returning packed updated Root.
+// Save all changes in DB returning packed updated Root.
 // Use the result to publish upates (node package related)
 func (p *Pack) Save() (root data.RootPack, err error) {
+	p.c.Debugln(VerbosePin, "(*Pack).Save", p.r.Pub.Hex()[:7], p.r.Seq)
 
-	// TODO (kostyarin): track saving time and put it into
-	//                   statistic of Container
-
+	tp := time.Now()
 	if p.flags&ViewOnly != 0 {
 		err = ErrViewOnlyTree // can't save view only tree
 		return
 	}
+	if p.sk == (cipher.SecKey{}) {
+		err = fmt.Errorf("can't save Root of %s empty secret key",
+			p.r.Pub.Hex()[:7])
+	}
+
+	// track seq
+	defer func() {
+		if err == nil {
+			p.c.trackSeq.addSeq(p.r.Pub, p.r.Seq, true)
+		}
+	}()
 
 	// setup timestamp and seq number
 	p.r.Time = time.Now().UnixNano() //
-	//
 
+	p.r.Seq = p.c.trackSeq.takeLastSeqAndLock(p.r.Pub)
+	defer p.c.trackSeq.mx.Unlock()
+
+	val := p.r.Encode()
+
+	p.r.Prev = p.r.Hash
+	p.r.Hash = cipher.SumSHA256(val)
+
+	root.Root = val
+	root.Hash = p.r.Hash
+	root.Seq = p.r.Seq
+	root.IsFull = true
+	root.Prev = p.r.Prev
+	root.Sig = cipher.SignHash(p.r.Hash, p.sk)
 	// single transaction required (to perform rollback on error)
-
 	err = p.c.DB().Update(func(tx data.Tu) (err error) {
-
 		// save Root
-
-		// TODO (kostyarin): save Root
-
+		roots := tx.Feeds().Roots(p.r.Pub)
+		if roots == nil {
+			return ErrNoSuchFeed
+		}
+		if err = roots.Add(&root); err != nil {
+			return
+		}
 		// save objects
 		if len(p.unsaved) == 0 {
 			return
 		}
-
 		err = tx.Objects().SetMap(p.unsaved)
 		return
 	})
-
 	if err == nil {
 		p.unsaved = make(map[cipher.SHA256][]byte) // clear
 	}
-
+	p.c.stat.addPackSave(time.Now().Sub(tp))
 	return
-
 }
 
 // Initialize the Pack. It creates Root WalkNode and
@@ -148,7 +184,7 @@ func (p *Pack) init() (err error) {
 	// Do we need to unpack entire tree?
 	if p.flags&EntireTree != 0 {
 		// unpack all possible
-		_, err = p.Refs()
+		_, err = p.RootRefs()
 	}
 	return
 }
@@ -166,11 +202,12 @@ func (p *Pack) Flags() Flag { return p.flags }
 // unpack Root.Refs
 //
 
-// Refs returns unpacked references of underlying
+// RootRefs returns unpacked references of underlying
 // Root. It's not equal to pack.Root().Refs, becaue
 // the method returns unpacked references. Actually
 // the method makes the same referenes "unpacked"
-func (p *Pack) Refs() (drs []Dynamic, err error) {
+func (p *Pack) RootRefs() (drs []Dynamic, err error) {
+	p.c.Debugln(VerbosePin, "(*Pack).Refs", p.r.Short())
 
 	for i := range p.r.Refs {
 		if p.r.Refs[i].walkNode == nil {
@@ -183,24 +220,29 @@ func (p *Pack) Refs() (drs []Dynamic, err error) {
 	return
 }
 
-// RefByIndex returns one of Root.Refs. The error can
-// be ErrIndexOutOfRange. It's easy to use (*Pack).Refs()
-// method to get all Dynamic references of underlying
-// Root. But if the tree is not unpacked entirely then
-// you can unpack it partially (depending  your needs)
-// using this method
+// RefByIndex returns one of Root.Refs
 func (p *Pack) RefByIndex(i int) (dr Dynamic, err error) {
+	p.c.Debugln(VerbosePin, "(*Pack).RefByIndex", p.r.Short(), i)
 
 	if i < 0 || i >= len(p.r.Refs) {
 		err = ErrIndexOutOfRange
 		return
 	}
-
 	if p.r.Refs[i].walkNode == nil {
 		_, err = p.r.Refs[i].Value() // unpack
 	}
-
 	dr = p.r.Refs[i]
+	return
+}
+
+func (p *Pack) SetRefByIndex(i int, obj interface{}) (err error) {
+	p.c.Debugf(VerbosePin, "(*Pack).SetRefByIndex %s %d %T", p.r.Short(), i,
+		obj)
+
+	if i < 0 || i >= len(p.r.Refs) {
+		return ErrIndexOutOfRange
+	}
+	p.r.Refs[i] = p.Dynamic(obj)
 	return
 }
 
@@ -213,41 +255,16 @@ func (p *Pack) RefByIndex(i int) (dr Dynamic, err error) {
 // slice (created by append). Thus, a developer
 // doesn't need to care about it
 func (p *Pack) Append(objs ...interface{}) (err error) {
-	if len(objs) == 0 {
-		return
-	}
-
-	drs := make([]Dynamic, 0, len(objs))
+	p.c.Debugln(VerbosePin, "(*Pack).Append", p.r.Short(), len(objs))
 
 	for _, obj := range objs {
-		var dr Dynamic
-
-		wn := new(walkNode)
-		wn.pack = p
-
-		dr.walkNode = wn
-
-		if err = dr.SetValue(obj); err != nil {
-			return
-		}
-		drs = append(drs, dr)
-	}
-
-	p.r.Refs = append(p.r.Refs, drs...) // append
-
-	// reattach
-
-	for i, dr := range p.r.Refs {
-		if dr.walkNode != nil {
-			dr.Attach(p.r.Refs, i)
-		}
+		p.r.Refs = append(p.r.Refs, p.Dynamic(obj))
 	}
 	return
 }
 
 func (p *Pack) schemaOf(obj interface{}) (sch Schema, err error) {
 	typ := typeOf(obj)
-
 	if name, ok := p.types.Inverse[typ]; !ok {
 		// detailed error
 		err = fmt.Errorf(
@@ -274,8 +291,11 @@ func (p *Pack) schemaOf(obj interface{}) (sch Schema, err error) {
 // a goalgn value of registered type. The method panics on first
 // error. Passing nil returns blank Dynamic
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
+	p.c.Debugln(VerbosePin, "(*Pack).Dynamic", p.r.Short(), obj)
+
 	wn := new(walkNode)
 	wn.pack = p
+	wn.upper = p
 
 	dr.walkNode = wn
 
@@ -285,24 +305,41 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	return
 }
 
-func (p *Pack) unpack(sch Schema, hash cipher.SHA256) (value interface{},
-	err error) {
-
-	var val []byte
-	if val, err = p.get(hash); err != nil {
-		return
+func (p *Pack) Ref(obj interface{}) (ref Ref) {
+	sch, err := p.schemaOf(obj)
+	if err != nil {
+		panic(err)
 	}
-
-	value, err = p.unpackToGo(sch.Name(), val)
+	ref.walkNode = &walkNode{
+		sch:  sch,
+		pack: p,
+	}
+	if err := ref.SetValue(obj); err != nil {
+		panic(err)
+	}
 	return
 }
 
-// if val is unaddressable then, in some cases, we need to make
-// it addressable to be able to call (*Pack).setupToGo
-func makeAddressable(typ reflect.Type, val reflect.Value) (reflect.Value,
-	interface{}) {
-
-	nv := reflect.Indirect(reflect.New(typ))
-	nv.Set(val)
-	return nv, nv.Interface()
+// Refs creates Refs by given objects. List must not be empty
+// and all obejct must have the same registered type
+func (p *Pack) Refs(objs ...interface{}) (r Refs) {
+	if len(objs) == 0 {
+		panic("can't create Refs by empty slice")
+	}
+	sch, err := p.schemaOf(objs[0])
+	if err != nil {
+		panic(err)
+	}
+	r.degree = p.c.conf.MerkleDegree
+	r.wn = &walkNode{
+		sch:  sch,
+		pack: p,
+	}
+	if p.flags&HashTableIndex != 0 {
+		r.index = make(map[cipher.SHA256]*Ref)
+	}
+	if err := r.Append(objs...); err != nil {
+		panic(err)
+	}
+	return
 }

@@ -311,7 +311,8 @@ func (r *Registry) SchemaByName(name string) (Schema, error) {
 // be valid (empty maps). The Types used to pack/unpack CX objects
 // directly from and to golang values. You should not modify the
 // maps of the Types
-func (r *Registry) Types() (ts Types) {
+func (r *Registry) Types() (ts *Types) {
+	ts = new(Types)
 	ts.Direct = r.nt
 	ts.Inverse = r.tn
 	return

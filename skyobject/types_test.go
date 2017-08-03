@@ -1,7 +1,11 @@
 package skyobject
 
 import (
+	"testing"
+	//"time"
+
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/node/log"
 )
 
 type User struct {
@@ -33,5 +37,9 @@ func getRegisty() *Registry {
 func getCont() *Container {
 	conf := NewConfig()
 	conf.Registry = getRegisty()
+	if testing.Verbose() {
+		conf.Log.Debug = true
+		conf.Log.Pins = log.All
+	}
 	return NewContainer(data.NewMemoryDB(), conf)
 }
