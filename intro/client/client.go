@@ -3,15 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
-	"sync"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
+	"github.com/skycoin/cxo/node/gnet"
 	sky "github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/intro"
@@ -42,7 +40,7 @@ func main() {
 	defer func() {
 		if err := recover(); err != nil {
 			code = 1
-			log.Println("[PANIC]:", err)
+			fmt.Fprintln(os.Stderr, "[PANIC]:", err)
 		}
 		os.Exit(code) // the Exit "recovers" silently
 	}()
@@ -86,13 +84,13 @@ func main() {
 
 	// create and launch
 	if s, err = node.NewNode(c); err != nil {
-		log.Print(err)
+		fmt.Fprintln(os.Stderr, err)
 		code = 1
 		return
 	}
 	defer s.Close() // close
 
-	pk, sk := cipher.GenerateDeterministicKeyPair([]byte("x"))
+	pk, _ := cipher.GenerateDeterministicKeyPair([]byte("x"))
 	s.Subscribe(nil, pk)
 	// conenct to pipe
 

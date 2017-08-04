@@ -357,7 +357,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 		// delete
 		//
 
-		if cr := c.CoreRegistry(); c != nil {
+		if cr := c.CoreRegistry(); cr != nil {
 			coll[cipher.SHA256(cr.Reference())] = 1
 		}
 
