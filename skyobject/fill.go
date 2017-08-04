@@ -70,6 +70,10 @@ func (c *Container) NewFiller(r *Root, wantq chan<- WCXO, fullq chan<- *Root,
 	return
 }
 
+func (f *Filler) Root() *Root {
+	return f.r
+}
+
 func (f *Filler) drop(err error) {
 	f.c.Debugln(VerbosePin, "(*Filler).drop", f.r.Short(), err)
 
@@ -139,7 +143,7 @@ func (f *Filler) request(hash cipher.SHA256) (val []byte, ok bool) {
 
 func (f *Filler) get(hash cipher.SHA256) (val []byte, ok bool) {
 	if val = f.c.Get(hash); val != nil {
-		return
+		return val, true
 	}
 	val, ok = f.request(hash)
 	return
@@ -335,6 +339,15 @@ func (f *Filler) fillDataRefs(sch Schema, val []byte) (err error) {
 	if refs.IsBlank() {
 		return
 	}
+
+	el := sch.Elem()
+	if el == nil {
+		err = fmt.Errorf("[ERR] schema of Refs [%s] without element: %s",
+			refs.Short(),
+			sch)
+		return
+	}
+
 	var ok bool
 	if val, ok = f.get(refs.Hash); !ok {
 		return
@@ -343,7 +356,7 @@ func (f *Filler) fillDataRefs(sch Schema, val []byte) (err error) {
 	if err = encoder.DeserializeRaw(val, &ers); err != nil {
 		return
 	}
-	return f.fillRefsNode(ers.Depth, ers.Nested, sch)
+	return f.fillRefsNode(ers.Depth, ers.Nested, el)
 }
 
 func (f *Filler) fillRefsNode(depth uint32, hs []cipher.SHA256,

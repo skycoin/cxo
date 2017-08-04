@@ -9,43 +9,75 @@ import (
 
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/node/gnet"
-	"github.com/skycoin/cxo/skyobject"
+	sky "github.com/skycoin/cxo/skyobject"
 )
 
 //
 // Linked list: use skyobject.Reference instead of pointer. So,
-// we can't use double-linked-list because of back reference
+// we can't use double-linked-list because of back reference.
+// But we can use joiner for double linked lists
 //
 
-// real linked list
+// real linked list (points to next)
 type any struct {
 	Data string
 	Next *any
 }
 
-var linkedList *any // create the linked-list
+// another linked list node (point to previous)
+type some struct {
+	Name string
+	Prev *some
+	Next *some
+}
+
+var (
+	direct  *any // create the linked-list
+	reverse *some
+)
 
 // CX linked list
-type Any struct {
+type Single struct {
 	Data string
-	Next skyobject.Reference `skyobject:"schema=Any"`
+	Next sky.Ref `skyobject:"schema=Sing"`
+}
+
+type Join struct {
+	Prev sky.Ref `skyobject:"schema=Double"`
+	Next sky.Ref `skyobject:"schema=Double"`
+}
+
+type Double struct {
+	Name string
+	Join sky.Ref `skyobject:"schema=Double"`
+}
+
+// Lists container
+type Head struct {
+	Any  sky.Ref `skyobject:"schema="Any"`
+	Some sky.Ref `skyobject:"schema="Some"`
 }
 
 func init() {
 	log.SetFlags(log.Lshortfile | log.Ltime)
 }
 
+var (
+	singleList *any
+	doubleList *some
+)
+
 func fillLinkedList() {
-	linkedList = &any{
-		"one",
-		&any{
-			"two",
-			&any{
-				"three",
-				nil,
-			},
-		},
+	singleList = &any{"one", &any{"two", &any{"three", nil}}}
+	doubleList = &some{"21", &some{"22", &some{"23", nil}}}
+
+	// set Prev references of
+
+	prev, current := doubleList, doubleList.Next                   // <- 80 -->|
+	for ; current != nil; prev, current := current, current.Next { // <- 80 -->|
+		current.Prev = prev
 	}
+
 }
 
 func Example_linkedList() {
@@ -54,7 +86,6 @@ func Example_linkedList() {
 	fillLinkedList()
 
 	// feed and owner
-
 	feed, owner := cipher.GenerateKeyPair()
 
 	// launch src->pipe->dst
@@ -85,7 +116,6 @@ func Example_linkedList() {
 	case <-pipe.Quiting():
 	case <-dst.Quiting():
 	}
-
 }
 
 func PipeNodeLinkedList(feed cipher.PubKey) (pipe *node.Node, err error) {
@@ -95,15 +125,12 @@ func PipeNodeLinkedList(feed cipher.PubKey) (pipe *node.Node, err error) {
 	conf.EnableRPC = false      // disable RPC (for example)
 	conf.Log.Prefix = "[PIPE] "
 	// conf.Log.Debug = true
-
 	// node
 	if pipe, err = node.NewNode(conf); err != nil {
 		return
 	}
-
 	// feed
 	pipe.Subscribe(nil, feed)
-
 	return
 }
 
@@ -111,20 +138,23 @@ func SourceNodeLinkedList(feed cipher.PubKey, owner cipher.SecKey,
 	address string) (src *node.Node, err error) {
 
 	// create registry and register all types we are going to use
-	reg := skyobject.NewRegistry()
-	reg.Register("Any", Any{})
+	reg := sky.NewRegistry(func(r *sky.Reg) {
+		r.Register("Any", Any{})
+		r.Register("Some", Some{})
+		r.Register("Head", Head{})
+	})
 
 	// config
-
 	conf := node.NewConfig()
 	conf.EnableListener = false // don't listen (for example)
 	conf.InMemoryDB = true      // use in-memory database (for example)
 	conf.EnableRPC = false      // disable RPC (for example)
 	conf.Log.Prefix = "[SRC] "
+	conf.Skyobject.Registry = reg // core registry
 	// conf.Log.Debug = true
 
 	// node
-	if src, err = node.NewNodeReg(conf, reg); err != nil {
+	if src, err = node.NewNode(conf); err != nil {
 		return
 	}
 
@@ -146,66 +176,59 @@ func SourceNodeLinkedList(feed cipher.PubKey, owner cipher.SecKey,
 	}
 
 	// don't block
-
 	go generateLinkedList(src, feed, owner)
-
 	return
-
 }
 
 func generateLinkedList(src *node.Node, feed cipher.PubKey,
 	owner cipher.SecKey) {
 
 	defer src.Close()
-
 	// for this example (never need in real case)
 	time.Sleep(1 * time.Second)
-
 	// container will push all updates to subscribed peers (to the Pipe)
 	cnt := src.Container()
-
 	// root object that refers to our registry and
 	// we will attach the linked list to the root
-	root, err := cnt.NewRoot(feed, owner)
+	pack, err := cnt.NewRoot(feed, owner, 0, cnt.CoreRegistry().Types())
 	if err != nil {
 		log.Print(err)
 		return
 	}
-
-	shareLinkedList(cnt, root)
-
+	shareLinkedList(src, pack)
 	// for this example (waiting for replication)
 	time.Sleep(1 * time.Second)
 }
 
-func shareLinkedList(cnt *node.Container, root *node.Root) {
+func shareLinkedList(src *node.Node, pack *sky.Pack) {
 
-	// actually, GC disabled by default and we don't need the LockGC / UnlockGC
-	cnt.LockGC()
-	defer cnt.UnlockGC()
+	// direct list
 
 	// find a tail of the list
 	var chain []*any
 
-	for elem := linkedList; elem != nil; elem = elem.Next {
+	for elem := direct; elem != nil; elem = elem.Next {
 		chain = append(chain, elem)
 	}
 
 	// save elements of the list from tail
 	var a *any
-	var prev skyobject.Reference
+	var prev skyobject.Ref
 	for i := len(chain) - 1; i >= 0; i-- {
 		a = chain[i]
-		prev = root.Save(Any{
+		prev = pack.Ref(&Any{
 			Data: a.Data,
 			Next: prev,
 		})
 	}
 
+	// reverse list
+	//
+
 	// now the prev contains first element of the list;
 	// let's attach it to root
 
-	// we can attach to Root Dynamic reference only
+	//
 
 	sch, err := root.SchemaReferenceByName("Any")
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/skycoin/cxo/node/log"
 )
 
+// common errors
 var (
 	// ErrTimeout occurs when a request that waits response tooks too long
 	ErrTimeout = errors.New("timeout")
@@ -30,31 +31,18 @@ var (
 	// feeds because it is not public
 	ErrNonPublicPeer = errors.New(
 		"request list of feeds from non-public peer")
+	ErrConnClsoed = errors.New("connection closed")
 )
-
-type fillRoot struct {
-	root  *skyobject.Root     // filling the root to send forward
-	c     *gnet.Conn          // from which the root received
-	await skyobject.Reference // waiting for
-}
 
 // A Node represents CXO P2P node
 // that includes RPC server if enabled
 // by configs
 type Node struct {
-	// logger of the server
-	log.Logger
-
-	src msgSource
-
-	// configuratios
-	conf Config
-
-	// database
-	db data.DB
-
-	// skyobject
-	so *skyobject.Container
+	log.Logger                      // logger of the server
+	src        msgSource            // msg id
+	conf       Config               // configuratios
+	db         data.DB              // database
+	so         *skyobject.Container // skyobject
 
 	// feeds
 	fmx   sync.RWMutex
@@ -66,9 +54,6 @@ type Node struct {
 	// accept or reject
 	pmx     sync.Mutex
 	pending map[*gnet.Conn]map[cipher.PubKey]struct{}
-
-	rmx   sync.RWMutex
-	roots []*fillRoot // filling up
 
 	// request/response replies
 	rpmx      sync.Mutex
@@ -90,15 +75,17 @@ type Node struct {
 
 // NewNode creates new Node instnace using given
 // configurations. The functions creates database and
-// Container of skyobject instances internally
-func NewNode(sc Config) (s *Node, err error) {
-	s, err = NewNodeReg(sc, nil)
-	return
-}
-
-// NewNodeReg creates new Node instance using given
-// skyobject.Registry to create container
-func NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node,
+// Container of skyobject instances internally. Use
+// Config.Skyobject to provide appropriate configuration
+// for skyobject.Container such as skyobject.Regsitry,
+// etc. For example
+//
+//     conf := NewConfig()
+//     conf.Skyobject.Regsitry = skyobject.NewRegistry(blah)
+//
+//     node, err := NewNode(conf)
+//
+func NewNode(sc Config) (s *Node,
 	err error) {
 
 	// database
@@ -120,13 +107,13 @@ func NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node,
 	// container
 
 	var so *skyobject.Container
-	so = skyobject.NewContainer(db, reg)
+	so = skyobject.NewContainer(db, sc.Skyobject)
 
 	// node instance
 
 	s = new(Node)
 
-	s.Logger = log.NewLoggerByConfig(sc.Log)
+	s.Logger = log.NewLogger(sc.Log)
 	s.conf = sc
 
 	s.db = db
@@ -139,9 +126,12 @@ func NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node,
 	s.responses = make(map[uint32]chan Msg)
 
 	// fill up feeds from database
-	for _, pk := range s.db.Feeds() {
-		s.feeds[pk] = make(map[*gnet.Conn]struct{})
-	}
+	s.so.DB().View(func(tx data.Tv) (_ error) {
+		for _, pk := range tx.Feeds().List() {
+			s.feeds[pk] = make(map[*gnet.Conn]struct{})
+		}
+		return
+	})
 
 	if sc.Config.Logger == nil {
 		sc.Config.Logger = s.Logger // use the same logger
@@ -195,7 +185,7 @@ func NewNodeReg(sc Config, reg *skyobject.Registry) (s *Node,
 }
 
 func (s *Node) start() (err error) {
-	s.Debugf(`starting node:
+	s.Debugf(log.All, `starting node:
     data dir:             %s
 
     max connections:      %d
@@ -227,8 +217,6 @@ func (s *Node) start() (err error) {
 
     in-memory DB:         %v
     DB path:              %s
-
-    gc interval:          %v
 
     debug:                %#v
 `,
@@ -263,8 +251,6 @@ func (s *Node) start() (err error) {
 		s.conf.InMemoryDB,
 		s.conf.DBPath,
 
-		s.conf.GCInterval,
-
 		s.conf.Log.Debug,
 	)
 
@@ -290,46 +276,38 @@ func (s *Node) start() (err error) {
 		go s.pingsLoop()
 	}
 
-	if s.conf.GCInterval > 0 {
-		s.await.Add(1)
-		go s.gcLoop()
-	}
-
 	return
 }
 
 // Close the Node
 func (s *Node) Close() (err error) {
-
 	s.quito.Do(func() {
 		close(s.quit)
 	})
-
 	err = s.pool.Close()
-
 	if s.conf.EnableRPC {
 		s.rpc.Close()
 	}
-
 	s.await.Wait()
-
 	// we have to close boltdb once
 	s.doneo.Do(func() {
-
-		// clean up database
-		for feed := range s.feeds {
-			s.so.RemoveNonFullRoots(feed)
-		}
-		s.so.GC(true) // true == preserve root objects
-
+		// close Container
+		s.so.Close()
 		// close database after all, otherwise, it panics
 		s.db.Close()
-
 		// close the Quiting channel
 		close(s.done)
 	})
 
 	return
+}
+
+// DB of the Node
+func (n *Node) DB() data.DB { return n.db }
+
+// Container of the Node
+func (n *Node) Container() *skyobject.Container {
+	return n.so
 }
 
 func maxDuration(a, b time.Duration) time.Duration {
@@ -362,27 +340,6 @@ func (s *Node) pingsLoop() {
 	}
 }
 
-func (s *Node) gcLoop() {
-	defer s.await.Done()
-
-	tk := time.NewTicker(s.conf.GCInterval)
-	defer tk.Stop()
-
-	s.Debug("start GC loop ", s.conf.GCInterval)
-	for {
-		select {
-		case <-tk.C:
-			tp := time.Now()
-			s.Debug("GC pause")
-			s.so.GC(false)
-			s.Debug("GC done ", time.Now().Sub(tp))
-		case <-s.quit:
-			return
-		}
-	}
-
-}
-
 // send a message to given connection
 func (s *Node) sendMessage(c *gnet.Conn, msg Msg) (ok bool) {
 	return s.sendEncodedMessage(c, fmt.Sprintf("%T", msg), Encode(msg))
@@ -393,7 +350,7 @@ func (s *Node) sendEncodedMessage(c *gnet.Conn, name string,
 
 	// the name argument used for Debug logs
 
-	s.Debugf("send message %s to %s", name, c.Address())
+	s.Debugf(MsgPin, "send message %s to %s", name, c.Address())
 
 	select {
 	case c.SendQueue() <- msg:
@@ -414,17 +371,23 @@ func boolString(t bool, ts, fs string) string {
 }
 
 func (s *Node) connectHandler(c *gnet.Conn) {
-	s.Debugf("got new %s connection %s %s",
+	s.Debugf(ConnPin, "got new %s connection %s %s",
 		boolString(c.IsIncoming(), "incoming", "outgoing"),
 		boolString(c.IsIncoming(), "from", "to"),
 		c.Address())
 	// handle
 	s.await.Add(1)
 	go s.handleConnection(c)
+	if occ := s.conf.OnCreateConnection; occ != nil {
+		occ(s, c)
+	}
 }
 
 func (s *Node) disconnectHandler(c *gnet.Conn) {
-	s.Debugf("closed connection %s", c.Address())
+	s.Debugf(ConnPin, "closed connection %s", c.Address())
+	if occ := s.conf.OnCloseConnection; occ != nil {
+		occ(s, c)
+	}
 }
 
 // delete connection from feeds
@@ -452,9 +415,28 @@ func (s *Node) close(c *gnet.Conn) {
 	c.Close()
 }
 
+func (s *Node) dropRoot(c *gnet.Conn, dre *skyobject.Root, err error) {
+	if ofb := s.conf.OnFillingBreaks; ofb != nil {
+		ofb(s, c, dre, err)
+	}
+	if s.conf.DropNonFullRotos {
+		s.Debug(RootPin, "can't drop non-full Root: feature is not implemented")
+		// TODO (kostyarin): remove root using Container
+		//                   (add appropriate method to the
+		//                   Container)
+	}
+}
+
+func (s *Node) rootFilled(r *skyobject.Root, c *gnet.Conn) {
+	if orf := s.conf.OnRootFilled; orf != nil {
+		orf(s, c, r)
+	}
+	s.sendToFeed(r.Pub, s.src.NewRootMsg(r.Pub, *r.Pack()), c)
+}
+
 func (s *Node) handleConnection(c *gnet.Conn) {
-	s.Debug("handle connection ", c.Address())
-	defer s.Debug("stop handling connection", c.Address())
+	s.Debug(ConnPin, "handle connection ", c.Address())
+	defer s.Debug(ConnPin, "stop handling connection", c.Address())
 
 	defer s.await.Done()
 	defer s.close(c)
@@ -462,12 +444,37 @@ func (s *Node) handleConnection(c *gnet.Conn) {
 	var (
 		closed  = c.Closed()
 		receive = c.ReceiveQueue()
+		fill    = s.newFiller()
 
 		data []byte
 		msg  Msg
 
 		err error
 	)
+
+	defer func() {
+		fill.clsoe()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			fill.wait()
+		}()
+		for {
+			select {
+			case dre := <-fill.drop:
+				s.dropRoot(c, dre.Root, dre.Err)
+				fill.del(dre.Root)
+			case fr := <-fill.full:
+				s.rootFilled(fr, c)
+				fill.del(fr)
+			case <-done:
+				for _, fr := range fill.fillers {
+					s.dropRoot(c, fr.Root(), ErrConnClsoed) // drop
+				}
+				return
+			}
+		}
+	}()
 
 	for {
 		select {
@@ -478,14 +485,19 @@ func (s *Node) handleConnection(c *gnet.Conn) {
 				s.Printf("[ERR] %s decoding message: %v", c.Address(), err)
 				return
 			}
-			s.handleMsg(c, msg)
+			s.handleMsg(c, fill, msg)
+		case dre := <-fill.drop:
+			s.dropRoot(c, dre.Root, dre.Err)
+			fill.del(dre.Root)
+		case fr := <-fill.full:
+			s.rootFilled(fr, c)
+			fill.del(fr)
+		case wcxo := <-fill.wantq:
+			fill.waiting(wcxo)
+			s.sendRequestDataMsg(c, wcxo.Hash)
 		}
 	}
 
-}
-
-func shortHex(a string) string {
-	return string([]byte(a)[:7])
 }
 
 func (s *Node) subscribeConn(c *gnet.Conn, feed cipher.PubKey) (accept,
@@ -500,8 +512,9 @@ func (s *Node) subscribeConn(c *gnet.Conn, feed cipher.PubKey) (accept,
 		}
 		// call OnSubscribeRemote callback and check out its reply
 		if callback := s.conf.OnSubscribeRemote; callback != nil {
-			if reject := callback(c, feed); reject != nil {
-				s.Debugln("remote subscription rejected by OnSubscribeRemote:",
+			if reject := callback(s, c, feed); reject != nil {
+				s.Debugln(SubscrPin,
+					"remote subscription rejected by OnSubscribeRemote:",
 					reject)
 				return // false, false
 			}
@@ -513,14 +526,20 @@ func (s *Node) subscribeConn(c *gnet.Conn, feed cipher.PubKey) (accept,
 }
 
 func (s *Node) sendLastFullRoot(c *gnet.Conn, feed cipher.PubKey) (sent bool) {
-	if full := s.so.LastFullRoot(feed); full != nil {
-		sent = s.sendRootMsg(c, feed, full.Encode())
+	rp, err := s.so.LastFullPack(feed)
+	if err != nil {
+		s.Debugf(RootPin, "can't send last full root of %s: %v",
+			feed.Hex()[:7], err)
 	}
+	if rp == nil {
+		return // not found
+	}
+	sent = s.sendRootMsg(c, feed, *rp)
 	return
 }
 
 func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
-	s.Debugln("handleSubscribeMsg", c.Address(), shortHex(msg.Feed.Hex()))
+	s.Debugln(SubscrPin, "handleSubscribeMsg", c.Address(), msg.Feed.Hex()[:7])
 
 	// (1) subscribe if the Node shares feed and send AcceptSubscriptionMsg back
 	//     and send latest full root of the feed if has
@@ -542,7 +561,8 @@ func (s *Node) handleSubscribeMsg(c *gnet.Conn, msg *SubscribeMsg) {
 }
 
 func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
-	s.Debugln("handleUnsubscribeMsg", c.Address(), shortHex(msg.Feed.Hex()))
+	s.Debugln(SubscrPin, "handleUnsubscribeMsg", c.Address(),
+		msg.Feed.Hex()[:7])
 
 	// just unsubscribe if subscribed
 	s.fmx.Lock()
@@ -554,7 +574,7 @@ func (s *Node) handleUnsubscribeMsg(c *gnet.Conn, msg *UnsubscribeMsg) {
 			// if we have the subcription from the
 			// remote peer
 			if callack := s.conf.OnUnsubscribeRemote; callack != nil {
-				callack(c, msg.Feed)
+				callack(s, c, msg.Feed)
 			}
 			delete(cs, c)
 		}
@@ -588,7 +608,8 @@ func (s *Node) onDial(c *gnet.Conn, _ error) (_ error) {
 	if val := c.Value(); val == nil {
 		return
 	} else if rs, ok := val.([]cipher.PubKey); !ok {
-		s.Debugf("wrong type of associated Value of gnet.Conn (%s): %T",
+		s.Debugf(SubscrPin,
+			"wrong type of associated Value of gnet.Conn (%s): %T",
 			c.Address(), val)
 	} else {
 		for _, feed := range rs {
@@ -604,7 +625,8 @@ func (s *Node) addToResubscriptions(c *gnet.Conn, feed cipher.PubKey) {
 		c.SetValue([]cipher.PubKey{feed})
 		return
 	} else if rs, ok := val.([]cipher.PubKey); !ok {
-		s.Debugf("wrong type of associated Value of gnet.Conn (%s): %T",
+		s.Debugf(SubscrPin,
+			"wrong type of associated Value of gnet.Conn (%s): %T",
 			c.Address(), val)
 	} else {
 		c.SetValue(append(rs, feed))
@@ -614,8 +636,8 @@ func (s *Node) addToResubscriptions(c *gnet.Conn, feed cipher.PubKey) {
 func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 	msg *AcceptSubscriptionMsg) {
 
-	s.Debugln("handleAcceptSubscriptionMsg", c.Address(),
-		shortHex(msg.Feed.Hex()))
+	s.Debugln(SubscrPin, "handleAcceptSubscriptionMsg", c.Address(),
+		msg.Feed.Hex()[:7])
 
 	// if subscription had been accepted then we
 	// need to subscribe remote peer our side
@@ -625,7 +647,8 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 	// SubscribeMsg to the remote peer before
 
 	if !s.deleteConnFeedFromPending(c, msg.Feed) {
-		s.Debug("unexpected AcceptSubscriptionMsg from ", c.Address())
+		s.Debug(SubscrPin, "unexpected AcceptSubscriptionMsg from ",
+			c.Address())
 		return
 	}
 
@@ -643,7 +666,7 @@ func (s *Node) handleAcceptSubscriptionMsg(c *gnet.Conn,
 
 		// call OnSubscriptionAccepted callback
 		if callback := s.conf.OnSubscriptionAccepted; callback != nil {
-			callback(c, msg.Feed)
+			callback(s, c, msg.Feed)
 		}
 	}
 
@@ -669,7 +692,8 @@ func (s *Node) removeFromResubscriptions(c *gnet.Conn, feed cipher.PubKey) {
 	if val := c.Value(); val == nil {
 		return
 	} else if rs, ok := val.([]cipher.PubKey); !ok {
-		s.Debugf("wrong type of associated Value of gnet.Conn (%s): %T",
+		s.Debugf(SubscrPin,
+			"wrong type of associated Value of gnet.Conn (%s): %T",
 			c.Address(), val)
 	} else {
 		c.SetValue(delFromListOfFeeds(rs, feed))
@@ -683,14 +707,15 @@ func (s *Node) handleRejectSubscriptionMsg(c *gnet.Conn,
 	// remove from resubscriptions
 
 	if !s.deleteConnFeedFromPending(c, msg.Feed) {
-		s.Debug("unexpected RejectSubscriptionMsg from ", c.Address())
+		s.Debug(SubscrPin, "unexpected RejectSubscriptionMsg from ",
+			c.Address())
 		return
 	}
 
 	s.removeFromResubscriptions(c, msg.Feed)
 
 	if callback := s.conf.OnSubscriptionRejected; callback != nil {
-		callback(c, msg.Feed)
+		callback(s, c, msg.Feed)
 	}
 }
 
@@ -712,26 +737,6 @@ func (s *Node) sendToFeed(feed cipher.PubKey, msg Msg, except *gnet.Conn) {
 	}
 }
 
-func (s *Node) addNonFullRoot(root *skyobject.Root,
-	c *gnet.Conn) (fl *fillRoot) {
-
-	fl = &fillRoot{root, c, skyobject.Reference{}}
-	s.roots = append(s.roots, fl)
-	return
-}
-
-func (s *Node) delNonFullRoot(root *skyobject.Root) {
-	for i, fl := range s.roots {
-		if fl.root == root {
-			copy(s.roots[i:], s.roots[i+1:])
-			s.roots[len(s.roots)-1] = nil // set to nil for golang GC
-			s.roots = s.roots[:len(s.roots)-1]
-			return
-		}
-	}
-	return
-}
-
 func (s *Node) hasFeed(pk cipher.PubKey) (yep bool) {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
@@ -740,196 +745,74 @@ func (s *Node) hasFeed(pk cipher.PubKey) (yep bool) {
 	return
 }
 
-func (s *Node) handleRootMsg(c *gnet.Conn, msg *RootMsg) {
+func (s *Node) handleRootMsg(c *gnet.Conn, fill *filler, msg *RootMsg) {
+
+	//
+	// TODO (kostarin): DRY
+	//
+
 	if !s.hasFeed(msg.Feed) {
-		s.Debug("reject root: not subscribed")
+		s.Debug(MsgPin, "reject root: not subscribed")
 		return
 	}
 
-	root, err := s.so.AddRootPack(&msg.RootPack)
+	r, err := s.so.AddRoot(msg.Feed, &msg.RootPack)
 	if err != nil {
 		if err == data.ErrRootAlreadyExists {
-			s.Debug("reject root: alredy have this root")
+			rbs, full, err := s.so.RootBySeq(msg.Feed, msg.RootPack.Seq)
+			if err != nil {
+				s.Debugf(RootPin,
+					"root {%s:%d} already exists,"+
+						" but I can't get it from DB: %v",
+					msg.Feed.Hex()[:7],
+					msg.RootPack.Seq,
+					err)
+				return
+			}
+			if full {
+				s.Debug(RootPin, "received root already exists and full",
+					rbs.Short())
+				return
+			}
+			if rbs.Hash != msg.RootPack.Hash {
+				s.Debugf(RootPin, "hash (%s) of received root ({%s:%d}) "+
+					" differs from the existing (root %s, hash %s)",
+					msg.RootPack.Hash.Hex()[:7],
+					msg.Feed.Hex()[:7], // } short
+					msg.RootPack.Seq,   // }
+					rbs.Short(),
+					rbs.Hash.Hex()[:7])
+				return
+			}
+			fill.fill(rbs) // fill it (already exist)
 			return
 		}
-		s.Print("[ERR] error appending root: ", err)
+		s.Debugf(RootPin, "error adding root {%s:%d}: %v",
+			msg.Feed.Hex()[:7], // } short
+			msg.RootPack.Seq,   // }
+			err)
 		return
 	}
 
 	// callback
 	if orr := s.conf.OnRootReceived; orr != nil {
-		orr(s.Container().wrapRoot(root))
+		orr(s, c, r)
 	}
-
-	if root.IsFull() {
-
-		// callback
-		if orf := s.conf.OnRootFilled; orf != nil {
-			orf(s.Container().wrapRoot(root))
-		}
-
-		s.sendToFeed(msg.Feed, msg, c)
-		return
-	}
-
-	s.rmx.Lock()
-	defer s.rmx.Unlock()
-
-	fl := s.addNonFullRoot(root, c)
-	if !root.HasRegistry() {
-		if !s.sendRequestRegistryMsg(c, root.RegistryReference()) {
-			s.delNonFullRoot(root) // sending error (connection closed)
-		}
-		return
-	}
-
-	err = root.WantFunc(func(ref skyobject.Reference) error {
-		if !s.sendRequestDataMsg(c, ref) {
-			s.delNonFullRoot(root) // sending error (connection closed)
-		} else {
-			fl.await = ref // keep last requested reference
-		}
-		return skyobject.ErrStopRange
-	})
-	if err != nil {
-		s.Print("[ERR] unexpected error: ", err)
-	}
-
-}
-
-func (s *Node) handleRequestRegistryMsg(c *gnet.Conn,
-	msg *RequestRegistryMsg) {
-
-	if encReg, ok := s.db.Get(cipher.SHA256(msg.Ref)); ok {
-		s.sendRegistryMsg(c, encReg)
-	}
-}
-
-func (s *Node) handleRegistryMsg(c *gnet.Conn, msg *RegistryMsg) {
-	reg, err := skyobject.DecodeRegistry(msg.Reg)
-	if err != nil {
-		s.Print("[ERR] error decoding received registry:", err)
-		return
-	}
-
-	if !s.so.WantRegistry(reg.Reference()) {
-		return // don't want the registry
-	}
-
-	s.so.AddRegistry(reg)
-
-	s.rmx.Lock()
-	defer s.rmx.Unlock()
-
-	var i int // index for deleting
-	for _, fl := range s.roots {
-
-		if fl.root.RegistryReference() == reg.Reference() {
-
-			if fl.root.IsFull() {
-
-				// callback
-				if orf := s.conf.OnRootFilled; orf != nil {
-					orf(s.Container().wrapRoot(fl.root))
-				}
-
-				s.sendToFeed(fl.root.Pub(), s.src.NewRootMsg(
-					fl.root.Pub(),    // feed
-					fl.root.Encode(), // root pack
-				), fl.c)
-				continue // delete
-
-			}
-
-			var sent bool
-			err = fl.root.WantFunc(func(ref skyobject.Reference) error {
-				if sent = s.sendRequestDataMsg(c, ref); sent {
-					fl.await = ref
-				}
-				return skyobject.ErrStopRange
-			})
-			if err != nil {
-				s.Print("[ERR] unexpected error: ", err)
-				continue // delete
-			}
-			if !sent {
-				continue // delete
-			}
-		}
-		s.roots[i] = fl
-		i++
-
-	}
-	s.roots = s.roots[:i]
+	fill.fill(r) // fill it
+	return
 }
 
 func (s *Node) handleRequestDataMsg(c *gnet.Conn, msg *RequestDataMsg) {
-	if data, ok := s.so.Get(msg.Ref); ok {
+	if data := s.so.Get(msg.Ref); data != nil {
 		s.sendDataMsg(c, data)
 	}
 }
 
-func (s *Node) handleDataMsg(c *gnet.Conn, msg *DataMsg) {
-	hash := skyobject.Reference(cipher.SumSHA256(msg.Data))
-
-	s.rmx.Lock()
-	defer s.rmx.Unlock()
-
-	// does the Server really want the data
-	var want bool
-	for _, fl := range s.roots {
-		if fl.await == hash {
-			want = true
-			break
-		}
+func (s *Node) handleDataMsg(c *gnet.Conn, fill *filler, msg *DataMsg) {
+	if err := fill.add(msg.Data); err != nil {
+		s.Print("[ERR] error adding data:", err)
+		c.Close()
 	}
-	if !want {
-		return // doesn't want the data
-	}
-	s.so.Set(hash, msg.Data) // save
-
-	// check filling
-	var i int // index for deleting
-	for _, fl := range s.roots {
-
-		if fl.await == hash {
-
-			if fl.root.IsFull() {
-
-				// callback
-				if orf := s.conf.OnRootFilled; orf != nil {
-					orf(s.Container().wrapRoot(fl.root))
-				}
-
-				s.sendToFeed(fl.root.Pub(), s.src.NewRootMsg(
-					fl.root.Pub(),    // feed
-					fl.root.Encode(), // root pack
-				), fl.c)
-				continue // delete
-
-			}
-
-			var sent bool
-			err := fl.root.WantFunc(func(ref skyobject.Reference) error {
-				if sent = s.sendRequestDataMsg(c, ref); sent {
-					fl.await = ref
-				}
-				return skyobject.ErrStopRange
-			})
-			if err != nil {
-				s.Print("[ERR] unexpected error: ", err)
-				continue // delete
-			}
-			if !sent {
-				continue // delete
-			}
-
-		}
-		s.roots[i] = fl
-		i++
-
-	}
-	s.roots = s.roots[:i]
 }
 
 func (s *Node) handleRequestListOfFeedsMsg(c *gnet.Conn,
@@ -946,8 +829,8 @@ func (s *Node) handlePingMsg(c *gnet.Conn) {
 	s.sendPongMsg(c)
 }
 
-func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
-	s.Debugf("handle message %T from %s", msg, c.Address())
+func (s *Node) handleMsg(c *gnet.Conn, f *filler, msg Msg) {
+	s.Debugf(MsgPin, "handle message %T from %s", msg, c.Address())
 
 	switch x := msg.(type) {
 
@@ -973,19 +856,13 @@ func (s *Node) handleMsg(c *gnet.Conn, msg Msg) {
 
 	// root
 	case *RootMsg:
-		s.handleRootMsg(c, x)
-
-	// registry
-	case *RequestRegistryMsg:
-		s.handleRequestRegistryMsg(c, x)
-	case *RegistryMsg:
-		s.handleRegistryMsg(c, x)
+		s.handleRootMsg(c, f, x)
 
 	//data
 	case *RequestDataMsg:
 		s.handleRequestDataMsg(c, x)
 	case *DataMsg:
-		s.handleDataMsg(c, x)
+		s.handleDataMsg(c, f, x)
 
 	//
 	// public servers
@@ -1048,7 +925,7 @@ func (s *Node) addFeed(feed cipher.PubKey) (already bool) {
 	defer s.fmx.Unlock()
 
 	if _, already = s.feeds[feed]; !already {
-		s.so.AddFeed(feed)
+		s.so.AddFeed(feed) // TODO (kostyarin): handle error
 		s.feeds[feed] = make(map[*gnet.Conn]struct{})
 	}
 	return
@@ -1141,22 +1018,6 @@ func (s *Node) deleteFeedFromPending(feed cipher.PubKey) {
 	}
 }
 
-// delte all filling root objects of a feed
-func (s *Node) deleteFeedFromFilling(feed cipher.PubKey) {
-	s.rmx.Lock()
-	defer s.rmx.Unlock()
-
-	var i int
-	for _, fl := range s.roots {
-		if fl.root.Pub() == feed {
-			continue // delete
-		}
-		i++
-		s.roots[i] = fl
-	}
-	s.roots = s.roots[:i]
-}
-
 // delete a feed and all associated resources without sending UnsubscribeMsg
 // to peers; the sending is not palced in the method to unlock fmx mutex
 func (s *Node) deleteFeed(feed cipher.PubKey) (cs map[*gnet.Conn]struct{}) {
@@ -1167,7 +1028,6 @@ func (s *Node) deleteFeed(feed cipher.PubKey) (cs map[*gnet.Conn]struct{}) {
 	if cs, ok = s.feeds[feed]; ok {
 		delete(s.feeds, feed)
 		s.deleteFeedFromPending(feed)
-		s.deleteFeedFromFilling(feed)
 		s.so.DelFeed(feed) // delete from database
 	}
 	return
@@ -1228,52 +1088,6 @@ func (s *Node) Unsubscribe(c *gnet.Conn, feed cipher.PubKey) {
 	s.deleteConnFeedFromFeeds(c, feed)
 	// 3. send UnsubscribeMsg to peer
 	s.sendUnsubscribeMsg(c, feed)
-}
-
-// TODO: + Want per root of a feed
-
-// Want returns lits of objects related to given
-// feed that the server hasn't got but knows about
-func (s *Node) Want(feed cipher.PubKey) (wn []cipher.SHA256) {
-
-	// locks: no (skyobject)
-
-	set := make(map[skyobject.Reference]struct{})
-	s.so.WantFeed(feed, func(k skyobject.Reference) error {
-		set[k] = struct{}{}
-		return nil
-	})
-	if len(set) == 0 {
-		return
-	}
-	wn = make([]cipher.SHA256, 0, len(set))
-	for k := range set {
-		wn = append(wn, cipher.SHA256(k))
-	}
-	return
-}
-
-// TODO: + Got per root of a feed
-
-// Got returns lits of objects related to given
-// feed that the server has got
-func (s *Node) Got(feed cipher.PubKey) (gt []cipher.SHA256) {
-
-	// locks: no (skyobject)
-
-	set := make(map[skyobject.Reference]struct{})
-	s.so.GotFeed(feed, func(k skyobject.Reference) error {
-		set[k] = struct{}{}
-		return nil
-	})
-	if len(set) == 0 {
-		return
-	}
-	gt = make([]cipher.SHA256, 0, len(set))
-	for k := range set {
-		gt = append(gt, cipher.SHA256(k))
-	}
-	return
 }
 
 // Feeds the server share
@@ -1405,7 +1219,7 @@ func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
 		return // nil
 	}
 
-	s.Debug("unexpected response for subscription: ", typ.String())
+	s.Debug(SubscrPin, "unexpected response for subscription: ", typ.String())
 	err = ErrUnexpectedResponse
 	return
 }
@@ -1450,7 +1264,8 @@ func (s *Node) ListOfFeedsResponseTimeout(c *gnet.Conn,
 		return
 	}
 
-	s.Debug("unexpected response for list of feeds requesting: ", typ.String())
+	s.Debug(SubscrPin, "unexpected response for list of feeds requesting: ",
+		typ.String())
 	err = ErrUnexpectedResponse
 	return
 
@@ -1462,5 +1277,17 @@ func (s *Node) RPCAddress() (address string) {
 	if s.rpc != nil {
 		address = s.rpc.Address()
 	}
+	return
+}
+
+// Publish given Root (send to feed)
+func (s *Node) Publish(r *skyobject.Root) {
+	s.sendToFeed(r.Pub, s.src.NewRootMsg(r.Pub, *r.Pack()), nil)
+}
+
+// Stat of underlying DB and Container
+func (s *Node) Stat() (st Stat) {
+	st.Data = s.DB().Stat()
+	st.CXO = s.Container().Stat()
 	return
 }

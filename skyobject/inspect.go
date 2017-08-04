@@ -66,7 +66,7 @@ func (i *inspector) rootError(err string) {
 
 func (i *inspector) Dynamic(dr Dynamic) (it gotree.GTStructure) {
 	if dr.IsBlank() {
-		it.Name = "(dynamic) nil"
+		it.Name = "*(dynamic) nil"
 		return
 	}
 	if !dr.IsValid() {
@@ -74,7 +74,7 @@ func (i *inspector) Dynamic(dr Dynamic) (it gotree.GTStructure) {
 		return
 	}
 	if dr.Object == (cipher.SHA256{}) {
-		it.Name = "(dynamic) nil of " + dr.SchemaRef.Short()
+		it.Name = "*(dynamic) nil of " + dr.SchemaRef.Short()
 		return
 	}
 	sch, err := i.reg.SchemaByReference(dr.SchemaRef)
@@ -84,13 +84,13 @@ func (i *inspector) Dynamic(dr Dynamic) (it gotree.GTStructure) {
 	}
 	val := i.c.Get(dr.Object)
 	if val == nil {
-		it.Name = "(dynamic) " + dr.Short()
+		it.Name = "*(dynamic) " + dr.Short()
 		it.Items = []gotree.GTStructure{{
 			Name: "(err) missing object: " + dr.Object.Hex()[:7],
 		}}
 		return
 	}
-	it.Name = "(dynamic) " + dr.Short()
+	it.Name = "*(dynamic) " + dr.Short()
 	it.Items = []gotree.GTStructure{
 		i.Data(sch, val),
 	}
@@ -305,7 +305,7 @@ func (p *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
 		}
 	} else {
 		for i := 0; i < ln; i++ {
-			if shift >= len(val) {
+			if shift > len(val) {
 				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
 				return
 			}
@@ -341,8 +341,9 @@ func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 	var shift int
 	var s int
 	var err error
+	it.Name = sch.String()
 	for _, f := range sch.Fields() {
-		if shift >= len(val) {
+		if shift > len(val) {
 			// detailed error
 			it.Name = fmt.Sprintf(
 				"(err) unexpected end of encoded struct '%s' "+
@@ -377,10 +378,10 @@ func (i *inspector) RefHash(sch Schema,
 	hash cipher.SHA256) (it gotree.GTStructure) {
 
 	if hash == (cipher.SHA256{}) {
-		it.Name = "(ref) nil"
+		it.Name = "*(ref) nil"
 		return
 	}
-	it.Name = "(ref) " + hash.Hex()[:7]
+	it.Name = "*(ref) " + hash.Hex()[:7]
 	val := i.c.Get(hash)
 	if val == nil {
 		it.Items = []gotree.GTStructure{{
@@ -399,7 +400,7 @@ func (i *inspector) Refs(sch Schema, val []byte) (it gotree.GTStructure) {
 	}
 
 	if refs.IsBlank() {
-		it.Name = "(refs) nil"
+		it.Name = "*(refs) nil"
 		return
 	}
 
@@ -415,10 +416,10 @@ func (i *inspector) Refs(sch Schema, val []byte) (it gotree.GTStructure) {
 		return
 	}
 	if er.Length == 0 {
-		it.Name = "(refs) empty"
+		it.Name = "*(refs) empty"
 		return
 	}
-	it.Name = "(refs) " + refs.Short()
+	it.Name = "*(refs) " + refs.Short()
 	it.Items = i.refsNode(sch, er.Depth, er)
 	return
 }

@@ -26,6 +26,9 @@ type getter interface {
 // with empty hash
 func (c *Container) knowsAbout(r *Root, g getter,
 	fn knowsAboutFunc) (err error) {
+
+	c.Debug(VerbosePin, "knowsAbout", r.Short())
+
 	// 1) registry
 	if _, err = fn(cipher.SHA256(r.Reg)); err != nil {
 		if err == ErrStopRange {

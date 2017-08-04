@@ -25,6 +25,9 @@ const (
 	EntireTree     Flag = 1 << iota // unpack all possible
 	HashTableIndex                  // use hash-table index for Merkle-trees
 	ViewOnly                        // don't allow modifications
+
+	// TODO (kostyarin): automatic track changes
+	// TrackChanges                    // automatic trach changes (experimental)
 )
 
 // A Types represents mapping from registered names
@@ -52,8 +55,9 @@ type Pack struct {
 
 	sk cipher.SecKey
 
-	unsaved   map[cipher.SHA256][]byte
-	isUnsaved bool
+	unsaved map[cipher.SHA256][]byte
+
+	// TOOD (kostyarin): track changes
 }
 
 // don't save, just get k-v
@@ -61,10 +65,6 @@ func (p *Pack) dsave(obj interface{}) (key cipher.SHA256, val []byte) {
 	val = encoder.Serialize(obj)
 	key = cipher.SumSHA256(val)
 	return
-}
-
-func (p *Pack) unsave() {
-	p.isUnsaved = true
 }
 
 // internal get/set/del/add/save methods that works with cipher.SHA256
@@ -120,61 +120,72 @@ func (p *Pack) del(key cipher.SHA256) {
 func (p *Pack) Save() (root data.RootPack, err error) {
 	p.c.Debugln(VerbosePin, "(*Pack).Save", p.r.Pub.Hex()[:7], p.r.Seq)
 
-	tp := time.Now()
-	if p.flags&ViewOnly != 0 {
-		err = ErrViewOnlyTree // can't save view only tree
-		return
-	}
+	tp := time.Now() // time point
+
 	if p.sk == (cipher.SecKey{}) {
 		err = fmt.Errorf("can't save Root of %s empty secret key",
 			p.r.Pub.Hex()[:7])
 	}
 
-	// track seq
-	defer func() {
-		if err == nil {
-			p.c.trackSeq.addSeq(p.r.Pub, p.r.Seq, true)
-		}
-	}()
+	if p.flags&ViewOnly != 0 {
+		err = ErrViewOnlyTree // can't save view only tree
+		return
+	}
 
-	// setup timestamp and seq number
-	p.r.Time = time.Now().UnixNano() //
+	// TODO (kostyarin): track changes
 
-	p.r.Seq = p.c.trackSeq.takeLastSeqAndLock(p.r.Pub)
-	defer p.c.trackSeq.mx.Unlock()
-
-	val := p.r.Encode()
-
-	p.r.Prev = p.r.Hash
-	p.r.Hash = cipher.SumSHA256(val)
-
-	root.Root = val
-	root.Hash = p.r.Hash
-	root.Seq = p.r.Seq
-	root.IsFull = true
-	root.Prev = p.r.Prev
-	root.Sig = cipher.SignHash(p.r.Hash, p.sk)
 	// single transaction required (to perform rollback on error)
 	err = p.c.DB().Update(func(tx data.Tu) (err error) {
+
 		// save Root
+
 		roots := tx.Feeds().Roots(p.r.Pub)
 		if roots == nil {
 			return ErrNoSuchFeed
 		}
-		if err = roots.Add(&root); err != nil {
+
+		// seq number and prev hash
+		var seq uint64
+		var prev cipher.SHA256
+		if last := roots.Last(); last != nil {
+			seq, prev = last.Seq+1, last.Hash
+		}
+
+		// setup
+		p.r.Seq = seq
+		p.r.Time = time.Now().UnixNano()
+		p.r.Prev = prev
+
+		val := p.r.Encode()
+
+		p.r.Hash = cipher.SumSHA256(val)
+		p.r.Sig = cipher.SignHash(p.r.Hash, p.sk)
+
+		var rp data.RootPack
+
+		rp.Hash = p.r.Hash
+		rp.IsFull = true
+		rp.Prev = p.r.Prev
+		rp.Root = val
+		rp.Seq = p.r.Seq
+		rp.Sig = p.r.Sig
+
+		if err = roots.Add(&rp); err != nil {
 			return
 		}
 		// save objects
-		if len(p.unsaved) == 0 {
-			return
-		}
-		err = tx.Objects().SetMap(p.unsaved)
-		return
+		return tx.Objects().SetMap(p.unsaved)
 	})
+
 	if err == nil {
 		p.unsaved = make(map[cipher.SHA256][]byte) // clear
 	}
-	p.c.stat.addPackSave(time.Now().Sub(tp))
+
+	st := time.Now().Sub(tp)
+
+	p.c.Debugf(PackSavePin, "%s saved after %v", p.r.Short(), st)
+
+	p.c.stat.addPackSave(st)
 	return
 }
 
@@ -211,8 +222,11 @@ func (p *Pack) RootRefs() (drs []Dynamic, err error) {
 
 	for i := range p.r.Refs {
 		if p.r.Refs[i].walkNode == nil {
-			if _, err = p.r.Refs[i].Value(); err != nil {
-				return
+			p.r.Refs[i].walkNode = &walkNode{pack: p}
+			if p.flags&EntireTree != 0 {
+				if _, err = p.r.Refs[i].Value(); err != nil {
+					return
+				}
 			}
 		}
 	}
@@ -229,7 +243,11 @@ func (p *Pack) RefByIndex(i int) (dr Dynamic, err error) {
 		return
 	}
 	if p.r.Refs[i].walkNode == nil {
-		_, err = p.r.Refs[i].Value() // unpack
+		p.r.Refs[i].walkNode = &walkNode{pack: p}
+		if p.flags&EntireTree != 0 {
+			_, err = p.r.Refs[i].Value() // unpack
+		}
+
 	}
 	dr = p.r.Refs[i]
 	return
@@ -255,6 +273,11 @@ func (p *Pack) Append(objs ...interface{}) {
 		p.r.Refs = append(p.r.Refs, p.Dynamic(obj))
 	}
 	return
+}
+
+// Clear referenfes of Root
+func (p *Pack) Clear() {
+	p.r.Refs = nil
 }
 
 func (p *Pack) schemaOf(obj interface{}) (sch Schema, err error) {
@@ -289,7 +312,6 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 
 	wn := new(walkNode)
 	wn.pack = p
-	wn.upper = p
 
 	dr.walkNode = wn
 
@@ -299,7 +321,13 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	return
 }
 
+// Ref of given object
 func (p *Pack) Ref(obj interface{}) (ref Ref) {
+	if obj == nil {
+		ref.walkNode = &walkNode{pack: p}
+		return
+	}
+
 	sch, err := p.schemaOf(obj)
 	if err != nil {
 		panic(err)
@@ -314,11 +342,11 @@ func (p *Pack) Ref(obj interface{}) (ref Ref) {
 	return
 }
 
-// Refs creates Refs by given objects. List must not be empty
-// and all obejct must have the same registered type
+// Refs creates Refs by given objects
 func (p *Pack) Refs(objs ...interface{}) (r Refs) {
 	if len(objs) == 0 {
-		panic("can't create Refs by empty slice")
+		r.wn = &walkNode{pack: p}
+		return
 	}
 	sch, err := p.schemaOf(objs[0])
 	if err != nil {

@@ -8,13 +8,13 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/peterh/liner"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
 )
 
@@ -32,8 +32,6 @@ var (
 	errTooManyArguments = errors.New("too many arguments")
 
 	commands = []string{
-		"want",
-		"got",
 		"subscribe",
 		"subscribe_to",
 		"unsubscribe",
@@ -223,10 +221,6 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		return
 	}
 	switch strings.ToLower(ss[0]) {
-	case "want":
-		err = want(rpc, ss)
-	case "got":
-		err = got(rpc, ss)
 	case "subscribe":
 		err = subscribe(rpc, ss)
 	case "subscribe_to":
@@ -272,10 +266,6 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 func showHelp() {
 	fmt.Fprintln(out, `
 
-  want <public key>
-    list objects of feed the server doesn't have (yet), but knows about
-  got <public key>
-    list objects of feed
   subscribe <public key>
     start shareing feed
   subscribe_to <address> <pub key>
@@ -287,7 +277,7 @@ func showHelp() {
   feeds
     list feeds
   stat
-    database statistic
+    statistic
   connections
     list connections
   incoming_connections
@@ -325,44 +315,6 @@ func publicKeyArg(ss []string) (pub cipher.PubKey, err error) {
 		return
 	}
 	pub, err = cipher.PubKeyFromHex(pubs)
-	return
-}
-
-func want(rpc *node.RPCClient, ss []string) (err error) {
-	var pk cipher.PubKey
-	if pk, err = publicKeyArg(ss); err != nil {
-		return
-	}
-	var list []cipher.SHA256
-	if list, err = rpc.Want(pk); err != nil {
-		return
-	}
-	if len(list) == 0 {
-		fmt.Fprintln(out, "  don't want anything")
-		return
-	}
-	for _, w := range list {
-		fmt.Fprintln(out, "  +", w.Hex())
-	}
-	return
-}
-
-func got(rpc *node.RPCClient, ss []string) (err error) {
-	var pk cipher.PubKey
-	if pk, err = publicKeyArg(ss); err != nil {
-		return
-	}
-	var list []cipher.SHA256
-	if list, err = rpc.Got(pk); err != nil {
-		return
-	}
-	if len(list) == 0 {
-		fmt.Fprintln(out, "  hasn't got anything")
-		return
-	}
-	for _, w := range list {
-		fmt.Fprintln(out, "  +", w.Hex())
-	}
 	return
 }
 
@@ -447,22 +399,24 @@ func feeds(rpc *node.RPCClient) (err error) {
 }
 
 func stat(rpc *node.RPCClient) (err error) {
-	var stat data.Stat
+	var stat node.Stat
 	if stat, err = rpc.Stat(); err != nil {
 		return
 	}
 	fmt.Fprintln(out, "  ----")
-	fmt.Fprintln(out, "  Objects:", stat.Objects)
-	fmt.Fprintln(out, "  Space:  ", stat.Space.String())
+	fmt.Fprintln(out, "  Objects:", stat.Data.Objects)
+	fmt.Fprintln(out, "  Space:  ", stat.Data.Space.String())
 	fmt.Fprintln(out, "  ----")
-	for pk, fs := range stat.Feeds {
+	for pk, fs := range stat.Data.Feeds {
 		fmt.Fprintln(out, "  -", pk.Hex())
 		fmt.Fprintln(out, "    Root Objects: ", fs.Roots)
 		fmt.Fprintln(out, "    Space:        ", fs.Space.String())
 	}
-	if len(stat.Feeds) > 0 {
-		fmt.Fprintln(out, "  ----")
-	}
+	fmt.Fprintln(out, "  ----")
+	fmt.Fprintln(out, "  Registries:    ", stat.CXO.Registries)
+	fmt.Fprintln(out, "  Save    (avg): ", stat.CXO.Save)
+	fmt.Fprintln(out, "  Cleanup (avg): ", stat.CXO.CleanUp)
+	fmt.Fprintln(out, "  ----")
 	return
 }
 
@@ -558,7 +512,7 @@ func roots(rpc *node.RPCClient, ss []string) (err error) {
 		return
 	}
 	for _, ri := range ris {
-		fmt.Fprintln(out, "  -", ri.Hash.String())
+		fmt.Fprintln(out, "  -", ri.Hash.Hex())
 		fmt.Fprintln(out, "      time:", ri.Time)
 		fmt.Fprintln(out, "      seq:", ri.Seq)
 		fmt.Fprintln(out, "      fill:", ri.IsFull)
@@ -567,16 +521,25 @@ func roots(rpc *node.RPCClient, ss []string) (err error) {
 }
 
 func tree(rpc *node.RPCClient, ss []string) (err error) {
-	var hashString string
-	if hashString, err = args(ss); err != nil {
+
+	var pk cipher.PubKey
+	var seq uint64
+
+	switch len(ss) {
+	case 0, 1, 2:
+		return errors.New("to few arguments: want <pub key> <seq>")
+	case 3:
+	default:
+		return errors.New("to many arguments: want <pub key> <seq>")
+	}
+	if pk, err = cipher.PubKeyFromHex(ss[1]); err != nil {
 		return
 	}
-	var hash cipher.SHA256
-	if hash, err = cipher.SHA256FromHex(hashString); err != nil {
+	if seq, err = strconv.ParseUint(ss[2], 10, 64); err != nil {
 		return
 	}
 	var tree string
-	if tree, err = rpc.Tree(hash); err != nil {
+	if tree, err = rpc.Tree(pk, seq); err != nil {
 		return
 	}
 	fmt.Fprintln(out, tree)

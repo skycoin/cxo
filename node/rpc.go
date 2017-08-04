@@ -66,8 +66,6 @@ func (r *rpcServer) Close() (err error) {
 // RPC methods
 //
 
-// - Want
-// - Got
 // - Subscribe
 // - Unsubscribe
 // - Feeds
@@ -82,18 +80,6 @@ func (r *rpcServer) Close() (err error) {
 // - Roots
 // - Tree
 // - Terminate
-
-// Want on a feed
-func (r *RPC) Want(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
-	*list = r.ns.Want(feed)
-	return
-}
-
-// Got of a feed
-func (r *RPC) Got(feed cipher.PubKey, list *[]cipher.SHA256) (_ error) {
-	*list = r.ns.Got(feed)
-	return
-}
 
 // A ConnFeed represetns connection->feed pair. The struct used
 // by RPC methods Subscribe and Unsubscribe
@@ -134,9 +120,15 @@ func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 	return
 }
 
+type Stat struct {
+	Data data.Stat      // data.DB
+	CXO  skyobject.Stat // skyobject.Container
+	// TODO: node stat
+}
+
 // Stat of database
-func (r *RPC) Stat(_ struct{}, stat *data.Stat) (_ error) {
-	*stat = r.ns.db.Stat()
+func (r *RPC) Stat(_ struct{}, stat *Stat) (_ error) {
+	*stat = r.ns.Stat()
 	return
 }
 
@@ -202,7 +194,7 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 type RootInfo struct {
 	Time   time.Time
 	Seq    uint64
-	Hash   skyobject.RootReference
+	Hash   cipher.SHA256
 	IsFull bool
 }
 
@@ -210,27 +202,45 @@ type RootInfo struct {
 // It returns (by RPC) list sorted from old roots to new
 func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (_ error) {
 	rs := make([]RootInfo, 0)
-	r.ns.so.RangeFeed(feed, func(r *skyobject.Root) (_ error) {
-		var ri RootInfo
-		ri.Time = time.Unix(0, r.Time())
-		ri.Seq = r.Seq()
-		ri.Hash = r.Hash()
-		ri.IsFull = r.IsFull()
-		rs = append(rs, ri)
-		return
+	r.ns.DB().View(func(tx data.Tv) (_ error) {
+		roots := tx.Feeds().Roots(feed)
+		if roots == nil {
+			return
+		}
+		return roots.Range(func(rp *data.RootPack) (err error) {
+			var ri RootInfo
+			var root *skyobject.Root
+			root, err = r.ns.Container().PackToRoot(feed, rp)
+			if err != nil {
+				return
+			}
+			ri.Hash = rp.Hash
+			ri.Time = time.Unix(0, root.Time)
+			ri.Seq = rp.Seq
+			ri.IsFull = rp.IsFull
+			rs = append(rs, ri)
+			return
+		})
 	})
 	*roots = rs
 	return
 }
 
-// Tree prints objects tree of chosen root object (chosen by hash)
-func (r *RPC) Tree(hash cipher.SHA256, tree *string) (_ error) {
-	root, ok := r.ns.so.RootByHash(skyobject.RootReference(hash))
-	if !ok {
-		*tree = "<not found>"
+type SelectRoot struct {
+	Pub cipher.PubKey
+	Seq uint64
+}
+
+// Tree prints objects tree of chosen root object (chosen by pk+seq)
+func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
+	var root *skyobject.Root
+	if root, err = r.ns.so.Root(sel.Pub, sel.Seq); err != nil {
 		return
 	}
-	*tree = root.Inspect()
+	if root == nil {
+		*tree = "<not found>"
+	}
+	*tree = r.ns.so.Inspect(root)
 	return
 }
 

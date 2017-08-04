@@ -25,14 +25,84 @@ type Root struct {
 	Seq  uint64 // seq number
 	Time int64  // timestamp (unix nano)
 
-	Sig cipher.Sig // signature
+	Sig cipher.Sig `enc:"-"` // signature (not part of the Root)
 
-	Hash cipher.SHA256 // hash
+	Hash cipher.SHA256 `enc:"-"` // hash (not part of the Root)
 	Prev cipher.SHA256 // hash of previous root
 }
 
 func (r *Root) Encode() []byte {
 	return encoder.Serialize(r)
+}
+
+// Pack of the Root (IsFull field always false)
+func (r *Root) Pack() (rp *data.RootPack) {
+	rp = new(data.RootPack)
+	rp.Root = r.Encode()
+	rp.Hash = r.Hash // if set
+	rp.Prev = r.Prev // if set
+	rp.Seq = r.Seq   // if set
+	rp.Sig = r.Sig   // if set
+	return
+}
+
+// PackToRoot convertes *data.RootPack to Root decoding it. The
+// pk argument used for errors and can be empty
+func (c *Container) PackToRoot(pk cipher.PubKey,
+	rp *data.RootPack) (*Root, error) {
+
+	return c.unpackRoot(pk, rp)
+}
+
+// LastFullPack returns data.RootPack to send throug network
+func (c *Container) LastFullPack(pk cipher.PubKey) (rp *data.RootPack,
+	err error) {
+
+	err = c.DB().View(func(tx data.Tv) (_ error) {
+		roots := tx.Feeds().Roots(pk)
+		if roots == nil {
+			return
+		}
+		return roots.Reverse(func(pr *data.RootPack) (err error) {
+			if rp.IsFull {
+				rp = pr
+				return ErrStopRange
+			}
+			return
+		})
+	})
+	return
+}
+
+// LastFull root of given feed
+func (c *Container) LastFull(pk cipher.PubKey) (r *Root, err error) {
+	var rp *data.RootPack
+	if rp, err = c.LastFullPack(pk); err != nil {
+		return
+	}
+	return c.unpackRoot(pk, rp)
+}
+
+// LastPack returns data.RootPack to send throug network
+func (c *Container) LastPack(pk cipher.PubKey) (rp *data.RootPack,
+	err error) {
+
+	err = c.DB().View(func(tx data.Tv) (_ error) {
+		if roots := tx.Feeds().Roots(pk); roots != nil {
+			rp = roots.Last()
+		}
+		return
+	})
+	return
+}
+
+// Last root of given feed
+func (c *Container) Last(pk cipher.PubKey) (r *Root, err error) {
+	var rp *data.RootPack
+	if rp, err = c.LastPack(pk); err != nil {
+		return
+	}
+	return c.unpackRoot(pk, rp)
 }
 
 func DecodeRoot(val []byte) (r *Root, err error) {
@@ -75,10 +145,6 @@ func (c *Container) AddRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 		}
 		return roots.Add(rp)
 	})
-	if err == nil {
-		// track seq number
-		c.trackSeq.addSeq(r.Pub, r.Seq, false)
-	}
 	return
 }
 
@@ -91,9 +157,30 @@ func (c *Container) MarkFull(r *Root) (err error) {
 		}
 		return roots.MarkFull(r.Seq)
 	})
-	if err == nil {
-		// track last full
-		c.trackSeq.addSeq(r.Pub, r.Seq, true)
+	return
+}
+
+// RootBySeq is the same as Root, But the method also returns "full"
+// reply, that describes fullness of the Root. If err is nil then Root
+// is not
+func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root,
+	full bool, err error) {
+
+	var rp *data.RootPack
+	err = c.DB().View(func(tx data.Tv) (_ error) {
+		if roots := tx.Feeds().Roots(pk); roots != nil {
+			rp = roots.Get(seq)
+		}
+		return
+	})
+	if err != nil {
+		return
 	}
+	if rp == nil {
+		err = fmt.Errorf("root %d of %s not found", seq, pk.Hex()[:7])
+		return
+	}
+	full = rp.IsFull
+	r, err = c.unpackRoot(pk, rp)
 	return
 }

@@ -95,6 +95,8 @@ func (r *Refs) unsave() {
 }
 
 // unsave each leaf
+//
+// TODO (kostyarin): unsave last n-th leafs
 func (r *Refs) unaveAll(depth int) {
 	if depth == 0 {
 		r.unsave()
@@ -406,16 +408,30 @@ func (r *Refs) rangeb(shift int, rrf RangeRefsFunc) (err error) {
 	return
 }
 
+// Append given object to the Refs. The objects must not be nils
+// or nil pointers. And all objects must be of the same type
 func (r *Refs) Append(objs ...interface{}) (err error) {
 	if len(objs) == 0 {
 		return
 	}
 
 	var sch Schema
-	for _, obj := range objs {
+	for i, obj := range objs {
+		if obj == nil {
+			err = fmt.Errorf("can't Append nil interface to Refs (index: %d)",
+				i)
+			return
+		}
+		val := reflect.ValueOf(obj)
+		if val.Kind() == reflect.Ptr && val.IsNil() {
+			err = fmt.Errorf("can't Append nil value of %T to Refs (index %d)",
+				obj, i)
+			return
+		}
 		if sch, err = r.wn.pack.schemaOf(obj); err != nil {
 			return
 		}
+		// TODO (kostyarin): if the Refs has not got a Schema
 		if sch != r.wn.sch {
 			err = fmt.Errorf(
 				"can't insert object of different type: want %s, got %s",
@@ -545,7 +561,7 @@ func (r *Refs) tryInsertRef(depth int, ref *Ref) (ok bool, err error) {
 // 	return
 // }
 
-// Celar the Refs making it empty
+// Celar the Refs making them empty
 func (r *Refs) Clear() {
 	r.Hash = (cipher.SHA256{})
 	r.depth = 0
@@ -565,6 +581,8 @@ func pow(a, b int) (p int) {
 	return p
 }
 
+// DebugString returns string that represents
+// Merkle-tree of the Refs
 func (r *Refs) DebugString() string {
 	var gt gotree.GTStructure
 	gt.Name = "(refs) " + r.Short()

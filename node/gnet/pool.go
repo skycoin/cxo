@@ -52,7 +52,7 @@ func NewPool(c Config) (p *Pool, err error) {
 	p.conf = c
 
 	if c.Logger == nil {
-		p.Logger = log.NewLogger("[pool] ", false)
+		p.Logger = log.NewLogger(log.Config{Prefix: "[pool]", Debug: false})
 	} else {
 		p.Logger = c.Logger
 	}
@@ -143,8 +143,8 @@ func (p *Pool) listen(l net.Listener) {
 	defer p.await.Done()
 	defer l.Close()
 
-	p.Debug("start accept loop")
-	defer p.Debug("stop accept loop")
+	p.Debug(log.All, "start accept loop")
+	defer p.Debug(log.All, "stop accept loop")
 
 	var (
 		c   net.Conn
@@ -155,11 +155,11 @@ func (p *Pool) listen(l net.Listener) {
 	)
 
 	for {
-		p.Debug("accept acquiring")
+		p.Debug(log.All, "accept acquiring")
 		if err = p.acquireBlock(); err != nil {
 			return // err closed
 		}
-		p.Debug("accepting")
+		p.Debug(log.All, "accepting")
 		if c, err = l.Accept(); err != nil {
 			p.release()
 			select {
@@ -283,7 +283,7 @@ func (p *Pool) closeListener() (err error) {
 	defer p.lmx.Unlock()
 
 	if p.l != nil {
-		p.Debug("close listener")
+		p.Debug(log.All, "close listener")
 
 		err = p.l.Close()
 	}
@@ -291,7 +291,7 @@ func (p *Pool) closeListener() (err error) {
 }
 
 func (p *Pool) closeConnections() {
-	p.Debug("close connections")
+	p.Debug(log.All, "close connections")
 
 	p.cmx.Lock()
 	defer p.cmx.Unlock()

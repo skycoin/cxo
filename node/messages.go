@@ -11,7 +11,6 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
-	"github.com/skycoin/cxo/skyobject"
 )
 
 //
@@ -46,8 +45,6 @@ var (
 	_ Msg = &RootMsg{}
 	_ Msg = &RequestDataMsg{}
 	_ Msg = &DataMsg{}
-	_ Msg = &RequestRegistryMsg{}
-	_ Msg = &RegistryMsg{}
 )
 
 //
@@ -111,7 +108,7 @@ func (m *msgSource) NewRootMsg(feed cipher.PubKey,
 }
 
 func (m *msgSource) NewRequestDataMsg(
-	ref skyobject.Reference) (msg *RequestDataMsg) {
+	ref cipher.SHA256) (msg *RequestDataMsg) {
 
 	msg = &RequestDataMsg{Ref: ref}
 	return
@@ -119,18 +116,6 @@ func (m *msgSource) NewRequestDataMsg(
 
 func (m *msgSource) NewDataMsg(data []byte) (msg *DataMsg) {
 	msg = &DataMsg{Data: data}
-	return
-}
-
-func (m *msgSource) NewRequestRegistryMsg(
-	ref skyobject.RegistryReference) (msg *RequestRegistryMsg) {
-
-	msg = &RequestRegistryMsg{Ref: ref}
-	return
-}
-
-func (m *msgSource) NewRegistryMsg(reg []byte) (msg *RegistryMsg) {
-	msg = &RegistryMsg{Reg: reg}
 	return
 }
 
@@ -195,22 +180,12 @@ func (s *Node) sendRootMsg(c *gnet.Conn, feed cipher.PubKey,
 	return s.sendMessage(c, s.src.NewRootMsg(feed, rp))
 }
 
-func (s *Node) sendRequestDataMsg(c *gnet.Conn, ref skyobject.Reference) bool {
+func (s *Node) sendRequestDataMsg(c *gnet.Conn, ref cipher.SHA256) bool {
 	return s.sendMessage(c, s.src.NewRequestDataMsg(ref))
 }
 
 func (s *Node) sendDataMsg(c *gnet.Conn, data []byte) bool {
 	return s.sendMessage(c, s.src.NewDataMsg(data))
-}
-
-func (s *Node) sendRequestRegistryMsg(c *gnet.Conn,
-	ref skyobject.RegistryReference) bool {
-
-	return s.sendMessage(c, s.src.NewRequestRegistryMsg(ref))
-}
-
-func (s *Node) sendRegistryMsg(c *gnet.Conn, reg []byte) bool {
-	return s.sendMessage(c, s.src.NewRegistryMsg(reg))
 }
 
 func (s *Node) sendRequestListOfFeedsMsg(c *gnet.Conn) bool {
@@ -376,7 +351,7 @@ func (*RootMsg) MsgType() MsgType { return RootMsgType }
 type RequestDataMsg struct {
 	msgCoreStub
 
-	Ref skyobject.Reference
+	Ref cipher.SHA256
 }
 
 // MsgType implements Msg interface
@@ -392,30 +367,9 @@ type DataMsg struct {
 // MsgType implements Msg interface
 func (*DataMsg) MsgType() MsgType { return DataMsgType }
 
-// A RequestRegistryMsg represents a Msg that request skyobject.Registry
-// by hash
-type RequestRegistryMsg struct {
-	msgCoreStub
-
-	Ref skyobject.RegistryReference // registry reference
-}
-
-// MsgType implements Msg interface
-func (*RequestRegistryMsg) MsgType() MsgType { return RequestRegistryMsgType }
-
-// A RegistryMsg contains encoded skyobject.Registry
-type RegistryMsg struct {
-	msgCoreStub
-
-	Reg []byte
-}
-
 //
 // MsgType / Encode / Deocode / String()
 //
-
-// MsgType implements Msg interface
-func (*RegistryMsg) MsgType() MsgType { return RegistryMsgType }
 
 // A MsgType represent msg prefix
 type MsgType uint8
@@ -434,11 +388,9 @@ const (
 	ListOfFeedsMsgType        // ListOfFeedsMsg         8
 	NonPublicServerMsgType    // NonPublicServerMsg     9
 
-	RootMsgType            // RootMsg            10
-	RequestDataMsgType     // RequestDataMsg     11
-	DataMsgType            // DataMsg            12
-	RequestRegistryMsgType // RequestRegistryMsg 13
-	RegistryMsgType        // RegistryMsg        14
+	RootMsgType        // RootMsg            10
+	RequestDataMsgType // RequestDataMsg     11
+	DataMsgType        // DataMsg            12
 )
 
 // MsgType to string mapping
@@ -455,11 +407,9 @@ var msgTypeString = [...]string{
 	ListOfFeedsMsgType:        "ListOfFeeds",
 	NonPublicServerMsgType:    "NonPublicServer",
 
-	RootMsgType:            "Root",
-	RequestDataMsgType:     "RequestData",
-	DataMsgType:            "Data",
-	RequestRegistryMsgType: "RequestRegistry",
-	RegistryMsgType:        "Registry",
+	RootMsgType:        "Root",
+	RequestDataMsgType: "RequestData",
+	DataMsgType:        "Data",
 }
 
 // String implements fmt.Stringer interface
@@ -483,11 +433,9 @@ var forwardRegistry = [...]reflect.Type{
 	ListOfFeedsMsgType:        reflect.TypeOf(ListOfFeedsMsg{}),
 	NonPublicServerMsgType:    reflect.TypeOf(NonPublicServerMsg{}),
 
-	RootMsgType:            reflect.TypeOf(RootMsg{}),
-	RequestDataMsgType:     reflect.TypeOf(RequestDataMsg{}),
-	DataMsgType:            reflect.TypeOf(DataMsg{}),
-	RequestRegistryMsgType: reflect.TypeOf(RequestRegistryMsg{}),
-	RegistryMsgType:        reflect.TypeOf(RegistryMsg{}),
+	RootMsgType:        reflect.TypeOf(RootMsg{}),
+	RequestDataMsgType: reflect.TypeOf(RequestDataMsg{}),
+	DataMsgType:        reflect.TypeOf(DataMsg{}),
 }
 
 // An ErrInvalidMsgType represents decoding error when

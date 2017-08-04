@@ -26,7 +26,7 @@ type User struct {
 
 type Group struct {
 	Name  string
-	Users skyobject.References `skyobject:"schema=User"`
+	Users skyobject.Refs `skyobject:"schema=User"`
 }
 
 var testOut = new(bytes.Buffer)
@@ -36,18 +36,6 @@ func init() {
 	if !testing.Verbose() {
 		log.SetOutput(ioutil.Discard)
 	}
-}
-
-func Test_want(t *testing.T) {
-	// want(rpc, ss)
-
-	// TODO: low priority
-}
-
-func Test_got(t *testing.T) {
-	// got(rpc, ss)
-
-	// TODO: low priority
 }
 
 func Test_subscribe(t *testing.T) {
@@ -175,26 +163,29 @@ func Test_roots(t *testing.T) {
 
 		n.Subscribe(nil, pk)
 
-		root, err := n.Container().NewRoot(pk, sk)
+		cnt := n.Container()
+		pack, err := cnt.NewRoot(pk, sk, 0, cnt.CoreRegistry().Types())
 		if err != nil {
 			t.Error(err)
 			return
 		}
 
 		// 1
-		if _, err = root.Touch(); err != nil {
+		if _, err = pack.Save(); err != nil {
 			t.Error(err)
 			return
 		}
-		h1 := root.Hash()
-		t1 := time.Unix(0, root.Time())
+		n.Publish(pack.Root())
+		h1 := pack.Root().Hash
+		t1 := time.Unix(0, pack.Root().Time)
 		// 2
-		if _, err = root.Touch(); err != nil {
+		if _, err = pack.Save(); err != nil {
 			t.Error(err)
 			return
 		}
-		h2 := root.Hash()
-		t2 := time.Unix(0, root.Time())
+		n.Publish(pack.Root())
+		h2 := pack.Root().Hash
+		t2 := time.Unix(0, pack.Root().Time)
 
 		err = roots(cl, []string{
 			"roots",
@@ -218,9 +209,9 @@ func Test_roots(t *testing.T) {
 		// for windows
 		out := strings.Replace(testOut.String(), "\r\n", "\n", -1)
 		want := fmt.Sprintf(format,
-			h1.String(),
+			h1.Hex(),
 			t1.String(),
-			h2.String(),
+			h2.Hex(),
 			t2.String())
 
 		if out != want {
@@ -251,31 +242,33 @@ func Test_tree(t *testing.T) {
 
 	n.Subscribe(nil, pk)
 
-	root, err := n.Container().NewRoot(pk, sk)
+	cnt := n.Container()
+
+	pack, err := cnt.NewRoot(pk, sk, 0, cnt.CoreRegistry().Types())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	root.Append(root.MustDynamic("Group", Group{
+	pack.Append(&Group{
 		Name: "Just an average Group",
-		Users: root.SaveArray(
-			User{
+		Users: pack.Refs(
+			&User{
 				Name: "Bob Simple",
-				Age:  40,
-			},
-			User{
+				Age:  40},
+			&User{
 				Name: "Jim Cobley",
-				Age:  80,
-			},
-		),
-	}))
-
-	hash := root.Hash()
+				Age:  80}),
+	})
+	if _, err = pack.Save(); err != nil {
+		t.Error(err)
+		return
+	}
 
 	err = tree(cl, []string{
 		"roots",
-		hash.String(),
+		pack.Root().Pub.Hex(),
+		fmt.Sprint(pack.Root().Seq),
 	})
 	if err != nil {
 		t.Error(err)
@@ -283,34 +276,28 @@ func Test_tree(t *testing.T) {
 	}
 
 	const want = `(root) %s
-└── *(dynamic) {49f23bbacc44219be9971cb1e9d70826b3c7eec100c247af82d814255225daf1, 941f946a0ddceaef8aeeee0a8e48ae3579d3cbd18c3de6e0319ced87ab41612a}
-    └── struct Group
-        ├── (field) Name
-        │   └── Just an average Group
-        └── (field) Users
-            └── []User
-                ├── *(static) ff1eaf416e8281b398693ce5934af57482493622e4e2978c751e8b12542f04cb
-                │   └── struct User
-                │       ├── (field) Name
-                │       │   └── Bob Simple
-                │       └── (field) Age
-                │           └── 40
-                └── *(static) 915fbaac74e9a55c9ed7050a829d117d8734d0444e3543b8d67557ed9ae813bc
-                    └── struct User
-                        ├── (field) Name
-                        │   └── Jim Cobley
-                        └── (field) Age
-                            └── 80
+└── *(dynamic) {49f23bb:baef146}
+    └── Group
+        ├── Name: "Just an average Group"
+        └── Users: *(refs) d31349b
+            ├── *(ref) ff1eaf4
+            │   └── User
+            │       ├── Name: "Bob Simple"
+            │       └── Age: 40
+            └── *(ref) 915fbaa
+                └── User
+                    ├── Name: "Jim Cobley"
+                    └── Age: 80
 
 `
 
 	// for windows
 	out := strings.Replace(testOut.String(), "\r\n", "\n", -1)
 
-	if out != fmt.Sprintf(want, hash.String()) {
+	if out != fmt.Sprintf(want, pack.Root().Short()) {
 		t.Error("wrong output")
 		t.Log(out)
-		t.Log(fmt.Sprintf(want, hash.String()))
+		t.Log(fmt.Sprintf(want, pack.Root().Short()))
 	}
 }
 
@@ -384,22 +371,22 @@ func newNodeConfig() (conf node.Config) {
 	conf.RPCAddress = "127.0.0.1:0"
 	conf.Log.Debug = testing.Verbose()
 	conf.RemoteClose = false
-	conf.GCInterval = 0
 	return
 }
 
 func launchNode(conf node.Config) (n *node.Node, err error) {
-	reg := skyobject.NewRegistry()
-	reg.Register("User", User{})
-	reg.Register("Group", Group{})
-	if n, err = node.NewNodeReg(conf, reg); err != nil {
-		return
+	if conf.Skyobject == nil {
+		conf.Skyobject = skyobject.NewConfig()
 	}
+	conf.Skyobject.Registry = skyobject.NewRegistry(func(r *skyobject.Reg) {
+		r.Register("User", User{})
+		r.Register("Group", Group{})
+	})
 	if !testing.Verbose() {
-		n.Logger.SetOutput(ioutil.Discard)
+		conf.Log.Output = ioutil.Discard
+		conf.Skyobject.Log.Output = ioutil.Discard
 	}
-	if err = n.Start(); err != nil {
-		n.Close()
+	if n, err = node.NewNode(conf); err != nil {
 		return
 	}
 	return

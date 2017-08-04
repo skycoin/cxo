@@ -5,7 +5,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -13,6 +12,9 @@ import (
 // It is collector of skyobject.Filler, that
 // requests CX objects. By design, the filler
 // per connection requeired.
+//
+// TODO: terminate by DelFeed
+//
 type filler struct {
 	c     *skyobject.Container // access DB and registries
 	wantq chan skyobject.WCXO  // request wanted CX object
@@ -29,24 +31,41 @@ type filler struct {
 	wg sync.WaitGroup
 }
 
+func (n *Node) newFiller() (f *filler) {
+	f = new(filler)
+	f.c = n.so
+	f.wantq = make(chan skyobject.WCXO, 10)
+	f.requests = make(map[cipher.SHA256][]chan []byte)
+	f.full = make(chan *skyobject.Root)
+	f.drop = make(chan skyobject.DropRootError)
+	f.fillers = make(map[cipher.SHA256]*skyobject.Filler)
+	return
+}
+
+// full/drop
+func (f *filler) del(r *skyobject.Root) {
+	fr := f.fillers[r.Hash]
+	fr.Close()
+	delete(f.fillers, r.Hash)
+}
+
+func (f *filler) waiting(wcxo skyobject.WCXO) {
+	f.requests[wcxo.Hash] = append(f.requests[wcxo.Hash], wcxo.GotQ)
+}
+
 // add received data. It returns database
 // saving error (that is fatal)
 func (f *filler) add(data []byte) (err error) {
 	hash := cipher.SumSHA256(data)
-
 	if rs, ok := f.requests[hash]; ok {
-
 		if err = f.c.Set(hash, data); err != nil {
 			return
 		}
-
-		o := cxo{hash, data}
 		for _, r := range rs {
-			r <- o // wake up
+			r <- data // wake up
 		}
 		delete(f.requests, hash)
 	}
-
 	return
 }
 
@@ -59,7 +78,7 @@ func (f *filler) fill(r *skyobject.Root) {
 		// - drop Root (chan of skyobject.DropRootError that is {*Root, err})
 		// - a Root is full (chan of *Root)
 		// - wait group
-		f.fillers[r.Hash] = f.c.NewFiller(r, f.wantq, f.drop, f.full, &f.wg)
+		f.fillers[r.Hash] = f.c.NewFiller(r, f.wantq, f.full, f.drop, &f.wg)
 	}
 }
 

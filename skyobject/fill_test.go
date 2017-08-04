@@ -14,10 +14,10 @@ import (
 func Test_filling(t *testing.T) {
 
 	type User struct {
-		Name string
-		Age  uint32
-		/*		Ary   [3]uint64
-				Slice []string*/
+		Name  string
+		Age   uint32
+		Ary   [3]uint64
+		Slice []string
 	}
 
 	type Group struct {
@@ -39,6 +39,7 @@ func Test_filling(t *testing.T) {
 	var getCont = func(name string) *Container {
 		conf := NewConfig()
 		conf.Log.Prefix = "[" + name + "] "
+		conf.MerkleDegree = 2
 		conf.Registry = NewRegistry(func(r *Reg) {
 			r.Register("User", User{})
 			r.Register("Group", Group{})
@@ -161,17 +162,22 @@ Loop1:
 
 	// fill referenes
 
-	if err := group.Leader.SetValue(&User{"Alex", 32}); err != nil {
+	err = group.Leader.SetValue(&User{
+		Name: "Alex",
+		Age:  32,
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := group.Curator.SetValue(&Man{"Jho", 44}); err != nil {
+	err = group.Curator.SetValue(&Man{"Jho", 44})
+	if err != nil {
 		t.Fatal(err)
 	}
 	err = group.Memebers.Append(
-		&User{"A1", 1},
-		&User{"A2", 2},
-		&User{"A3", 3},
-		&User{"A4", 4},
+		&User{"A1", 1, [3]uint64{0, 1, 2}, nil},
+		&User{"A2", 2, [3]uint64{2, 3, 4}, []string{"0", "9", "8"}},
+		&User{"A3", 3, [3]uint64{3, 4, 5}, nil},
+		&User{"A4", 4, [3]uint64{5, 6, 7}, nil},
 	)
 	if err != nil {
 		t.Fatal(err)

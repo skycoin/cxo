@@ -49,3 +49,11 @@ node/test/
 # suffix for ignore files and directories temporary 
 
 *.go.ignore
+
+intro/server/server
+intro/server/server.db
+intro/pipe/pipe
+intro/pipe/pipe.db
+intro/client/client
+intro/client/client.db
+

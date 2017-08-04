@@ -17,8 +17,8 @@ type User struct {
 
 type Group struct {
 	Name   string
-	Leader skyobject.Reference  `skyobject:"schema=test.User"`
-	Users  skyobject.References `skyobject:"schema=test.User"`
+	Leader skyobject.Ref  `skyobject:"schema=test.User"`
+	Users  skyobject.Refs `skyobject:"schema=test.User"`
 }
 
 func testRegistry() (reg *skyobject.Registry) {

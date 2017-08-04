@@ -21,8 +21,8 @@ type User struct {
 
 type Group struct {
 	Name   string
-	Leader skyobject.Reference  `skyobject:"schema=cxo.User"`
-	Users  skyobject.References `skyobject:"schema=cxo.User"`
+	Leader skyobject.Ref  `skyobject:"schema=cxo.User"`
+	Users  skyobject.Refs `skyobject:"schema=cxo.User"`
 }
 
 func Example_sourceDestination() {
@@ -51,102 +51,81 @@ func Example_sourceDestination() {
 	case <-src.Quiting():
 	case <-dst.Quiting():
 	}
-
 }
 
 func SourceNodeSrcDst(feed cipher.PubKey, owner cipher.SecKey) (src *node.Node,
 	err error) {
 
 	// registry
-
-	reg := skyobject.NewRegistry()
-
-	reg.Register("cxo.User", User{})
-	reg.Register("cxo.Group", Group{})
-
+	reg := skyobject.NewRegistry(func(r *skyobject.Reg) {
+		r.Register("cxo.User", User{})
+		r.Register("cxo.Group", Group{})
+	})
 	// config
-
 	conf := node.NewConfig()
 	conf.Listen = "127.0.0.1:0" // arbitrary assignment
 	conf.InMemoryDB = true      // use in-memory database
 	conf.EnableRPC = false      // disable RPC
 	conf.Log.Prefix = "[SRC] "
+	conf.Skyobject = skyobject.NewConfig()
+	conf.Skyobject.Registry = reg // <--- CoreRegistry
 	// conf.Log.Debug = true
-
 	// node
-
-	if src, err = node.NewNodeReg(conf, reg); err != nil {
+	if src, err = node.NewNode(conf); err != nil {
 		return
 	}
-
 	// feed
-
 	src.Subscribe(nil, feed)
-
 	// don't block
-
 	go generateSrcDst(src, feed, owner)
-
 	return
-
 }
 
 func generateSrcDst(src *node.Node, feed cipher.PubKey, owner cipher.SecKey) {
-
 	defer src.Close()
-
 	// for this example (never need in real case)
 	time.Sleep(1 * time.Second)
-
 	// container
 	cnt := src.Container()
-
 	// generate groups
-	root, err := cnt.NewRoot(feed, owner)
+	pack, err := cnt.NewRoot(feed, owner, 0, cnt.CoreRegistry().Types())
 	if err != nil {
 		log.Print(err)
 		return
 	}
-
 	for i := 0; i < 2; i++ {
-		generateGroup(i, cnt, root)
-
+		generateGroup(i, src, pack)
 		// for this example
 		time.Sleep(1 * time.Second)
 	}
 }
 
-func generateGroup(i int, cnt *node.Container, root *node.Root) {
-	cnt.LockGC()
-	defer cnt.UnlockGC()
-
-	group, err := root.Dynamic("cxo.Group", Group{
+func generateGroup(i int, src *node.Node, pack *skyobject.Pack) {
+	pack.Append(&Group{
 		Name: fmt.Sprint("Group #", i),
-		Leader: root.Save(User{
+		Leader: pack.Ref(&User{
 			Name: "Elisabet Bathory",
 			Age:  30,
 		}),
-		Users: root.SaveArray(
-			User{fmt.Sprintf("Alice #%d", i), 19 + uint32(i)},
-			User{fmt.Sprintf("Eva #%d", i), 21 + uint32(i)},
+		Users: pack.Refs(
+			&User{fmt.Sprintf("Alice #%d", i), 19 + uint32(i)},
+			&User{fmt.Sprintf("Eva #%d", i), 21 + uint32(i)},
 		),
 	})
-	if err != nil {
-		log.Print(err)
+	if _, err := pack.Save(); err != nil {
+		log.Println(err)
 		return
 	}
-
-	if _, err := root.Append(group); err != nil {
-		log.Print(err)
-	}
-
+	src.Publish(pack.Root()) // share
 }
 
 func DestinationNodeSrcDst(feed cipher.PubKey, address string) (dst *node.Node,
 	err error) {
 
-	// config
+	// you can create the same regsitry here if you want to
+	// extract received obejcts to golang values
 
+	// config
 	conf := node.NewConfig()
 	conf.EnableListener = false // disable listener for this example
 	conf.InMemoryDB = true      // use database in memory
@@ -155,7 +134,7 @@ func DestinationNodeSrcDst(feed cipher.PubKey, address string) (dst *node.Node,
 	// conf.Log.Debug = true
 
 	// while a root object and all related objects received
-	conf.OnRootFilled = func(root *node.Root) {
+	conf.OnRootFilled = func(n *node.Node, _ *gnet.Conn, root *skyobject.Root) {
 		// don't block messages handling;
 		// it's not nessesary for this example, but
 		// if you want to perform a long running
@@ -163,11 +142,10 @@ func DestinationNodeSrcDst(feed cipher.PubKey, address string) (dst *node.Node,
 		// to keep in mind that this callback
 		// blocks goroutine that handles incoming
 		// messages from this connection
-		go printTreeSrcDst(root)
+		go printTreeSrcDst(n.Container(), root)
 	}
 
 	// node
-
 	dst, err = node.NewNode(conf)
 	if err != nil {
 		return
@@ -188,15 +166,13 @@ func DestinationNodeSrcDst(feed cipher.PubKey, address string) (dst *node.Node,
 	}
 
 	return
-
 }
 
-func printTreeSrcDst(root *node.Root) {
-
+func printTreeSrcDst(cnt *skyobject.Container, root *skyobject.Root) {
 	fmt.Println("----")
 	defer fmt.Println("----")
 
-	fmt.Println(root.Inspect())
+	fmt.Println(cnt.Inspect(root))
 }
 
 /*

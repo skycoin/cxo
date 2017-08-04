@@ -26,23 +26,17 @@ var (
 // objects
 type Container struct {
 	log.Logger
-
 	conf Config
-
-	db data.DB
-
-	trackSeq
+	db   data.DB
 	stat
 
 	// registries
-
 	coreRegistry *Registry
 
 	rmx  sync.RWMutex
 	regs map[RegistryRef]*Registry
 
 	// clean up
-
 	cleanmx sync.Mutex // clean up mutex
 
 	closeq chan struct{}  //
@@ -53,36 +47,24 @@ type Container struct {
 // NewContainer by given database (required) and Registry
 // (optional). Given Registry will be CoreRegsitry of the
 // Container
-//
-// TODO (kostyarin): move the db argument to Config creating
-// in-memory DB by default (if nil). Think about panics
 func NewContainer(db data.DB, conf *Config) (c *Container) {
-
 	if db == nil {
 		panic("missing data.DB")
 	}
-
 	if conf == nil {
 		conf = NewConfig()
 	}
-
 	if err := conf.Validate(); err != nil {
 		panic(err)
 	}
-
 	c = new(Container)
-
 	c.db = db
-
 	c.closeq = make(chan struct{})
-
 	c.Logger = log.NewLogger(conf.Log)
 	c.regs = make(map[RegistryRef]*Registry)
-
 	// copy configs
 	c.conf = *conf
-
-	c.initSeqTrackStat()
+	c.stat.init(c.conf.StatSamples)
 
 	if conf.Registry != nil {
 		c.coreRegistry = conf.Registry
@@ -98,47 +80,6 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 	}
 
 	return
-}
-
-func (c *Container) initSeqTrackStat() {
-	c.Debug(VerbosePin, "initSeqTrackStat")
-
-	// initialize trackSeq
-	c.trackSeq.init()
-	c.stat.init(c.conf.StatSamples)
-	// range over feeds of DB and fill up the trackSeq
-	err := c.DB().View(func(tx data.Tv) error {
-		feeds := tx.Feeds()
-		return feeds.Range(func(pk cipher.PubKey) (err error) {
-			roots := feeds.Roots(pk)
-			var seq, last uint64 // last seq and seq of last full
-			var hasLast bool     // really has last full root (if last is 0)
-			err = roots.Reverse(func(rp *data.RootPack) (_ error) {
-				if seq == 0 {
-					seq = rp.Seq
-				}
-				if rp.IsFull == true {
-					last, hasLast = rp.Seq, true
-					return data.ErrStopRange // break
-				}
-				return // continue, finding last full
-			})
-			if err != nil {
-				return
-			}
-			c.trackSeq.addSeq(pk, seq, false)
-			if hasLast {
-				c.trackSeq.addSeq(pk, last, true)
-				return
-			}
-			return
-		})
-	})
-	if err != nil {
-		c.Debug(VerbosePin, "fatal")
-		c.DB().Close()
-		c.Panic("unexpected database error: ", err)
-	}
 }
 
 // saveRegistry in database
@@ -230,6 +171,7 @@ func (c *Container) Registry(rr RegistryRef) *Registry {
 	return c.regs[rr]
 }
 
+// Root of a feed by seq. If err is nil then the Root is not
 func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 	c.Debugln(VerbosePin, "Root", pk.Hex()[:7], seq)
 
@@ -279,7 +221,8 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 //
 // The sk argument should not be empty if you want to modify the Root
 // and pulish changes. In any ither cases it is not necessary and can be
-// passed like cipher.SecKey{}
+// passed like cipher.SecKey{}. If the sk is empty then ViewOnly flag
+// will be set
 func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 	sk cipher.SecKey) (pack *Pack, err error) {
 
@@ -322,6 +265,10 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 
 	// create the pack
 
+	if sk == (cipher.SecKey{}) {
+		flags = flags | ViewOnly // can't modify
+	}
+
 	pack.flags = flags
 	pack.types = types
 
@@ -351,6 +298,18 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 	return c.Unpack(r, flags, types, sk)
 }
 
+// NewRootReg associated with given regsitry
+func (c *Container) NewRootReg(pk cipher.PubKey, sk cipher.SecKey,
+	reg RegistryRef, flags Flag, types *Types) (pack *Pack, err error) {
+
+	c.Debugln(VerbosePin, "NewRoot", pk.Hex()[:7])
+
+	r := new(Root)
+	r.Pub = pk
+	r.Reg = reg
+	return c.Unpack(r, flags, types, sk)
+}
+
 // CelanUp removes unused objects from database
 func (c *Container) CleanUp(keepRoots bool) (err error) {
 
@@ -372,7 +331,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 
 	// we have to use single transaction
 
-	err = c.DB().Update(func(tx data.Tu) (_ error) {
+	err = c.DB().Update(func(tx data.Tu) (err error) {
 
 		//
 		// collect
@@ -398,10 +357,8 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 		// delete
 		//
 
-		for k, v := range coll {
-			if v != 0 {
-				delete(coll, k) // remove necessary objects from the map
-			}
+		if cr := c.CoreRegistry(); c != nil {
+			coll[cipher.SHA256(cr.Reference())] = 1
 		}
 
 		if len(coll) != 0 && len(collRoots) != 0 {
@@ -415,7 +372,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 	c.stat.addCleanUp(elapsed)
 
 	if err != nil {
-		c.Debugf(CleanUpPin, "CleanUp failed after %v: %v", elapsed, err)
+		c.Print("CleanUp failed after %v: %v", elapsed, err)
 		return
 	}
 
@@ -446,21 +403,13 @@ func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
 
 		err = roots.Reverse(func(rp *data.RootPack) (err error) {
 
-			if rp.IsFull {
-				lastFull, hasLastFull = rp.Seq, true
-				if !keepRoots {
-					// we will delete roots below last full
-					return data.ErrStopRange
-				}
-			}
-
 			var r *Root
 			if r, err = c.unpackRoot(pk, rp); err != nil {
 				return
 			}
 
-			c.knowsAbout(r, objs, func(hash cipher.SHA256) (deeper bool,
-				err error) {
+			kerr := c.knowsAbout(r, objs, func(hash cipher.SHA256) (deeper bool,
+				_ error) {
 
 				if _, ok := coll[hash]; !ok {
 					coll[hash] = 1
@@ -468,11 +417,21 @@ func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
 				}
 				return // already known the object
 			})
+			if kerr != nil {
+				c.Printf("[ERR] knowsAbout of %s error: %v",
+					r.Short(),
+					kerr)
+			}
 
 			// ignore all possible errors of the knowsAbout
 			// becasue we need to walk through all Roots
 			//
 			// TOTH (kostyarin): ignore? or be strict?
+
+			if rp.IsFull && !keepRoots {
+				lastFull, hasLastFull = rp.Seq, true
+				return data.ErrStopRange // we will delete roots below last full
+			}
 
 			return
 		})
@@ -577,6 +536,8 @@ func (c *Container) unpackRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 			err)
 		r = nil
 	}
+	r.Sig = rp.Sig
+	r.Hash = rp.Hash
 	return
 }
 
@@ -643,8 +604,5 @@ func (c *Container) DelFeed(pk cipher.PubKey) (err error) {
 	err = c.DB().Update(func(tx data.Tu) error {
 		return tx.Feeds().Del(pk)
 	})
-	if err == nil {
-		c.trackSeq.delFeed(pk)
-	}
 	return
 }
