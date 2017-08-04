@@ -75,7 +75,7 @@ func main() {
 	c.OnRootFilled = func(s *node.Node, c *gnet.Conn, r *sky.Root) {
 		fmt.Println("\n\n\n") // space
 		fmt.Println("----")
-		s.Container().Inspect(r)
+		fmt.Println(s.Container().Inspect(r))
 		fmt.Println("----")
 	}
 
