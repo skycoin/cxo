@@ -65,8 +65,9 @@ func main() {
 	c.Skyobject.Registry = reg
 
 	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = sky.CleanUpPin | sky.PackSavePin | sky.VerbosePin // all
+	c.Skyobject.Log.Pins = sky.CleanUpPin | sky.PackSavePin // all
 	c.Skyobject.Log.Prefix = "[server cxo] "
+	c.Skyobject.CleanUp = 59 * time.Second
 
 	c.FromFlags()
 	flag.Parse()
@@ -137,7 +138,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 		case <-stop:
 			c.Print("[STOP]")
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(1 * time.Second):
 		}
 
 		// new random votes

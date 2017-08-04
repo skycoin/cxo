@@ -172,8 +172,11 @@ func (d *driveObjects) Del(key cipher.SHA256) (err error) {
 	return d.bk.Delete(key[:])
 }
 
-func (d *driveObjects) Get(key cipher.SHA256) []byte {
-	return d.bk.Get(key[:])
+func (d *driveObjects) Get(key cipher.SHA256) (val []byte) {
+	if val = d.bk.Get(key[:]); len(val) == 0 {
+		val = nil
+	}
+	return
 }
 
 func (d *driveObjects) GetCopy(key cipher.SHA256) (value []byte) {

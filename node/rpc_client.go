@@ -104,10 +104,10 @@ func (r *RPCClient) Roots(feed cipher.PubKey) (ris []RootInfo, err error) {
 
 // Tree returns strigified objects tree of a root object. The
 // method useful for inspecting
-func (r *RPCClient) Tree(pk cipher.PubKey, seq uint64) (tree string,
-	err error) {
+func (r *RPCClient) Tree(pk cipher.PubKey, seq uint64,
+	lastFull bool) (tree string, err error) {
 
-	err = r.c.Call("cxo.Tree", SelectRoot{pk, seq}, &tree)
+	err = r.c.Call("cxo.Tree", SelectRoot{pk, seq, lastFull}, &tree)
 	return
 }
 

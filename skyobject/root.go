@@ -54,23 +54,26 @@ func (c *Container) PackToRoot(pk cipher.PubKey,
 	return c.unpackRoot(pk, rp)
 }
 
-// LastFullPack returns data.RootPack to send throug network
+// LastFullPack returns data.RootPack to send throug network.
 func (c *Container) LastFullPack(pk cipher.PubKey) (rp *data.RootPack,
 	err error) {
 
 	err = c.DB().View(func(tx data.Tv) (_ error) {
 		roots := tx.Feeds().Roots(pk)
 		if roots == nil {
-			return
+			return fmt.Errorf("no such feed %s", pk.Hex()[:7])
 		}
-		return roots.Reverse(func(pr *data.RootPack) (err error) {
-			if rp.IsFull {
-				rp = pr
-				return ErrStopRange
+		return roots.Reverse(func(rpd *data.RootPack) (_ error) {
+			if rpd.IsFull {
+				rp = rpd
+				return data.ErrStopRange // data.ErrStopRange
 			}
 			return
 		})
 	})
+	if rp == nil {
+		err = fmt.Errorf("last full of %s not found", pk.Hex()[:7])
+	}
 	return
 }
 

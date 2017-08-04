@@ -136,7 +136,7 @@ func (k *knowsAbout) DataSlice(sch Schema, val []byte) (err error) {
 func (k *knowsAbout) DataStruct(sch Schema, val []byte) (err error) {
 	var shift, s int
 	for i, fl := range sch.Fields() {
-		if shift >= len(val) {
+		if shift > len(val) {
 			err = fmt.Errorf("unexpected end of encoded struct <%s>, "+
 				"field number: %d, field name: %q, schema of field: %s",
 				i,
@@ -144,7 +144,7 @@ func (k *knowsAbout) DataStruct(sch Schema, val []byte) (err error) {
 				fl.Schema())
 			return
 		}
-		if s, err = SchemaSize(sch, val[shift:]); err != nil {
+		if s, err = SchemaSize(fl.Schema(), val[shift:]); err != nil {
 			return
 		}
 		if err = k.Data(fl.Schema(), val[shift:shift+s]); err != nil {
@@ -160,7 +160,7 @@ func (k *knowsAbout) rangeArraySlice(el Schema, ln int,
 
 	var shift, m int
 	for i := 0; i < ln; i++ {
-		if shift >= len(val) {
+		if shift > len(val) {
 			err = fmt.Errorf("unexpected end of encoded  array or slice "+
 				"of <%s>, length: %d, index: %d", el, ln, i)
 			return
@@ -215,50 +215,78 @@ func (k *knowsAbout) DataRef(sch Schema, val []byte) (err error) {
 }
 
 func (k *knowsAbout) DataRefs(sch Schema, val []byte) (err error) {
-	var refs encodedRefs
+
+	var refs Refs
 	if err = encoder.DeserializeRaw(val, &refs); err != nil {
 		return
 	}
-	for _, hash := range refs.Nested {
-		if err = k.RefsNode(refs.Depth, sch, hash); err != nil {
-			return
-		}
+	if refs.IsBlank() {
+		return
 	}
-	return
+
+	var deepper bool
+	if deepper, err = k.fn(refs.Hash); err != nil {
+		return
+	}
+	if deepper == false {
+		return
+	}
+
+	el := sch.Elem()
+	if el == nil {
+		err = fmt.Errorf("[ERR] schema of Refs [%s] without element: %s",
+			refs.Short(),
+			sch)
+		return
+	}
+
+	if val = k.g.Get(refs.Hash); val == nil {
+		return // skip
+	}
+
+	var ers encodedRefs
+	if err = encoder.DeserializeRaw(val, &ers); err != nil {
+		return
+	}
+	return k.RefsNode(ers.Depth, ers.Nested, el)
 }
 
-func (k *knowsAbout) RefsNode(depth uint32, sch Schema,
-	hash cipher.SHA256) (err error) {
+func (k *knowsAbout) RefsNode(depth uint32, hashes []cipher.SHA256,
+	el Schema) (err error) {
 
-	if hash == (cipher.SHA256{}) {
-		return
-	}
+	for _, hash := range hashes {
+		if hash == (cipher.SHA256{}) {
+			continue
+		}
 
-	var deeper bool
-	if deeper, err = k.fn(hash); err != nil {
-		return
-	}
-	if deeper == false {
-		return
-	}
-	if depth == 0 { // the leaf
-		return k.Hash(sch, hash)
-	}
+		var deeper bool
+		if deeper, err = k.fn(hash); err != nil {
+			return
+		}
+		if deeper == false {
+			continue
+		}
+		if depth == 0 { // the leaf
+			if err = k.Hash(el, hash); err != nil {
+				return
+			}
+			continue
+		}
 
-	var val []byte
-	if val = k.g.Get(hash); val == nil {
-		return // skip (not found)
-	}
+		var val []byte
+		if val = k.g.Get(hash); val == nil {
+			return // skip (not found)
+		}
 
-	var refs encodedRefs
-	if err = encoder.DeserializeRaw(val, &refs); err != nil {
-		return
-	}
-	for _, hash := range refs.Nested {
-		if err = k.RefsNode(depth-1, sch, hash); err != nil {
+		var ers encodedRefs
+		if err = encoder.DeserializeRaw(val, &ers); err != nil {
+			return
+		}
+		if err = k.RefsNode(depth-1, ers.Nested, el); err != nil {
 			return
 		}
 	}
+
 	return
 }
 

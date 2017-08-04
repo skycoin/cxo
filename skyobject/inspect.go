@@ -65,6 +65,7 @@ func (i *inspector) rootError(err string) {
 }
 
 func (i *inspector) Dynamic(dr Dynamic) (it gotree.GTStructure) {
+
 	if dr.IsBlank() {
 		it.Name = "*(dynamic) nil"
 		return
@@ -98,6 +99,7 @@ func (i *inspector) Dynamic(dr Dynamic) (it gotree.GTStructure) {
 }
 
 func (i *inspector) Data(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	if sch.IsReference() {
 		return i.refSwitch(sch, val)
 	}
@@ -125,6 +127,7 @@ func (i *inspector) Data(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 func (i *inspector) refSwitch(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	switch rt := sch.ReferenceType(); rt {
 	case ReferenceTypeSingle:
 		return i.Ref(sch, val)
@@ -149,6 +152,7 @@ func (i *inspector) refSwitch(sch Schema, val []byte) (it gotree.GTStructure) {
 // unpack to Value
 
 func (*inspector) Bool(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var x bool
 	if err := encoder.DeserializeRaw(val, &x); err != nil {
 		it.Name = "(err) " + err.Error()
@@ -159,6 +163,7 @@ func (*inspector) Bool(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 func (*inspector) Int(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var x int64
 	var err error
 	switch sch.Kind() {
@@ -186,6 +191,7 @@ func (*inspector) Int(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 func (*inspector) Uint(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var x uint64
 	var err error
 	switch sch.Kind() {
@@ -213,6 +219,7 @@ func (*inspector) Uint(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 func (*inspector) Float(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var x float64
 	var err error
 	switch sch.Kind() {
@@ -232,6 +239,7 @@ func (*inspector) Float(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 func (*inspector) String(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var x string
 	if err := encoder.DeserializeRaw(val, &x); err != nil {
 		it.Name = "(err) " + err.Error()
@@ -243,6 +251,7 @@ func (*inspector) String(sch Schema, val []byte) (it gotree.GTStructure) {
 
 // slcie or array
 func (p *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	el := sch.Elem()
 	if el == nil {
 		it.Name = fmt.Sprintf("(err) invalid schema %q: nil-element",
@@ -338,6 +347,7 @@ func unexpectedEndOfArraySliceError(sch, el Schema, i, ln int) (err error) {
 }
 
 func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var shift int
 	var s int
 	var err error
@@ -354,6 +364,7 @@ func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 			return
 		}
 		if s, err = SchemaSize(f.Schema(), val[shift:]); err != nil {
+
 			it.Name = "(err) " + err.Error()
 			return
 		}
@@ -366,6 +377,7 @@ func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 func (p *inspector) Ref(sch Schema, val []byte) (it gotree.GTStructure) {
+
 	var ref Ref
 	if err := encoder.DeserializeRaw(val, &ref); err != nil {
 		it.Name = "(err) " + err.Error()
@@ -427,13 +439,19 @@ func (i *inspector) Refs(sch Schema, val []byte) (it gotree.GTStructure) {
 func (i *inspector) refsNode(sch Schema, depth uint32,
 	er encodedRefs) (its []gotree.GTStructure) {
 
-	if er.Depth == 0 {
+	if depth == 0 {
 		for _, h := range er.Nested {
+			if h == (cipher.SHA256{}) {
+				continue // not missing, not nil: zero
+			}
 			its = append(its, i.RefHash(sch, h))
 		}
 		return
 	}
 	for _, h := range er.Nested {
+		if h == (cipher.SHA256{}) {
+			continue // not missing, not nil: zero
+		}
 		its = append(its, i.refsHashNode(sch, depth-1, h)...)
 	}
 	return

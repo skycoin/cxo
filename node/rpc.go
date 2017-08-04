@@ -227,14 +227,20 @@ func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (_ error) {
 }
 
 type SelectRoot struct {
-	Pub cipher.PubKey
-	Seq uint64
+	Pub      cipher.PubKey
+	Seq      uint64
+	LastFull bool // ignore the seq and print last full of the feed
 }
 
 // Tree prints objects tree of chosen root object (chosen by pk+seq)
 func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 	var root *skyobject.Root
-	if root, err = r.ns.so.Root(sel.Pub, sel.Seq); err != nil {
+	if sel.LastFull {
+		root, err = r.ns.so.LastFull(sel.Pub)
+	} else {
+		root, err = r.ns.so.Root(sel.Pub, sel.Seq)
+	}
+	if err != nil {
 		return
 	}
 	if root == nil {

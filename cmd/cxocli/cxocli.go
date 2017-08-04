@@ -292,8 +292,9 @@ func showHelp() {
     print listening address
   roots <public key>
     print brief information about all root objects of given feed
-  tree <root hash>
-    print objects tree of feed
+  tree <pub key> [seq]
+    print root by public key and seq number, if the seq omited then
+    last full root printed
   terminate
     terminate server if allowed
   help
@@ -524,22 +525,27 @@ func tree(rpc *node.RPCClient, ss []string) (err error) {
 
 	var pk cipher.PubKey
 	var seq uint64
+	var lsatFull bool
 
 	switch len(ss) {
-	case 0, 1, 2:
-		return errors.New("to few arguments: want <pub key> <seq>")
+	case 0, 1:
+		return errors.New("to few arguments: want <pub key> [seq]")
+	case 2:
+		lsatFull = true
 	case 3:
 	default:
-		return errors.New("to many arguments: want <pub key> <seq>")
+		return errors.New("to many arguments: want <pub key> [seq]")
 	}
 	if pk, err = cipher.PubKeyFromHex(ss[1]); err != nil {
 		return
 	}
-	if seq, err = strconv.ParseUint(ss[2], 10, 64); err != nil {
-		return
+	if lsatFull == false {
+		if seq, err = strconv.ParseUint(ss[2], 10, 64); err != nil {
+			return
+		}
 	}
 	var tree string
-	if tree, err = rpc.Tree(pk, seq); err != nil {
+	if tree, err = rpc.Tree(pk, seq, lsatFull); err != nil {
 		return
 	}
 	fmt.Fprintln(out, tree)
