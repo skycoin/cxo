@@ -49,7 +49,7 @@ type Filler struct {
 func (c *Container) NewFiller(r *Root, wantq chan<- WCXO, fullq chan<- *Root,
 	dropq chan<- DropRootError, wg *sync.WaitGroup) (fl *Filler) {
 
-	c.Debugln(VerbosePin, "NewFiller", r.Short())
+	c.Debugln(FillVerbosePin, "NewFiller", r.Short())
 
 	fl = new(Filler)
 
@@ -75,17 +75,19 @@ func (f *Filler) Root() *Root {
 }
 
 func (f *Filler) drop(err error) {
-	f.c.Debugln(VerbosePin, "(*Filler).drop", f.r.Short(), err)
+	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
 
 	f.dropq <- DropRootError{f.r, err}
 }
 
 func (f *Filler) full() {
-	f.c.Debugln(VerbosePin, "(*Filler).full", f.r.Short())
+	f.c.Debugln(FillVerbosePin, "(*Filler).full", f.r.Short())
 
 	if err := f.c.MarkFull(f.r); err != nil {
 		// detailed error
-		err = fmt.Errorf("can't mark root %s as full in DB", f.r.Short())
+		err = fmt.Errorf("can't mark root %s as full in DB: %v",
+			f.r.Short(),
+			err)
 		f.drop(err) // can't mark as full
 		return
 	}
@@ -94,7 +96,7 @@ func (f *Filler) full() {
 
 func (f *Filler) fill(wg *sync.WaitGroup) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fill", f.r.Short())
+	f.c.Debugln(FillVerbosePin, "(*Filler).fill", f.r.Short())
 
 	defer wg.Done()
 	if f.r.Reg == (RegistryRef{}) {
@@ -158,7 +160,8 @@ func (f *Filler) Close() {
 
 func (f *Filler) fillDynamic(dr Dynamic) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDynamic", f.r.Short(), dr.Short())
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDynamic", f.r.Short(),
+		dr.Short())
 
 	if !dr.IsValid() {
 		return ErrInvalidDynamicReference
@@ -175,7 +178,7 @@ func (f *Filler) fillDynamic(dr Dynamic) (err error) {
 
 func (f *Filler) fillRef(sch Schema, ref cipher.SHA256) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillRef", f.r.Short(), ref.Hex()[:7])
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillRef", f.r.Short(), ref.Hex()[:7])
 
 	if ref == (cipher.SHA256{}) {
 		return // blank (represents nil)
@@ -190,7 +193,7 @@ func (f *Filler) fillRef(sch Schema, ref cipher.SHA256) (err error) {
 
 func (f *Filler) fillData(sch Schema, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillData", f.r.Short(), sch.String())
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillData", f.r.Short(), sch.String())
 
 	if !sch.HasReferences() {
 		return
@@ -212,7 +215,7 @@ func (f *Filler) fillData(sch Schema, val []byte) (err error) {
 
 func (f *Filler) fillDataArray(sch Schema, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataArray", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataArray", f.r.Short(),
 		sch.String())
 
 	ln := sch.Len()  // length of the array
@@ -226,7 +229,7 @@ func (f *Filler) fillDataArray(sch Schema, val []byte) (err error) {
 
 func (f *Filler) fillDataSlice(sch Schema, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataSlice", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataSlice", f.r.Short(),
 		sch.String())
 
 	var ln int
@@ -243,7 +246,7 @@ func (f *Filler) fillDataSlice(sch Schema, val []byte) (err error) {
 
 func (f *Filler) fillDataStruct(sch Schema, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataStruct", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataStruct", f.r.Short(),
 		sch.String())
 
 	var shift, s int
@@ -257,7 +260,7 @@ func (f *Filler) fillDataStruct(sch Schema, val []byte) (err error) {
 				fl.Schema().String())
 			return
 		}
-		if s, err = SchemaSize(fl.Schema(), val[shift:]); err != nil {
+		if s, err = fl.Schema().Size(val[shift:]); err != nil {
 			return
 		}
 		if err = f.fillData(fl.Schema(), val[shift:shift+s]); err != nil {
@@ -270,7 +273,7 @@ func (f *Filler) fillDataStruct(sch Schema, val []byte) (err error) {
 
 func (f *Filler) rangeArraySlice(el Schema, ln int, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).rangeArraySlice", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).rangeArraySlice", f.r.Short(),
 		ln, el.String())
 
 	var shift, m int
@@ -280,7 +283,7 @@ func (f *Filler) rangeArraySlice(el Schema, ln int, val []byte) (err error) {
 				"of <%s>, length: %d, index: %d", el, ln, i)
 			return
 		}
-		if m, err = SchemaSize(el, val[shift:]); err != nil {
+		if m, err = el.Size(val[shift:]); err != nil {
 			return
 		}
 		if err = f.fillData(el, val[shift:shift+m]); err != nil {
@@ -293,7 +296,7 @@ func (f *Filler) rangeArraySlice(el Schema, ln int, val []byte) (err error) {
 
 func (f *Filler) fillDataRefsSwitch(sch Schema, val []byte) error {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataRefSwitch", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataRefSwitch", f.r.Short(),
 		sch.String())
 
 	switch rt := sch.ReferenceType(); rt {
@@ -310,7 +313,7 @@ func (f *Filler) fillDataRefsSwitch(sch Schema, val []byte) error {
 
 func (f *Filler) fillDataRef(sch Schema, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataRef", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataRef", f.r.Short(),
 		sch.String())
 
 	var ref Ref
@@ -329,7 +332,7 @@ func (f *Filler) fillDataRef(sch Schema, val []byte) (err error) {
 
 func (f *Filler) fillDataRefs(sch Schema, val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataRefs", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataRefs", f.r.Short(),
 		sch.String())
 
 	var refs Refs
@@ -362,7 +365,7 @@ func (f *Filler) fillDataRefs(sch Schema, val []byte) (err error) {
 func (f *Filler) fillRefsNode(depth uint32, hs []cipher.SHA256,
 	sch Schema) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillRefsNode", f.r.Short(),
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillRefsNode", f.r.Short(),
 		depth, len(hs), sch.String())
 
 	if depth == 0 { // the leaf
@@ -396,7 +399,7 @@ func (f *Filler) fillRefsNode(depth uint32, hs []cipher.SHA256,
 
 func (f *Filler) fillDataDynamic(val []byte) (err error) {
 
-	f.c.Debugln(VerbosePin, "(*Filler).fillDataDynamic")
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataDynamic")
 
 	var dr Dynamic
 	if err = encoder.DeserializeRaw(val, &dr); err != nil {

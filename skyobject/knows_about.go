@@ -144,7 +144,7 @@ func (k *knowsAbout) DataStruct(sch Schema, val []byte) (err error) {
 				fl.Schema())
 			return
 		}
-		if s, err = SchemaSize(fl.Schema(), val[shift:]); err != nil {
+		if s, err = fl.Schema().Size(val[shift:]); err != nil {
 			return
 		}
 		if err = k.Data(fl.Schema(), val[shift:shift+s]); err != nil {
@@ -165,7 +165,7 @@ func (k *knowsAbout) rangeArraySlice(el Schema, ln int,
 				"of <%s>, length: %d, index: %d", el, ln, i)
 			return
 		}
-		if m, err = SchemaSize(el, val[shift:]); err != nil {
+		if m, err = el.Size(val[shift:]); err != nil {
 			return
 		}
 		if err = k.Data(el, val[shift:shift+m]); err != nil {

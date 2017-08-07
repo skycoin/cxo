@@ -15,11 +15,9 @@ var (
 )
 
 var (
-	// TODO (kostyarin): rename to typeOfReference, tyoeOfReferences, etc,
-	//                   to make the code more clear
-	singleRef  = typeOf(Ref{})
-	sliceRef   = typeOf(Refs{})
-	dynamicRef = typeOf(Dynamic{})
+	typeOfRef     = typeOf(Ref{})
+	typeOfRefs    = typeOf(Refs{})
+	typeOfDynamic = typeOf(Dynamic{})
 )
 
 // A ReferenceType represents type of a reference
@@ -46,8 +44,6 @@ type Schema interface {
 	// references on any level deep
 	HasReferences() bool
 
-	IsNil() bool // is the schema a nil
-
 	Kind() reflect.Kind // Kind of the Schema
 	Name() string       // Name of the Schema if named
 	Len() int           // Length if array
@@ -62,6 +58,9 @@ type Schema interface {
 
 	Encode() (b []byte) // encode the schema
 
+	// Size of encoded data
+	Size(p []byte) (n int, err error)
+
 	fmt.Stringer // String() string
 }
 
@@ -74,10 +73,6 @@ type schema struct {
 
 	kind reflect.Kind
 	name []byte
-}
-
-func (s *schema) IsNil() bool {
-	return s.kind == reflect.Invalid
 }
 
 func (s *schema) IsReference() bool {
@@ -127,6 +122,31 @@ func (s *schema) Elem() Schema {
 	return nil
 }
 
+func (s *schema) Size(p []byte) (n int, err error) {
+	switch s.kind {
+	case reflect.Bool, reflect.Int8, reflect.Uint8:
+		n = 1
+	case reflect.Int16, reflect.Uint16:
+		n = 2
+	case reflect.Int32, reflect.Uint32, reflect.Float32:
+		n = 4
+	case reflect.Int64, reflect.Uint64, reflect.Float64:
+		n = 8
+	case reflect.String:
+		if n, err = getLength(p); err != nil {
+			return
+		}
+		n += 4 // encoded length (uint32)
+	default:
+		err = ErrInvalidSchemaOrData
+		return
+	}
+	if n > len(p) {
+		err = ErrInvalidSchemaOrData
+	}
+	return
+}
+
 func (s *schema) encodedSchema() (x encodedSchema) {
 	x.Kind = uint32(s.kind)
 	x.Name = s.name
@@ -161,6 +181,10 @@ func (r *referenceSchema) HasReferences() bool {
 	return true // by design
 }
 
+func (r *referenceSchema) IsRegistered() bool {
+	return false // Ref, Refs and Dynamic are not regsitered
+}
+
 func (r *referenceSchema) IsReference() bool {
 	return true
 }
@@ -169,8 +193,33 @@ func (r *referenceSchema) ReferenceType() ReferenceType {
 	return r.typ
 }
 
+func (r *referenceSchema) Reference() SchemaRef {
+	if r.ref == (SchemaRef{}) {
+		r.ref = SchemaRef(cipher.SumSHA256(r.Encode()))
+	}
+	return r.ref
+}
+
 func (r *referenceSchema) Elem() Schema {
 	return r.elem
+}
+
+func (r *referenceSchema) Size(p []byte) (n int, err error) {
+	switch rt := r.typ; rt {
+	case ReferenceTypeSingle:
+		n = refSize
+	case ReferenceTypeSlice:
+		n = refsSize
+	case ReferenceTypeDynamic:
+		n = dynamicSize
+	default:
+		err = fmt.Errorf("[ERR] reference with invalid ReferenceType: %d", rt)
+		return
+	}
+	if n > len(p) {
+		err = ErrInvalidSchemaOrData
+	}
+	return
 }
 
 func (r *referenceSchema) encodedSchema() (x encodedSchema) {
@@ -218,8 +267,27 @@ func (s *sliceSchema) HasReferences() bool {
 	return s.elem.HasReferences()
 }
 
+func (s *sliceSchema) Reference() SchemaRef {
+	if s.ref == (SchemaRef{}) {
+		s.ref = SchemaRef(cipher.SumSHA256(s.Encode()))
+	}
+	return s.ref
+}
+
 func (s *sliceSchema) Elem() Schema {
 	return s.elem
+}
+
+func (s *sliceSchema) Size(p []byte) (n int, err error) {
+	var l int
+	if l, err = getLength(p); err != nil {
+		return
+	}
+	n, err = schemaArraySliceSize(s.Elem(), l, 4, p)
+	if err == nil && n > len(p) {
+		err = ErrInvalidSchemaOrData
+	}
+	return
 }
 
 func (s *sliceSchema) encodedSchema() (x encodedSchema) {
@@ -258,6 +326,21 @@ func (a *arraySchema) Len() int {
 	return a.length
 }
 
+func (a *arraySchema) Reference() SchemaRef {
+	if a.ref == (SchemaRef{}) {
+		a.ref = SchemaRef(cipher.SumSHA256(a.Encode()))
+	}
+	return a.ref
+}
+
+func (a *arraySchema) Size(p []byte) (n int, err error) {
+	n, err = schemaArraySliceSize(a.Elem(), a.Len(), 0, p)
+	if err == nil && n > len(p) {
+		err = ErrInvalidSchemaOrData
+	}
+	return
+}
+
 func (a *arraySchema) encodedSchema() (x encodedSchema) {
 	x = a.sliceSchema.encodedSchema()
 	x.Len = uint32(a.length)
@@ -293,8 +376,33 @@ func (r *structSchema) HasReferences() (has bool) {
 	return
 }
 
+func (s *structSchema) Reference() SchemaRef {
+	if s.ref == (SchemaRef{}) {
+		s.ref = SchemaRef(cipher.SumSHA256(s.Encode()))
+	}
+	return s.ref
+}
+
 func (s *structSchema) Fields() []Field {
 	return s.fields
+}
+
+func (s *structSchema) Size(p []byte) (n int, err error) {
+	var m int
+	for _, sf := range s.Fields() {
+		if n > len(p) {
+			err = ErrInvalidSchemaOrData
+			return
+		}
+		if m, err = sf.Schema().Size(p[n:]); err != nil {
+			return
+		}
+		n += m
+	}
+	if n > len(p) {
+		err = ErrInvalidSchemaOrData
+	}
+	return
 }
 
 func (s *structSchema) encodedSchema() (x encodedSchema) {
@@ -315,20 +423,8 @@ func (s *structSchema) Encode() (b []byte) {
 }
 
 //
-// TODO:
-//  (1) rid out of simpleField
-//  (2) merge coreField and field
-//  (3) make Field (interface) to be *Field (struct)
+// Field
 //
-// Because simpleField can't be created from encodedField.
-// And (Field).Kind() never used to be a big advantag of
-// permormance and memory
-//
-// And, creating Schema from simpleField adds some memory
-// and GC pressure
-//
-
-// field
 
 // A Field represetns struct field
 type Field interface {

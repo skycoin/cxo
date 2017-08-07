@@ -117,7 +117,7 @@ func (p *Pack) del(key cipher.SHA256) {
 
 // Save all changes in DB returning packed updated Root.
 // Use the result to publish upates (node package related)
-func (p *Pack) Save() (root data.RootPack, err error) {
+func (p *Pack) Save() (rp data.RootPack, err error) {
 	p.c.Debugln(VerbosePin, "(*Pack).Save", p.r.Pub.Hex()[:7], p.r.Seq)
 
 	tp := time.Now() // time point
@@ -160,8 +160,6 @@ func (p *Pack) Save() (root data.RootPack, err error) {
 
 		p.r.Hash = cipher.SumSHA256(val)
 		p.r.Sig = cipher.SignHash(p.r.Hash, p.sk)
-
-		var rp data.RootPack
 
 		rp.Hash = p.r.Hash
 		rp.IsFull = true

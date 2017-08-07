@@ -529,12 +529,12 @@ func (c *Container) unpackRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 	if err = encoder.DeserializeRaw(rp.Root, r); err != nil {
 		// detailed error
 		err = fmt.Errorf("error decoding root"+
-			" (feed %s, seq %d, hash %s): %v",
+			" {%s:%d}: %v",
 			pk.Hex()[:7],
 			rp.Seq,
-			rp.Hash.Hex()[:7],
 			err)
 		r = nil
+		return
 	}
 	r.Sig = rp.Sig
 	r.Hash = rp.Hash

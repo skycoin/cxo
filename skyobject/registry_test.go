@@ -141,13 +141,16 @@ func TestRegistry_userProvidedName(t *testing.T) {
 	type Info struct {
 		About string
 	}
+
 	type Brief struct {
 		Note string
 	}
+
 	type Any struct {
 		Info
 		Brief Brief
 	}
+
 	reg := NewRegistry(func(r *Reg) {
 		r.Register("test.Info", Info{})
 		r.Register("test.Brief", Brief{})

@@ -150,7 +150,7 @@ func (p *Pack) setupRefsToGo(sf reflect.StructField,
 func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
 
 	typ := obj.Type().Elem()
-	if typ == dynamicRef {
+	if typ == typeOfDynamic {
 		for i := 0; i < obj.Len(); i++ {
 			idx := obj.Index(i)
 			if err = p.setupDynamicToGo(obj, idx); err != nil {
@@ -182,7 +182,7 @@ func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 	typ := obj.Type()
 	for i := 0; i < typ.NumField(); i++ {
 		sf := typ.Field(i)
-		if sf.Type == dynamicRef {
+		if sf.Type == typeOfDynamic {
 			if err = p.setupDynamicToGo(obj, obj.Field(i)); err != nil {
 				return
 			}
@@ -192,9 +192,9 @@ func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
 			continue // skip unexported, unencoded and _-named fields
 		}
 		switch sf.Type {
-		case singleRef:
+		case typeOfRef:
 			err = p.setupRefToGo(sf, obj.Field(i))
-		case sliceRef:
+		case typeOfRefs:
 			err = p.setupRefsToGo(sf, obj.Field(i))
 		default:
 			continue

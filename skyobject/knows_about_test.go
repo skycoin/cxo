@@ -2,20 +2,19 @@ package skyobject
 
 import (
 	"testing"
-
-	"github.com/skycoin/skycoin/src/cipher"
+	//"github.com/skycoin/skycoin/src/cipher"
 )
 
 func Test_knowsAbout(t *testing.T) {
 
-	c := getCont()
+	// c := getCont()
 
-	pk, sk := cipher.GenerateKeyPair()
+	// pk, sk := cipher.GenerateKeyPair()
 
-	pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
-	if err != nil {
-		t.Fatal(err)
-	}
+	// pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
 
 	// TOOD
 

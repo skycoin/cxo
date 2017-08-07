@@ -35,14 +35,14 @@ func (r *Reg) Register(name string, val interface{}) {
 	}
 	typ := typeOf(val)
 	switch typ {
-	case singleRef, sliceRef, dynamicRef:
+	case typeOfRef, typeOfRefs, typeOfDynamic:
 		panic("can't register reference type")
 	default:
 	}
 
 	for _, n := range r.tn {
 		if n == name {
-			panic("this name already registered")
+			panic("this name already registered: " + name)
 		}
 	}
 
@@ -63,10 +63,19 @@ func (r *Reg) typeName(typ reflect.Type) []byte {
 
 func (r *Reg) getSchema(typ reflect.Type) Schema {
 
-	s := new(schema)
+	if typ == typeOfDynamic { // dynamic reference
+		return &referenceSchema{
+			schema: schema{
+				ref:  SchemaRef{},
+				kind: typ.Kind(),
+			},
+			typ: ReferenceTypeDynamic,
+		}
+	}
 
-	s.kind = typ.Kind()
-	s.name = r.typeName(typ)
+	if typ == typeOfRef || typ == typeOfRefs {
+		panic("Ref or Refs are not allowed in arrays and slices")
+	}
 
 	switch typ.Kind() {
 
@@ -76,8 +85,8 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		reflect.Int64, reflect.Uint64, reflect.Float64,
 		reflect.String:
 
-		// do nothing for flat types
-
+		s := new(schema)
+		s.kind, s.name = typ.Kind(), r.typeName(typ)
 		return s
 
 	case reflect.Slice:
@@ -85,7 +94,7 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		// get schema of element
 
 		ss := new(sliceSchema)
-		ss.schema = *s
+		ss.kind, ss.name = typ.Kind(), r.typeName(typ)
 
 		el := r.getSchema(typ.Elem())
 
@@ -102,7 +111,7 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		// get schema of element and length
 
 		as := new(arraySchema)
-		as.schema = *s
+		as.kind, as.name = typ.Kind(), r.typeName(typ)
 		as.length = typ.Len()
 
 		el := r.getSchema(typ.Elem())
@@ -120,7 +129,7 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		// get schemas of fields
 
 		ss := new(structSchema)
-		ss.schema = *s
+		ss.kind, ss.name = typ.Kind(), r.typeName(typ)
 
 		for i, nf := 0, typ.NumField(); i < nf; i++ {
 
@@ -151,13 +160,8 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 	t := sf.Type // reflect.Type
 
 	switch t {
-
-	case singleRef:
-
-		// reference
-
+	case typeOfRef: // reference
 		tagRef := mustTagSchemaName(sf.Tag)
-
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaRef{},
@@ -166,13 +170,8 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 			typ:  ReferenceTypeSingle,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
 		}
-
 		return f
-
-	case sliceRef:
-
-		// references
-
+	case typeOfRefs: // references
 		tagRef := mustTagSchemaName(sf.Tag)
 		f.schema = &referenceSchema{
 			schema: schema{
@@ -182,13 +181,8 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 			typ:  ReferenceTypeSlice,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
 		}
-
 		return f
-
-	case dynamicRef:
-
-		// dynamic reference
-
+	case typeOfDynamic: // dynamic reference
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaRef{},
@@ -196,9 +190,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 			},
 			typ: ReferenceTypeDynamic,
 		}
-
 		return f
-
 	default:
 	}
 
@@ -252,7 +244,7 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 	return
 }
 
-// NewRegistry creates filled up Regsitry using provided
+// NewRegistry creates filled up Registry using provided
 // function. For example
 //
 //     reg := skyobject.NewRegistry(func(t *skyobject.Reg) {
@@ -324,27 +316,13 @@ func (r *Registry) register(reg *Reg) {
 	r.tn = reg.tn // keep the map
 
 	for typ, name := range reg.tn {
-
 		r.nt[name] = typ // build r.nt by the reg.tn
-
 		s := reg.getSchema(typ)
-
 		// only named structures
 		if !s.IsRegistered() {
 			panic("can't register type: " + typ.Name())
 		}
-
-		// set registered name instead of type name (not nessessary)
-		s.(*structSchema).name = []byte(name)
-
-		if rr, ok := r.reg[name]; ok {
-			if rr.Reference() != s.Reference() {
-				panic("another type already registered with the name")
-			}
-		} else {
-			r.reg[name] = s // store: name -> Scehma
-		}
-
+		r.reg[name] = s // store: name -> Scehma
 	}
 
 }

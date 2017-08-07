@@ -318,7 +318,7 @@ func (p *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
 				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
 				return
 			}
-			if m, err = SchemaSize(el, val[shift:]); err != nil {
+			if m, err = el.Size(val[shift:]); err != nil {
 				return
 			}
 			it.Items = append(it.Items, p.Data(el, val[shift:shift+m]))
@@ -363,8 +363,7 @@ func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 				f.Schema().String())
 			return
 		}
-		if s, err = SchemaSize(f.Schema(), val[shift:]); err != nil {
-
+		if s, err = f.Schema().Size(val[shift:]); err != nil {
 			it.Name = "(err) " + err.Error()
 			return
 		}
