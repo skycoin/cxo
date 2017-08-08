@@ -153,8 +153,8 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 
 // SetValue replacing the Dynamic with new, that points
 // to given value. Pass nil to make the Dynamic blank.
-// IF related pack created with ViewOnly flag, then this
-// emthod returns error
+// If related pack created with ViewOnly flag, then this
+// method returns error
 func (d *Dynamic) SetValue(obj interface{}) (err error) {
 
 	if obj == nil {
@@ -165,6 +165,10 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 	if d.wn == nil {
 		return errors.New(
 			"can't set value: the Dynamic is not attached to Pack")
+	}
+
+	if d.wn.pack.flags&ViewOnly != 0 {
+		return ErrViewOnlyTree
 	}
 
 	var sch Schema

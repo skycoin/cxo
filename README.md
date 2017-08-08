@@ -122,8 +122,8 @@ import (
 
 conf := node.NewConfig()
 
-// The Regsitry can be nil for nodes that repicate
-// a objects threoug. But we are going to create and
+// The Regsitry can be nil for nodes that pass
+// objects through. But we are going to create and
 // use obejcts. Thus we need a Regsitry
 conf.Skyobject.Regsitry = reg
 
@@ -145,9 +145,9 @@ defer n.Close()
 
 A `Node` used to create (emit), replicate, and receive feeds. A `Node` doesn't
 do it autmatically. You need to subscribe to a feed. You need to associate a
-connection to another node with the subscription. Both, this and remote node
-should be subscribed to the feed to start exchanging it. If
-`(node.Config).PublidServer` set to true, then you can obtain list of feeds
+connection to another node with the subscription. Both, this-side and remote
+nodes should be subscribed to the feed to start exchanging it. If
+`(node.Config).PublicServer` set to true, then you can obtain list of feeds
 from a remote node. Otherwise, it can be done uisng RPC (e.g. administrative
 access required). A `Node` is thread-safe but you must not block callbacks,
 because they are performing inside message-handling goroutine of a connection
@@ -167,7 +167,7 @@ The Root is not thread-safe. Only the Refs field requires the safety
 ```go
 
 type Root struct {
-	Refs []Dynamic // main branches of the 
+	Refs []Dynamic // main branches
 
 	Reg RegistryRef   // registry
 	Pub cipher.PubKey // feed
@@ -216,7 +216,7 @@ if err != nil {
 
 So, the `Root` has been created. It doesn't stored in DB or somewhere else.
 If you want to update the Root often, then you can keep the `Pack` in its
-goroutine permorming changes if need. For example
+goroutine performing changes if need. For example
 
 ```go
 // in this example the Event is an event, that requires updates in our Root
@@ -270,6 +270,16 @@ The chan is closed after `(node.Node).Close()` call
 
 ##### Receive and Explore a Root
 
-```go
-// TODO
-```
+TODO (kostyarin): explain detailed (after "track changes")
+
+##### References
+
+TODO (kostyarin): explain detailed
+
+##### Unpack Flags
+
+TODO (kostyarin): explain detailed
+
+##### Double-Linked List Example
+
+TODO (kostyarin): do it
