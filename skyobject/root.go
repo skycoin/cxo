@@ -47,7 +47,8 @@ func (r *Root) Pack() (rp *data.RootPack) {
 }
 
 // PackToRoot convertes *data.RootPack to Root decoding it. The
-// pk argument used for errors and can be empty
+// pk argument used for errors and can be empty. The rp argument
+// must not be nil
 func (c *Container) PackToRoot(pk cipher.PubKey,
 	rp *data.RootPack) (*Root, error) {
 
@@ -96,6 +97,9 @@ func (c *Container) LastPack(pk cipher.PubKey) (rp *data.RootPack,
 		}
 		return
 	})
+	if rp == nil && err == nil {
+		err = fmt.Errorf("last root of %s not found", pk.Hex()[:7])
+	}
 	return
 }
 
@@ -131,7 +135,8 @@ func (r *Root) String() string {
 		r.Hash.Hex()[:7])
 }
 
-// AddRoot to container. The method sets rp.IsFull to false
+// AddRoot to container. The method sets rp.IsFull to false.
+// The rp must not be nil
 func (c *Container) AddRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 	err error) {
 
@@ -164,8 +169,7 @@ func (c *Container) MarkFull(r *Root) (err error) {
 }
 
 // RootBySeq is the same as Root, But the method also returns "full"
-// reply, that describes fullness of the Root. If err is nil then Root
-// is not
+// reply, that describes fullness of the Root
 func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root,
 	full bool, err error) {
 

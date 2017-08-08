@@ -15,16 +15,17 @@ type Dynamic struct {
 	SchemaRef SchemaRef     // reference to Schema
 
 	// internals
-	walkNode *walkNode `enc:"-"` // WalkNode of this Dynamic
+	wn *walkNode `enc:"-"` // walkNode of this Dynamic
 }
 
-// IsBlank returns true if the reference is blank
+// IsBlank returns true if both SchemaRef
+// and Object fields are blank
 func (d *Dynamic) IsBlank() bool {
 	return d.SchemaRef.IsBlank() && d.Object == (cipher.SHA256{})
 }
 
 // IsValid returns true if the Dynamic is blank, full
-// or hash reference to shcema only. A Dynamic is invalid if
+// or has reference to shcema only. A Dynamic is invalid if
 // it has reference to object but deosn't have reference to
 // shcema
 func (d *Dynamic) IsValid() bool {
@@ -51,157 +52,176 @@ func (d *Dynamic) Eq(x *Dynamic) bool {
 
 // Schema of the Dynamic. It returns nil if the Dynamic is blank
 func (d *Dynamic) Schema() (sch Schema, err error) {
+
 	if d.IsBlank() {
 		return // nil, nil
 	}
+
 	if !d.IsValid() {
 		err = ErrInvalidDynamicReference
 		return
 	}
-	wn := d.walkNode
-	if wn == nil {
-		err = errors.New("can't get Schema of detached Dynamic")
+
+	if d.wn == nil {
+		err = errors.New("can't get Schema: " +
+			"the Dynamic is not attached to Pack")
 		return
 	}
-	if wn.sch == nil { // obtain schema first
-		if sch, err = wn.pack.reg.SchemaByReference(d.SchemaRef); err != nil {
-			return
-		}
+
+	if d.wn.sch != nil {
+		sch = d.wn.sch // already have
+		return
 	}
-	wn.sch = sch
+
+	if sch, err = r.wn.pack.reg.SchemaByReference(d.SchemaRef); err != nil {
+		return
+	}
+
+	wn.sch = sch // keep
 	return
 }
 
 // Value of the Dynamic. It's pointer to golang struct.
-// It can be nil if the dynamic is blank or references to
-// object is blank
+// It can be nil if the Dynamic is blank. It can be nil pointer
+// of some type if the Dynamic has SchemaRef but reference to
+// object is blank. For example
+//
+//     valueInterface, err := dr.Value()
+//     if err != nil {
+//         // handle the err
+//     }
+//     if valueInterface == nil {
+//         // this case possible only if the dr is blank
+//     }
+//     // for example the dr represents *User
+//     usr := valueInterface.(*User)
+//     // work with the usr
+//
+// Even if you pass non-pointer (User{}) to the SetValue,
+// the Value returns pointer (*User) anyway.
 func (d *Dynamic) Value() (obj interface{}, err error) {
+
 	if !d.IsValid() {
-		err = fmt.Errorf("invalid Dynamic %s", d.Short())
+		err = ErrInvalidDynamicReference
 		return
 	}
-	if d.Object == (cipher.SHA256{}) {
-		return // this Dynamic represents nil
+
+	if d.IsBlank() {
+		return // this Dynamic represents nil interface{}
 	}
-	wn := d.walkNode
-	if wn == nil {
-		err = errors.New("can't get value of detached Dynamic")
+
+	if d.wn == nil {
+		err = errors.New("can't get value: the Dynamic is not attached to Pack")
 		return
 	}
-	if wn.value != nil { // already have
-		obj = wn.value
+
+	if d.wn.value != nil {
+		obj = wn.value // already have
 		return
 	}
-	// schema
+
 	if _, err = d.Schema(); err != nil {
+		return // the call stores schema in the walkNode (d is not blank)
+	}
+
+	if d.Object == (cipher.SHA256{}) {
+		var ptr reflect.Value
+		if ptr, err = d.wn.pack.newOf(d.wn.sch.Name()); err != nil {
+			return
+		}
+		d.wn.value = ptr.Interface() // keep
+		obj = d.wn.value             // nil pointer of some type
 		return
 	}
+
 	// obtain object
 	var val []byte
 	if val, err = wn.pack.get(d.Object); err != nil {
 		return
 	}
+
 	if obj, err = wn.pack.unpackToGo(wn.sch.Name(), val); err != nil {
 		return
 	}
+
 	wn.value = obj // keep
+
+	// TODO (kostyarin): track changes
+
 	return
 }
 
-// SetValue of the Dynamic. Pass nil to make the Dynamic
-// blank. The obj must be pointer to registered golang
-// struct
+// SetValue replacing the Dynamic with new, that points
+// to given value. Pass nil to make the Dynamic blank.
+// IF related pack created with ViewOnly flag, then this
+// emthod returns error
 func (d *Dynamic) SetValue(obj interface{}) (err error) {
+
 	if obj == nil {
-		d.clear()
+		d.Clear()
 		return
 	}
-	wn := d.walkNode
-	if wn == nil {
-		err = errors.New("can't set value to detached Dynamic")
-		return
+
+	if d.wn == nil {
+		return errors.New(
+			"can't set value: the Dynamic is not attached to Pack")
 	}
-	typ := typeOf(obj)
+
 	var sch Schema
-	if name, ok := wn.pack.types.Inverse[typ]; !ok {
-		// detailed error
-		err = fmt.Errorf(`can't set Dynamic value:
-    given object not found in Types map
-    reflect.Type of the object: %s`,
-			typ.String())
-		return
-	} else if sch, err = wn.pack.reg.SchemaByName(name); err != nil {
-		// dtailed error
-		err = fmt.Errorf(`wrong Types of Pack:
-    schema name found in Types, but schema by the name not found in Registry
-    error:                      %s
-    registry reference:         %s
-    schema name:                %s
-    reflect.Type of the obejct: %s`,
-			err,
-			wn.pack.reg.Reference().Short(),
-			name,
-			typ.String())
-		return
+	if sch, obj, err = r.wn.pack.initialize(obj); err != nil {
+		return fmt.Errorf("can't set value to Dynamic: %v", err)
 	}
-	// else everything is ok
-	val := reflect.ValueOf(obj)
-	if val.Kind() == reflect.Ptr {
-		// obj represents nil of typ
-		if val.IsNil() {
-			prevs := d.SchemaRef
-			wn.sch = sch
-			wn.value = nil
-			d.SchemaRef = sch.Reference()
-			d.Object = cipher.SHA256{}
-			// clear, but don't celar schema reference
-			if prevs != sch.Reference() || d.Object != (cipher.SHA256{}) {
-				wn.unsave()
-			}
-			return
+
+	d.wn.value = obj // keep
+
+	var changed bool
+
+	if sr := sch.Reference(); sr != d.SchemaRef {
+		d.SchemaRef, changed = sr, true
+	}
+
+	if obj == nil {
+		if d.Object != (cipher.SHA256{}) {
+			d.Object, changed = cipher.SHA256{}, true
 		}
-	} else { // not a pointer
-		err = errors.New("can't accept non-pointer value")
-		return
+	} else if key, val := d.wn.pack.dsave(obj); key != d.Object {
+		d.wn.pack.set(key, val) // save
+		d.Object, changed = key, true
 	}
-	// setup references of given obj
-	if err = wn.pack.setupToGo(val); err != nil {
-		return
+
+	if changed {
+		d.wn.unsave()
 	}
-	// save the object getting hash back
-	key, _ := wn.pack.save(obj)
-	// setup
-	prevs, prevo := d.SchemaRef, d.Object
-	wn.sch = sch
-	wn.value = obj
-	d.SchemaRef = sch.Reference()
-	d.Object = key
-	if d.Object != prevo || d.SchemaRef != prevs {
+
+	// TODO (kostyarin): track changes
+
+	return
+}
+
+// Clear the Dynamic making it blank. It clears
+// reference to object and refernece to Schema too
+func (d *Dynamic) Clear() {
+	if d.SchemaRef == (SchemaRef{}) && d.Object == (cipher.SHA256{}) {
+		return // already blank
+	}
+	d.SchemaRef, d.Object = SchemaRef{}, cipher.SHA256{}
+	if d.wn != nil {
+		d.wn.value = nil // clear value
+		d.wn.sch = nil   // clear schema
 		wn.unsave()
 	}
-	return
-}
 
-func (d *Dynamic) clear() {
-	prevs, prevo := d.SchemaRef, d.Object
-	d.SchemaRef = SchemaRef{}
-	d.Object = cipher.SHA256{}
-	if wn := d.walkNode; wn != nil {
-		wn.value = nil
-		wn.sch = nil
-		if d.Object != prevo || d.SchemaRef != prevs {
-			wn.unsave()
-		}
-	}
+	// TODO (kostyarin): track changes
 }
 
 // Copy returns copy of the Dynamic
-// Underlying value not copied
+// Underlying value does not copied.
+// But schema does
 func (d *Dynamic) Copy() (cp Dynamic) {
 	cp.SchemaRef = d.SchemaRef
 	cp.Object = d.Object
-	if wn := d.walkNode; wn != nil {
-		cp.walkNode = &walkNode{
+	if d.wn != nil {
+		cp.wn = &walkNode{
 			pack: wn.pack,
 			sch:  wn.sch,
 		}

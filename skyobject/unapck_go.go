@@ -7,10 +7,10 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// given val can't be encoded reference; it guaraneed by
-// Types map: we can't register a reference
-func (p *Pack) unpackToGo(schemaName string,
-	val []byte) (obj interface{}, err error) {
+// create reflect.Value that represetns pointer of regsitered type
+func (p *Pack) newOf(schemaName string) (ptr reflect.Value, err error) {
+
+	p.c.Debugf(VerbosePin, "(*Pack).newOf %q", schemaName)
 
 	var typ reflect.Type
 	var ok bool
@@ -20,7 +20,22 @@ func (p *Pack) unpackToGo(schemaName string,
 			schemaName)
 		return
 	}
-	ptr := reflect.New(typ)
+	ptr = reflect.New(typ)
+	return
+}
+
+// given val can't be encoded reference; it guaraneed by
+// Types map: we can't register a reference
+func (p *Pack) unpackToGo(schemaName string,
+	val []byte) (obj interface{}, err error) {
+
+	p.c.Debugf(VerbosePin, "(*Pack).unpackToGo %d-bytes of %q", len(val),
+		schemaName)
+
+	var ptr reflect.Value
+	if ptr, err = p.newOf(schemaName); err != nil {
+		return
+	}
 	if _, err = encoder.DeserializeRawToValue(val, ptr); err != nil {
 		return
 	}
@@ -34,6 +49,9 @@ func (p *Pack) unpackToGo(schemaName string,
 
 // setup references of a golang-value
 func (p *Pack) setupToGo(obj reflect.Value) (err error) {
+
+	p.c.Debugln(VerbosePin, "(*Pack).setupToGo", obj)
+
 	if obj.Kind() == reflect.Ptr {
 		obj = obj.Elem()
 	}
@@ -63,8 +81,7 @@ func (p *Pack) setupToGo(obj reflect.Value) (err error) {
 //
 func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 
-	p.c.Debugf(VerbosePin, "setupDynamicToGo %s of %s", idx.String(),
-		obj.String())
+	p.c.Debugf(VerbosePin, "(*Pack).setupDynamicToGo %s of %s", idx, obj)
 
 	dr := idx.Interface().(Dynamic)
 	if !dr.IsValid() {
@@ -94,7 +111,7 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 func (p *Pack) setupRefToGo(sf reflect.StructField,
 	val reflect.Value) (err error) {
 
-	p.c.Debugln(VerbosePin, "setupRefToGo", sf)
+	p.c.Debugln(VerbosePin, "(*Pack).setupRefToGo", sf)
 
 	var name string
 	if name, err = TagSchemaName(sf.Tag); err != nil {
@@ -124,6 +141,8 @@ func (p *Pack) setupRefToGo(sf reflect.StructField,
 func (p *Pack) setupRefsToGo(sf reflect.StructField,
 	val reflect.Value) (err error) {
 
+	p.c.Debugln(VerbosePin, "(*Pack).setupRefsToGo", sf, val)
+
 	var name string
 	if name, err = TagSchemaName(sf.Tag); err != nil {
 		return
@@ -148,6 +167,8 @@ func (p *Pack) setupRefsToGo(sf reflect.StructField,
 //   - array of Dynamic
 //   - array of structs
 func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
+
+	p.c.Debugln(VerbosePin, "(*Pack).setupArrayOrSliceToGo", obj)
 
 	typ := obj.Type().Elem()
 	if typ == typeOfDynamic {
@@ -179,6 +200,9 @@ func (p *Pack) setupArrayOrSliceToGo(obj reflect.Value) (err error) {
 //   - field of Refs
 //   - field of struct
 func (p *Pack) setupStructToGo(obj reflect.Value) (err error) {
+
+	p.c.Debugln(VerbosePin, "(*Pack).setupStructToGo", obj)
+
 	typ := obj.Type()
 	for i := 0; i < typ.NumField(); i++ {
 		sf := typ.Field(i)

@@ -26,6 +26,7 @@ type Refs struct {
 	index map[cipher.SHA256]*Ref `enc:"-"` // index (or reference)
 }
 
+// TODO: rename to reduceDepthIfNeed ?
 func (r *Refs) rebuildIfNeed() (err error) {
 	if r.depth == 0 {
 		return
@@ -36,6 +37,8 @@ func (r *Refs) rebuildIfNeed() (err error) {
 	return
 }
 
+// max number of items if there are not
+// zero items
 func (r *Refs) items() int {
 	return pow(r.degree, r.depth+1)
 }
