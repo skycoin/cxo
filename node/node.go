@@ -16,6 +16,7 @@ import (
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/node/msg"
+	"github.com/skycoin/net/skycoin-messenger/factory"
 )
 
 // common errors
@@ -42,11 +43,11 @@ var (
 // that includes RPC server if enabled
 // by configs
 type Node struct {
-	log.Logger                      // logger of the server
-	src        msg.Src              // msg source
-	conf       Config               // configuratios
-	db         *data.DB             // database
-	so         *skyobject.Container // skyobject
+	log.Logger                // logger of the server
+	src  msg.Src              // msg source
+	conf Config               // configuratios
+	db   *data.DB             // database
+	so   *skyobject.Container // skyobject
 
 	// feeds
 	fmx   sync.RWMutex
@@ -72,6 +73,8 @@ type Node struct {
 	doneo sync.Once
 
 	await sync.WaitGroup
+
+	discovery *factory.MessengerFactory
 }
 
 // NewNode creates new Node instnace using given
@@ -283,6 +286,20 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 		s.conf.Log.Debug,
 	)
 
+	// connect to service discovery
+	if len(s.conf.DiscoveryAddresses) > 0 {
+		f := factory.NewMessengerFactory()
+		for _, addr := range s.conf.DiscoveryAddresses {
+			f.ConnectWithConfig(addr, &factory.ConnConfig{
+				Reconnect:                      true,
+				ReconnectWait:                  time.Second * 30,
+				FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
+				OnConnected:                    s.updateServiceDiscovery,
+			})
+		}
+		s.discovery = f
+	}
+
 	// start listener
 	if s.conf.EnableListener == true {
 		if err = s.pool.Listen(s.conf.Listen); err != nil {
@@ -313,6 +330,37 @@ func (n *Node) addConn(c *Conn) {
 	defer n.cmx.Unlock()
 
 	n.conns = append(n.conns, c)
+}
+
+func (n *Node) updateServiceDiscovery(conn *factory.Connection) {
+	feeds := n.Feeds()
+	services := make([]*factory.Service, len(feeds))
+	for i, feed := range feeds {
+		services[i] = &factory.Service{Key: feed}
+	}
+	conn.FindServiceNodesByKeys(feeds)
+	if n.conf.PublicServer {
+		conn.UpdateServices(&factory.NodeServices{ServiceAddress: n.conf.Listen, Services: services})
+	}
+}
+
+func (n *Node) findServiceNodesCallback(resp *factory.QueryResp) {
+	if len(resp.Result) < 1 {
+		return
+	}
+	for k, v := range resp.Result {
+		key, err := cipher.PubKeyFromHex(k)
+		if err != nil {
+			continue
+		}
+		for _, addr := range v {
+			err = n.Connect(addr)
+			if err != nil {
+				continue
+			}
+			n.Connection(addr).Subscribe(key)
+		}
+	}
 }
 
 func (n *Node) delConn(c *Conn) {
@@ -580,6 +628,9 @@ func (n *Node) AddFeed(pk cipher.PubKey) (err error) {
 			return
 		}
 		n.feeds[pk] = make(map[*Conn]struct{})
+		if n.discovery != nil {
+			go n.discovery.ForEachConn(n.updateServiceDiscovery)
+		}
 	}
 	return
 }
@@ -591,6 +642,9 @@ func (n *Node) delFeed(pk cipher.PubKey) (ok bool) {
 
 	if _, ok = n.feeds[pk]; ok {
 		delete(n.feeds, pk)
+		if n.discovery != nil {
+			go n.discovery.ForEachConn(n.updateServiceDiscovery)
+		}
 	}
 	return
 }

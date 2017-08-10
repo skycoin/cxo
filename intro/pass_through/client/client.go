@@ -123,10 +123,10 @@ func main() {
 	}
 	// conenct to pipe
 
-	if err := s.Connect(PipeAddress); err != nil {
-		s.Println("[ERR] can't conenct to server:", err)
-		return
-	}
+	//if err := s.Connect(PipeAddress); err != nil {
+	//	s.Println("[ERR] can't conenct to server:", err)
+	//	return
+	//}
 
 	waitInterrupt(s.Quiting())
 }

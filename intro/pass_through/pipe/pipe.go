@@ -102,10 +102,10 @@ func main() {
 
 	// conenct to server
 
-	if err := s.Connect(ServerAddress); err != nil {
-		s.Println("[ERR] can't conenct to server:", err)
-		return
-	}
+	//if err := s.Connect(ServerAddress); err != nil {
+	//	s.Println("[ERR] can't conenct to server:", err)
+	//	return
+	//}
 
 	waitInterrupt(s.Quiting())
 }
