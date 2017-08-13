@@ -207,7 +207,7 @@ func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (_ error) {
 		if roots == nil {
 			return
 		}
-		return roots.Range(func(rp *data.RootPack) (err error) {
+		return roots.Ascend(func(rp *data.RootPack) (err error) {
 			var ri RootInfo
 			var root *skyobject.Root
 			root, err = r.ns.Container().PackToRoot(feed, rp)

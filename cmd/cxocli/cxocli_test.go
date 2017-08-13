@@ -276,7 +276,7 @@ func Test_tree(t *testing.T) {
 	}
 
 	const want = `(root) %s
-└── *(dynamic) {49f23bb:baef146}
+└── *(dynamic) {7409ab3:baef146}
     └── Group
         ├── Name: "Just an average Group"
         └── Users: *(refs) d31349b
@@ -296,8 +296,8 @@ func Test_tree(t *testing.T) {
 
 	if out != fmt.Sprintf(want, pack.Root().Short()) {
 		t.Error("wrong output")
-		t.Log(out)
-		t.Log(fmt.Sprintf(want, pack.Root().Short()))
+		t.Logf("%q", out)
+		t.Logf("%q", fmt.Sprintf(want, pack.Root().Short()))
 	}
 }
 
