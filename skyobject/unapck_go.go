@@ -7,6 +7,23 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// nilPtrOf returns nil pointer of some type
+func (p *Pack) nilPtrOf(schemaName string) (nilPtr interface{}, err error) {
+
+	p.c.Debugf(VerbosePin, "(*Pack).nilPtrOf %q", schemaName)
+
+	var typ reflect.Type
+	var ok bool
+
+	if typ, ok = p.types.Direct[schemaName]; !ok {
+		err = fmt.Errorf("missing reflect.Type of %q schema in Types.Direct",
+			schemaName)
+		return
+	}
+	nilPtr = makeNilOf(typ)
+	return
+}
+
 // create reflect.Value that represetns pointer of regsitered type
 func (p *Pack) newOf(schemaName string) (ptr reflect.Value, err error) {
 

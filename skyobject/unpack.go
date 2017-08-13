@@ -365,6 +365,14 @@ func (p *Pack) initialize(obj interface{}) (sch Schema, ptr interface{},
 	return
 }
 
+// make nil pointer of given type
+func makeNilOf(typ reflect.Type) (nilPtr interface{}) {
+	if typ.Kind() != reflect.Ptr {
+		typ = reflect.PtrTo(typ) // pointer to
+	}
+	return reflect.New(typ).Elem().Interface() // elem is nil of some type
+}
+
 // get Schema by given reflect.Type, the type must not be a pointer
 func (p *Pack) schemaOf(typ reflect.Type) (sch Schema, err error) {
 	if name, ok := p.types.Inverse[typ]; !ok {

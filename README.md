@@ -220,33 +220,64 @@ goroutine performing changes if need. For example
 
 ```go
 // in this example the Event is an event, that requires updates in our Root
+func startHandlingSomePack(events <-chan Event, pack *skyobject.Pack,
+	n *node.Node, wg *sync.WaitGroup) {
 
-go func(n *node.Node, pack *cxo.Pack, events <-chan Event, quit <-chan struct{},
-	wg *sync.WaitGroup) {
-	
+	go handleSomePack(n, pack, events, n.Quiting(), wg)
+}
+
+func handleSomePack(n *node.Node, pack *cxo.Pack, events <-chan Event,
+	quit <-chan struct{}, wg *sync.WaitGroup) {
+
 	defer wg.Done()
 
-	for  {
+	for {
 		select {
 		case evt := <-events:
-
-			//
 			// perform changes using the evt (Event)
-			//
-
-			if _, err := pack.Save(); err != nil {
-				// can't save for some reason
-				continue // or return, panic, log the error
-			}
-			n.Publish(pack.Root()) // publish the new version of our Root
-
+			performCahnges(pack, evt)
+			perfomAllChangesPossible(quit, events, pack, n)
 		case <-quit:
 			return
 		}
 	}
+}
 
+func performAllCahgnesPossible(quit <-chan struct{}, events <-chan Event,
+	pack *skyobject.Pack, n *node.Node) {
 
-}(n, pack, events, n.Quiting(), wg)
+	tm := time.NewTimer(MinPublishInterval)
+	defer tm.Stop()
+
+	// perform all changes possible and publish
+	for {
+		select {
+		case <-quit:
+			return
+		case evt := <-events:
+			performCahnges(pack, evt)
+		case <-tm.C:
+			// to many changes performed but not published yet
+			publish(n, pack)
+			tm.Reset(MinPubishInterval) // start the timer again
+		default:
+			// no more events, no more changes
+			publish(n, pack)
+			return
+		}
+	}
+}
+
+func publish(n *node.Node, pack *skyobject.Pack) {
+	if _, err := pack.Save(); err != nil {
+		// fatality: handle the err
+	}
+	n.Publish(pack.Root())
+}
+
+func performCahgnes(pack *skyobject.Pack, evt Event) {
+	// stuff
+}
 
 ```
 
@@ -267,6 +298,21 @@ godoc documentation of the node package
 
 Also, there is `(node.Node).Quiting()` method that returns `<-chan struct{}`.
 The chan is closed after `(node.Node).Close()` call
+
+##### Track Changes
+
+// TODO (kostyarin): example
+
+##### Pack/Unpack flags
+
+- `EntireTree` - unpack entire tree. This way, a whole will be unpacked inside
+  `Unpack` call. The unpaking stops on first error. E.g. the tree should be
+  in database, otherwise the flag doesn't make sence
+- `EntireMerkleTree` - unpack all branches of Refs. If the flag is not set,
+  then branhces of Refs will be unacked by needs
+- `HashTableIndex` - use hash-table index for Refs to speed up lookup by hash
+- `ViewOnly` - don't allow modifications
+- `AutoTrackChanges` - track changes automatically. This flag is experimental
 
 ##### Receive and Explore a Root
 

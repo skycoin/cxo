@@ -3,13 +3,13 @@ package skyobject
 import (
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
 // A Dynamic represents dynamic reference that contains
-// reference to schema and reference to object
+// reference to schema and reference to object. You
+// should not change fields of the Dynamic manually
 type Dynamic struct {
 	Object    cipher.SHA256 // reference to object
 	SchemaRef SchemaRef     // reference to Schema
@@ -126,13 +126,12 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 	}
 
 	if d.Object == (cipher.SHA256{}) {
-		var ptr reflect.Value
-		if ptr, err = d.wn.pack.newOf(d.wn.sch.Name()); err != nil {
+		// nil pointer of some type
+		if obj, err = d.wn.pack.nilPtrOf(d.wn.sch.Name()); err != nil {
 			return
 		}
-		d.wn.value = ptr.Interface() // keep
-		obj = d.wn.value             // nil pointer of some type
-		d.trackChanges()             // if AutoTrackChanges flag set
+		d.wn.value = obj // keep
+		d.trackChanges() // if AutoTrackChanges flag set
 		return
 	}
 
@@ -188,7 +187,7 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 	var changed bool
 
 	if sr := sch.Reference(); sr != d.SchemaRef {
-		d.SchemaRef, changed = sr, true
+		d.SchemaRef, d.wn.sch, changed = sr, sch, true
 	}
 
 	if obj == nil {

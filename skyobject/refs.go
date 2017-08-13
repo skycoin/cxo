@@ -10,9 +10,13 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// A Refs represetns array of Ref
+// A Refs represetns array of Ref.
+// You should not change fields of
+// the Refs manually
 type Refs struct {
-	Hash cipher.SHA256 // hash of the refsNode (empty for nodess)
+	Hash cipher.SHA256 // hash of the Refs
+
+	// the Hash is also hash of nested nodes
 
 	depth  int `enc:"-"` // not stored
 	degree int `enc:"-"` // not stored

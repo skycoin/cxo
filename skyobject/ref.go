@@ -3,7 +3,6 @@ package skyobject
 import (
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
 )
@@ -57,7 +56,9 @@ func (r SchemaRef) Short() string {
 // Ref
 //
 
-// A Ref represents reference to object
+// A Ref represents reference to object.
+// You should not change fields of the Ref
+// manually
 type Ref struct {
 	// Hash of CX object
 	Hash cipher.SHA256
@@ -130,13 +131,11 @@ func (r *Ref) Value() (obj interface{}, err error) {
 	}
 
 	if r.IsBlank() {
-		var ptr reflect.Value
-		if ptr, err = r.wn.pack.newOf(r.Schema().Name()); err != nil {
+		if obj, err = r.wn.pack.nilPtrOf(r.Schema().Name()); err != nil {
 			return
 		}
-		obj = ptr.Interface() // nil pointer to some type
-		r.wn.value = obj      // keep
-		r.trackChanges()      // if AutoTrackChanges enabled
+		r.wn.value = obj // keep
+		r.trackChanges() // if AutoTrackChanges enabled
 		return
 	}
 
@@ -212,6 +211,8 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 		return fmt.Errorf(`can't set value: type of given object "%T"`+
 			" is not type of the Ref %q", obj, r.wn.sch.String())
 	}
+
+	r.wn.sch = sch // keep schema (if it was nil or the same)
 
 	if obj == nil {
 		r.Clear() // the obj was a nil pointer of some type

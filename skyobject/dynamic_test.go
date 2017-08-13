@@ -85,6 +85,7 @@ func TestDynamic_Schema(t *testing.T) {
 
 	// not found
 	dr = pack.Dynamic(User{"Alice", 21, nil})
+	dr.wn.sch = nil                   // clear for the test
 	dr.SchemaRef = SchemaRef{1, 2, 3} // not empty
 	if _, err := dr.Schema(); err == nil {
 		t.Error("missing error")
@@ -124,8 +125,8 @@ func TestDynamic_Value(t *testing.T) {
 	}
 
 	// invalid
-	dr := pack.Dynamic(nil)
-	dr.SchemaRef = SchemaRef{1, 2, 3}
+	dr := pack.Dynamic(User{"Alice", 21, nil})
+	dr.SchemaRef = SchemaRef{}
 	if _, err := dr.Value(); err == nil {
 		t.Error(err)
 	}
@@ -142,6 +143,27 @@ func TestDynamic_Value(t *testing.T) {
 		t.Error(err)
 	} else if valInterface != nil {
 		t.Error("unexpected result:", valInterface)
+	}
+
+	// schema not found
+	dr = pack.Dynamic(User{"Alice", 21, nil})
+	dr.wn.value, dr.wn.sch = nil, nil // clear for the test
+	dr.SchemaRef = SchemaRef{1, 2, 3}
+	if _, err := dr.Value(); err == nil {
+		t.Error("missing error")
+	}
+
+	// nil of User
+	dr = pack.Dynamic((*User)(nil))
+	dr.wn.value = nil // clear for the test
+	if valInterface, err := dr.Value(); err != nil {
+		t.Error(err)
+	} else if valInterface == nil {
+		t.Error("expected nil of User, got nil interface")
+	} else if usr, ok := valInterface.(*User); !ok {
+		t.Errorf("unexpected type %T", valInterface)
+	} else if usr != nil {
+		t.Error("not nil", usr)
 	}
 
 	// already have
@@ -195,17 +217,131 @@ func TestDynamic_Value(t *testing.T) {
 func TestDynamic_SetValue(t *testing.T) {
 	// SetValue(obj interfae{}) (err error)
 
-	//
+	c := getCont()
+	defer c.db.Close()
+	defer c.Close()
+
+	pk, sk := cipher.GenerateKeyPair()
+	if err := c.AddFeed(pk); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// clear
+	dr := Dynamic{}
+	dr.SchemaRef = SchemaRef{1, 2, 3}
+	dr.Object[0] = 1
+
+	if err := dr.SetValue(nil); err != nil {
+		t.Error(err)
+	} else if !dr.IsBlank() {
+		t.Error("not clear")
+	}
+
+	// detached
+	if err := dr.SetValue(User{"Alice", 21, nil}); err == nil {
+		t.Error("missing error")
+	}
+
+	// view only
+	dr = pack.Dynamic(nil)
+	pack.flags = pack.flags | ViewOnly
+	if err := dr.SetValue(User{"Alice", 21, nil}); err == nil {
+		t.Error("missing error")
+	}
+	pack.flags = 0
+
+	// schema not found
+	type Invader struct {
+		Name string
+	}
+	if err := dr.SetValue(Invader{"Alex"}); err == nil {
+		t.Error("missing error")
+	}
+
+	// nil of User
+	if err := dr.SetValue((*User)(nil)); err != nil {
+		t.Error(err)
+	} else if sch, err := dr.Schema(); err != nil {
+		t.Error(err)
+	} else if sch.Name() != "cxo.User" {
+		t.Error("unexpected Schema:", sch.String())
+	} else if dr.SchemaRef != sch.Reference() {
+		t.Error("invalid SchemaRef field")
+	} else if dr.Object != (cipher.SHA256{}) {
+		t.Error("non-blank object")
+	}
+
+	// ponter
+	alice := &User{"Alice", 21, nil}
+	if err := dr.SetValue(alice); err != nil {
+		t.Error(err)
+	} else if valInterface, err := dr.Value(); err != nil {
+		t.Error(err)
+	} else if valInterface == nil {
+		t.Error("nil value after SetValue")
+	} else if usr, ok := valInterface.(*User); !ok {
+		t.Errorf("invlaid type %T", valInterface)
+	} else if usr != alice {
+		t.Error("unexpected pointer")
+	}
+
+	// not a pointer
+	if err := dr.SetValue(User{"Alice", 21, nil}); err != nil {
+		t.Error(err)
+	} else if valInterface, err := dr.Value(); err != nil {
+		t.Error(err)
+	} else if valInterface == nil {
+		t.Error("nil value after SetValue")
+	} else if usr, ok := valInterface.(*User); !ok {
+		t.Errorf("invlaid type %T", valInterface)
+	} else if usr.Name != "Alice" || usr.Age != 21 {
+		t.Error("wrong vlaue")
+	}
+
 }
 
 func TestDynamic_Clear(t *testing.T) {
 	// Clear() (err error)
 
-	//
+	c := getCont()
+	defer c.db.Close()
+	defer c.Close()
+
+	pk, sk := cipher.GenerateKeyPair()
+	if err := c.AddFeed(pk); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dr := pack.Dynamic(User{"Alice", 21, nil})
+	if err := dr.Clear(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !dr.IsBlank() {
+		t.Error("not clear")
+	}
+
+	if dr.wn.value != nil {
+		t.Error("internal value is not clear")
+	}
+
+	if dr.wn.sch != nil {
+		t.Error("internal schema is not clear")
+	}
 }
 
 func TestDynamic_Copy(t *testing.T) {
 	// Copy() (cp Dynamic)
 
-	//
+	// TODO (kostyarin): low priority
 }
