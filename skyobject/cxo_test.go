@@ -158,8 +158,8 @@ func Test_votes(t *testing.T) {
 		&Vote{"Tom", false},
 	)
 
-	fmt.Println("ThreadVotes", threadVotes.Votes.DebugString())
-	fmt.Println("PostVotes", postVotes.Votes.DebugString())
+	fmt.Println("ThreadVotes", threadVotes.Votes.DebugString(true))
+	fmt.Println("PostVotes", postVotes.Votes.DebugString(true))
 
 	cv := new(ContentVotes)
 
@@ -188,7 +188,7 @@ func Test_votes(t *testing.T) {
 	}
 	fmt.Println("Inspect: ", c.Inspect(pack.Root()))
 
-	fmt.Println("Inspect tree: ", threadVotes.Votes.DebugString())
+	fmt.Println("Inspect tree: ", threadVotes.Votes.DebugString(true))
 
 	//
 	// load

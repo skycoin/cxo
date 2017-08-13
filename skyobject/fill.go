@@ -19,6 +19,8 @@ var (
 type WCXO struct {
 	Hash cipher.SHA256 // hash of wanted CX object
 	GotQ chan []byte   // cahnnel to sent requested CX object
+
+	// TODO (kostarin): announce get
 }
 
 // A Filler represents filling Root. The Filelr is
@@ -143,6 +145,7 @@ func (f *Filler) request(hash cipher.SHA256) (val []byte, ok bool) {
 	return
 }
 
+// TODO (kostyarin): announce-get
 func (f *Filler) get(hash cipher.SHA256) (val []byte, ok bool) {
 	if val = f.c.Get(hash); val != nil {
 		return val, true

@@ -15,7 +15,7 @@ import (
 
 // common errors
 var (
-	ErrStopRange                = errors.New("stop range")
+	ErrStopIteration            = errors.New("stop iteration")
 	ErrInvalidArgument          = errors.New("invalid argument")
 	ErrMissingTypes             = errors.New("missing Types maps")
 	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
@@ -142,7 +142,7 @@ func (c *Container) Get(hash cipher.SHA256) (value []byte) {
 	c.Debugln(VerbosePin, "Get", hash.Hex()[:7])
 
 	err := c.db.View(func(tx data.Tv) (_ error) {
-		value = tx.Objects().Get(hash)
+		value = tx.Objects().GetCopy(hash)
 		return
 	})
 	if err != nil {
@@ -234,6 +234,21 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 		err = ErrInvalidArgument
 		return
 	}
+
+	if err = r.Pub.Verify(); err != nil {
+		err = fmt.Errorf("invalud public key of given Root: %v", err)
+		return
+	}
+
+	if sk == (cipher.SecKey{}) {
+		flags = flags | ViewOnly // can't modify
+	} else {
+		if err = sk.Verify(); err != nil {
+			err = fmt.Errorf("invalid secret key: %v", err)
+			return
+		}
+	}
+
 	if types == nil {
 		err = ErrMissingTypes
 		return
@@ -265,10 +280,6 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 
 	// create the pack
 
-	if sk == (cipher.SecKey{}) {
-		flags = flags | ViewOnly // can't modify
-	}
-
 	pack.flags = flags
 	pack.types = types
 
@@ -291,6 +302,11 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 	types *Types) (pack *Pack, err error) {
 
 	c.Debugln(VerbosePin, "NewRoot", pk.Hex()[:7])
+
+	if c.coreRegistry == nil {
+		err = errors.New("can't create new Root: missing core Registry")
+		return
+	}
 
 	r := new(Root)
 	r.Pub = pk
@@ -394,14 +410,14 @@ func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
 
 	// range over roots
 
-	return feeds.Range(func(pk cipher.PubKey) (err error) {
+	return feeds.Ascend(func(pk cipher.PubKey) (err error) {
 
 		roots := feeds.Roots(pk)
 
 		var lastFull uint64
 		var hasLastFull bool
 
-		err = roots.Reverse(func(rp *data.RootPack) (err error) {
+		err = roots.Descend(func(rp *data.RootPack) (err error) {
 
 			var r *Root
 			if r, err = c.unpackRoot(pk, rp); err != nil {
@@ -430,7 +446,8 @@ func (c *Container) cleanUpCollect(tx data.Tu, coll map[cipher.SHA256]int,
 
 			if rp.IsFull && !keepRoots {
 				lastFull, hasLastFull = rp.Seq, true
-				return data.ErrStopRange // we will delete roots below last full
+				// we will delete roots below last full
+				return data.ErrStopIteration
 			}
 
 			return
@@ -470,7 +487,7 @@ func (c *Container) cleanUpRemove(tx data.Tu, coll map[cipher.SHA256]int,
 
 	if len(coll) > 0 {
 		objs := tx.Objects()
-		return objs.RangeDel(func(key cipher.SHA256, _ []byte) (del bool,
+		return objs.AscendDel(func(key cipher.SHA256, _ []byte) (del bool,
 			_ error) {
 
 			if _, ok := coll[key]; !ok {
@@ -552,9 +569,9 @@ func (c *Container) removeNonFullRoots() error {
 
 	return c.DB().Update(func(tx data.Tu) error {
 		feeds := tx.Feeds()
-		return feeds.Range(func(pk cipher.PubKey) error {
+		return feeds.Ascend(func(pk cipher.PubKey) error {
 			roots := feeds.Roots(pk)
-			return roots.RangeDel(func(rp *data.RootPack) (del bool, _ error) {
+			return roots.AscendDel(func(rp *data.RootPack) (del bool, _ error) {
 				del = !rp.IsFull
 				return
 			})

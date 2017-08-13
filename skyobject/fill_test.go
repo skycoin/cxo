@@ -13,6 +13,8 @@ import (
 
 func Test_filling(t *testing.T) {
 
+	t.Skip("reimplemnet")
+
 	type User struct {
 		Name  string
 		Age   uint32
@@ -95,13 +97,13 @@ func Test_filling(t *testing.T) {
 
 	pack.Append(group)
 
-	if group.Leader.walkNode == nil {
+	if group.Leader.wn == nil {
 		t.Error("Leader not initialized")
 	}
 	if group.Memebers.wn == nil {
 		t.Error("Members not initialized")
 	}
-	if group.Curator.walkNode == nil {
+	if group.Curator.wn == nil {
 		t.Error("Curator not initialized")
 	}
 
@@ -216,7 +218,7 @@ Loop2:
 			break Loop2
 		case de := <-dropq:
 			t.Log(c1.Inspect(pack.Root()))
-			t.Log(group.Memebers.DebugString())
+			t.Log(group.Memebers.DebugString(true))
 			t.Fatal(de)
 		}
 	}

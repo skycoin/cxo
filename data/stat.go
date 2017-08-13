@@ -40,7 +40,7 @@ type Stat struct {
 type FeedStat struct {
 	// Roots is amount of root objects of feed
 	Roots int `json:"roots"`
-	// Space taken by root objects of feed
+	// Space taken by root (only root) objects of feed
 	Space Space `json:"space"`
 }
 

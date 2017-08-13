@@ -18,6 +18,7 @@ const dbMode = 0644
 var (
 	objectsBucket = []byte("objects")
 	feedsBucket   = []byte("feeds")
+	miscBucket    = []byte("misc")
 )
 
 // buckets:
@@ -42,7 +43,10 @@ func NewDriveDB(path string) (db DB, err error) {
 		if _, err = t.CreateBucketIfNotExists(objectsBucket); err != nil {
 			return
 		}
-		_, err = t.CreateBucketIfNotExists(feedsBucket)
+		if _, err = t.CreateBucketIfNotExists(feedsBucket); err != nil {
+
+		}
+		_, err = t.CreateBucketIfNotExists(miscBucket)
 		return
 	})
 	if err != nil {
@@ -144,6 +148,12 @@ func (d *driveTv) Feeds() ViewFeeds {
 	return &driveViewFeeds{f}
 }
 
+func (d *driveTv) Misc() ViewMisc {
+	m := new(driveMisc)
+	m.bk = d.tx.Bucket(miscBucket)
+	return m
+}
+
 type driveTu struct {
 	tx *bolt.Tx
 }
@@ -158,6 +168,12 @@ func (d *driveTu) Feeds() UpdateFeeds {
 	f := new(driveFeeds)
 	f.bk = d.tx.Bucket(feedsBucket)
 	return f
+}
+
+func (d *driveTu) Misc() UpdateMisc {
+	m := new(driveMisc)
+	m.bk = d.tx.Bucket(miscBucket)
+	return m
 }
 
 type driveObjects struct {
@@ -206,7 +222,7 @@ func (d *driveObjects) SetMap(m map[cipher.SHA256][]byte) (err error) {
 	return
 }
 
-func (d *driveObjects) Range(
+func (d *driveObjects) Ascend(
 	fn func(key cipher.SHA256, value []byte) error) (err error) {
 
 	c := d.bk.Cursor()
@@ -220,13 +236,13 @@ func (d *driveObjects) Range(
 		}
 	}
 
-	if err == ErrStopRange {
+	if err == ErrStopIteration {
 		err = nil
 	}
 	return
 }
 
-func (d *driveObjects) RangeDel(
+func (d *driveObjects) AscendDel(
 	fn func(key cipher.SHA256, value []byte) (bool, error)) (err error) {
 
 	c := d.bk.Cursor()
@@ -240,7 +256,88 @@ func (d *driveObjects) RangeDel(
 		for {
 			copy(ck[:], k)
 			if del, err = fn(ck, v); err != nil {
-				if err == ErrStopRange {
+				if err == ErrStopIteration {
+					err = nil
+				}
+				return
+			}
+			if del {
+				if err = c.Delete(); err != nil {
+					return
+				}
+				// coninue seek loop, because after deleting
+				// we have got invalid cusor and we need to
+				// call Seek to make it valid; the Seek will
+				// points to next item, because current one
+				// has been deleted
+				break
+			}
+			// just get next item (next loop)
+			if k, v = c.Next(); k == nil {
+				return // there's nothing more
+			}
+		}
+	}
+
+	return
+}
+
+type driveMisc struct {
+	bk *bolt.Bucket
+}
+
+func (d *driveMisc) Set(key, value []byte) (err error) {
+	return d.bk.Put(key, value)
+}
+
+func (d *driveMisc) Del(key []byte) (err error) {
+	return d.bk.Delete(key)
+}
+
+func (d *driveMisc) Get(key []byte) (val []byte) {
+	if val = d.bk.Get(key); len(val) == 0 {
+		val = nil
+	}
+	return
+}
+
+func (d *driveMisc) GetCopy(key []byte) (value []byte) {
+	if g := d.bk.Get(key); g != nil {
+		value = make([]byte, len(g))
+		copy(value, g)
+	}
+	return
+}
+
+func (d *driveMisc) Ascend(fn func(key, value []byte) error) (err error) {
+
+	c := d.bk.Cursor()
+
+	for k, v := c.First(); k != nil; k, v = c.Next() {
+		if err = fn(k, v); err != nil {
+			break
+		}
+	}
+
+	if err == ErrStopIteration {
+		err = nil
+	}
+	return
+}
+
+func (d *driveMisc) AscendDel(
+	fn func(key, value []byte) (bool, error)) (err error) {
+
+	c := d.bk.Cursor()
+
+	var del bool
+
+	// seek loop
+	for k, v := c.First(); k != nil; k, v = c.Seek(k) {
+		// next loop
+		for {
+			if del, err = fn(k, v); err != nil {
+				if err == ErrStopIteration {
 					err = nil
 				}
 				return
@@ -308,14 +405,14 @@ func (d *driveFeeds) List() (list []cipher.PubKey) {
 	return
 }
 
-func (d *driveFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
+func (d *driveFeeds) Ascend(fn func(pk cipher.PubKey) error) (err error) {
 	var cp cipher.PubKey
 	c := d.bk.Cursor()
 
 	for k, _ := c.First(); k != nil; k, _ = c.Next() {
 		copy(cp[:], k)
 		if err = fn(cp); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return
@@ -324,7 +421,7 @@ func (d *driveFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
 	return
 }
 
-func (d *driveFeeds) RangeDel(
+func (d *driveFeeds) AscendDel(
 	fn func(pk cipher.PubKey) (bool, error)) (err error) {
 
 	var cp cipher.PubKey
@@ -340,7 +437,7 @@ func (d *driveFeeds) RangeDel(
 
 			copy(cp[:], k)
 			if del, err = fn(cp); err != nil {
-				if err == ErrStopRange {
+				if err == ErrStopIteration {
 					err = nil
 				}
 				return
@@ -466,7 +563,7 @@ func (d *driveRoots) MarkFull(seq uint64) (err error) {
 	return d.bk.Put(utob(seq), encoder.Serialize(rp))
 }
 
-func (d *driveRoots) Range(fn func(rp *RootPack) error) (err error) {
+func (d *driveRoots) Ascend(fn func(rp *RootPack) error) (err error) {
 
 	var rp *RootPack
 	c := d.bk.Cursor()
@@ -476,7 +573,7 @@ func (d *driveRoots) Range(fn func(rp *RootPack) error) (err error) {
 			panic(err) // critical
 		}
 		if err = fn(rp); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return
@@ -485,7 +582,7 @@ func (d *driveRoots) Range(fn func(rp *RootPack) error) (err error) {
 	return
 }
 
-func (d *driveRoots) Reverse(fn func(rp *RootPack) error) (err error) {
+func (d *driveRoots) Descend(fn func(rp *RootPack) error) (err error) {
 
 	var rp *RootPack
 	c := d.bk.Cursor()
@@ -495,7 +592,7 @@ func (d *driveRoots) Reverse(fn func(rp *RootPack) error) (err error) {
 			panic(err) // critical
 		}
 		if err = fn(rp); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return
@@ -504,7 +601,8 @@ func (d *driveRoots) Reverse(fn func(rp *RootPack) error) (err error) {
 	return
 }
 
-func (d *driveRoots) RangeDel(fn func(rp *RootPack) (bool, error)) (err error) {
+func (d *driveRoots) AscendDel(
+	fn func(rp *RootPack) (bool, error)) (err error) {
 
 	var rp *RootPack
 	var del bool
@@ -521,7 +619,7 @@ func (d *driveRoots) RangeDel(fn func(rp *RootPack) (bool, error)) (err error) {
 				panic(err) // critical
 			}
 			if del, err = fn(rp); err != nil {
-				if err == ErrStopRange {
+				if err == ErrStopIteration {
 					err = nil
 				}
 				return

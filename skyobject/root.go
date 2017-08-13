@@ -64,10 +64,10 @@ func (c *Container) LastFullPack(pk cipher.PubKey) (rp *data.RootPack,
 		if roots == nil {
 			return fmt.Errorf("no such feed %s", pk.Hex()[:7])
 		}
-		return roots.Reverse(func(rpd *data.RootPack) (_ error) {
+		return roots.Descend(func(rpd *data.RootPack) (_ error) {
 			if rpd.IsFull {
 				rp = rpd
-				return data.ErrStopRange // data.ErrStopRange
+				return data.ErrStopIteration // data.ErrStopIteration
 			}
 			return
 		})
@@ -136,7 +136,7 @@ func (r *Root) String() string {
 }
 
 // AddRoot to container. The method sets rp.IsFull to false.
-// The rp must not be nil
+// The rp must not be nil.
 func (c *Container) AddRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 	err error) {
 
@@ -146,7 +146,10 @@ func (c *Container) AddRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 		return
 	}
 
-	err = c.DB().Update(func(tx data.Tu) (_ error) {
+	c.cleanmx.Lock()
+	defer c.cleanmx.Unlock()
+
+	err = c.DB().Update(func(tx data.Tu) error {
 		roots := tx.Feeds().Roots(pk)
 		if roots == nil {
 			return ErrNoSuchFeed
@@ -190,4 +193,17 @@ func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root,
 	full = rp.IsFull
 	r, err = c.unpackRoot(pk, rp)
 	return
+}
+
+// DelRootsBefore deletes root obejcts of given feed before given seq number
+// (exclusive). It never returns "no such feed" error. The error can only
+// be error of database
+func (c *Container) DelRootsBefore(pk cipher.PubKey, seq uint64) error {
+	return c.DB().Update(func(tx data.Tu) (_ error) {
+		roots := tx.Feeds().Roots(pk)
+		if roots == nil {
+			return // nothing to delete
+		}
+		return roots.DelBefore(seq)
+	})
 }

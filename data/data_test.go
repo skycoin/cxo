@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	// "github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
 //
@@ -407,6 +406,33 @@ func TestTv_Feeds(t *testing.T) {
 
 }
 
+func testTvMisc(t *testing.T, db DB) {
+	err := db.View(func(tx Tv) (_ error) {
+		if tx.Misc() == nil {
+			t.Error("Tv.Misc returns nil")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestTv_Misc(t *testing.T) {
+	// Feeds() ViewFeeds
+
+	t.Run("memory", func(t *testing.T) {
+		testTvMisc(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testTvMisc(t, db)
+	})
+
+}
+
 //
 // Tu
 //
@@ -462,6 +488,33 @@ func TestTu_Feeds(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
 		testTuFeeds(t, db)
+	})
+
+}
+
+func testTuMisc(t *testing.T, db DB) {
+	err := db.Update(func(tx Tu) (_ error) {
+		if tx.Misc() == nil {
+			t.Error("Tu.Misc returns nil")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestTu_Misc(t *testing.T) {
+	// Feeds() ViewFeeds
+
+	t.Run("memory", func(t *testing.T) {
+		testTuMisc(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testTuMisc(t, db)
 	})
 
 }

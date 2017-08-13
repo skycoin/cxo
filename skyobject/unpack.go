@@ -14,20 +14,25 @@ import (
 
 // common packing and unpacking errors
 var (
-	ErrViewOnlyTree    = errors.New("view only tree")
-	ErrIndexOutOfRange = errors.New("index out of range")
+	ErrViewOnlyTree = errors.New("view only tree")
 )
 
 // A Flag represents unpacking flags
 type Flag int
 
 const (
-	EntireTree     Flag = 1 << iota // unpack all possible
-	HashTableIndex                  // use hash-table index for Merkle-trees
-	ViewOnly                        // don't allow modifications
-
-	// TODO (kostyarin): automatic track changes
-	// TrackChanges                    // automatic trach changes (experimental)
+	// EntireTree - load all possible. Stop on first error
+	EntireTree Flag = 1 << iota
+	// EntireMerkleTree - load Refs with all brances (not leafs). Otherwise,
+	// the Refs will be loaded partially depending needs. The EntireTree and
+	// HashTableIndex flags set this one
+	EntireMerkleTree
+	// HashTable - use hash-table index for Refs to speeds up RefByHash method
+	HashTableIndex
+	// VieOnly don't allows modifications
+	ViewOnly
+	// AutoTrackChanges is experimental
+	AutoTrackChanges
 )
 
 // A Types represents mapping from registered names
@@ -45,19 +50,19 @@ type Types struct {
 // not thread safe. All objects of the
 // Pack are not thread safe
 type Pack struct {
-	c *Container
+	c *Container // back reference
 
-	r   *Root
-	reg *Registry
+	r   *Root     // wrapped Root
+	reg *Registry // related registry (not nil)
 
 	flags Flag   // packing flags
 	types *Types // types mapping
 
-	sk cipher.SecKey
+	sk cipher.SecKey // secret key
 
-	unsaved map[cipher.SHA256][]byte
+	unsaved map[cipher.SHA256][]byte // cache
 
-	// TOOD (kostyarin): track changes
+	updateStack // track changes
 }
 
 // don't save, just get k-v
@@ -132,7 +137,9 @@ func (p *Pack) Save() (rp data.RootPack, err error) {
 		return
 	}
 
-	// TODO (kostyarin): track changes
+	if err = p.updateStack.Commit(); err != nil {
+		return
+	}
 
 	// single transaction required (to perform rollback on error)
 	err = p.c.DB().Update(func(tx data.Tu) (err error) {
@@ -190,6 +197,9 @@ func (p *Pack) Save() (rp data.RootPack, err error) {
 // Initialize the Pack. It creates Root WalkNode and
 // unpack entire tree if appropriate flag is set
 func (p *Pack) init() (err error) {
+	if p.flags&ViewOnly == 0 {
+		p.updateStack.init()
+	}
 	// Do we need to unpack entire tree?
 	if p.flags&EntireTree != 0 {
 		// unpack all possible
@@ -235,11 +245,17 @@ func (p *Pack) RootRefs() (objs []interface{}, err error) {
 	return
 }
 
-func (p *Pack) validateRootRefsIndex(i int) (err error) {
-	if i < 0 || i >= len(p.r.Refs) {
-		err = ErrIndexOutOfRange
+func validateIndex(i, ln int) (err error) {
+	if i < 0 {
+		err = fmt.Errorf("negative index %d", i)
+	} else if i >= ln {
+		err = fmt.Errorf("index out of range %d (len %d)", i, ln)
 	}
 	return
+}
+
+func (p *Pack) validateRootRefsIndex(i int) error {
+	return validateIndex(i, len(p.r.Refs))
 }
 
 // RefByIndex unpacks and returns one of Root.Refs
@@ -250,8 +266,8 @@ func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
 		return
 	}
 
-	if p.r.Refs[i].walkNode == nil {
-		p.r.Refs[i].walkNode = &walkNode{pack: p}
+	if p.r.Refs[i].wn == nil {
+		p.r.Refs[i].wn = &walkNode{pack: p}
 	}
 	obj, err = p.r.Refs[i].Value()
 	return
@@ -279,7 +295,7 @@ func (p *Pack) Append(objs ...interface{}) {
 
 	var first interface{} // for debug logs
 	if len(objs) != 0 {
-		first = objs[1]
+		first = objs[0]
 	}
 
 	p.c.Debugf(VerbosePin, "(*Pack).Append %s %d %T", p.r.Short(), len(objs),
@@ -328,6 +344,7 @@ func (p *Pack) initialize(obj interface{}) (sch Schema, ptr interface{},
 	if typ.Kind() != reflect.Ptr {
 		valp := reflect.New(typ)
 		valp.Elem().Set(val)
+		val = valp.Elem() // addressable non-pinter value for setupToGo method
 		ptr = valp.Interface()
 	} else {
 		typ = typ.Elem() // we need non-pointer type for schemaOf method
@@ -370,9 +387,13 @@ func (p *Pack) schemaOf(typ reflect.Type) (sch Schema, err error) {
 	return
 }
 
+func (p *Pack) initDynamic(dr *Dynamic) {
+	dr.wn = &walkNode{pack: p}
+}
+
 // blank new Dynamic
 func (p *Pack) dynamic() (dr Dynamic) {
-	dr.wn = &walkNode{pack: p}
+	p.initDynamic(&dr)
 	return
 }
 
@@ -390,9 +411,13 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	return
 }
 
+func (p *Pack) initRef(r *Ref) {
+	r.wn = &walkNode{pack: p}
+}
+
 // blank new Ref
 func (p *Pack) ref() (r Ref) {
-	r.wn = &walkNode{pack: p}
+	p.initRef(&r)
 	return
 }
 
@@ -410,12 +435,13 @@ func (p *Pack) Ref(obj interface{}) (ref Ref) {
 	return
 }
 
-func (p *Pack) refs() (r Refs) {
+func (p *Pack) initRefs(r *Refs) {
 	r.wn = &walkNode{pack: p}
 	r.degree = p.c.conf.MerkleDegree
-	if p.flags&HashTableIndex != 0 {
-		r.index = make(map[cipher.SHA256]*Ref)
-	}
+}
+
+func (p *Pack) refs() (r Refs) {
+	p.initRefs(&r)
 	return
 }
 
@@ -427,7 +453,7 @@ func (p *Pack) Refs(objs ...interface{}) (r Refs) {
 
 	var first interface{} // for debug logs
 	if len(objs) != 0 {
-		first = objs[1]
+		first = objs[0]
 	}
 
 	p.c.Debugf(VerbosePin, "(*Pack).Refs %s %d %T", p.r.Short(), len(objs),

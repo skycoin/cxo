@@ -90,19 +90,16 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 			dr.Short(), obj.Type().String())
 		return
 	}
-	if dr.walkNode == nil {
-		dr.walkNode = new(walkNode)
+
+	if dr.wn == nil {
+		p.initDynamic(&dr)
 	}
-	dr.walkNode.pack = p
-	if p.flags&EntireTree != 0 && !dr.IsBlank() {
-		if _, err = dr.Schema(); err != nil { // setup schema
-			return
-		}
-		if _, err = dr.Value(); err != nil { // setup value
-			return
-		}
+
+	if p.flags&EntireTree != 0 {
+		_, err = dr.Value()
 	}
-	idx.Set(reflect.ValueOf(dr))
+
+	idx.Set(reflect.ValueOf(dr)) // set it anyway
 	return
 }
 
@@ -117,24 +114,24 @@ func (p *Pack) setupRefToGo(sf reflect.StructField,
 	if name, err = TagSchemaName(sf.Tag); err != nil {
 		return
 	}
+
 	var sch Schema
 	if sch, err = p.reg.SchemaByName(name); err != nil {
 		return
 	}
+
 	ref := val.Interface().(Ref)
-	wn := ref.walkNode
-	if wn == nil {
-		wn = new(walkNode)
+
+	if ref.wn == nil {
+		p.initRef(&ref)
 	}
-	wn.sch = sch
-	wn.pack = p
-	ref.walkNode = wn
-	if p.flags&EntireTree != 0 && !ref.IsBlank() {
-		if _, err = ref.Value(); err != nil { // setup value
-			return
-		}
+	ref.wn.sch = sch
+
+	if p.flags&EntireTree != 0 {
+		_, err = ref.Value() // setup value
 	}
-	val.Set(reflect.ValueOf(ref))
+
+	val.Set(reflect.ValueOf(ref)) // set it anyway
 	return
 }
 
@@ -147,19 +144,23 @@ func (p *Pack) setupRefsToGo(sf reflect.StructField,
 	if name, err = TagSchemaName(sf.Tag); err != nil {
 		return
 	}
+
 	var sch Schema
 	if sch, err = p.reg.SchemaByName(name); err != nil {
 		return
 	}
+
 	refs := val.Interface().(Refs)
-	if refs.wn != nil {
-		return // already set up (skip circular references)
+
+	if refs.wn == nil {
+		p.initRefs(&refs)
 	}
-	var rr *Refs
-	if rr, err = p.getRefs(sch, refs.Hash, val); err != nil {
-		return
+	refs.wn.sch = sch
+
+	if p.flags&EntireTree != 0 {
+		err = refs.load(0) // setup the refs
 	}
-	val.Set(reflect.ValueOf(rr).Elem())
+	val.Set(reflect.ValueOf(refs)) // set it anyway
 	return
 }
 

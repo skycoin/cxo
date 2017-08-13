@@ -123,12 +123,12 @@ func TestViewFeeds_List(t *testing.T) {
 
 }
 
-func testViewFeedsRange(t *testing.T, db DB) {
+func testViewFeedsAscend(t *testing.T, db DB) {
 
 	t.Run("empty", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
 			var called int
-			err := tx.Feeds().Range(func(pk cipher.PubKey) (_ error) {
+			err := tx.Feeds().Ascend(func(pk cipher.PubKey) (_ error) {
 				called++
 				return
 			})
@@ -164,10 +164,10 @@ func testViewFeedsRange(t *testing.T, db DB) {
 		err := db.View(func(tx Tv) (_ error) {
 			var called int
 			lsit := []cipher.PubKey{}
-			err := tx.Feeds().Range(func(pk cipher.PubKey) (_ error) {
+			err := tx.Feeds().Ascend(func(pk cipher.PubKey) (_ error) {
 				if called > 1 {
 					t.Error("called too many times")
-					return ErrStopRange
+					return ErrStopIteration
 				}
 				lsit = append(lsit, pk)
 				called++
@@ -187,18 +187,18 @@ func testViewFeedsRange(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
 			var called int
-			err := tx.Feeds().Range(func(pk cipher.PubKey) error {
+			err := tx.Feeds().Ascend(func(pk cipher.PubKey) error {
 				called++
-				return ErrStopRange
+				return ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the Range")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -209,17 +209,17 @@ func testViewFeedsRange(t *testing.T, db DB) {
 
 }
 
-func TestViewFeeds_Range(t *testing.T) {
-	// Range(func(pk cipher.PubKey) error) (err error)
+func TestViewFeeds_Ascend(t *testing.T) {
+	// Ascend(func(pk cipher.PubKey) error) (err error)
 
 	t.Run("memory", func(t *testing.T) {
-		testViewFeedsRange(t, NewMemoryDB())
+		testViewFeedsAscend(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testViewFeedsRange(t, db)
+		testViewFeedsAscend(t, db)
 	})
 
 }
@@ -296,8 +296,8 @@ func TestUpdateFeeds_List(t *testing.T) {
 
 }
 
-func TestUpdateFeeds_Range(t *testing.T) {
-	// Range(func(pk cipher.PubKey) error) (err error)
+func TestUpdateFeeds_Ascend(t *testing.T) {
+	// Ascend(func(pk cipher.PubKey) error) (err error)
 
 	t.Skip("inherited from ViewFeeds")
 
@@ -435,14 +435,14 @@ func TestUpdateFeeds_Del(t *testing.T) {
 
 }
 
-func testUpdateFeedsRangeDel(t *testing.T, db DB) {
+func testUpdateFeedsAscendDel(t *testing.T, db DB) {
 
 	t.Run("no feeds", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
 			feeds := tx.Feeds()
 
 			var called int
-			feeds.RangeDel(func(cipher.PubKey) (_ bool, _ error) {
+			feeds.AscendDel(func(cipher.PubKey) (_ bool, _ error) {
 				called++
 				return
 			})
@@ -480,10 +480,12 @@ func testUpdateFeedsRangeDel(t *testing.T, db DB) {
 			var called int
 			order := []cipher.PubKey{}
 
-			err = feeds.RangeDel(func(pk cipher.PubKey) (del bool, err error) {
+			err = feeds.AscendDel(func(pk cipher.PubKey) (del bool,
+				err error) {
+
 				if called > 2 {
 					t.Error("wront times called")
-					return false, ErrStopRange
+					return false, ErrStopIteration
 				}
 				order = append(order, pk)
 				del = (pk == pks[1])
@@ -495,7 +497,7 @@ func testUpdateFeedsRangeDel(t *testing.T, db DB) {
 			testComparePublicKeyLists(t, pks, order)
 
 			if feeds.IsExist(pks[1]) == true {
-				t.Error("RangeDel doesn't delete a feed")
+				t.Error("AscendDel doesn't delete a feed")
 			}
 
 			return
@@ -514,18 +516,18 @@ func testUpdateFeedsRangeDel(t *testing.T, db DB) {
 		return
 	}
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
 			feeds := tx.Feeds()
 
 			var called int
-			feeds.RangeDel(func(cipher.PubKey) (_ bool, _ error) {
+			feeds.AscendDel(func(cipher.PubKey) (_ bool, _ error) {
 				called++
-				return false, ErrStopRange
+				return false, ErrStopIteration
 			})
 
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the RangeDel")
+				t.Error("ErrStopIteration doesn't stop the AscendDel")
 			}
 			return
 		})
@@ -536,17 +538,17 @@ func testUpdateFeedsRangeDel(t *testing.T, db DB) {
 
 }
 
-func TestUpdateFeeds_RangeDel(t *testing.T) {
-	// RangeDel(func(pk cipher.PubKey) (del bool, err error)) error
+func TestUpdateFeeds_AscendDel(t *testing.T) {
+	// AscendDel(func(pk cipher.PubKey) (del bool, err error)) error
 
 	t.Run("memory", func(t *testing.T) {
-		testUpdateFeedsRangeDel(t, NewMemoryDB())
+		testUpdateFeedsAscendDel(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testUpdateFeedsRangeDel(t, db)
+		testUpdateFeedsAscendDel(t, db)
 	})
 
 }

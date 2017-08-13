@@ -119,8 +119,8 @@ func (r *Ref) Value() (obj interface{}, err error) {
 		return
 	}
 
-	if wn.value != nil {
-		obj = wn.value // already have
+	if r.wn.value != nil {
+		obj = r.wn.value // already have (already tracked)
 		return
 	}
 
@@ -136,24 +136,30 @@ func (r *Ref) Value() (obj interface{}, err error) {
 		}
 		obj = ptr.Interface() // nil pointer to some type
 		r.wn.value = obj      // keep
+		r.trackChanges()      // if AutoTrackChanges enabled
 		return
 	}
 
 	// obtain encoded object
 	var val []byte
-	if val, err = wn.pack.get(r.Hash); err != nil {
+	if val, err = r.wn.pack.get(r.Hash); err != nil {
 		return
 	}
 
 	// unpack and setup
-	if obj, err = wn.pack.unpackToGo(wn.sch.Name(), val); err != nil {
+	if obj, err = r.wn.pack.unpackToGo(r.wn.sch.Name(), val); err != nil {
 		return
 	}
-	wn.value = obj // keep
+	r.wn.value = obj // keep
 
-	// TODO (kostyarin): track cahgnes
-
+	r.trackChanges() // if AutoTrackChanges enabled
 	return
+}
+
+func (r *Ref) trackChanges() {
+	if f := r.wn.pack.flags; f&AutoTrackChanges != 0 && f&ViewOnly == 0 {
+		r.wn.pack.Push(r) // track
+	}
 }
 
 // SetValue replacing the Ref with new, that points
@@ -204,7 +210,7 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 
 	if r.wn.sch != nil && r.wn.sch != sch {
 		return fmt.Errorf(`can't set value: type of given object "%T"`+
-			" is not type of the Ref %q", obj, wn.sch.String())
+			" is not type of the Ref %q", obj, r.wn.sch.String())
 	}
 
 	if obj == nil {
@@ -217,27 +223,55 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 	if key, val := r.wn.pack.dsave(obj); key != r.Hash {
 		r.Hash = key
 		r.wn.pack.set(key, val) // save
-		r.wn.unsave()
+		if err = r.wn.unsave(); err != nil {
+			return
+		}
 	}
 
-	// TODO (kostyarin): track changes
-
+	r.trackChanges()
 	return
 }
 
-// Clear the Ref making is blank. The Clear
+// if the Ref has wn.value
+func (r *Ref) commit() (err error) {
+
+	if r.wn == nil {
+		panic("commit not initialized Ref")
+	}
+
+	if r.Hash == (cipher.SHA256{}) && r.wn.value == nil {
+		return // everything is ok
+	}
+
+	if r.wn.value == nil {
+		return // never happens
+	}
+
+	key, val := r.wn.pack.dsave(r.wn.value)
+	if key == r.Hash {
+		return
+	}
+
+	r.Hash = key
+	r.wn.pack.set(key, val) // save
+	err = r.wn.unsave()     // bubble up
+	return
+}
+
+// Clear the Ref making it blank. The Clear
 // not clears Schema
-func (r *Ref) Clear() {
+func (r *Ref) Clear() (err error) {
 	if r.Hash == (cipher.SHA256{}) {
 		return // already clear
 	}
 	r.Hash = cipher.SHA256{}
 	if r.wn != nil {
 		r.wn.value = nil
-		r.wn.unsave() // bubble changes up
+		if err = r.wn.unsave(); err != nil { // bubble changes up
+			return
+		}
 	}
-
-	// TODO (kostyarin): tack changes
+	return
 }
 
 // Copy returs copy of this reference.

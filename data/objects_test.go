@@ -209,7 +209,7 @@ func TestViewObjects_IsExist(t *testing.T) {
 
 }
 
-func testViewObjectsRange(t *testing.T, db DB) {
+func testViewObjectsAscend(t *testing.T, db DB) {
 
 	t.Run("empty", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
@@ -217,7 +217,7 @@ func testViewObjectsRange(t *testing.T, db DB) {
 
 			var called int
 
-			err := objs.Range(func(cipher.SHA256, []byte) (_ error) {
+			err := objs.Ascend(func(cipher.SHA256, []byte) (_ error) {
 				called++
 				return
 			})
@@ -260,10 +260,12 @@ func testViewObjectsRange(t *testing.T, db DB) {
 
 			var called int
 
-			err := objs.Range(func(key cipher.SHA256, value []byte) (_ error) {
+			err := objs.Ascend(func(key cipher.SHA256,
+				value []byte) (_ error) {
+
 				if called > len(to) {
 					t.Error("called too many times")
-					return ErrStopRange
+					return ErrStopIteration
 				}
 
 				tObj := to[called]
@@ -293,21 +295,23 @@ func testViewObjectsRange(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
 			objs := tx.Objects()
 
 			var called int
 
-			err := objs.Range(func(key cipher.SHA256, value []byte) (_ error) {
+			err := objs.Ascend(func(key cipher.SHA256,
+				value []byte) (_ error) {
+
 				called++
-				return ErrStopRange
+				return ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the Range")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -318,17 +322,17 @@ func testViewObjectsRange(t *testing.T, db DB) {
 
 }
 
-func TestViewObjects_Range(t *testing.T) {
-	// Range(func(key cipher.SHA256, value []byte) error) (err error)
+func TestViewObjects_Ascend(t *testing.T) {
+	// Ascend(func(key cipher.SHA256, value []byte) error) (err error)
 
 	t.Run("memory", func(t *testing.T) {
-		testViewObjectsRange(t, NewMemoryDB())
+		testViewObjectsAscend(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testViewObjectsRange(t, db)
+		testViewObjectsAscend(t, db)
 	})
 
 }
@@ -537,7 +541,7 @@ func TestUpdateObjects_IsExist(t *testing.T) {
 
 }
 
-func testUpdateObjectsRange(t *testing.T, db DB) {
+func testUpdateObjectsAscend(t *testing.T, db DB) {
 
 	t.Run("empty", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
@@ -545,7 +549,7 @@ func testUpdateObjectsRange(t *testing.T, db DB) {
 
 			var called int
 
-			err := objs.Range(func(cipher.SHA256, []byte) (_ error) {
+			err := objs.Ascend(func(cipher.SHA256, []byte) (_ error) {
 				called++
 				return
 			})
@@ -588,10 +592,12 @@ func testUpdateObjectsRange(t *testing.T, db DB) {
 
 			var called int
 
-			err := objs.Range(func(key cipher.SHA256, value []byte) (_ error) {
+			err := objs.Ascend(func(key cipher.SHA256,
+				value []byte) (_ error) {
+
 				if called > len(to) {
 					t.Error("called too many times")
-					return ErrStopRange
+					return ErrStopIteration
 				}
 
 				tObj := to[called]
@@ -621,21 +627,23 @@ func testUpdateObjectsRange(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
 			objs := tx.Objects()
 
 			var called int
 
-			err := objs.Range(func(key cipher.SHA256, value []byte) (_ error) {
+			err := objs.Ascend(func(key cipher.SHA256,
+				value []byte) (_ error) {
+
 				called++
-				return ErrStopRange
+				return ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the Range")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -646,17 +654,17 @@ func testUpdateObjectsRange(t *testing.T, db DB) {
 
 }
 
-func TestUpdateObjects_Range(t *testing.T) {
-	// Range(func(key cipher.SHA256, value []byte) error) (err error)
+func TestUpdateObjects_Ascend(t *testing.T) {
+	// Ascend(func(key cipher.SHA256, value []byte) error) (err error)
 
 	t.Run("memory", func(t *testing.T) {
-		testUpdateObjectsRange(t, NewMemoryDB())
+		testUpdateObjectsAscend(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testUpdateObjectsRange(t, db)
+		testUpdateObjectsAscend(t, db)
 	})
 
 }
@@ -887,7 +895,7 @@ func TestUpdateObjects_SetMap(t *testing.T) {
 
 }
 
-func testUpdateObjectsRangeDel(t *testing.T, db DB) {
+func testUpdateObjectsAscendDel(t *testing.T, db DB) {
 
 	t.Run("empty", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
@@ -895,7 +903,9 @@ func testUpdateObjectsRangeDel(t *testing.T, db DB) {
 
 			var called int
 
-			err := objs.RangeDel(func(cipher.SHA256, []byte) (_ bool, _ error) {
+			err := objs.AscendDel(func(cipher.SHA256, []byte) (_ bool,
+				_ error) {
+
 				called++
 				return
 			})
@@ -938,12 +948,12 @@ func testUpdateObjectsRangeDel(t *testing.T, db DB) {
 
 			var called int
 
-			err := objs.RangeDel(func(key cipher.SHA256,
+			err := objs.AscendDel(func(key cipher.SHA256,
 				value []byte) (del bool, _ error) {
 
 				if called > len(to) {
 					t.Error("called too many times")
-					return false, ErrStopRange
+					return false, ErrStopIteration
 				}
 
 				tObj := to[called]
@@ -992,21 +1002,21 @@ func testUpdateObjectsRangeDel(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
 			objs := tx.Objects()
 
 			var called int
 
-			err := objs.RangeDel(func(cipher.SHA256, []byte) (bool, error) {
+			err := objs.AscendDel(func(cipher.SHA256, []byte) (bool, error) {
 				called++
-				return false, ErrStopRange
+				return false, ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the RangeDel")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -1017,18 +1027,18 @@ func testUpdateObjectsRangeDel(t *testing.T, db DB) {
 
 }
 
-func TestUpdateObjects_RangeDel(t *testing.T) {
-	// RangeDel(
+func TestUpdateObjects_AscendDel(t *testing.T) {
+	// AscendDel(
 	//     func(key cipher.SHA256, value []byte) (del bool, err error)) error
 
 	t.Run("memory", func(t *testing.T) {
-		testUpdateObjectsRangeDel(t, NewMemoryDB())
+		testUpdateObjectsAscendDel(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testUpdateObjectsRangeDel(t, db)
+		testUpdateObjectsAscendDel(t, db)
 	})
 
 }

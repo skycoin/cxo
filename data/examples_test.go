@@ -50,7 +50,7 @@ func Example() {
 
 	err = db.View(func(tx data.Tv) (_ error) {
 		objs := tx.Objects()
-		return objs.Range(func(_ cipher.SHA256, value []byte) (_ error) {
+		return objs.Ascend(func(_ cipher.SHA256, value []byte) (_ error) {
 			fmt.Println(" ", string(value))
 			return
 		})

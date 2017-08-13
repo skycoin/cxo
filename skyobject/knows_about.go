@@ -9,7 +9,7 @@ import (
 )
 
 // knowsAboutFunc used to determine objects of a Root. If it returns
-// an error the itteration breaks. Use ErrStopRange to stop.
+// an error the itteration breaks. Use ErrStopErrStopIteration to stop.
 // If it returns deeper = true, then current object will be
 // inspected, otherwise skipped after call
 type knowsAboutFunc func(cipher.SHA256) (deeper bool, err error)
@@ -31,7 +31,7 @@ func (c *Container) knowsAbout(r *Root, g getter,
 
 	// 1) registry
 	if _, err = fn(cipher.SHA256(r.Reg)); err != nil {
-		if err == ErrStopRange {
+		if err == ErrStopIteration {
 			err = nil
 		}
 		return

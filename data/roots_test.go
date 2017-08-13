@@ -200,7 +200,7 @@ func TestViewRoots_Get(t *testing.T) {
 
 }
 
-func testViewRootsRange(t *testing.T, db DB) {
+func testViewRootsAscend(t *testing.T, db DB) {
 
 	pk, _ := cipher.GenerateKeyPair()
 
@@ -218,7 +218,7 @@ func testViewRootsRange(t *testing.T, db DB) {
 			roots := tx.Feeds().Roots(pk)
 
 			var called int
-			err := roots.Range(func(rp *RootPack) (_ error) {
+			err := roots.Ascend(func(rp *RootPack) (_ error) {
 				called++
 				return
 			})
@@ -244,10 +244,10 @@ func testViewRootsRange(t *testing.T, db DB) {
 			roots := tx.Feeds().Roots(pk)
 
 			var called int
-			err := roots.Range(func(rp *RootPack) (_ error) {
+			err := roots.Ascend(func(rp *RootPack) (_ error) {
 				if called > 2 {
 					t.Error("called too many times")
-					return ErrStopRange
+					return ErrStopIteration
 				}
 				if rp.Seq != uint64(called) {
 					t.Error("wrong order")
@@ -268,20 +268,20 @@ func testViewRootsRange(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
 			roots := tx.Feeds().Roots(pk)
 
 			var called int
-			err := roots.Range(func(rp *RootPack) error {
+			err := roots.Ascend(func(rp *RootPack) error {
 				called++
-				return ErrStopRange
+				return ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the Range")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -292,22 +292,22 @@ func testViewRootsRange(t *testing.T, db DB) {
 
 }
 
-func TestViewRoots_Range(t *testing.T) {
-	// Range(func(rp *RootPack) (err error)) error
+func TestViewRoots_Ascend(t *testing.T) {
+	// Ascend(func(rp *RootPack) (err error)) error
 
 	t.Run("memory", func(t *testing.T) {
-		testViewRootsRange(t, NewMemoryDB())
+		testViewRootsAscend(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testViewRootsRange(t, db)
+		testViewRootsAscend(t, db)
 	})
 
 }
 
-func testViewRootsReverse(t *testing.T, db DB) {
+func testViewRootsDescend(t *testing.T, db DB) {
 
 	pk, _ := cipher.GenerateKeyPair()
 
@@ -325,7 +325,7 @@ func testViewRootsReverse(t *testing.T, db DB) {
 			roots := tx.Feeds().Roots(pk)
 
 			var called int
-			err := roots.Reverse(func(rp *RootPack) (_ error) {
+			err := roots.Descend(func(rp *RootPack) (_ error) {
 				called++
 				return
 			})
@@ -351,10 +351,10 @@ func testViewRootsReverse(t *testing.T, db DB) {
 			roots := tx.Feeds().Roots(pk)
 
 			var called int
-			err := roots.Reverse(func(rp *RootPack) (_ error) {
+			err := roots.Descend(func(rp *RootPack) (_ error) {
 				if called > 2 {
 					t.Error("called too many times")
-					return ErrStopRange
+					return ErrStopIteration
 				}
 				if rp.Seq != uint64(2-called) {
 					t.Error("wrong order")
@@ -375,20 +375,20 @@ func testViewRootsReverse(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
 			roots := tx.Feeds().Roots(pk)
 
 			var called int
-			err := roots.Reverse(func(rp *RootPack) error {
+			err := roots.Descend(func(rp *RootPack) error {
 				called++
-				return ErrStopRange
+				return ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the Reverse range")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -399,17 +399,17 @@ func testViewRootsReverse(t *testing.T, db DB) {
 
 }
 
-func TestViewRoots_Reverse(t *testing.T) {
+func TestViewRoots_Descend(t *testing.T) {
 	// Reverse(fn func(rp *RootPack) (err error)) error
 
 	t.Run("memory", func(t *testing.T) {
-		testViewRootsReverse(t, NewMemoryDB())
+		testViewRootsDescend(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testViewRootsReverse(t, db)
+		testViewRootsDescend(t, db)
 	})
 
 }
@@ -441,8 +441,8 @@ func TestUpdateRoots_Get(t *testing.T) {
 
 }
 
-func TestUpdateRoots_Range(t *testing.T) {
-	// Range(func(rp *RootPack) (err error)) error
+func TestUpdateRoots_Ascend(t *testing.T) {
+	// Acsending(func(rp *RootPack) (err error)) error
 
 	t.Skip("inherited from ViewRoots")
 
@@ -599,7 +599,7 @@ func TestUpdateRoots_MarkFull(t *testing.T) {
 
 }
 
-func testUpdateRootsRangeDel(t *testing.T, db DB) {
+func testUpdateRootsAscendDel(t *testing.T, db DB) {
 	pk, _ := cipher.GenerateKeyPair()
 
 	// add empty feed
@@ -615,7 +615,7 @@ func testUpdateRootsRangeDel(t *testing.T, db DB) {
 		err := db.Update(func(tx Tu) (_ error) {
 			roots := tx.Feeds().Roots(pk)
 			var called int
-			err := roots.RangeDel(func(*RootPack) (_ bool, _ error) {
+			err := roots.AscendDel(func(*RootPack) (_ bool, _ error) {
 				called++
 				return
 			})
@@ -640,10 +640,10 @@ func testUpdateRootsRangeDel(t *testing.T, db DB) {
 		err := db.Update(func(tx Tu) (_ error) {
 			roots := tx.Feeds().Roots(pk)
 			var called int
-			err := roots.RangeDel(func(rp *RootPack) (del bool, err error) {
+			err := roots.AscendDel(func(rp *RootPack) (del bool, err error) {
 				if called > 2 {
 					t.Error("called too many times")
-					return false, ErrStopRange
+					return false, ErrStopIteration
 				}
 				if rp.Seq != uint64(called) {
 					t.Error("wrong order")
@@ -668,19 +668,19 @@ func testUpdateRootsRangeDel(t *testing.T, db DB) {
 		}
 	})
 
-	t.Run("stop range", func(t *testing.T) {
+	t.Run("stop iteration", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
 			roots := tx.Feeds().Roots(pk)
 			var called int
-			err := roots.RangeDel(func(*RootPack) (bool, error) {
+			err := roots.AscendDel(func(*RootPack) (bool, error) {
 				called++
-				return false, ErrStopRange
+				return false, ErrStopIteration
 			})
 			if err != nil {
 				t.Error(err)
 			}
 			if called != 1 {
-				t.Error("ErrStopRange doesn't stop the RangeDel")
+				t.Error("ErrStopIteration doesn't stop the iteration")
 			}
 			return
 		})
@@ -691,17 +691,17 @@ func testUpdateRootsRangeDel(t *testing.T, db DB) {
 
 }
 
-func TestUpdateRoots_RangeDel(t *testing.T) {
-	// RangeDel(fn func(rp *RootPack) (del bool, err error)) error
+func TestUpdateRoots_AscendDel(t *testing.T) {
+	// AscendDel(fn func(rp *RootPack) (del bool, err error)) error
 
 	t.Run("memory", func(t *testing.T) {
-		testUpdateRootsRangeDel(t, NewMemoryDB())
+		testUpdateRootsAscendDel(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testUpdateRootsRangeDel(t, db)
+		testUpdateRootsAscendDel(t, db)
 	})
 
 }

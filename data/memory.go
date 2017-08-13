@@ -14,6 +14,7 @@ import (
 // buckets:
 //  - objects hash -> []byte (including schemas)
 //  - feeds   pubkey -> { seq -> RootPack }
+//  - misc    key -> value
 type memoryDB struct {
 	bunt *buntdb.DB
 }
@@ -106,6 +107,10 @@ func (m *memoryTv) Feeds() ViewFeeds {
 	return &memoryViewFeeds{memoryFeeds{m.tx}}
 }
 
+func (m *memoryTv) Misc() ViewMisc {
+	return &memoryMisc{m.tx}
+}
+
 type memoryTu struct {
 	tx *buntdb.Tx
 }
@@ -116,6 +121,10 @@ func (m *memoryTu) Objects() UpdateObjects {
 
 func (m *memoryTu) Feeds() UpdateFeeds {
 	return &memoryFeeds{m.tx}
+}
+
+func (m *memoryTu) Misc() UpdateMisc {
+	return &memoryMisc{m.tx}
 }
 
 type memoryObjects struct {
@@ -179,12 +188,12 @@ func (m *memoryObjects) getKey(k string) cipher.SHA256 {
 	return cp
 }
 
-func (m *memoryObjects) Range(
+func (m *memoryObjects) Ascend(
 	fn func(key cipher.SHA256, value []byte) error) (err error) {
 
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
 		if err = fn(m.getKey(k), decValue(v)); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return false // break
@@ -194,7 +203,7 @@ func (m *memoryObjects) Range(
 	return
 }
 
-func (m *memoryObjects) RangeDel(
+func (m *memoryObjects) AscendDel(
 	fn func(key cipher.SHA256, value []byte) (bool, error)) (err error) {
 
 	var del bool
@@ -204,7 +213,7 @@ func (m *memoryObjects) RangeDel(
 
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
 		if del, err = fn(m.getKey(k), decValue(v)); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return false // break
@@ -226,6 +235,114 @@ func (m *memoryObjects) RangeDel(
 		}
 		return true // continue
 	})
+
+	// temporary (buntdb#24)
+	if err != nil {
+		return
+	}
+
+	for _, k := range collect {
+		if _, err = m.tx.Delete(k); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+type memoryMisc struct {
+	tx *buntdb.Tx
+}
+
+func (m *memoryMisc) key(key []byte) string {
+	return "misc:" + hex.EncodeToString(key)
+}
+
+func (m *memoryMisc) Set(key, value []byte) (err error) {
+	_, _, err = m.tx.Set(m.key(key), encValue(value), nil)
+	return
+}
+
+func (m *memoryMisc) Del(key []byte) (err error) {
+	if _, err = m.tx.Delete(m.key(key)); err == buntdb.ErrNotFound {
+		err = nil
+	}
+	return
+}
+
+func (m *memoryMisc) Get(key []byte) (p []byte) {
+	if val, _ := m.tx.Get(m.key(key)); len(val) != 0 {
+		if p = decValue(val); len(p) == 0 {
+			p = nil
+		}
+		return
+	}
+	return nil
+}
+
+func (m *memoryMisc) GetCopy(key []byte) []byte {
+	return m.Get(key)
+}
+
+func (m *memoryMisc) getKey(k string) []byte {
+	key, err := hex.DecodeString(strings.TrimPrefix(k, "misc:"))
+	if err != nil {
+		panic(err)
+	}
+	return key
+}
+
+func (m *memoryMisc) Ascend(fn func(key, value []byte) error) (err error) {
+
+	m.tx.AscendKeys("misc:*", func(k, v string) bool {
+		if err = fn(m.getKey(k), decValue(v)); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return false // break
+		}
+		return true // continue
+	})
+	return
+}
+
+func (m *memoryMisc) AscendDel(
+	fn func(key, value []byte) (bool, error)) (err error) {
+
+	var del bool
+
+	// See TODO note below
+	collect := []string{}
+
+	m.tx.AscendKeys("misc:*", func(k, v string) bool {
+		if del, err = fn(m.getKey(k), decValue(v)); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return false // break
+		}
+		if del {
+			// TODO (kostyarin): feature was requested, check it out
+
+			// Waiting for
+			//
+			// https://github.com/tidwall/buntdb/issues/24
+			//
+			// if _, err = m.tx.Delete(k); err != nil {
+			//	return false // break
+			// }
+
+			// Until #24 of buntdb is open, use this
+			collect = append(collect, k)
+
+		}
+		return true // continue
+	})
+
+	// temporary (buntdb#24)
+	if err != nil {
+		return
+	}
 
 	for _, k := range collect {
 		if _, err = m.tx.Delete(k); err != nil {
@@ -317,7 +434,7 @@ func (m *memoryFeeds) List() (list []cipher.PubKey) {
 	return
 }
 
-func (m *memoryFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
+func (m *memoryFeeds) Ascend(fn func(pk cipher.PubKey) error) (err error) {
 
 	// waithing for #24 of buntdb
 	collect := []string{}
@@ -333,7 +450,7 @@ func (m *memoryFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
 		// waiting for #24 of buntdb
 
 		// if err = fn(m.getKey(k)); err != nil {
-		// 	if err == ErrStopRange {
+		// 	if err == ErrStopIteration {
 		// 		err = nil
 		// 	}
 		// 	return false // break
@@ -344,7 +461,7 @@ func (m *memoryFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
 
 	for _, k := range collect {
 		if err = fn(m.getKey(k)); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return
@@ -354,7 +471,7 @@ func (m *memoryFeeds) Range(fn func(pk cipher.PubKey) error) (err error) {
 	return
 }
 
-func (m *memoryFeeds) RangeDel(
+func (m *memoryFeeds) AscendDel(
 	fn func(pk cipher.PubKey) (bool, error)) (err error) {
 
 	var del bool
@@ -369,7 +486,7 @@ func (m *memoryFeeds) RangeDel(
 		}
 
 		if del, err = fn(m.getKey(k)); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return false // break
@@ -386,6 +503,11 @@ func (m *memoryFeeds) RangeDel(
 
 		return true // continue
 	})
+
+	// temporary (buntdb#24)
+	if err != nil {
+		return
+	}
 
 	// see TODO above
 	for _, k := range collect {
@@ -514,7 +636,7 @@ func (m *memoryRoots) MarkFull(seq uint64) (err error) {
 	return
 }
 
-func (m *memoryRoots) Range(fn func(rp *RootPack) error) (err error) {
+func (m *memoryRoots) Ascend(fn func(rp *RootPack) error) (err error) {
 
 	var rp *RootPack
 	m.tx.AscendKeys(m.prefix+"*", func(k, v string) bool {
@@ -526,7 +648,7 @@ func (m *memoryRoots) Range(fn func(rp *RootPack) error) (err error) {
 			panic(err) // critical
 		}
 		if err = fn(rp); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return false // break
@@ -536,7 +658,7 @@ func (m *memoryRoots) Range(fn func(rp *RootPack) error) (err error) {
 	return
 }
 
-func (m *memoryRoots) Reverse(fn func(rp *RootPack) error) (err error) {
+func (m *memoryRoots) Descend(fn func(rp *RootPack) error) (err error) {
 
 	var rp *RootPack
 	m.tx.DescendKeys(m.prefix+"*", func(k, v string) bool {
@@ -548,7 +670,7 @@ func (m *memoryRoots) Reverse(fn func(rp *RootPack) error) (err error) {
 			panic(err) // critical
 		}
 		if err = fn(rp); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return false // break
@@ -558,7 +680,7 @@ func (m *memoryRoots) Reverse(fn func(rp *RootPack) error) (err error) {
 	return
 }
 
-func (m *memoryRoots) RangeDel(
+func (m *memoryRoots) AscendDel(
 	fn func(rp *RootPack) (bool, error)) (err error) {
 
 	var rp *RootPack
@@ -576,7 +698,7 @@ func (m *memoryRoots) RangeDel(
 			panic(err) // critical
 		}
 		if del, err = fn(rp); err != nil {
-			if err == ErrStopRange {
+			if err == ErrStopIteration {
 				err = nil
 			}
 			return false // break
@@ -590,6 +712,11 @@ func (m *memoryRoots) RangeDel(
 		}
 		return true // continue
 	})
+
+	// temporary (buntdb#24)
+	if err != nil {
+		return
+	}
 
 	// See TODO note above
 	for _, k := range collect {
@@ -605,7 +732,7 @@ func (m *memoryRoots) DelBefore(seq uint64) (err error) {
 
 	// TODO: optimize (avoid decoding)
 
-	m.RangeDel(func(rp *RootPack) (del bool, _ error) {
+	m.AscendDel(func(rp *RootPack) (del bool, _ error) {
 		del = rp.Seq < seq
 		return
 	})

@@ -18,9 +18,9 @@ var (
 	// ErrNotFound occurs where any requested object doesn't exist in
 	// database
 	ErrNotFound = errors.New("not found")
-	// ErrStopRange used by Range, RangeDelete and Reverse functions
+	// ErrStopIteration used by Range, RangeDelete and Reverse functions
 	// to stop itterating. It's error never bubbles up
-	ErrStopRange = errors.New("stop range")
+	ErrStopIteration = errors.New("stop range")
 )
 
 // ViewObjects represents read-only bucket of objects
@@ -33,8 +33,8 @@ type ViewObjects interface {
 	GetCopy(key cipher.SHA256) (value []byte)
 	// IsExist returns true if object with given hash presence in database
 	IsExist(key cipher.SHA256) (ok bool)
-	// Range over all objects. Use ErrStopRange to break itteration
-	Range(func(key cipher.SHA256, value []byte) error) (err error)
+	// Ascend over all objects. Use ErrStopIteration to break iteration
+	Ascend(func(key cipher.SHA256, value []byte) error) (err error)
 }
 
 // UpdateObjects represents read-write bucket of objects
@@ -55,11 +55,14 @@ type UpdateObjects interface {
 	// The method sorts given data by key increasing performance
 	SetMap(map[cipher.SHA256][]byte) (err error)
 
-	// RangeDel used for deleting. If given function returns del = true
-	// then this object will be removed. Use ErrStopRange to break
-	// the Range. The RangeDel is low level method and you should not
+	// AscendDel used for deleting. If given function returns del = true
+	// then this object will be removed. Use ErrStopIteration to break
+	// the iteration. The AscendDel is low level method and you should not
 	// use it. Otherwise, it can break some things of skyobject packge
-	RangeDel(func(key cipher.SHA256, value []byte) (del bool, err error)) error
+	//
+	// Note: it can delete objects when given function
+	// returns. And it can delete them after all
+	AscendDel(func(key cipher.SHA256, value []byte) (del bool, err error)) error
 }
 
 // ViewFeeds represents read-only bucket of feeds
@@ -67,9 +70,9 @@ type ViewFeeds interface {
 	IsExist(pk cipher.PubKey) (ok bool) // presence check
 	List() (list []cipher.PubKey)       // list of all
 
-	// Range itterates all feeds. Use ErrStopRange to break
-	// the Range
-	Range(func(pk cipher.PubKey) error) (err error)
+	// Ascend itterates all feeds. Use ErrStopIteration to break
+	// the iteration
+	Ascend(func(pk cipher.PubKey) error) (err error)
 
 	// Roots of given feed. This method returns nil if
 	// given feed doesn't exist. Use this method to access
@@ -86,7 +89,7 @@ type UpdateFeeds interface {
 
 	IsExist(pk cipher.PubKey) (ok bool)
 	List() (list []cipher.PubKey)
-	Range(func(pk cipher.PubKey) error) (err error)
+	Ascend(func(pk cipher.PubKey) error) (err error)
 
 	//
 	// change feed/roots
@@ -98,10 +101,13 @@ type UpdateFeeds interface {
 	// It never returns "not found" error
 	Del(pk cipher.PubKey) (err error)
 
-	// RangeDel itterates all feeds. If given function returns del = true
-	// then this feed will be deleted with all roots. Use ErrStopRange
-	// to break the ReangeDel
-	RangeDel(func(pk cipher.PubKey) (del bool, err error)) error
+	// AscendDel itterates all feeds. If given function returns del = true
+	// then this feed will be deleted with all roots. Use ErrStopIteration
+	// to break the iteration
+	//
+	// Note: it can delete objects when given function
+	// returns. And it can delete them after all
+	AscendDel(func(pk cipher.PubKey) (del bool, err error)) error
 
 	// Roots of given feed. This method returns nil if
 	// given feed doesn't exist
@@ -118,14 +124,14 @@ type ViewRoots interface {
 	// Get a root object by seq number
 	Get(seq uint64) (rp *RootPack)
 
-	// Range itterates all root objects ordered
-	// by seq from oldest to newest. Use ErrStopRange
-	// to break the Range
-	Range(func(rp *RootPack) (err error)) error
-	// Revers is the same as Range in reversed order.
+	// Ascend itterates all root objects ordered
+	// by seq from oldest to newest. Use ErrStopIteration
+	// to break the iteration
+	Ascend(func(rp *RootPack) (err error)) error
+	// Descend is the same as Ascend in reversed order.
 	// E.g. it itterates all root objects ordered by seq
 	// from newest (latest) to oldest
-	Reverse(fn func(rp *RootPack) (err error)) error
+	Descend(fn func(rp *RootPack) (err error)) error
 }
 
 // UpdateRoots represents read-write bucket of Root obejcts
@@ -144,11 +150,14 @@ type UpdateRoots interface {
 	// The method can return ErrNotFound
 	MarkFull(seq uint64) (err error)
 
-	// RangeDelete used to delete Root obejcts.
+	// AscendDel used to delete Root obejcts.
 	// If given function returns del = true, then
-	// this root will be deleted. Use ErrStopRange
-	// to break the RangeDel
-	RangeDel(fn func(rp *RootPack) (del bool, err error)) error
+	// this root will be deleted. Use ErrStopIteration
+	// to break the iteration
+	//
+	// Note: it can delete root objects when given function
+	// returns. And it can delete them after all
+	AscendDel(fn func(rp *RootPack) (del bool, err error)) error
 
 	// DelBefore deletes root objects of given feed
 	// before given seq number (exclusive).
@@ -157,10 +166,48 @@ type UpdateRoots interface {
 	DelBefore(seq uint64) (err error)
 }
 
+type ViewMisc interface {
+	// Get obejct by key. The value is nil
+	// if obejct not found. The value can be used
+	// only inside current trnsaction
+	Get(key []byte) (value []byte)
+	// GetCopy returns long-lived value
+	GetCopy(key []byte) (value []byte)
+
+	// Ascend itterates all misc-objects ordered
+	// by key from. Use ErrStopIteration to break the
+	// iteration
+	Ascend(func(key, value []byte) (err error)) error
+
+	// TODO (kostyarin): add
+	//
+	// // Descend is the same as Ascend in reversed order
+	// Descend(fn func(key, value []byte) (err error)) error
+}
+
+type UpdateMisc interface {
+	ViewMisc
+
+	// Set key-value pair
+	Set(key, value []byte) error
+	// Del by key. The Del never returns "not found" errors
+	Del(key []byte) error
+
+	// AscendDel itterates all misc-objects ordered
+	// by key from. Use ErrStopIteration to break the
+	// iteration. If given function returns del=true for
+	// an object, then this object will be deleted.
+	//
+	// Note: it can delete objects when given function
+	// returns. And it can delete them after all
+	AscendDel(func(key, value []byte) (del bool, err error)) error
+
+	// TODO (kostyarin): DescendDel
+}
+
 // A Tv represents read-only transaction
 type Tv interface {
-
-	// TODO (kostyarin): add bucket for end-user needs
+	Misc() ViewMisc // bucket for end-user needs
 
 	Objects() ViewObjects // access objects
 	Feeds() ViewFeeds     // access feeds
@@ -168,8 +215,7 @@ type Tv interface {
 
 // A Tu represents read-write transaction
 type Tu interface {
-
-	// TODO (kostyarin): add bucket for end-user needs
+	Misc() UpdateMisc // bucket for end-user needs
 
 	Objects() UpdateObjects // access objects
 	Feeds() UpdateFeeds     // access feeds
@@ -200,10 +246,15 @@ type RootPack struct {
 
 	// TODO (kostyarin): move the field from here making it
 	//                   machine local
+
 	// IsFull is true if the Root has all related objects in
 	// this DB. The field is temporary added and likely to
 	// be moved outside the RootPack
 	IsFull bool
+
+	// Space holded by all obejcts of the Root. The field is
+	// machine-local and likely to be removed from the RootPack
+	Space uint64
 }
 
 // A RootError represents error that can be returned by AddRoot method

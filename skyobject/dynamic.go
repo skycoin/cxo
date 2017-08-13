@@ -73,11 +73,11 @@ func (d *Dynamic) Schema() (sch Schema, err error) {
 		return
 	}
 
-	if sch, err = r.wn.pack.reg.SchemaByReference(d.SchemaRef); err != nil {
+	if sch, err = d.wn.pack.reg.SchemaByReference(d.SchemaRef); err != nil {
 		return
 	}
 
-	wn.sch = sch // keep
+	d.wn.sch = sch // keep
 	return
 }
 
@@ -98,7 +98,7 @@ func (d *Dynamic) Schema() (sch Schema, err error) {
 //     // work with the usr
 //
 // Even if you pass non-pointer (User{}) to the SetValue,
-// the Value returns pointer (*User) anyway.
+// the Value returns pointer (*User) anyway
 func (d *Dynamic) Value() (obj interface{}, err error) {
 
 	if !d.IsValid() {
@@ -106,17 +106,18 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 		return
 	}
 
-	if d.IsBlank() {
-		return // this Dynamic represents nil interface{}
-	}
-
 	if d.wn == nil {
 		err = errors.New("can't get value: the Dynamic is not attached to Pack")
 		return
 	}
 
+	if d.IsBlank() {
+		d.trackChanges() // if AutoTrackChangses flag set
+		return           // this Dynamic represents nil interface{}
+	}
+
 	if d.wn.value != nil {
-		obj = wn.value // already have
+		obj = d.wn.value // already have
 		return
 	}
 
@@ -131,24 +132,30 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 		}
 		d.wn.value = ptr.Interface() // keep
 		obj = d.wn.value             // nil pointer of some type
+		d.trackChanges()             // if AutoTrackChanges flag set
 		return
 	}
 
 	// obtain object
 	var val []byte
-	if val, err = wn.pack.get(d.Object); err != nil {
+	if val, err = d.wn.pack.get(d.Object); err != nil {
 		return
 	}
 
-	if obj, err = wn.pack.unpackToGo(wn.sch.Name(), val); err != nil {
+	if obj, err = d.wn.pack.unpackToGo(d.wn.sch.Name(), val); err != nil {
 		return
 	}
 
-	wn.value = obj // keep
+	d.wn.value = obj // keep
 
-	// TODO (kostyarin): track changes
-
+	d.trackChanges() // if AutoTrackChanges flag set
 	return
+}
+
+func (d *Dynamic) trackChanges() {
+	if f := d.wn.pack.flags; f&AutoTrackChanges != 0 && f&ViewOnly == 0 {
+		d.wn.pack.Push(d) // track
+	}
 }
 
 // SetValue replacing the Dynamic with new, that points
@@ -172,7 +179,7 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 	}
 
 	var sch Schema
-	if sch, obj, err = r.wn.pack.initialize(obj); err != nil {
+	if sch, obj, err = d.wn.pack.initialize(obj); err != nil {
 		return fmt.Errorf("can't set value to Dynamic: %v", err)
 	}
 
@@ -194,17 +201,18 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 	}
 
 	if changed {
-		d.wn.unsave()
+		if err = d.wn.unsave(); err != nil {
+			return
+		}
 	}
 
-	// TODO (kostyarin): track changes
-
+	d.trackChanges()
 	return
 }
 
 // Clear the Dynamic making it blank. It clears
 // reference to object and refernece to Schema too
-func (d *Dynamic) Clear() {
+func (d *Dynamic) Clear() (err error) {
 	if d.SchemaRef == (SchemaRef{}) && d.Object == (cipher.SHA256{}) {
 		return // already blank
 	}
@@ -212,10 +220,11 @@ func (d *Dynamic) Clear() {
 	if d.wn != nil {
 		d.wn.value = nil // clear value
 		d.wn.sch = nil   // clear schema
-		wn.unsave()
+		if err = d.wn.unsave(); err != nil {
+			return
+		}
 	}
-
-	// TODO (kostyarin): track changes
+	return
 }
 
 // Copy returns copy of the Dynamic
@@ -226,9 +235,33 @@ func (d *Dynamic) Copy() (cp Dynamic) {
 	cp.Object = d.Object
 	if d.wn != nil {
 		cp.wn = &walkNode{
-			pack: wn.pack,
-			sch:  wn.sch,
+			pack: d.wn.pack,
+			sch:  d.wn.sch,
 		}
+	}
+	return
+}
+
+func (d *Dynamic) commit() (err error) {
+
+	if d.wn == nil {
+		panic("commit not initialized Ref")
+	}
+
+	var changed bool
+	var obj interface{} = d.wn.value
+
+	if obj == nil {
+		if d.Object != (cipher.SHA256{}) {
+			d.Object, changed = cipher.SHA256{}, true
+		}
+	} else if key, val := d.wn.pack.dsave(obj); key != d.Object {
+		d.wn.pack.set(key, val) // save
+		d.Object, changed = key, true
+	}
+
+	if changed {
+		err = d.wn.unsave()
 	}
 	return
 }
