@@ -206,7 +206,7 @@ func TestPack_setupToGo(t *testing.T) {
 		}
 
 		for i, g := range []User{g1, g2, g3} {
-			gRef, err := grp.Members.RefBiIndex(i)
+			gRef, err := grp.Members.RefByIndex(i)
 			if err != nil {
 				t.Fatal(err)
 			}

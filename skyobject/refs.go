@@ -106,13 +106,6 @@ func (r *Refs) load(depth int) (err error) {
 		r.index = make(map[cipher.SHA256]*Ref)
 	}
 
-	// the Refs can be fresh and empty
-	if r.Hash == (cipher.SHA256{}) {
-		// degree set by (*Pack).refs()
-		// nothing to load
-		return
-	}
-
 	var val []byte
 	if val, err = r.wn.pack.get(r.Hash); err != nil {
 		return
@@ -213,7 +206,7 @@ func (r *Refs) Len() (ln int, err error) {
 // RefByIndex returns element by index. To delete an element
 // by index use RefByIndex and then Clear result (if found).
 // You also can set another value using this approach
-func (r *Refs) RefBiIndex(i int) (ref *Ref, err error) {
+func (r *Refs) RefByIndex(i int) (ref *Ref, err error) {
 	if err = r.load(0); err != nil {
 		return
 	}

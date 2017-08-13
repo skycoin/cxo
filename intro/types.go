@@ -9,12 +9,6 @@ type Content struct {
 	Post   sky.Refs `skyobject:"schema=intro.Vote"`
 }
 
-// TODO: what it means?
-
-// type Votes struct {
-// 	Votes sky.Refs `skyobject:"schema="intro.Vote"`
-// }
-
 type Vote struct {
 	Up    bool
 	Index uint32
