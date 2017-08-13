@@ -69,8 +69,7 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 	if conf.Registry != nil {
 		c.coreRegistry = conf.Registry
 		if err := c.AddRegistry(conf.Registry); err != nil {
-			c.db.Close() // to be safe
-			panic(err)   // fatality
+			panic(err) // fatality
 		}
 	}
 
@@ -146,8 +145,7 @@ func (c *Container) Get(hash cipher.SHA256) (value []byte) {
 		return
 	})
 	if err != nil {
-		c.db.Close() // to be safe (don't corrupt database-file)
-		c.Fatalf("[ALERT] database error: %v", err)
+		panic("database error: " + err.Error())
 	}
 	return
 }
@@ -179,7 +177,7 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 	err = c.db.View(func(tx data.Tv) (_ error) {
 		roots := tx.Feeds().Roots(pk)
 		if roots == nil {
-			return data.ErrNotFound
+			return ErrNoSuchFeed
 		}
 		rp = roots.Get(seq)
 		return
@@ -226,14 +224,16 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 	sk cipher.SecKey) (pack *Pack, err error) {
 
-	c.Debugln(VerbosePin, "Unpack", r.Pub.Hex()[:7], r.Seq)
-
 	// check arguments
 
 	if r == nil {
+		c.Debugln(VerbosePin, "Unpack nil")
 		err = ErrInvalidArgument
 		return
 	}
+
+	// debug log
+	c.Debugln(VerbosePin, "Unpack", r.Pub.Hex()[:7], r.Seq)
 
 	if err = r.Pub.Verify(); err != nil {
 		err = fmt.Errorf("invalud public key of given Root: %v", err)
@@ -388,7 +388,7 @@ func (c *Container) CleanUp(keepRoots bool) (err error) {
 	c.stat.addCleanUp(elapsed)
 
 	if err != nil {
-		c.Print("CleanUp failed after %v: %v", elapsed, err)
+		c.Printf("CleanUp failed after %v: %v", elapsed, err)
 		return
 	}
 

@@ -1,8 +1,8 @@
 package skyobject
 
 import (
+	"io/ioutil"
 	"testing"
-	//"time"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/log"
@@ -34,12 +34,19 @@ func getRegisty() *Registry {
 	})
 }
 
-func getCont() *Container {
+func getConf() *Config {
 	conf := NewConfig()
 	conf.Registry = getRegisty()
+	conf.CleanUp = 0 // don't clean up
 	if testing.Verbose() {
 		conf.Log.Debug = true
 		conf.Log.Pins = log.All
+	} else {
+		conf.Log.Output = ioutil.Discard
 	}
-	return NewContainer(data.NewMemoryDB(), conf)
+	return conf
+}
+
+func getCont() *Container {
+	return NewContainer(data.NewMemoryDB(), getConf())
 }

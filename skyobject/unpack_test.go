@@ -193,168 +193,44 @@ func TestPack_Save(t *testing.T) {
 
 }
 
-/*
+func TestPack_RootRefs(t *testing.T) {
+	// RootRefs() (objs []interface{}, err error)
 
-func (p *Pack) init() (err error) {
-	if p.flags&ViewOnly == 0 {
-		p.updateStack.init()
-	}
-	// Do we need to unpack entire tree?
-	if p.flags&EntireTree != 0 {
-		// unpack all possible
-		_, err = p.RootRefs()
-	}
-	return
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
 
-func (p *Pack) RootRefs() (objs []interface{}, err error) {
-	if len(p.r.Refs) == 0 {
-		return // (empty) nil, nil
-	}
-	objs = make([]interface{}, 0, len(p.r.Refs))
-	for i := range p.r.Refs {
-		var obj interface{}
-		if obj, err = p.RefByIndex(i); err != nil {
-			return
-		}
-		objs = append(objs, obj)
-	}
-	return
+func TestPack_RefByIndex(t *testing.T) {
+	// RefByIndex(i int) (obj interface{}, err error)
+
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
 
-func validateIndex(i, ln int) (err error) {
-	if i < 0 {
-		err = fmt.Errorf("negative index %d", i)
-	} else if i >= ln {
-		err = fmt.Errorf("index out of range %d (len %d)", i, ln)
-	}
-	return
+func TestPack_SetRefByIndex(t *testing.T) {
+	// SetRefByIndex(i int, obj interface{}) (err error)
+
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
 
-func (p *Pack) validateRootRefsIndex(i int) error {
-	return validateIndex(i, len(p.r.Refs))
+func TestPack_Append(t *testing.T) {
+	// Append(objs ...interface{})
+
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
 
-func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
-	if err = p.validateRootRefsIndex(i); err != nil {
-		return
-	}
+func TestPack_Clear(t *testing.T) {
+	// Clear()
 
-	if p.r.Refs[i].wn == nil {
-		p.r.Refs[i].wn = &walkNode{pack: p}
-	}
-	obj, err = p.r.Refs[i].Value()
-	return
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
 
-func (p *Pack) SetRefByIndex(i int, obj interface{}) (err error) {
-	if err = p.validateRootRefsIndex(i); err != nil {
-		return
-	}
-	p.r.Refs[i] = p.Dynamic(obj)
-	return
+func TestPack_Dynamic(t *testing.T) {
+	// Dynamic(obj interface{}) (dr Dynamic)
+
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
 
-func (p *Pack) Append(objs ...interface{}) {
-	for _, obj := range objs {
-		p.r.Refs = append(p.r.Refs, p.Dynamic(obj))
-	}
-	return
+func TestPack_Refs(t *testing.T) {
+	// Refs(objs ...interface{}) (r Refs)
+
+	t.Skip("not implemented") // TODO (kostyarin): implement
 }
-
-func (p *Pack) Clear() {
-	p.r.Refs = nil
-}
-
-// perform
-//
-// - get schema of the obj
-// - if type of the object is not pointer, then the method makes it pointer
-// - initialize (setupTo) the obj
-//
-// reply
-//
-// sch - schema of nil if obj is nil (or err is not)
-// ptr - (1) pointer to value of the obj, (2) the obj if the obj is pointer
-//       to non-nil, (3) nil if obj is nil (4) nil if obj represents
-//       nil-pointer of some type (for example: var usr *User, the usr
-//       is nil pointer to User), (5) nil if err is not
-// err - first error
-func (p *Pack) initialize(obj interface{}) (sch Schema, ptr interface{},
-	err error) {
-
-	if obj == nil {
-		return // nil, nil, nil
-	}
-
-	// val -> non-pointer value for setupToGo method
-	// typ -> non-pointer type for schemaOf method
-	// ptr -> pointer
-
-	val := reflect.ValueOf(obj)
-	typ := val.Type()
-
-	// we need the obj to be pointer
-	if typ.Kind() != reflect.Ptr {
-		valp := reflect.New(typ)
-		valp.Elem().Set(val)
-		ptr = valp.Interface()
-	} else {
-		typ = typ.Elem() // we need non-pointer type for schemaOf method
-		if !val.IsNil() {
-			val = val.Elem() // non-pointer value for setupToGo method
-			ptr = obj        // it is already a pointer
-		}
-	}
-
-	if sch, err = p.schemaOf(typ); err != nil {
-		return
-	}
-
-	if ptr != nil {
-		err = p.setupToGo(val)
-	}
-	return
-}
-
-// get Schema by given reflect.Type, the type must not be a pointer
-func (p *Pack) schemaOf(typ reflect.Type) (sch Schema, err error) {
-	if name, ok := p.types.Inverse[typ]; !ok {
-		// detailed error
-		err = fmt.Errorf("can't get Schema of %s:"+
-			" given object not found in Types.Inverse map",
-			typ.String())
-	} else if sch, err = p.reg.SchemaByName(name); err != nil {
-		// dtailed error
-		err = fmt.Errorf(`wrong Types of Pack:
-    schema name found in Types, but schema by the name not found in Registry
-    error:                      %s
-    registry reference:         %s
-    schema name:                %s
-    reflect.Type of the obejct: %s`,
-			err,
-			p.reg.Reference().Short(),
-			name,
-			typ.String())
-	}
-	return
-}
-
-func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
-	dr = p.dynamic()
-	if err := dr.SetValue(obj); err != nil {
-		panic(err)
-	}
-	return
-}
-
-func (p *Pack) Refs(objs ...interface{}) (r Refs) {
-	r = p.refs()
-	if err := r.Append(objs...); err != nil {
-		panic(err)
-	}
-	return
-}
-
-
-*/

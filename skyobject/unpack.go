@@ -267,7 +267,7 @@ func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
 	}
 
 	if p.r.Refs[i].wn == nil {
-		p.r.Refs[i].wn = &walkNode{pack: p}
+		p.initDynamic(&p.r.Refs[i])
 	}
 	obj, err = p.r.Refs[i].Value()
 	return
@@ -310,6 +310,7 @@ func (p *Pack) Append(objs ...interface{}) {
 // Clear Root.Refs making the slice empty
 func (p *Pack) Clear() {
 	p.r.Refs = nil
+	p.unsaved = make(map[cipher.SHA256][]byte)
 }
 
 // perform
