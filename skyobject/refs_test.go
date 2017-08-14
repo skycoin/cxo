@@ -37,15 +37,15 @@ func TestRefs_String(t *testing.T) {
 func TestRefs_Len(t *testing.T) {
 	// Len() (ln int, err error)
 
-	// blank
+	// detached blank
 	refs := Refs{}
 	if ln, err := refs.Len(); err != nil {
 		t.Error(err)
 	} else if ln != 0 {
-		t.Error("wrong length")
+		t.Error("wrong length:", ln)
 	}
 
-	// detached
+	// detached non-blank
 	refs.Hash = cipher.SHA256{1, 2, 3}
 	if _, err := refs.Len(); err == nil {
 		t.Error("missing error")
@@ -63,6 +63,14 @@ func TestRefs_Len(t *testing.T) {
 	pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// blank
+	refs = pack.Refs()
+	if ln, err := refs.Len(); err != nil {
+		t.Error(err)
+	} else if ln != 0 {
+		t.Error("wrong length")
 	}
 
 	// not found in DB
@@ -83,8 +91,49 @@ func TestRefs_Len(t *testing.T) {
 	pack.flags = 0
 	refs.index = nil
 
-	// alice, ammy, eva := &User{"Alice", 21, nil}, &User{"Ammy", 17, nil},
-	//	&User{"Eva", 23, nil}
+	if refs.degree != c.conf.MerkleDegree {
+		t.Error("unexpected degree of new created Refs", refs.degree)
+	}
+
+	// the Refs is root that contains leafs (degree = 8)
+	if c.conf.MerkleDegree < 3 {
+		t.Fatal("set proper degree manually or chagne default configs")
+	}
+
+	alice, ammy, eva := &User{"Alice", 21, nil}, &User{"Ammy", 17, nil},
+		&User{"Eva", 23, nil}
+
+	refs = pack.Refs(alice, ammy, eva)
+
+	if ln, err := refs.Len(); err != nil {
+		t.Error(err)
+	} else if ln != 3 {
+		t.Error("wrong length:", ln)
+	}
+
+	// reduce the degree nand repeat to force the Refs has branches
+	// this way it calls: cahngeDepth and then Append
+
+	c.conf.MerkleDegree = 2
+
+	refs = pack.Refs(alice, ammy, eva)
+
+	if ln, err := refs.Len(); err != nil {
+		t.Error(err)
+	} else if ln != 3 {
+		t.Error("wrong length:", ln)
+	}
+
+	// load from "database"
+	refs.length, refs.depth = 0, 0
+	refs.branches, refs.leafs, refs.index = nil, nil, nil
+
+	if ln, err := refs.Len(); err != nil {
+		t.Error(err)
+	} else if ln != 3 {
+		t.Error("wrong length:", ln)
+	}
+
 }
 
 func TestRefs_RefByIndex(t *testing.T) {

@@ -646,7 +646,9 @@ func (r *Refs) updateHashLengthFieldsFromTail(depth int) (set bool, err error) {
 	for i := len(r.branches) - 1; i >= 0; i-- {
 		br := r.branches[i]
 		if br.Hash == (cipher.SHA256{}) {
-			continue
+			if len(br.branches) == 0 && len(br.leafs) == 0 {
+				continue
+			}
 		}
 		if bset {
 			// we here only if this branch is first from tail or
@@ -681,6 +683,7 @@ func (r *Refs) changeDepth(depth int) (err error) {
 
 	nr.depth = depth
 	nr.degree = r.degree
+	nr.wn = r.wn
 
 	if r.wn.pack.flags&HashTableIndex != 0 {
 		nr.index = make(map[cipher.SHA256]*Ref)
@@ -809,7 +812,6 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 
 	// append
 	var ok bool
-
 	for _, obj := range objs {
 		ref := new(Ref)
 

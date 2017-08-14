@@ -400,19 +400,13 @@ func (p *Pack) initDynamic(dr *Dynamic) {
 	dr.wn = &walkNode{pack: p}
 }
 
-// blank new Dynamic
-func (p *Pack) dynamic() (dr Dynamic) {
-	p.initDynamic(&dr)
-	return
-}
-
 // Dynamic creates Dynamic by given object. The obj must to be
 // a goalgn value of registered type. The method panics on first
 // error. Passing nil returns blank Dynamic
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	p.c.Debugf(VerbosePin, "(*Pack).Dynamic %s %T", p.r.Short(), obj)
 
-	dr = p.dynamic()
+	p.initDynamic(&dr)
 
 	if err := dr.SetValue(obj); err != nil {
 		panic(err)
@@ -424,19 +418,13 @@ func (p *Pack) initRef(r *Ref) {
 	r.wn = &walkNode{pack: p}
 }
 
-// blank new Ref
-func (p *Pack) ref() (r Ref) {
-	p.initRef(&r)
-	return
-}
-
 // Ref of given object. Type of the object must be registered in
 // related Registry. The method panics on first error. Passing nil
 // returns blank Ref
 func (p *Pack) Ref(obj interface{}) (ref Ref) {
 	p.c.Debugf(VerbosePin, "(*Pack).Ref %s %T", p.r.Short(), obj)
 
-	ref = p.ref()
+	p.initRef(&ref)
 
 	if err := ref.SetValue(obj); err != nil {
 		panic(err)
@@ -447,11 +435,9 @@ func (p *Pack) Ref(obj interface{}) (ref Ref) {
 func (p *Pack) initRefs(r *Refs) {
 	r.wn = &walkNode{pack: p}
 	r.degree = p.c.conf.MerkleDegree
-}
-
-func (p *Pack) refs() (r Refs) {
-	p.initRefs(&r)
-	return
+	if p.flags&HashTableIndex != 0 {
+		r.index = make(map[cipher.SHA256]*Ref)
+	}
 }
 
 // Refs creates Refs by given objects. Types of the objects must be
@@ -468,7 +454,7 @@ func (p *Pack) Refs(objs ...interface{}) (r Refs) {
 	p.c.Debugf(VerbosePin, "(*Pack).Refs %s %d %T", p.r.Short(), len(objs),
 		first)
 
-	r = p.refs()
+	p.initRefs(&r)
 
 	if err := r.Append(objs...); err != nil {
 		panic(err)

@@ -232,5 +232,28 @@ func TestPack_Dynamic(t *testing.T) {
 func TestPack_Refs(t *testing.T) {
 	// Refs(objs ...interface{}) (r Refs)
 
-	t.Skip("not implemented") // TODO (kostyarin): implement
+	// TODO (kostyarin): extend
+
+	c := getCont()
+	defer c.db.Close()
+	defer c.Close()
+
+	pk, sk := cipher.GenerateKeyPair()
+	if err := c.AddFeed(pk); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refs := pack.Refs()
+	if refs.degree != c.conf.MerkleDegree {
+		t.Error("wring degree of fresh Refs")
+	}
+
+	if refs.wn == nil {
+		t.Error("pack.Refs returns detached Refs")
+	}
 }
