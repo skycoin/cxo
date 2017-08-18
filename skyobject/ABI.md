@@ -1,9 +1,9 @@
 Binary data format
 ==================
 
-# Data
+## Data
 
-## Int, Uint
+### Int, Uint
 
 All signed and unsigned integers encoded using little-endian order to
 bytes slice with appropriate size
@@ -18,7 +18,7 @@ That is obvious.
 See [LittleEndian](http://godoc.org/encoding/binary#LittleEndian) and
 [ByteOrder](http://godoc.org/encoding/binary#ByteOrder)
 
-## Float32, Flaot64
+### Float32, Flaot64
 
 For float point number used IEEE 754 binary representation.
 E.g. floatXX -> IEEE -> uintXX -> little-endian -> bytes
@@ -31,7 +31,7 @@ See [`math.Float32bits`](http://godoc.org/math#Float32bits),
 [`math.Float64bits`](http://godoc.org/math#Float64bits),
 [`math.Float64frombits`](http://godoc.org/math#Float64frombits) methods
 
-## String
+### String
 
 Strings are length-prefixed, where length is represented as encoded `uint32`
 
@@ -39,11 +39,11 @@ Strings are length-prefixed, where length is represented as encoded `uint32`
 [4 byte length][string body or nothing if the length is zero]
 ```
 
-## Arrays
+### Arrays
 
 Arrays is just encoded elements one by one
 
-## Slices
+### Slices
 
 Slices are length-prefixed like strings
 
@@ -51,7 +51,7 @@ Slices are length-prefixed like strings
 [4 byte length][elements one by one]
 ```
 
-## Structures
+### Structures
 
 Structures is encoded elements from first field to last
 
@@ -76,7 +76,7 @@ should be encoded to
 
 That's all about data
 
-# References
+## References
 
 Since we can't use pointers, we are using SHA256 hash of encoded value.
 This can be applied only to structures. (E.g. only "pointers" to structures).
@@ -206,7 +206,7 @@ And the `Length` of every subtree contains total length of all its subtrees
 etc. We have to keep the length because of zero-elements. To find an element
 by index we need to know how many elements every subtree fit inside.
 
-### Schema of a Reference
+#### Schema of a Reference
 
 As mentioned above, we can't determine type of object using SHA256-hash.
 Thus, we are using schemas. We have to register every type to use. We are
@@ -225,13 +225,13 @@ type User struct {
 
 It's just example
 
-# Root
+## Root
 
 Binary representation of a Root
 
 ... TODO
 
-# Schema
+## Schema
 
 Binary representation of a Schema.
 
