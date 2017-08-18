@@ -1162,8 +1162,8 @@ type encodedRefs struct {
 }
 
 type encodedRefsNode struct {
-	Nested []cipher.SHA256
 	Length uint32 // total elements
+	Nested []cipher.SHA256
 }
 
 // a**b
