@@ -56,14 +56,26 @@ func (r SchemaRef) Short() string {
 // Ref
 //
 
-// A Ref represents reference to object.
-// You should not change fields of the Ref
-// manually
+// A Ref represents reference to object
+// Use SetHash method to update Hash
+// field of the Ref
 type Ref struct {
 	// Hash of CX object
 	Hash cipher.SHA256
 	// internals
-	wn *walkNode `enc:"-"`
+	rn *refNode `enc:"-"` // schema, value, pack
+}
+
+func (r *Ref) isInitialized() bool {
+	return r.rn != nil
+}
+
+type refNode struct {
+	sch   Schema      // scehma of related Ref
+	value interface{} // golang-value of related Ref
+	pack  *Pack       // related Pack
+
+	// TOTH (kostyarin): upper node etc
 }
 
 // IsBlank returns true if the Ref is blank
@@ -90,8 +102,8 @@ func (r *Ref) Eq(x *Ref) bool {
 // if the Ref is not unpacked or has not a
 // Schema (the Ref is not a part of a struct)
 func (r *Ref) Schema() Schema {
-	if r.wn != nil {
-		return r.wn.sch
+	if r.rn != nil {
+		return r.rn.sch
 	}
 	return nil
 }
@@ -115,13 +127,13 @@ func (r *Ref) Schema() Schema {
 // to the SetValue method
 func (r *Ref) Value() (obj interface{}, err error) {
 
-	if r.wn == nil {
+	if r.rn == nil {
 		err = errors.New("can't get value: the Ref is not attached to Pack")
 		return
 	}
 
-	if r.wn.value != nil {
-		obj = r.wn.value // already have (already tracked)
+	if r.rn.value != nil {
+		obj = r.rn.value // already have (already tracked)
 		return
 	}
 
@@ -131,33 +143,45 @@ func (r *Ref) Value() (obj interface{}, err error) {
 	}
 
 	if r.IsBlank() {
-		if obj, err = r.wn.pack.nilPtrOf(r.Schema().Name()); err != nil {
+		if obj, err = r.rn.pack.nilPtrOf(r.Schema().Name()); err != nil {
 			return
 		}
-		r.wn.value = obj // keep
+		r.rn.value = obj // keep
 		r.trackChanges() // if AutoTrackChanges enabled
 		return
 	}
 
 	// obtain encoded object
 	var val []byte
-	if val, err = r.wn.pack.get(r.Hash); err != nil {
+	if val, err = r.rn.pack.get(r.Hash); err != nil {
 		return
 	}
 
 	// unpack and setup
-	if obj, err = r.wn.pack.unpackToGo(r.wn.sch.Name(), val); err != nil {
+	if obj, err = r.rn.pack.unpackToGo(r.rn.sch.Name(), val); err != nil {
 		return
 	}
-	r.wn.value = obj // keep
+	r.rn.value = obj // keep
 
 	r.trackChanges() // if AutoTrackChanges enabled
 	return
 }
 
+// SetHash of the Ref to given one
+func (r *Ref) SetHash(hash cipher.SHA256) {
+	if r.Hash == hash {
+		return
+	}
+	r.Hash = hash
+	if r.rn != nil {
+		r.rn.value = nil // clear related value
+	}
+	return
+}
+
 func (r *Ref) trackChanges() {
-	if f := r.wn.pack.flags; f&AutoTrackChanges != 0 && f&ViewOnly == 0 {
-		r.wn.pack.Push(r) // track
+	if f := r.rn.pack.flags; f&AutoTrackChanges != 0 && f&ViewOnly == 0 {
+		r.rn.pack.Push(r) // track
 	}
 }
 
@@ -194,68 +218,68 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 		return
 	}
 
-	if r.wn == nil {
+	if r.rn == nil {
 		return errors.New("can't set value: the Ref is not attached to Pack")
 	}
 
-	if r.wn.pack.flags&ViewOnly != 0 {
+	if r.rn.pack.flags&ViewOnly != 0 {
 		return ErrViewOnlyTree
 	}
 
 	var sch Schema
-	if sch, obj, err = r.wn.pack.initialize(obj); err != nil {
+	if sch, obj, err = r.rn.pack.initialize(obj); err != nil {
 		return fmt.Errorf("can't set value to Ref: %v", err)
 	}
 
-	if r.wn.sch != nil && r.wn.sch != sch {
+	if r.rn.sch != nil && r.rn.sch != sch {
 		return fmt.Errorf(`can't set value: type of given object "%T"`+
-			" is not type of the Ref %q", obj, r.wn.sch.String())
+			" is not type of the Ref %q", obj, r.rn.sch.String())
 	}
 
-	r.wn.sch = sch // keep schema (if it was nil or the same)
+	r.rn.sch = sch // keep schema (if it was nil or the same)
 
 	if obj == nil {
 		r.Clear() // the obj was a nil pointer of some type
 		return
 	}
 
-	r.wn.value = obj // keep
+	r.rn.value = obj // keep
 
-	if key, val := r.wn.pack.dsave(obj); key != r.Hash {
+	if key, val := r.rn.pack.dsave(obj); key != r.Hash {
 		r.Hash = key
-		r.wn.pack.set(key, val) // save
-		if err = r.wn.unsave(); err != nil {
-			return
-		}
+		r.rn.pack.set(key, val) // save
+
+		// frozen
+		//
+		// if up := r.upper; up != nil {
+		// 	if err = up.unsave(); err != nil {
+		// 		return
+		// 	}
+		// }
 	}
 
 	r.trackChanges()
 	return
 }
 
-// if the Ref has wn.value
+// if the Ref has rn.value
 func (r *Ref) commit() (err error) {
 
-	if r.wn == nil {
+	if r.rn == nil {
 		panic("commit not initialized Ref")
 	}
 
-	if r.Hash == (cipher.SHA256{}) && r.wn.value == nil {
+	if r.Hash == (cipher.SHA256{}) || r.rn.value == nil {
 		return // everything is ok
 	}
 
-	if r.wn.value == nil {
-		return // never happens
-	}
-
-	key, val := r.wn.pack.dsave(r.wn.value)
+	key, val := r.rn.pack.dsave(r.rn.value)
 	if key == r.Hash {
 		return
 	}
 
 	r.Hash = key
-	r.wn.pack.set(key, val) // save
-	err = r.wn.unsave()     // bubble up
+	r.rn.pack.set(key, val) // save
 	return
 }
 
@@ -266,11 +290,8 @@ func (r *Ref) Clear() (err error) {
 		return // already clear
 	}
 	r.Hash = cipher.SHA256{}
-	if r.wn != nil {
-		r.wn.value = nil
-		if err = r.wn.unsave(); err != nil { // bubble changes up
-			return
-		}
+	if r.rn != nil {
+		r.rn.value = nil
 	}
 	return
 }
@@ -284,10 +305,10 @@ func (r *Ref) Clear() (err error) {
 // will not be a part of the Refs
 func (r *Ref) Copy() (cp Ref) {
 	cp.Hash = r.Hash
-	if r.wn != nil {
-		cp.wn = &walkNode{
-			sch:  r.wn.sch,
-			pack: r.wn.pack,
+	if r.rn != nil {
+		cp.rn = &refNode{
+			sch:  r.rn.sch,
+			pack: r.rn.pack,
 		}
 	}
 	return

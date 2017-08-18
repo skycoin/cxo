@@ -10,9 +10,12 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// A Refs represetns array of Ref.
-// You should not change fields of
-// the Refs manually
+// A Refs represetns array of referencs.
+// The Refs contains RefsElem(s). To delete
+// an element use Delete method of the
+// RefsElem. It's impossible to reborn
+// deleted RefsElem. To cahgne Hash field
+// of the Refs use SetHash method
 type Refs struct {
 	Hash cipher.SHA256 // hash of the Refs
 
@@ -21,15 +24,28 @@ type Refs struct {
 	depth  int `enc:"-"` // not stored
 	degree int `enc:"-"` // not stored
 
-	length   int     `enc:"-"`
-	branches []*Refs `enc:"-"` // nodes
-	leafs    []*Ref  `enc:"-"`
+	length   int         `enc:"-"`
+	branches []*Refs     `enc:"-"` // branches
+	leafs    []*RefsElem `enc:"-"` // leafs
 
-	upper *Refs                  `enc:"-"` // upper node (nil for root)
-	wn    *walkNode              `enc:"-"` // wn of Refs
-	index map[cipher.SHA256]*Ref `enc:"-"` // index (or reference)
+	upper *Refs     `enc:"-"` // upper node (nil for root)
+	rn    *refsNode `enc:"-"` // pack, schema, index
+}
 
-	reduceLock bool `enc:"-"` // don't rebuild the tree in some cases
+func (r *Refs) isInitialized() bool {
+	return r.rn != nil
+}
+
+type refsNode struct {
+	pack  *Pack                       // related Pack
+	sch   Schema                      // shema of the Refs
+	index map[cipher.SHA256]*RefsElem // index (or reference)
+
+	// lock
+	// - don't rebuild the tree in some cases
+	// - don't allow Append, Ascend, Descend
+	//   methods in some cases
+	iterating bool
 }
 
 // IsBlank returns true if the Refs is blank
@@ -80,107 +96,139 @@ func (r *Refs) isRoot() bool {
 }
 
 // setup wn field of leaf-Ref
-func (r *Refs) setupInternalsOfLeaf(leaf *Ref) {
-	if leaf.wn != nil {
-		return // already set up
+func (r *Refs) setupInternalsOfLeaf(leaf *RefsElem) {
+	leaf.rn = r.rn
+	leaf.upper = r
+}
+
+// the r is root
+func (r *Refs) attach() {
+	if r.depth == 0 {
+		if len(r.leafs) == 0 {
+			return
+		}
+		if up := r.leafs[0].upper; up == r {
+			return // everything is ok already
+		} else if up != nil {
+			up.leafs = nil // clear
+			up.rn = nil    // detach
+		}
+		for _, leaf := range r.leafs {
+			leaf.upper = r // re-attach
+		}
+		return
 	}
-	leaf.wn = &walkNode{
-		upper: r,
-		sch:   r.wn.sch,
-		pack:  r.wn.pack,
+	if len(r.branches) == 0 {
+		return
+	}
+	if up := r.branches[0].upper; up == r {
+		return // everything is ok already
+	} else if up != nil {
+		up.branches = nil // clear
+		up.rn = nil       // detach
+	}
+	for _, br := range r.branches {
+		br.upper = r // re-attach
 	}
 }
 
 // from (1) to (2)
 func (r *Refs) load(depth int) (err error) {
 
+	if r.rn == nil {
+		return errors.New("Refs is not attached to Pack")
+	}
+
+	// since we are using non-pinter values we must to know,
+	// are nested nodes points to the r
+	r.attach()
+
 	if r.isLoaded() {
 		return // already loaded
 	}
 
-	if r.wn == nil {
-		return errors.New("Refs is not attached to Pack")
-	}
-
-	if r.isRoot() && r.wn.pack.flags&HashTableIndex != 0 {
-		r.index = make(map[cipher.SHA256]*Ref)
+	if r.isRoot() && r.rn.pack.flags&HashTableIndex != 0 {
+		r.rn.index = make(map[cipher.SHA256]*RefsElem)
 	}
 
 	var val []byte
-	if val, err = r.wn.pack.get(r.Hash); err != nil {
+	if val, err = r.rn.pack.get(r.Hash); err != nil {
 		return
 	}
 
-	var er encodedRefs
-	if err = encoder.DeserializeRaw(val, &er); err != nil {
-		return
-	}
-
-	r.depth = int(er.Depth)   // 0 if the r is not root of Refs
-	r.degree = int(er.Degree) // 0 if the r is not root of Refs
-	r.length = int(er.Length) // actual value
+	var nested []cipher.SHA256 // nested nodes
 
 	if r.isRoot() {
-		depth = r.depth // this r is root and we're using depth from database
+		var er encodedRefs
+		if err = encoder.DeserializeRaw(val, &er); err != nil {
+			return
+		}
+		r.depth = int(er.Depth)   // get depth from database
+		r.degree = int(er.Degree) // get degree from datbase
+		r.length = int(er.Length) // get length from database
+
+		depth = r.depth // it's root and we are using depth from database
+
+		nested = er.Nested // nested nodes or leafs
+	} else {
+		var ern encodedRefsNode
+		if err = encoder.DeserializeRaw(val, &ern); err != nil {
+			return
+		}
+		r.length = int(ern.Length) // length of the node
+
+		nested = ern.Nested // nested nodes
 	}
 
 	if depth == 0 {
 
-		// er.Nested contains leafs
+		// the nested contains leafs
 
-		r.leafs = make([]*Ref, 0, len(er.Nested))
+		r.leafs = make([]*RefsElem, 0, len(nested))
 
-		for _, hash := range er.Nested {
+		for _, hash := range nested {
 
-			leaf := new(Ref)
+			leaf := new(RefsElem)
 			leaf.Hash = hash
+			r.setupInternalsOfLeaf(leaf)
 
 			r.leafs = append(r.leafs, leaf)
 
-			if r.wn.pack.flags&HashTableIndex != 0 {
-				r.index[hash] = leaf
+			if r.rn.pack.flags&HashTableIndex != 0 {
+				r.rn.index[hash] = leaf
 			}
 
-			if r.wn.pack.flags&EntireTree != 0 {
-
-				r.setupInternalsOfLeaf(leaf) // create walkNode of the leaf
-
+			if r.rn.pack.flags&EntireTree != 0 {
 				if _, err = leaf.Value(); err != nil { // load value of the leaf
 					return
 				}
-
 			}
 
 		}
 
 		return
-
 	}
 
-	// er.Nested contains branches
+	// the nested contains branches
 
-	r.branches = make([]*Refs, 0, len(er.Nested))
+	r.branches = make([]*Refs, 0, len(nested))
 
-	for _, hash := range er.Nested {
+	for _, hash := range nested {
 
 		branch := new(Refs)
 
 		branch.Hash = hash
 
-		branch.wn = r.wn
-		branch.index = r.index
+		branch.rn = r.rn
 		branch.upper = r
 
 		r.branches = append(r.branches, branch)
 
-		if r.wn.pack.flags&(EntireTree|EntireMerkleTree) != 0 {
-
+		if r.rn.pack.flags&(EntireTree|EntireMerkleTree|HashTableIndex) != 0 {
 			// go deepper
-
 			if err = branch.load(depth - 1); err != nil {
 				return
 			}
-
 		}
 
 	}
@@ -205,8 +253,8 @@ func (r *Refs) Len() (ln int, err error) {
 
 // RefByIndex returns element by index. To delete an element
 // by index use RefByIndex and then Clear result (if found).
-// You also can set another value using this approach
-func (r *Refs) RefByIndex(i int) (ref *Ref, err error) {
+// You also can set another value using this approach.
+func (r *Refs) RefByIndex(i int) (ref *RefsElem, err error) {
 	if err = r.load(0); err != nil {
 		return
 	}
@@ -217,12 +265,12 @@ func (r *Refs) RefByIndex(i int) (ref *Ref, err error) {
 	return
 }
 
-func (r *Refs) refByIndex(depth, i int) (ref *Ref, err error) {
+func (r *Refs) refByIndex(depth, i int) (ref *RefsElem, err error) {
 
 	// the r is loaded
 	// i >= 0
 
-	if r.depth == 0 {
+	if depth == 0 {
 		// i is index in r.leafs
 		if i >= len(r.leafs) {
 			err = fmt.Errorf(
@@ -232,7 +280,6 @@ func (r *Refs) refByIndex(depth, i int) (ref *Ref, err error) {
 		}
 
 		ref = r.leafs[i]
-		r.setupInternalsOfLeaf(ref)
 		return
 	}
 
@@ -266,32 +313,113 @@ func (r *Refs) refByIndex(depth, i int) (ref *Ref, err error) {
 
 // RefByHash returns Ref by its hash. It returns first Ref.
 // The call is O(1) if HashTableIndex flag set. Otherwise
-// the call is O(n). It returns (nil, nil) if requested Ref
+// the call is O(n). It returns (nil, nil) if requested RefsElem
 // not found
-func (r *Refs) RefByHash(hash cipher.SHA256) (needle *Ref, err error) {
+func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 
 	if err = r.load(0); err != nil {
 		return
 	}
 
-	if r.wn.pack.flags&HashTableIndex != 0 {
-		needle = r.index[hash]
+	if r.rn.pack.flags&HashTableIndex != 0 {
+		needle = r.rn.index[hash]
 		return
 	}
 
-	_, err = r.ascend(r.depth, 0, func(_ int, ref *Ref) (_ error) {
-		if ref.Hash == hash {
-			needle = ref
-			return ErrStopIteration
+	if r.length == 0 {
+		return // nil, nil (not found)
+	}
+
+	_, err = r.descend(r.depth, r.length-1,
+		func(_ int, el *RefsElem) (_ error) {
+			if el.Hash == hash {
+				needle = el
+				return ErrStopIteration
+			}
+			return
+		})
+	if err == ErrStopIteration {
+		err = nil
+	}
+	return
+}
+
+// RefByHashWithIndex returns RefsElem by its hash and index of the
+// element. It returns (0, nil, nil) if the needle not found
+func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
+	err error) {
+
+	if err = r.load(0); err != nil {
+		return
+	}
+
+	if r.rn.pack.flags&HashTableIndex != 0 {
+		var ok bool
+		if needle, ok = r.rn.index[hash]; !ok {
+			return // 0, nil, nil
+		}
+		// walk up
+		if needle.upper == nil {
+			err = errors.New("the RefsElem is detached from Refs-tree" +
+				" (it shoud not happen, please contact CXO developer)")
+			return
+		}
+		// upper of the needle contans leafs,
+		// all nodes above contains branches
+
+		// check the needle.upper
+		for _, leaf := range needle.upper.leafs {
+			if leaf == needle {
+				break
+			}
+			i++
+		}
+
+		cur := needle.upper // the node that contains leafs (the needle holder)
+		if cur.upper == nil {
+			return // we're done
+		}
+
+		// the cur already checked out, take a look above
+
+		for up := cur.upper; up != nil; cur, up = up, up.upper {
+			// so, we need to check out branches only,
+			// because the needle.upper contains leafs, but
+			// all nodes above contains brances
+
+			for _, br := range up.branches {
+				if br == cur {
+					break
+				}
+				i += br.length
+			}
+
 		}
 		return
-	})
+	}
+
+	if r.length == 0 {
+		return // 0, nil, nil (not found)
+	}
+
+	_, err = r.descend(r.depth, r.length-1,
+		func(k int, el *RefsElem) (_ error) {
+			if el.Hash == hash {
+				needle, i = el, k
+				return ErrStopIteration
+			}
+			return
+		})
+	if err == ErrStopIteration {
+		err = nil
+	}
+
 	return
 }
 
 // reduce depth, the r is root, the r is loaded
 func (r *Refs) reduceIfNeed() (err error) {
-	if r.reduceLock == true {
+	if r.rn.iterating == true {
 		return // don't reduce we are inside Ascend or Descend
 	}
 	var depth = r.depth
@@ -308,7 +436,7 @@ func (r *Refs) reduceIfNeed() (err error) {
 // function. Don't modify the Refs using Append, Clear
 // or similar inside the function. Use ErrStopIteration
 // to stop the iteration
-type IterateRefsFunc func(i int, ref *Ref) (err error)
+type IterateRefsFunc func(i int, ref *RefsElem) (err error)
 
 // Ascend iterates over Refs ascending order. See also
 // docs for IterateRefsFunc
@@ -321,21 +449,21 @@ func (r *Refs) Ascend(irf IterateRefsFunc) (err error) {
 	// we can't rebuild the tree while iterating,
 	// but we can rebuild it after
 
-	r.reduceLock = true
-	defer func() { r.reduceLock = false }() // unlock
+	r.rn.iterating = true                     // lock
+	defer func() { r.rn.iterating = false }() // unlock
 
-	_, err = r.ascend(r.depth, r.length-1, irf)
+	_, err = r.ascend(r.depth, 0, irf)
 	if err != nil && err != ErrStopIteration {
 		return
 	}
 
-	r.reduceLock = false // unlock
-	err = r.reduceIfNeed()
+	r.rn.iterating = false // unlock
+	err = r.reduceIfNeed() // overwrite the ErrStopIteration if so
 	return
-
 }
 
 func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
+
 	// root already loaded
 	if err = r.load(depth); err != nil {
 		return
@@ -347,7 +475,9 @@ func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
 
 	if depth == 0 { // leafs
 		for _, leaf := range r.leafs {
-			r.setupInternalsOfLeaf(leaf)
+			if leaf.Hash == (cipher.SHA256{}) {
+				continue
+			}
 			if err = irf(i, leaf); err != nil {
 				return
 			}
@@ -359,6 +489,9 @@ func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
 
 	// branches
 	for _, br := range r.branches {
+		if br.Hash == (cipher.SHA256{}) {
+			continue
+		}
 		var subpass int
 		if subpass, err = br.ascend(depth-1, i, irf); err != nil {
 			return
@@ -384,19 +517,18 @@ func (r *Refs) Descend(irf IterateRefsFunc) (err error) {
 	// we can't rebuild the tree while iterating,
 	// but we can rebuild it after
 
-	r.reduceLock = true
-	defer func() { r.reduceLock = false }()
+	r.rn.iterating = true
+	defer func() { r.rn.iterating = false }()
 
 	_, err = r.descend(r.depth, r.length-1, irf)
 	if err != nil && err != ErrStopIteration {
 		return
 	}
 
-	r.reduceLock = false // unlock
+	r.rn.iterating = false // unlock
 	err = r.reduceIfNeed()
 
 	return
-
 }
 
 func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
@@ -413,7 +545,11 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 	}
 
 	if depth == 0 { // leafs
-		for _, leaf := range r.leafs {
+		for k := len(r.leafs) - 1; k >= 0; k-- {
+			leaf := r.leafs[k]
+			if leaf.Hash == (cipher.SHA256{}) {
+				continue
+			}
 			if i < 0 {
 				// TODO (kostyarin): detailed error
 				err = errors.New(
@@ -421,7 +557,6 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 				return
 			}
 
-			r.setupInternalsOfLeaf(leaf)
 			if err = irf(i, leaf); err != nil {
 				return
 			}
@@ -434,7 +569,11 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 
 	// branches
 
-	for _, br := range r.branches {
+	for k := len(r.branches) - 1; k >= 0; k-- {
+		br := r.branches[k]
+		if br.Hash == (cipher.SHA256{}) {
+			continue
+		}
 		if i < 0 {
 			// TODO (kostyarin): detailed error
 			err = errors.New(
@@ -449,7 +588,6 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 
 		i -= subpass
 		pass += subpass
-
 	}
 
 	return
@@ -505,11 +643,12 @@ func (r *Refs) freeSpaceOnTail(degree, depth int) (fsot int, err error) {
 
 // try to insert given reference to the node;
 //
-// the ref is not blank
+// the el is not blank
 // the tryInsert doesn't cahnge 'length' and 'Hash' fields,
 // thus we need to walk the tree (from tail or whole tree) and
 // check the length and change hashes if the length has been changed
-func (r *Refs) tryInsert(degree, depth int, ref *Ref) (ok bool, err error) {
+func (r *Refs) tryInsert(degree, depth int, el *RefsElem) (ok bool,
+	err error) {
 
 	if err = r.load(depth); err != nil {
 		return
@@ -523,18 +662,14 @@ func (r *Refs) tryInsert(degree, depth int, ref *Ref) (ok bool, err error) {
 			return // can not
 		}
 
-		// setup the ref and insert
-		pwn := ref.wn
-		r.setupInternalsOfLeaf(ref)
-		if pwn != nil && pwn.value != nil {
-			ref.wn.value = pwn.value // keep the value
+		// setup the el and insert
+		r.setupInternalsOfLeaf(el)
+
+		if r.rn.pack.flags&HashTableIndex != 0 {
+			r.rn.index[el.Hash] = el // insert to the index
 		}
 
-		if r.wn.pack.flags&HashTableIndex != 0 {
-			r.index[ref.Hash] = ref // insert to the index
-		}
-
-		r.leafs, ok = append(r.leafs, ref), true // inserted
+		r.leafs, ok = append(r.leafs, el), true // inserted
 		return
 	}
 
@@ -544,7 +679,7 @@ func (r *Refs) tryInsert(degree, depth int, ref *Ref) (ok bool, err error) {
 	if len(r.branches) > 0 {
 
 		lb := r.branches[len(r.branches)-1]
-		if ok, err = lb.tryInsert(degree, depth-1, ref); err != nil || ok {
+		if ok, err = lb.tryInsert(degree, depth-1, el); err != nil || ok {
 			return // success or error
 		}
 
@@ -560,11 +695,10 @@ func (r *Refs) tryInsert(degree, depth int, ref *Ref) (ok bool, err error) {
 
 	nb := new(Refs) // new branch
 
-	nb.wn = r.wn
-	nb.index = r.index
+	nb.rn = r.rn
 	nb.upper = r
 
-	if ok, err = nb.tryInsert(degree, depth-1, ref); err != nil {
+	if ok, err = nb.tryInsert(degree, depth-1, el); err != nil {
 		return // never happens (a precaution)
 	}
 
@@ -579,37 +713,53 @@ func (r *Refs) tryInsert(degree, depth int, ref *Ref) (ok bool, err error) {
 // save the Refs (not recursive)
 func (r *Refs) save(depth int) {
 
-	var nl int         // new length
-	var er encodedRefs // encode to save and get hash
+	var nl int                 // new length
+	var nested []cipher.SHA256 // nested elements
 
 	if depth == 0 {
-		er.Nested = make([]cipher.SHA256, 0, len(r.leafs))
+		nested = make([]cipher.SHA256, 0, len(r.leafs))
 		for _, leaf := range r.leafs {
 			if leaf.Hash == (cipher.SHA256{}) {
 				continue
 			}
 			nl++
-			er.Nested = append(er.Nested, leaf.Hash)
+			nested = append(nested, leaf.Hash)
 		}
 	} else {
-		er.Nested = make([]cipher.SHA256, 0, len(r.branches))
+		nested = make([]cipher.SHA256, 0, len(r.branches))
 		for _, br := range r.branches {
 			if br.Hash == (cipher.SHA256{}) {
 				continue
 			}
 			nl += br.length
-			er.Nested = append(er.Nested, br.Hash)
+			nested = append(nested, br.Hash)
 		}
 	}
 
-	er.Length, r.length = uint32(nl), nl
-
-	if r.isRoot() {
-		er.Degree = uint32(r.degree)
-		er.Depth = uint32(depth)
+	r.length = nl // store actual (possible new) length
+	if nl == 0 {
+		// clear (don't save blank Refs)
+		r.depth = 0
+		r.leafs, r.branches = nil, nil
+		r.Hash = cipher.SHA256{}
+		return
 	}
 
-	r.Hash, _ = r.wn.pack.save(er)
+	if r.isRoot() {
+		// root Refs represented as encodedRefs
+		var er encodedRefs           // encode to save and get hash
+		er.Degree = uint32(r.degree) // keep in database
+		er.Depth = uint32(depth)     // keep in database
+		er.Length = uint32(nl)       // keep in database
+		er.Nested = nested           // actually, keep in database
+		r.Hash, _ = r.rn.pack.save(er)
+	} else {
+		// non-root Refs represented as encodedRefsNode
+		var ern encodedRefsNode
+		ern.Nested = nested     // keep in database
+		ern.Length = uint32(nl) // keep in daabase
+		r.Hash, _ = r.rn.pack.save(ern)
+	}
 	return
 }
 
@@ -683,16 +833,19 @@ func (r *Refs) changeDepth(depth int) (err error) {
 
 	nr.depth = depth
 	nr.degree = r.degree
-	nr.wn = r.wn
+	nr.rn = &refsNode{
+		pack: r.rn.pack,
+		sch:  r.rn.sch,
+	}
 
-	if r.wn.pack.flags&HashTableIndex != 0 {
-		nr.index = make(map[cipher.SHA256]*Ref)
+	if r.rn.pack.flags&HashTableIndex != 0 {
+		nr.rn.index = make(map[cipher.SHA256]*RefsElem)
 	}
 
 	// 1) create branches (keep 'Hash' and 'length' fields blank)
 	// 2) walk throut the tree and set proper 'Hash' and 'length' fields
 
-	_, err = r.ascend(r.depth, 0, func(_ int, ref *Ref) (err error) {
+	_, err = r.ascend(r.depth, 0, func(_ int, ref *RefsElem) (err error) {
 		var ok bool
 		if ok, err = nr.tryInsert(nr.degree, nr.depth, ref); err != nil {
 			return
@@ -714,7 +867,28 @@ func (r *Refs) changeDepth(depth int) (err error) {
 	}
 
 	*r = nr // replace the r with nr
+
+	// set proper upper
+	if r.depth == 0 {
+		for _, leaf := range r.leafs {
+			leaf.upper = r
+		}
+		return
+	}
+	for _, br := range r.branches {
+		br.upper = r
+	}
+
 	return
+}
+
+// Schema of the Refs. The method can returns nil if
+// the Refs are not attached
+func (r *Refs) Schema() (sch Schema) {
+	if r.rn == nil {
+		return
+	}
+	return r.rn.sch
 }
 
 // Append obejcts to the Refs. Type of the objects must
@@ -730,7 +904,7 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 		return
 	}
 
-	if r.wn.pack.flags&ViewOnly != 0 {
+	if r.rn.pack.flags&ViewOnly != 0 {
 		return ErrViewOnlyTree
 	}
 
@@ -747,17 +921,17 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 			continue // delte from the objs
 		}
 
-		if os, obj, err = r.wn.pack.initialize(obj); err != nil {
+		if os, obj, err = r.rn.pack.initialize(obj); err != nil {
 			return
 		}
 
 		// check out schemas
 
-		if r.wn.sch != nil {
-			if r.wn.sch != os {
+		if r.rn.sch != nil {
+			if r.rn.sch != os {
 				err = fmt.Errorf(
 					"can't Append object of another type: want %q, got %q",
-					r.wn.sch.String(), os.String())
+					r.rn.sch.String(), os.String())
 				return
 			}
 		} else if ns != nil && ns != os {
@@ -784,8 +958,8 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 		return // only nils
 	}
 
-	if r.wn.sch == nil {
-		r.wn.sch = ns // this will be schema of the Refs
+	if r.rn.sch == nil {
+		r.rn.sch = ns // this will be schema of the Refs
 	}
 
 	// do we need to rebuild the tree to place new elements
@@ -813,12 +987,89 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 	// append
 	var ok bool
 	for _, obj := range objs {
-		ref := new(Ref)
+		ref := new(RefsElem)
 
-		ref.wn = &walkNode{value: obj}    // keep initialized value
-		ref.Hash, _ = r.wn.pack.save(obj) // set Hash field, saving object
+		ref.rn = r.rn                     //
+		ref.value = obj                   // keep initialized value
+		ref.Hash, _ = r.rn.pack.save(obj) // set Hash field, saving object
 
 		if ok, err = r.tryInsert(r.degree, r.depth, ref); err != nil {
+			return
+		}
+		if !ok {
+			panic("can't insert inside Append: bug")
+		}
+	}
+
+	// walk from tail to update Hash and length fields of the
+	// tree after appending, saving new and changed elements
+	_, err = r.updateHashLengthFieldsFromTail(r.depth)
+	return
+}
+
+// AppendHash to the Refs. Type of the objects must
+// be the same as type of the Refs. It never checked
+// Blank hashes will be skipped
+func (r *Refs) AppendHashes(hashes ...cipher.SHA256) (err error) {
+
+	if len(hashes) == 0 {
+		return // nothing to append
+	}
+
+	if err = r.load(0); err != nil {
+		return
+	}
+
+	if r.rn.pack.flags&ViewOnly != 0 {
+		return ErrViewOnlyTree
+	}
+
+	// rid out of blank hashes
+	var i int
+	for _, hash := range hashes {
+		if hash == (cipher.SHA256{}) {
+			continue // delte from the hashes
+		}
+		hashes[i] = hash
+		i++
+	}
+	hashes = hashes[:i] // delete all deleted
+
+	if len(hashes) == 0 {
+		return // only blank
+	}
+
+	// do we need to rebuild the tree to place new elements
+	var fsot int
+	if fsot, err = r.freeSpaceOnTail(r.degree, r.depth); err != nil {
+		return
+	}
+
+	if fsot < len(hashes) {
+		// so, we need to rebuild the tree removing zero elements or
+		// increasing depth (and removing the zero elements, actually)
+
+		// new depth, required space
+		var depth, required int = r.depth, r.length + len(hashes)
+		for ; pow(r.degree, depth) < required; depth++ {
+		}
+
+		// rebuild the tree, depth can be the same
+		if err = r.changeDepth(depth); err != nil {
+			return
+		}
+
+	}
+
+	// append
+	var ok bool
+	for _, hash := range hashes {
+		el := new(RefsElem)
+
+		el.rn = r.rn   //
+		el.Hash = hash //
+
+		if ok, err = r.tryInsert(r.degree, r.depth, el); err != nil {
 			return
 		}
 		if !ok {
@@ -843,31 +1094,29 @@ func (r *Refs) Clear() {
 		// changes
 		if r.depth == 0 {
 			for _, leaf := range r.leafs {
-				if leaf.wn != nil {
-					leaf.wn.upper = nil
-				}
+				leaf.upper = nil // detach from Refs
+				leaf.rn = nil
 			}
 		} else {
 			for _, br := range r.branches {
-				br.index = nil
 				br.upper = nil
-				br.wn = nil
+				br.rn = nil
 			}
 		}
 	}
 	r.Hash = cipher.SHA256{}
 	r.length = 0
 	r.depth = 0
-	if r.wn.pack.flags&HashTableIndex != 0 {
-		r.index = make(map[cipher.SHA256]*Ref) // clear
+	if r.rn.pack.flags&HashTableIndex != 0 {
+		r.rn.index = make(map[cipher.SHA256]*RefsElem) // clear
 	}
 	return
 }
 
 // utils
 
-// unsave implements unsaver interface
-func (r *Refs) unsave() (err error) {
+// bubble changes up
+func (r *Refs) bubble() (err error) {
 	stack := []*Refs{}
 
 	// push unsaved nodes to the stack
@@ -876,10 +1125,9 @@ func (r *Refs) unsave() (err error) {
 		stack = append(stack, up)
 	}
 
-	// now the 'up' keeps root or pre-root node if this
-	// Refs is part of detached tree (after Clear)
-	if up.wn == nil {
-		// this is detached part of tree
+	root := stack[len(stack)-1]
+	if root.depth != len(stack)-1 {
+		// it's detached branch of Refs
 		return
 	}
 
@@ -888,13 +1136,13 @@ func (r *Refs) unsave() (err error) {
 		br.save(i)
 	}
 
-	// the unsave call can be triggered by deleteing
+	// the bubble can be triggered by deleteing
 	// and length o the tree can be changed,
 	// thus we need to rebuild the tree if it
 	// contains a lot of zero-elements
 
 	// up keeps root Refs
-	err = up.reduceIfNeed()
+	err = root.reduceIfNeed()
 	return
 }
 
@@ -905,12 +1153,17 @@ func (r *Refs) items() int {
 	return pow(r.degree, r.depth+1)
 }
 
-// encoded representation of Refs and nodes of the Refs
+// encoded representation of Refs
 type encodedRefs struct {
-	Depth  uint32          // actual only for Refs, it is zero for nodes of Refs
-	Degree uint32          // actual only for Refs, it is zero for nodes of Refs
-	Length uint32          // actual for Refs and nodes
+	Depth  uint32          // depth of the Refs (depth-1)
+	Degree uint32          // deger of the Refs
+	Length uint32          // total elements
 	Nested []cipher.SHA256 // hashes of nested objects (leafs or ndoes)
+}
+
+type encodedRefsNode struct {
+	Nested []cipher.SHA256
+	Length uint32 // total elements
 }
 
 // a**b
@@ -928,7 +1181,7 @@ func pow(a, b int) (p int) {
 
 // don't need to commit the Refs
 func (r *Refs) commit() (_ error) {
-	if r.wn == nil {
+	if r.rn == nil {
 		panic("commit not initialized Refs")
 	}
 	return
@@ -944,7 +1197,7 @@ func (r *Refs) commit() (_ error) {
 // to print pass true
 func (r *Refs) DebugString(forceLoad bool) string {
 	var gt gotree.GTStructure
-	gt.Name = "*(refs) " + r.Short()
+	gt.Name = "[](refs) " + r.Short()
 
 	if !forceLoad && !r.isLoaded() {
 		gt.Name += " (not loaded)"
@@ -984,4 +1237,169 @@ func (r *Refs) debugItems(forceLoad bool,
 	}
 	return
 
+}
+
+// ------ ------ ------ ------ ------ ------ ------ ------ ------ ------ ------
+
+// RefsElem
+
+// RefsElem is element of Refs
+type RefsElem struct {
+	Hash cipher.SHA256 // hash of the RefsElem
+
+	// internals
+	value interface{} // golang-value of the RefsElem
+	rn    *refsNode   // related
+	upper *Refs       // upper node
+}
+
+// Short string
+func (r *RefsElem) Short() string {
+	return r.Hash.Hex()[:7]
+}
+
+// String implements fmt.Stringer interface
+func (r *RefsElem) String() string {
+	return r.Hash.Hex()
+}
+
+func (r *RefsElem) SetHash(hash cipher.SHA256) (err error) {
+	if r.Hash == hash {
+		return
+	}
+	if hash == (cipher.SHA256{}) {
+		return r.Delete()
+	}
+	r.value = nil // clear related value
+	r.Hash = hash
+	return
+}
+
+// Delete the RefsElem from related Refs
+func (r *RefsElem) Delete() (err error) {
+	r.Hash = (cipher.SHA256{})
+	r.value = nil
+	r.rn = nil // detach
+	if r.upper != nil {
+		err = r.upper.bubble()
+	}
+	r.upper = nil
+	return
+}
+
+// Value of the RefsElem. If err is nil, then obj is not
+func (r *RefsElem) Value() (obj interface{}, err error) {
+
+	// copy pasted from Ref.Value with little changes
+	//
+	// TODO (kostyarin): DRY with the Ref.Value
+
+	if r.rn == nil {
+		err = errors.New(
+			"can't get value: the RefsElem is not attached to Pack")
+		return
+	}
+
+	if r.value != nil {
+		obj = r.value // already have (already tracked)
+		return
+	}
+
+	if r.rn.sch == nil {
+		err = errors.New("can't get value: Schema of related Refs is nil")
+		return
+	}
+
+	// obtain encoded object
+	var val []byte
+	if val, err = r.rn.pack.get(r.Hash); err != nil {
+		return
+	}
+
+	// unpack and setup
+	if obj, err = r.rn.pack.unpackToGo(r.rn.sch.Name(), val); err != nil {
+		return
+	}
+	r.value = obj // keep
+
+	r.trackChanges() // if AutoTrackChanges enabled
+	return
+}
+
+// SetValue of the element. A nil removes this
+// element from related Refs
+func (r *RefsElem) SetValue(obj interface{}) (err error) {
+
+	// copy-pased from Ref.SetValue wiht little changes
+	//
+	// TODO (kostyarin): DRY with Ref.SetValue
+
+	if obj == nil {
+		return r.Delete()
+	}
+
+	if r.rn == nil {
+		return errors.New(
+			"can't set value: the RefsElem is not attached to Pack")
+	}
+
+	if r.upper == nil {
+		return errors.New(
+			"can't set value: the RefsElem is not attached to Refs")
+	}
+
+	if r.rn.pack.flags&ViewOnly != 0 {
+		return ErrViewOnlyTree
+	}
+
+	var sch Schema
+	if sch, obj, err = r.rn.pack.initialize(obj); err != nil {
+		return fmt.Errorf("can't set value to RefsElem: %v", err)
+	}
+
+	if r.rn.sch != nil && r.rn.sch != sch {
+		return fmt.Errorf(`can't set value: type of given object "%T"`+
+			" is not type of the Ref %q", obj, r.rn.sch.String())
+	}
+
+	if obj == nil {
+		return r.Delete() // the obj was a nil pointer of some type
+	}
+
+	r.rn.sch = sch // keep schema (if it was nil or the same)
+	r.value = obj  // keep
+
+	if key, val := r.rn.pack.dsave(obj); key != r.Hash {
+		r.Hash = key
+		r.rn.pack.set(key, val) // save
+
+		if err = r.upper.bubble(); err != nil {
+			return
+		}
+	}
+
+	r.trackChanges()
+	return
+}
+
+func (r *RefsElem) trackChanges() {
+	if r.rn.pack.flags&AutoTrackChanges != 0 {
+		r.rn.pack.Push(r) // track
+	}
+	return
+}
+
+func (r *RefsElem) commit() (err error) {
+	if r.rn == nil || r.value == nil || r.upper == nil {
+		return // detached or not loaded
+	}
+	key, val := r.rn.pack.dsave(r.value) // don't save - get key-value pair
+	if key == r.Hash {
+		return
+	}
+	r.rn.pack.set(key, val) // save
+	r.Hash = key
+
+	err = r.upper.bubble() // bubble up
+	return
 }

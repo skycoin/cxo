@@ -253,7 +253,75 @@ func TestPack_Refs(t *testing.T) {
 		t.Error("wring degree of fresh Refs")
 	}
 
-	if refs.wn == nil {
+	if refs.rn == nil {
 		t.Error("pack.Refs returns detached Refs")
 	}
+
+	if refs.upper != nil {
+		t.Error("pack.Refs returns Refs wiht non-nil upper")
+	}
+}
+
+func TestPack_SetFlag(t *testing.T) {
+	c := getCont()
+	defer c.db.Close()
+	defer c.Close()
+
+	pk, sk := cipher.GenerateKeyPair()
+	if err := c.AddFeed(pk); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := c.NewRoot(pk, sk, ViewOnly, c.CoreRegistry().Types())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pack.SetFlag(HashTableIndex)
+	if pack.flags&HashTableIndex == 0 {
+		t.Error("flag was not set")
+	}
+
+	pack.SetFlag(EntireTree)
+	if pack.flags&EntireTree == 0 {
+		t.Error("flag was not set")
+	}
+
+	if pack.flags&ViewOnly == 0 {
+		t.Error("SetFlag clears some flags")
+	}
+
+}
+
+func TestPack_UnsetFlag(t *testing.T) {
+	c := getCont()
+	defer c.db.Close()
+	defer c.Close()
+
+	pk, sk := cipher.GenerateKeyPair()
+	if err := c.AddFeed(pk); err != nil {
+		t.Fatal(err)
+	}
+
+	flags := HashTableIndex | EntireTree | ViewOnly
+
+	pack, err := c.NewRoot(pk, sk, flags, c.CoreRegistry().Types())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pack.UnsetFlag(HashTableIndex)
+	if pack.flags&HashTableIndex != 0 {
+		t.Error("flag was not cleared")
+	}
+
+	pack.UnsetFlag(EntireTree)
+	if pack.flags&EntireTree != 0 {
+		t.Error("flag was not cleared")
+	}
+
+	if pack.flags&ViewOnly == 0 {
+		t.Error("UnsetFlags unsets some necessary flags")
+	}
+
 }

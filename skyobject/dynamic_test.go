@@ -85,7 +85,7 @@ func TestDynamic_Schema(t *testing.T) {
 
 	// not found
 	dr = pack.Dynamic(User{"Alice", 21, nil})
-	dr.wn.sch = nil                   // clear for the test
+	dr.dn.sch = nil                   // clear for the test
 	dr.SchemaRef = SchemaRef{1, 2, 3} // not empty
 	if _, err := dr.Schema(); err == nil {
 		t.Error("missing error")
@@ -147,7 +147,7 @@ func TestDynamic_Value(t *testing.T) {
 
 	// schema not found
 	dr = pack.Dynamic(User{"Alice", 21, nil})
-	dr.wn.value, dr.wn.sch = nil, nil // clear for the test
+	dr.dn.value, dr.dn.sch = nil, nil // clear for the test
 	dr.SchemaRef = SchemaRef{1, 2, 3}
 	if _, err := dr.Value(); err == nil {
 		t.Error("missing error")
@@ -155,7 +155,7 @@ func TestDynamic_Value(t *testing.T) {
 
 	// nil of User
 	dr = pack.Dynamic((*User)(nil))
-	dr.wn.value = nil // clear for the test
+	dr.dn.value = nil // clear for the test
 	if valInterface, err := dr.Value(); err != nil {
 		t.Error(err)
 	} else if valInterface == nil {
@@ -249,11 +249,11 @@ func TestDynamic_SetValue(t *testing.T) {
 
 	// view only
 	dr = pack.Dynamic(nil)
-	pack.flags = pack.flags | ViewOnly
+	pack.setFlag(ViewOnly)
 	if err := dr.SetValue(User{"Alice", 21, nil}); err == nil {
 		t.Error("missing error")
 	}
-	pack.flags = 0
+	pack.unsetFlag(ViewOnly)
 
 	// schema not found
 	type Invader struct {
@@ -331,11 +331,11 @@ func TestDynamic_Clear(t *testing.T) {
 		t.Error("not clear")
 	}
 
-	if dr.wn.value != nil {
+	if dr.dn.value != nil {
 		t.Error("internal value is not clear")
 	}
 
-	if dr.wn.sch != nil {
+	if dr.dn.sch != nil {
 		t.Error("internal schema is not clear")
 	}
 }

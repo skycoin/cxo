@@ -108,9 +108,11 @@ func (p *Pack) setupDynamicToGo(obj, idx reflect.Value) (err error) {
 		return
 	}
 
-	if dr.wn == nil {
-		p.initDynamic(&dr)
+	if dr.isInitialized() {
+		return // already initialized
 	}
+
+	p.initializeDynamic(&dr)
 
 	if p.flags&EntireTree != 0 {
 		_, err = dr.Value()
@@ -139,10 +141,12 @@ func (p *Pack) setupRefToGo(sf reflect.StructField,
 
 	ref := val.Interface().(Ref)
 
-	if ref.wn == nil {
-		p.initRef(&ref)
+	if ref.isInitialized() {
+		return // already initialized
 	}
-	ref.wn.sch = sch
+
+	p.initializeRef(&ref)
+	ref.rn.sch = sch
 
 	if p.flags&EntireTree != 0 {
 		_, err = ref.Value() // setup value
@@ -169,10 +173,12 @@ func (p *Pack) setupRefsToGo(sf reflect.StructField,
 
 	refs := val.Interface().(Refs)
 
-	if refs.wn == nil {
-		p.initRefs(&refs)
+	if refs.isInitialized() {
+		return // already initialized
 	}
-	refs.wn.sch = sch
+
+	p.initializeRefs(&refs)
+	refs.rn.sch = sch
 
 	if p.flags&EntireTree != 0 {
 		err = refs.load(0) // setup the refs

@@ -116,7 +116,7 @@ func TestRef_Value(t *testing.T) {
 
 	// blank
 	ref = pack.Ref(alice)
-	ref.wn.value, ref.Hash = nil, cipher.SHA256{} // clear for the test
+	ref.rn.value, ref.Hash = nil, cipher.SHA256{} // clear for the test
 	if valInterface, err := ref.Value(); err != nil {
 		t.Error(err)
 	} else if valInterface == nil {
@@ -160,12 +160,12 @@ func TestRef_SetValue(t *testing.T) {
 	}
 
 	// view only
-	pack.flags = pack.flags | ViewOnly
+	pack.setFlag(ViewOnly)
 	ref = pack.Ref(nil)
 	if err := ref.SetValue(alice); err == nil {
 		t.Error("missing error")
 	}
-	pack.flags = 0
+	pack.unsetFlag(ViewOnly)
 
 	// type is not registered
 	type Invader struct {
@@ -200,7 +200,7 @@ func TestRef_SetValue(t *testing.T) {
 	val := pack.unsaved[ref.Hash] // keep for next test
 	// clear for the test
 	pack.unsaved = make(map[cipher.SHA256][]byte) // clear cache
-	ref.wn.value = nil
+	ref.rn.value = nil
 	if _, err := ref.Value(); err == nil {
 		t.Error("missing error")
 	}
@@ -247,7 +247,7 @@ func TestRef_Clear(t *testing.T) {
 		t.Error("not clear")
 	}
 
-	if ref.wn.value != nil {
+	if ref.rn.value != nil {
 		t.Error("internal value has not been cleared")
 	}
 

@@ -96,11 +96,11 @@ func TestPack_unpackToGo(t *testing.T) {
 				t.Errorf("wrong type %T", obj)
 			} else if grp.Name != src.Name {
 				t.Error("wrong decode value")
-			} else if grp.Leader.wn == nil {
+			} else if grp.Leader.isInitialized() == false {
 				t.Error("Ref's not initialized")
-			} else if grp.Members.wn == nil {
+			} else if grp.Members.isInitialized() == false {
 				t.Error("Refs were not initialized")
-			} else if grp.Curator.wn == nil {
+			} else if grp.Curator.isInitialized() == false {
 				t.Error("Dynamic's not initialized")
 			}
 		case "cxo.Developer":
@@ -162,13 +162,13 @@ func TestPack_setupToGo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if grp.Leader.wn == nil {
+		if grp.Leader.isInitialized() == false {
 			t.Error("Ref not initialized")
 		}
-		if grp.Members.wn == nil {
+		if grp.Members.isInitialized() == false {
 			t.Error("Refs not initialized")
 		}
-		if grp.Curator.wn == nil {
+		if grp.Curator.isInitialized() == false {
 			t.Error("Dynamic not initialized")
 		}
 
@@ -185,7 +185,7 @@ func TestPack_setupToGo(t *testing.T) {
 		// Members
 		mem := grp.Members
 
-		if mem.index != nil {
+		if mem.rn.index != nil {
 			t.Error("unexpected index")
 		}
 
@@ -278,15 +278,15 @@ func TestPack_setupToGo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if grp.Leader.wn == nil {
+		if grp.Leader.isInitialized() == false {
 			t.Error("Ref not initialized")
 		}
 
-		if grp.Members.wn == nil {
+		if grp.Members.isInitialized() == false {
 			t.Error("Refs not initialized")
 		}
 
-		if grp.Curator.wn == nil {
+		if grp.Curator.isInitialized() == false {
 			t.Error("Dynamic not initialized")
 		}
 

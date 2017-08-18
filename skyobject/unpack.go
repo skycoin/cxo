@@ -266,8 +266,8 @@ func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
 		return
 	}
 
-	if p.r.Refs[i].wn == nil {
-		p.initDynamic(&p.r.Refs[i])
+	if p.r.Refs[i].isInitialized() == false {
+		p.initializeDynamic(&p.r.Refs[i])
 	}
 	obj, err = p.r.Refs[i].Value()
 	return
@@ -396,8 +396,8 @@ func (p *Pack) schemaOf(typ reflect.Type) (sch Schema, err error) {
 	return
 }
 
-func (p *Pack) initDynamic(dr *Dynamic) {
-	dr.wn = &walkNode{pack: p}
+func (p *Pack) initializeDynamic(dr *Dynamic) {
+	dr.dn = &drNode{pack: p}
 }
 
 // Dynamic creates Dynamic by given object. The obj must to be
@@ -406,7 +406,7 @@ func (p *Pack) initDynamic(dr *Dynamic) {
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	p.c.Debugf(VerbosePin, "(*Pack).Dynamic %s %T", p.r.Short(), obj)
 
-	p.initDynamic(&dr)
+	p.initializeDynamic(&dr)
 
 	if err := dr.SetValue(obj); err != nil {
 		panic(err)
@@ -414,8 +414,8 @@ func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	return
 }
 
-func (p *Pack) initRef(r *Ref) {
-	r.wn = &walkNode{pack: p}
+func (p *Pack) initializeRef(r *Ref) {
+	r.rn = &refNode{pack: p}
 }
 
 // Ref of given object. Type of the object must be registered in
@@ -424,7 +424,7 @@ func (p *Pack) initRef(r *Ref) {
 func (p *Pack) Ref(obj interface{}) (ref Ref) {
 	p.c.Debugf(VerbosePin, "(*Pack).Ref %s %T", p.r.Short(), obj)
 
-	p.initRef(&ref)
+	p.initializeRef(&ref)
 
 	if err := ref.SetValue(obj); err != nil {
 		panic(err)
@@ -432,11 +432,11 @@ func (p *Pack) Ref(obj interface{}) (ref Ref) {
 	return
 }
 
-func (p *Pack) initRefs(r *Refs) {
-	r.wn = &walkNode{pack: p}
+func (p *Pack) initializeRefs(r *Refs) {
+	r.rn = &refsNode{pack: p}
 	r.degree = p.c.conf.MerkleDegree
 	if p.flags&HashTableIndex != 0 {
-		r.index = make(map[cipher.SHA256]*Ref)
+		r.rn.index = make(map[cipher.SHA256]*RefsElem)
 	}
 }
 
@@ -454,10 +454,35 @@ func (p *Pack) Refs(objs ...interface{}) (r Refs) {
 	p.c.Debugf(VerbosePin, "(*Pack).Refs %s %d %T", p.r.Short(), len(objs),
 		first)
 
-	p.initRefs(&r)
+	p.initializeRefs(&r)
 
 	if err := r.Append(objs...); err != nil {
 		panic(err)
 	}
 	return
+}
+
+// SetFlag is experimantal. Handle with care
+func (p *Pack) SetFlag(flag Flag) {
+	p.setFlag(flag)
+}
+
+// for tests, no checks
+func (p *Pack) setFlag(flag Flag) {
+	p.flags = p.flags | flag
+}
+
+// UnsetFlag is experimental. It's impossible
+// to clear ViewOnly flag (it panics). Handle with
+// care
+func (p *Pack) UnsetFlag(flag Flag) {
+	if flag&ViewOnly != 0 {
+		panic("can't unset ViewOnly flag: recrete the Pack")
+	}
+	p.unsetFlag(flag)
+}
+
+// for tests, no checks
+func (p *Pack) unsetFlag(flag Flag) {
+	p.flags = p.flags &^ flag
 }

@@ -5,24 +5,6 @@ import (
 	"fmt"
 )
 
-type unsaver interface {
-	unsave() (err error)
-}
-
-type walkNode struct {
-	value interface{} // golang value or Value (skyobject.Value)
-	upper unsaver     // upepr node (for Refs trees)
-	sch   Schema      // schema of the value
-	pack  *Pack       // back reference to related Pack
-}
-
-func (w *walkNode) unsave() (err error) {
-	if up := w.upper; up != nil {
-		err = up.unsave()
-	}
-	return
-}
-
 // Ref, Refs or Dynamic in updateStack
 type commiter interface {
 	commit() (err error)
@@ -41,15 +23,15 @@ func (u *updateStack) init() {
 func (u *updateStack) Push(ref interface{}) (err error) {
 	switch tt := ref.(type) {
 	case *Ref:
-		if tt.wn == nil {
+		if tt.isInitialized() == false {
 			return errors.New("Push uninitialized Ref")
 		}
 	case *Refs:
-		if tt.wn == nil {
+		if tt.isInitialized() == false {
 			return errors.New("Push uninitialized Refs")
 		}
 	case *Dynamic:
-		if tt.wn == nil {
+		if tt.isInitialized() == false {
 			return errors.New("Push uninitialized Dynamic")
 		}
 	default:
