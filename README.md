@@ -21,7 +21,9 @@ Use [dep](https://github.com/golang/dep) to use particular commit
 
 ## Skyobject
 
-See skyobject/README.md
+- Main: skyobject/README.md
+- Binary data representation: skyobject/ABI.md
+
 
 ## Node
 
