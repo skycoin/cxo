@@ -105,7 +105,7 @@ Thus the `Dynamic` encoded as `[encoded schema hash][encoded object hash]`
 
 
 The `Refs` represented as Merkle-tree with degree. Take a look the image
-![cxo refs representation](http://imgur.com/a/f2Cv2)
+![cxo refs representation](https://github.com/logrusorgru/cxo/blob/master/skyobject/refs.png)
 
 Thus we need:
 
