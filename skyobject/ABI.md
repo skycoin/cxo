@@ -167,7 +167,7 @@ We are using blank Refs.Hash instead. One more time: if Refs doesn't contains
 anything then we are using blank SHA256 hash instead of hash of encoded
 `refsRoot` that contains nothing.
 
-The smae for `refsNode`. If a node empty, then we aren't using encoded
+The same for `refsNode`. If a node empty, then we aren't using encoded
 hash of some `{Length: 0, Nested: nil}` node. We are using blank hash.
 
 For example

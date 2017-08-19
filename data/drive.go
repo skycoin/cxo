@@ -76,50 +76,22 @@ func (d *driveDB) Update(fn func(t Tu) error) (err error) {
 
 func (d *driveDB) Stat() (s Stat) {
 
-	d.bolt.View(func(t *bolt.Tx) (_ error) {
+	d.View(func(tx Tv) (_ error) {
+		objs := tx.Objects()
 
-		// objects
+		s.Objects.Amount = objs.Amount()
+		s.Objects.Volume = objs.Volume()
 
-		objects := t.Bucket(objectsBucket)
-		s.Objects = objects.Stats().KeyN
+		s.Feeds = make(map[cipher.PubKey]FeedStat)
 
-		objects.ForEach(func(_, v []byte) (_ error) {
-			s.Space += Space(len(v))
-			return
-		})
+		feeds := tx.Feeds()
 
-		// feeds (and roots)
-
-		feeds := t.Bucket(feedsBucket)
-		fln := feeds.Stats().KeyN
-
-		if fln == 0 {
-			return // no feeds
-		}
-
-		s.Feeds = make(map[cipher.PubKey]FeedStat, fln)
-
-		feeds.ForEach(func(kk, _ []byte) (_ error) {
-
-			roots := feeds.Bucket(kk)
-
-			var fs FeedStat
-			var cp cipher.PubKey
-
-			fs.Roots = roots.Stats().KeyN
-			roots.ForEach(func(_, v []byte) (_ error) {
-				fs.Space += Space(len(v))
-				return
-			})
-
-			copy(cp[:], kk)
-			s.Feeds[cp] = fs
-
+		feeds.Ascend(func(pk cipher.PubKey) (_ error) {
+			s.Feeds[pk] = feeds.Stat(pk)
 			return
 		})
 
 		return
-
 	})
 
 	return
@@ -180,8 +152,30 @@ type driveObjects struct {
 	bk *bolt.Bucket
 }
 
-func (d *driveObjects) Set(key cipher.SHA256, value []byte) (err error) {
-	return d.bk.Put(key[:], value)
+func (d *driveObjects) Set(key cipher.SHA256, val []byte) (err error) {
+	if len(val) == 0 {
+		return
+	}
+	return d.bk.Put(key[:], val)
+}
+
+func (d *driveObjects) Add(val []byte) (key cipher.SHA256, err error) {
+	key = cipher.SumSHA256(val)
+	err = d.Set(key, val)
+	return
+}
+
+func (d *driveObjects) MultiAdd(vals ...[]byte) (err error) {
+	keys := make([]cipher.SHA256, 0, len(vals))
+	for _, val := range vals {
+		keys = append(keys, cipher.SumSHA256(val))
+	}
+	for i, key := range sortKeys(keys...) {
+		if err = d.Set(key, vals[i]); err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (d *driveObjects) Del(key cipher.SHA256) (err error) {
@@ -189,33 +183,27 @@ func (d *driveObjects) Del(key cipher.SHA256) (err error) {
 }
 
 func (d *driveObjects) Get(key cipher.SHA256) (val []byte) {
-	if val = d.bk.Get(key[:]); len(val) == 0 {
-		val = nil
+	if got := d.bk.Get(key[:]); len(got) != 0 {
+		val = make([]byte, len(got))
+		copy(val, got)
 	}
 	return
 }
 
-func (d *driveObjects) GetCopy(key cipher.SHA256) (value []byte) {
-	if g := d.bk.Get(key[:]); g != nil {
-		value = make([]byte, len(g))
-		copy(value, g)
+func (d *driveObjects) MultiGet(keys ...cipher.SHA256) (values [][]byte) {
+	if len(keys) == 0 {
+		return
+	}
+	values = make([][]byte, len(keys))
+	for i, key := range sortKeys(keys...) {
+		values[i] = d.Get(key)
 	}
 	return
-}
-
-func (d *driveObjects) Add(value []byte) (key cipher.SHA256, err error) {
-	key = cipher.SumSHA256(value)
-	err = d.bk.Put(key[:], value)
-	return
-}
-
-func (d *driveObjects) IsExist(key cipher.SHA256) bool {
-	return d.Get(key) != nil
 }
 
 func (d *driveObjects) SetMap(m map[cipher.SHA256][]byte) (err error) {
 	for _, kv := range sortMap(m) {
-		if err = d.bk.Put(kv.key[:], kv.val); err != nil {
+		if err = d.Set(kv.key, kv.val); err != nil {
 			return
 		}
 	}
@@ -279,6 +267,18 @@ func (d *driveObjects) AscendDel(
 		}
 	}
 
+	return
+}
+
+func (d *driveObjects) Amount() uint32 {
+	return uint32(d.bk.Stats().KeyN)
+}
+
+func (d *driveObjects) Volume() (vol Volume) {
+	d.bk.ForEach(func(_, v []byte) (_ error) {
+		vol += Volume(len(v))
+		return
+	})
 	return
 }
 
@@ -367,6 +367,10 @@ type driveFeeds struct {
 	bk *bolt.Bucket
 }
 
+func (d *driveFeeds) IsExist(pk cipher.PubKey) bool {
+	return d.bk.Bucket(pk[:]) != nil
+}
+
 func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 	_, err = d.bk.CreateBucketIfNotExists(pk[:])
 	return
@@ -379,10 +383,6 @@ func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 		}
 	}
 	return
-}
-
-func (d *driveFeeds) IsExist(pk cipher.PubKey) bool {
-	return d.bk.Bucket(pk[:]) != nil
 }
 
 func (d *driveFeeds) List() (list []cipher.PubKey) {
@@ -470,6 +470,23 @@ func (d *driveFeeds) Roots(pk cipher.PubKey) UpdateRoots {
 	return r
 }
 
+func (d *driveFeeds) Stat(pk cipher.PubKey) (fs FeedStat) {
+	roots := d.Roots(pk)
+	if roots == nil {
+		return
+	}
+	roots.Ascend(func(rp *RootPack) (_ error) {
+		vol := Volume(len(encoder.Serialize(rp)))
+		fs.Roots = append(fs.Roots, RootStat{
+			Volume: vol,
+			Seq:    rp.Seq,
+		})
+		fs.Volume += vol
+		return
+	})
+	return
+}
+
 type driveViewFeeds struct {
 	*driveFeeds
 }
@@ -554,13 +571,15 @@ func (d *driveRoots) Del(seq uint64) error {
 	return d.bk.Delete(seqb)
 }
 
-func (d *driveRoots) MarkFull(seq uint64) (err error) {
-	rp := d.Get(seq)
-	if rp == nil {
+func (d *driveRoots) Update(rp *RootPack) (err error) {
+	er := d.Get(rp.Seq)
+	if er == nil {
 		return ErrNotFound
 	}
-	rp.IsFull = true
-	return d.bk.Put(utob(seq), encoder.Serialize(rp))
+	if err = canUpdateRoot(er, rp); err != nil {
+		return
+	}
+	return d.bk.Put(utob(rp.Seq), encoder.Serialize(rp))
 }
 
 func (d *driveRoots) Ascend(fn func(rp *RootPack) error) (err error) {

@@ -15,27 +15,32 @@ Specs: https://pad.riseup.net/p/cxo
 - `node` - CXO networking core
 - `skyobejct` - CX objects tree
 
-##### Version
+### Version
 
 Use [dep](https://github.com/golang/dep) to use particular commit
 
+## Database
+
+- [data/README.md](https://github.com/logrusorgru/cxo/blob/master/data/README.md)
+- Binary data representation: [data/ABI.md](https://github.com/logrusorgru/cxo/blob/master/data/ABI.md)
+
 ## Skyobject
 
-- Main: skyobject/README.md
-- Binary data representation: skyobject/ABI.md
+- [skyobject/README.md](https://github.com/logrusorgru/cxo/blob/master/skyobject/README.md)
+- Binary data representation: [skyobject/ABI.md](https://github.com/logrusorgru/cxo/blob/master/skyobject/ABI.md)
 
 
 ## Node
 
-See node/README.md
+- [node/README.md](https://github.com/logrusorgru/cxo/blob/master/node/README.md)
 
 ## CLI
 
-See cmd/cli/README.md
+See [cmd/cxocli/README.md](https://github.com/logrusorgru/cxo/blob/master/cmd/cxocli/README.md)
 
 ## Daemon
 
-See cmd/cxod/README.md
+See [cmd/cxod/README.md](https://github.com/logrusorgru/cxo/blob/master/cmd/cxod/README.md)
 
 ---
 

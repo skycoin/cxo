@@ -278,16 +278,16 @@ func TestViewFeeds_Roots(t *testing.T) {
 
 }
 
+func TestViewFeeds_Stat(t *testing.T) {
+	// Stat(pk cipher.PubKey) (fs FeedStat)
+
+	// TODO (kostyarin): implement
+	t.Skip("not implemented yet")
+}
+
 //
 // UpdateFeeds
 //
-
-func TestUpdateFeeds_IsExist(t *testing.T) {
-	// IsExist(pk cipher.PubKey) (ok bool)
-
-	t.Skip("inherited from ViewFeeds")
-
-}
 
 func TestUpdateFeeds_List(t *testing.T) {
 	// List() (list []cipher.PubKey)
@@ -312,7 +312,7 @@ func testUpdateFeedsAdd(t *testing.T, db DB) {
 			if err := tx.Feeds().Add(pk); err != nil {
 				t.Error(err)
 			}
-			if tx.Feeds().IsExist(pk) == false {
+			if tx.Feeds().Roots(pk) == nil {
 				t.Error("can't add a feed")
 			}
 			return
@@ -327,7 +327,7 @@ func testUpdateFeedsAdd(t *testing.T, db DB) {
 			if err := tx.Feeds().Add(pk); err != nil {
 				t.Error(err)
 			}
-			if tx.Feeds().IsExist(pk) == false {
+			if tx.Feeds().Roots(pk) == nil {
 				t.Error("can't add a feed twice")
 			}
 			return
@@ -387,7 +387,7 @@ func testUpdateFeedsDel(t *testing.T, db DB) {
 			if err := feeds.Del(pk); err != nil {
 				t.Error(err)
 			}
-			if feeds.IsExist(pk) == true {
+			if feeds.Roots(pk) != nil {
 				t.Error("can't delete a feed")
 			}
 			return
@@ -408,7 +408,7 @@ func testUpdateFeedsDel(t *testing.T, db DB) {
 			if err := feeds.Del(pk); err != nil {
 				t.Error(err)
 			}
-			if feeds.IsExist(pk) == true {
+			if feeds.Roots(pk) != nil {
 				t.Error("can't delete a feed with roots")
 			}
 			return

@@ -141,7 +141,7 @@ func (c *Container) Get(hash cipher.SHA256) (value []byte) {
 	c.Debugln(VerbosePin, "Get", hash.Hex()[:7])
 
 	err := c.db.View(func(tx data.Tv) (_ error) {
-		value = tx.Objects().GetCopy(hash)
+		value = tx.Objects().Get(hash)
 		return
 	})
 	if err != nil {
@@ -555,6 +555,9 @@ func (c *Container) unpackRoot(pk cipher.PubKey, rp *data.RootPack) (r *Root,
 	}
 	r.Sig = rp.Sig
 	r.Hash = rp.Hash
+
+	r.IsFull = rp.IsFull
+	r.Volu
 	return
 }
 
@@ -615,6 +618,8 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 }
 
 // DelFeed. The method never returns "not found" errors
+//
+// TODO
 func (c *Container) DelFeed(pk cipher.PubKey) (err error) {
 	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
 

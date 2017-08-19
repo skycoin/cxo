@@ -249,13 +249,13 @@ func testDBStat(t *testing.T, db DB) {
 
 	t.Run("empty", func(t *testing.T) {
 		stat := db.Stat()
-		if stat.Objects != 0 {
+		if stat.Objects.Amount != 0 {
 			t.Error("objects in empty db")
 		}
-		if stat.Space != 0 {
-			t.Error("non-zero space of empty db")
+		if stat.Objects.Volume != 0 {
+			t.Error("non-zero volume of empty db")
 		}
-		if stat.Feeds != nil {
+		if len(stat.Feeds) != 0 {
 			t.Error("feeds in empty db")
 		}
 	})
@@ -278,11 +278,11 @@ func testDBStat(t *testing.T, db DB) {
 
 	t.Run("objects", func(t *testing.T) {
 		stat := db.Stat()
-		if stat.Objects != len(objects) {
+		if int(stat.Objects.Amount) != len(objects) {
 			t.Error("wrong amount of objects")
 		}
-		if stat.Space == 0 {
-			t.Error("wrong space")
+		if stat.Objects.Volume == 0 {
+			t.Error("wrong volume")
 		}
 	})
 
@@ -300,11 +300,12 @@ func testDBStat(t *testing.T, db DB) {
 		}
 		if fs, ok := stat.Feeds[pk]; !ok {
 			t.Error("mising feed in stat")
-		} else if fs.Roots != 3 {
+		} else if len(fs.Roots) != 3 {
 			t.Error("wrong root count")
-		} else if fs.Space == 0 {
+		} else if fs.Volume == 0 {
 			t.Error("wrong amount of space of roots")
 		}
+
 	})
 }
 

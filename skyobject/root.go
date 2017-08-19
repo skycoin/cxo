@@ -25,10 +25,24 @@ type Root struct {
 	Seq  uint64 // seq number
 	Time int64  // timestamp (unix nano)
 
+	// sig and hash are anot parts of the Root
+
 	Sig cipher.Sig `enc:"-"` // signature (not part of the Root)
 
 	Hash cipher.SHA256 `enc:"-"` // hash (not part of the Root)
 	Prev cipher.SHA256 // hash of previous root
+
+	// machine local fields, not parts of the Root
+
+	// IsFull set to true if DB contains all objects
+	// required by this Root
+	IsFull bool `enc:"-"`
+
+	// Amount of all objects of the Root
+	Amount uint32 `enc:"-"`
+
+	// Volume is total size of all objects of the Root
+	Volume data.Volume `enc:"-"`
 }
 
 func (r *Root) Encode() []byte {
@@ -168,30 +182,6 @@ func (c *Container) MarkFull(r *Root) (err error) {
 		}
 		return roots.MarkFull(r.Seq)
 	})
-	return
-}
-
-// RootBySeq is the same as Root, But the method also returns "full"
-// reply, that describes fullness of the Root
-func (c *Container) RootBySeq(pk cipher.PubKey, seq uint64) (r *Root,
-	full bool, err error) {
-
-	var rp *data.RootPack
-	err = c.DB().View(func(tx data.Tv) (_ error) {
-		if roots := tx.Feeds().Roots(pk); roots != nil {
-			rp = roots.Get(seq)
-		}
-		return
-	})
-	if err != nil {
-		return
-	}
-	if rp == nil {
-		err = fmt.Errorf("root %d of %s not found", seq, pk.Hex()[:7])
-		return
-	}
-	full = rp.IsFull
-	r, err = c.unpackRoot(pk, rp)
 	return
 }
 

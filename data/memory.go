@@ -42,52 +42,20 @@ func (m *memoryDB) Update(fn func(t Tu) error) error {
 }
 
 func (m *memoryDB) Stat() (s Stat) {
-
-	m.bunt.View(func(t *buntdb.Tx) (_ error) {
-
-		// objects
-
-		t.AscendKeys("object:*", func(_, v string) bool {
-			s.Objects++
-			s.Space += Space(len(v))
-			return true // continue
-		})
-
-		// feeds (and roots)
+	m.View(func(tx Tv) (_ error) {
+		objs := tx.Objects()
+		s.Objects.Amount = objs.Amount()
+		s.Objects.Volume = objs.Volume()
 
 		s.Feeds = make(map[cipher.PubKey]FeedStat)
 
-		t.AscendKeys("feed:*", func(k, v string) bool {
-
-			// k is "feed:pub_key:seq" or "feed:pub_key"
-
-			if len(v) == 0 {
-				return true // (continue) is not a root object
-			}
-
-			pk, err := cipher.PubKeyFromHex(strings.Split(k, ":")[1])
-			if err != nil {
-				panic(err)
-			}
-
-			fs := s.Feeds[pk]
-			fs.Roots++
-			fs.Space += Space(len(v))
-
-			s.Feeds[pk] = fs
-
-			return true // continue
-
+		feeds := tx.Feeds()
+		feeds.Ascend(func(pk cipher.PubKey) (_ error) {
+			s.Feeds[pk] = feeds.Stat(pk)
+			return
 		})
-
-		if len(s.Feeds) == 0 {
-			s.Feeds = nil
-		}
-
 		return
-
 	})
-
 	return
 }
 
@@ -136,7 +104,29 @@ func (m *memoryObjects) key(key cipher.SHA256) string {
 }
 
 func (m *memoryObjects) Set(key cipher.SHA256, value []byte) (err error) {
+	if len(value) == 0 {
+		return // don't save blank objects
+	}
 	_, _, err = m.tx.Set(m.key(key), encValue(value), nil)
+	return
+}
+
+func (m *memoryObjects) Add(val []byte) (key cipher.SHA256, err error) {
+	key = cipher.SumSHA256(val)
+	err = m.Set(key, val)
+	return
+}
+
+func (m *memoryObjects) MultiAdd(vals ...[]byte) (err error) {
+	keys := make([]cipher.SHA256, 0, len(vals))
+	for _, val := range vals {
+		keys = append(keys, cipher.SumSHA256(val))
+	}
+	for i, key := range sortKeys(keys...) {
+		if err = m.Set(key, vals[i]); err != nil {
+			return
+		}
+	}
 	return
 }
 
@@ -157,18 +147,15 @@ func (m *memoryObjects) Get(key cipher.SHA256) (p []byte) {
 	return nil
 }
 
-func (m *memoryObjects) GetCopy(key cipher.SHA256) []byte {
-	return m.Get(key)
-}
-
-func (m *memoryObjects) Add(value []byte) (key cipher.SHA256, err error) {
-	key = cipher.SumSHA256(value)
-	err = m.Set(key, value)
+func (m *memoryObjects) MultiGet(keys ...cipher.SHA256) (vals [][]byte) {
+	if len(keys) == 0 {
+		return
+	}
+	vals = make([][]byte, len(keys))
+	for i, key := range sortKeys(keys...) {
+		vals[i] = m.Get(key)
+	}
 	return
-}
-
-func (m *memoryObjects) IsExist(key cipher.SHA256) bool {
-	return m.Get(key) != nil
 }
 
 func (m *memoryObjects) SetMap(mp map[cipher.SHA256][]byte) (err error) {
@@ -247,6 +234,22 @@ func (m *memoryObjects) AscendDel(
 		}
 	}
 
+	return
+}
+
+func (m *memoryObjects) Amount() (amnt uint32) {
+	m.tx.AscendKeys("object:*", func(string, string) bool {
+		amnt++
+		return true // continue
+	})
+	return
+}
+
+func (m *memoryObjects) Volume() (vol Volume) {
+	m.tx.AscendKeys("object:*", func(_, v string) bool {
+		vol += Volume(len(decValue(v)))
+		return true // continue
+	})
 	return
 }
 
@@ -528,6 +531,23 @@ func (m *memoryFeeds) Roots(pk cipher.PubKey) UpdateRoots {
 	return &memoryRoots{pk, m.key(pk) + ":", m.tx}
 }
 
+func (m *memoryFeeds) Stat(pk cipher.PubKey) (fs FeedStat) {
+	roots := m.Roots(pk)
+	if roots == nil {
+		return
+	}
+	roots.Ascend(func(rp *RootPack) (_ error) {
+		vol := Volume(len(encoder.Serialize(rp)))
+		fs.Roots = append(fs.Roots, RootStat{
+			Volume: vol,
+			Seq:    rp.Seq,
+		})
+		fs.Volume += vol
+		return
+	})
+	return
+}
+
 type memoryViewFeeds struct {
 	memoryFeeds
 }
@@ -624,12 +644,14 @@ func (m *memoryRoots) Del(seq uint64) (err error) {
 	return
 }
 
-func (m *memoryRoots) MarkFull(seq uint64) (err error) {
-	rp := m.Get(seq)
-	if rp == nil {
+func (m *memoryRoots) Update(rp *RootPack) (err error) {
+	er := m.Get(rp.Seq)
+	if er == nil {
 		return ErrNotFound
 	}
-	rp.IsFull = true
+	if err = canUpdateRoot(er, rp); err != nil {
+		return
+	}
 	data := encValue(encoder.Serialize(rp))
 	key := m.key(rp.Seq) // feed:pk:seq
 	_, _, err = m.tx.Set(key, data, nil)

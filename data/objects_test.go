@@ -78,137 +78,6 @@ func TestViewObjects_Get(t *testing.T) {
 
 }
 
-func testViewObjectsGetCopy(t *testing.T, db DB) {
-
-	// TODO (kostyarin): how to be sure that returned slice
-	//                   is long-lived and will not be modified
-	//                   after transaction? fuzz? I hate fuzz tests!
-
-	value := []byte("any")
-	key := cipher.SumSHA256(value)
-
-	t.Run("not exist", func(t *testing.T) {
-		err := db.View(func(tx Tv) (_ error) {
-			objs := tx.Objects()
-
-			if objs.GetCopy(key) != nil {
-				t.Error("got unexisting value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-	err := db.Update(func(tx Tu) (_ error) {
-		return tx.Objects().Set(key, value)
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("exists", func(t *testing.T) {
-		err := db.View(func(tx Tv) (_ error) {
-			objs := tx.Objects()
-
-			got := objs.GetCopy(key)
-
-			if got == nil {
-				t.Error("missing value")
-				return
-			}
-
-			if bytes.Compare(got, value) != 0 {
-				t.Error("wrong value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-}
-
-func TestViewObjects_GetCopy(t *testing.T) {
-	// GetCopy(key cipher.SHA256) (value []byte)
-
-	t.Run("memory", func(t *testing.T) {
-		testViewObjectsGetCopy(t, NewMemoryDB())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		db, cleanUp := testDriveDB(t)
-		defer cleanUp()
-		testViewObjectsGetCopy(t, db)
-	})
-
-}
-
-func testViewObjectsIsExists(t *testing.T, db DB) {
-
-	value := []byte("any")
-	key := cipher.SumSHA256(value)
-
-	t.Run("not exist", func(t *testing.T) {
-		err := db.View(func(tx Tv) (_ error) {
-			objs := tx.Objects()
-
-			if objs.IsExist(key) == true {
-				t.Error("has unexisting value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-	err := db.Update(func(tx Tu) (_ error) {
-		return tx.Objects().Set(key, value)
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("exists", func(t *testing.T) {
-		err := db.View(func(tx Tv) (_ error) {
-			objs := tx.Objects()
-
-			if objs.IsExist(key) == false {
-				t.Error("hasn't got existing value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-}
-
-func TestViewObjects_IsExist(t *testing.T) {
-	// IsExist(key cipher.SHA256) (ok bool)
-
-	t.Run("memory", func(t *testing.T) {
-		testViewObjectsIsExists(t, NewMemoryDB())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		db, cleanUp := testDriveDB(t)
-		defer cleanUp()
-		testViewObjectsIsExists(t, db)
-	})
-
-}
-
 func testViewObjectsAscend(t *testing.T, db DB) {
 
 	t.Run("empty", func(t *testing.T) {
@@ -337,208 +206,37 @@ func TestViewObjects_Ascend(t *testing.T) {
 
 }
 
+func TestViewObjects_MultiGet(t *testing.T) {
+	// MultiGet(keys ...cipher.SHA256) (vals [][]byte)
+
+	// TODO (kostyarin): implement
+	t.Skip("not implemented yet")
+}
+
+func TestViewObjects_Amount(t *testing.T) {
+	// Amount() uint32
+
+	// TODO (kostyarin): implement
+	t.Skip("not implemented yet")
+}
+
+func TestViewObjects_Volume(t *testing.T) {
+	// Volume() (vol Volume)
+
+	// TODO (kostyarin): implement
+	t.Skip("not implemented yet")
+}
+
 //
 // UpdateObjects
 //
 
 // inherited from ViewObjects
 
-func testUpdateObjectsGet(t *testing.T, db DB) {
-
-	value := []byte("any")
-	key := cipher.SumSHA256(value)
-
-	t.Run("not exist", func(t *testing.T) {
-		err := db.Update(func(tx Tu) (_ error) {
-			objs := tx.Objects()
-
-			if objs.Get(key) != nil {
-				t.Error("got unexisting value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-	err := db.Update(func(tx Tu) (_ error) {
-		return tx.Objects().Set(key, value)
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("exists", func(t *testing.T) {
-		err := db.Update(func(tx Tu) (_ error) {
-			objs := tx.Objects()
-
-			got := objs.Get(key)
-
-			if got == nil {
-				t.Error("missing value")
-				return
-			}
-
-			if bytes.Compare(got, value) != 0 {
-				t.Error("wrong value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-}
-
 func TestUpdateObjects_Get(t *testing.T) {
 	// Get(key cipher.SHA256) (value []byte)
 
-	t.Run("memory", func(t *testing.T) {
-		testUpdateObjectsGet(t, NewMemoryDB())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		db, cleanUp := testDriveDB(t)
-		defer cleanUp()
-		testUpdateObjectsGet(t, db)
-	})
-
-}
-
-func testUpdateObjectsGetCopy(t *testing.T, db DB) {
-
-	// TODO (kostyarin): how to be sure that returned slice
-	//                   is long-lived and will not be modified
-	//                   after transaction? fuzz? I hate fuzz tests!
-
-	value := []byte("any")
-	key := cipher.SumSHA256(value)
-
-	t.Run("not exist", func(t *testing.T) {
-		err := db.Update(func(tx Tu) (_ error) {
-			objs := tx.Objects()
-
-			if objs.GetCopy(key) != nil {
-				t.Error("got unexisting value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-	err := db.Update(func(tx Tu) (_ error) {
-		return tx.Objects().Set(key, value)
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("exists", func(t *testing.T) {
-		err := db.Update(func(tx Tu) (_ error) {
-			objs := tx.Objects()
-
-			got := objs.GetCopy(key)
-
-			if got == nil {
-				t.Error("missing value")
-				return
-			}
-
-			if bytes.Compare(got, value) != 0 {
-				t.Error("wrong value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-}
-
-func TestUpdateObjects_GetCopy(t *testing.T) {
-	// GetCopy(key cipher.SHA256) (value []byte)
-
-	t.Run("memory", func(t *testing.T) {
-		testUpdateObjectsGetCopy(t, NewMemoryDB())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		db, cleanUp := testDriveDB(t)
-		defer cleanUp()
-		testUpdateObjectsGetCopy(t, db)
-	})
-
-}
-
-func testUpdateObjectsIsExists(t *testing.T, db DB) {
-
-	value := []byte("any")
-	key := cipher.SumSHA256(value)
-
-	t.Run("not exist", func(t *testing.T) {
-		err := db.Update(func(tx Tu) (_ error) {
-			objs := tx.Objects()
-
-			if objs.IsExist(key) == true {
-				t.Error("has unexisting value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-	err := db.Update(func(tx Tu) (_ error) {
-		return tx.Objects().Set(key, value)
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("exists", func(t *testing.T) {
-		err := db.Update(func(tx Tu) (_ error) {
-			objs := tx.Objects()
-
-			if objs.IsExist(key) == false {
-				t.Error("hasn't got existing value")
-			}
-
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-}
-
-func TestUpdateObjects_IsExist(t *testing.T) {
-	// IsExist(key cipher.SHA256) (ok bool)
-
-	t.Run("memory", func(t *testing.T) {
-		testUpdateObjectsIsExists(t, NewMemoryDB())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		db, cleanUp := testDriveDB(t)
-		defer cleanUp()
-		testUpdateObjectsIsExists(t, db)
-	})
-
+	t.Skip("inherited from ViewObjects")
 }
 
 func testUpdateObjectsAscend(t *testing.T, db DB) {
@@ -1041,4 +739,11 @@ func TestUpdateObjects_AscendDel(t *testing.T) {
 		testUpdateObjectsAscendDel(t, db)
 	})
 
+}
+
+func TestUpdateObjects_MultiAdd(t *testing.T) {
+	// MultiAdd(vals ...[]byte) (err error)
+
+	// TODO (kostyarin): implement
+	t.Skip("not implemented yet")
 }

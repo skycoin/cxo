@@ -560,41 +560,47 @@ func TestUpdateRoots_Del(t *testing.T) {
 
 }
 
-func testUpdateRootsMarkFull(t *testing.T, db DB) {
-	pk, _ := cipher.GenerateKeyPair()
+func testUpdateRootsUpdate(t *testing.T, db DB) {
 
-	if testFillWithExampleFeed(t, pk, db); t.Failed() {
-		return
-	}
+	// TODO (kostyarin): implememt
+	t.Skip("not implemented")
 
-	err := db.Update(func(tx Tu) (_ error) {
-		roots := tx.Feeds().Roots(pk)
-		if err := roots.MarkFull(0); err != nil {
+	/*
+		pk, _ := cipher.GenerateKeyPair()
+
+		if testFillWithExampleFeed(t, pk, db); t.Failed() {
+			return
+		}
+
+		err := db.Update(func(tx Tu) (_ error) {
+			roots := tx.Feeds().Roots(pk)
+			if err := roots.Update(0); err != nil {
+				t.Error(err)
+			}
+			if rp := roots.Get(0); rp == nil {
+				t.Error("missing Root after MarkFull")
+			} else if rp.IsFull == false {
+				t.Error("not marked as full")
+			}
+			return
+		})
+		if err != nil {
 			t.Error(err)
 		}
-		if rp := roots.Get(0); rp == nil {
-			t.Error("missing Root after MarkFull")
-		} else if rp.IsFull == false {
-			t.Error("not marked as full")
-		}
-		return
-	})
-	if err != nil {
-		t.Error(err)
-	}
+	*/
 }
 
-func TestUpdateRoots_MarkFull(t *testing.T) {
+func TestUpdateRoots_Update(t *testing.T) {
 	// Del(seq uint64) (err error)
 
 	t.Run("memory", func(t *testing.T) {
-		testUpdateRootsMarkFull(t, NewMemoryDB())
+		testUpdateRootsUpdate(t, NewMemoryDB())
 	})
 
 	t.Run("drive", func(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
-		testUpdateRootsMarkFull(t, db)
+		testUpdateRootsUpdate(t, db)
 	})
 
 }

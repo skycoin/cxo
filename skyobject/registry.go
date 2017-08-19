@@ -9,6 +9,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
 
 // TAG is name of struct tag the skyobject package use to determine
@@ -205,10 +207,13 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 }
 
 type Registry struct {
-	done bool                 // stop registration and use
-	ref  RegistryRef          // reference to the registry
-	reg  map[string]Schema    // by name
-	srf  map[SchemaRef]Schema // by reference (for Dynamic references)
+	done bool // stop registration and use
+
+	ref RegistryRef // reference to the registry
+	vol data.Volume // volume of the encoded registry
+
+	reg map[string]Schema    // by name
+	srf map[SchemaRef]Schema // by reference (for Dynamic references)
 
 	// local (inversed tn of Reg for unpacking directly to reflect.Type)
 	nt map[string]reflect.Type // registered name -> reflect.Type
@@ -296,6 +301,11 @@ func (r *Registry) SchemaByReference(sr SchemaRef) (s Schema, err error) {
 // SchemaByName returns schema by name or "missing schema" error
 func (r *Registry) SchemaByName(name string) (Schema, error) {
 	return r.schemaByName(name)
+}
+
+// Volume is size of encoded Registry
+func (r *Registry) Volume() data.Volume {
+	return r.vol
 }
 
 // Types returns Types of the Registry. If this regsitry creaded using
@@ -404,7 +414,9 @@ func (r *Registry) finialize() {
 		r.srf[sch.Reference()] = sch
 	}
 
-	r.ref = RegistryRef(cipher.SumSHA256(r.Encode()))
+	encoded := r.Encode()
+	r.vol = data.Volume(len(encoded))
+	r.ref = RegistryRef(cipher.SumSHA256(encoded))
 }
 
 // TagSchemaName returns schema name from given reflect.StructTag.

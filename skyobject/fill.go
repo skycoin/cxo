@@ -8,6 +8,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
 
 // some of Root dropping reasons
@@ -20,7 +22,7 @@ type WCXO struct {
 	Hash cipher.SHA256 // hash of wanted CX object
 	GotQ chan []byte   // cahnnel to sent requested CX object
 
-	// TODO (kostarin): announce get
+	Announce []cipher.SHA256 // announce get
 }
 
 // A Filler represents filling Root. The Filelr is
@@ -41,6 +43,9 @@ type Filler struct {
 
 	r   *Root     // filling Root
 	reg *Registry // registry of the Root
+
+	volume data.Volume // volume of the Root
+	amount uint32      // amount of the Root
 
 	gotq chan []byte // reply
 
@@ -85,6 +90,7 @@ func (f *Filler) drop(err error) {
 func (f *Filler) full() {
 	f.c.Debugln(FillVerbosePin, "(*Filler).full", f.r.Short())
 
+	// TODO
 	if err := f.c.MarkFull(f.r); err != nil {
 		// detailed error
 		err = fmt.Errorf("can't mark root %s as full in DB: %v",
@@ -117,12 +123,16 @@ func (f *Filler) fill(wg *sync.WaitGroup) {
 		}
 		f.c.addRegistry(f.reg) // already saved by the request call
 	}
+
+	f.amount++
+	f.volume += f.reg.Volume()
+
 	if len(f.r.Refs) == 0 {
 		f.full()
 		return
 	}
 	for _, dr := range f.r.Refs {
-		if err = f.fillDynamic(dr); err != nil {
+		if err = f.fillDynamic(nil, dr); err != nil {
 			f.drop(err)
 			return
 		}
@@ -131,9 +141,14 @@ func (f *Filler) fill(wg *sync.WaitGroup) {
 	return
 }
 
-func (f *Filler) request(hash cipher.SHA256) (val []byte, ok bool) {
+// Requset given object from remove peer. If announce is not
+// blank, then request them too, but don't sent them through
+// the got-channel
+func (f *Filler) request(hash cipher.SHA256,
+	announce ...cipher.SHA256) (val []byte, ok bool) {
+
 	select {
-	case f.wantq <- WCXO{hash, f.gotq}:
+	case f.wantq <- WCXO{hash, f.gotq, announce}:
 	case <-f.closeq:
 		return
 	}
@@ -145,11 +160,17 @@ func (f *Filler) request(hash cipher.SHA256) (val []byte, ok bool) {
 	return
 }
 
-// TODO (kostyarin): announce-get
-func (f *Filler) get(hash cipher.SHA256) (val []byte, ok bool) {
-	if val = f.c.Get(hash); val != nil {
-		return val, true
+func (f *Filler) get(hash cipher.SHA256,
+	announce ...cipher.SHA256) (val []byte, ok bool) {
+
+	if len(announce) == 0 {
+		if val = f.c.Get(hash); val != nil {
+			return val, true
+		}
+		val, ok = f.request(hash)
+		return
 	}
+
 	val, ok = f.request(hash)
 	return
 }

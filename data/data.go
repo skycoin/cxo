@@ -2,6 +2,7 @@ package data
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sort"
@@ -26,15 +27,26 @@ var (
 // ViewObjects represents read-only bucket of objects
 type ViewObjects interface {
 	// Get obejct by key. It returns nil if requested object
-	// doesn't exists. Retuned slice valid only inside current
-	// transaction. To get long lived copy use GetCopy
+	// doesn't exists
 	Get(key cipher.SHA256) (value []byte)
-	// GetCopy similar to Get, but it returns long lived object
-	GetCopy(key cipher.SHA256) (value []byte)
-	// IsExist returns true if object with given hash presence in database
-	IsExist(key cipher.SHA256) (ok bool)
+	// MultiGet requests many objects returning slice
+	// or objects, and nils for objects not found
+	MultiGet(keys ...cipher.SHA256) (values [][]byte)
 	// Ascend over all objects. Use ErrStopIteration to break iteration
 	Ascend(func(key cipher.SHA256, value []byte) error) (err error)
+
+	// GetObject returns encoded value with meta information
+	GetObject(key cipher.SHA256) (obj *Object)
+	// MultiGetObjects returns all requested object. Place
+	// of not found objects will be holded by nil. E.g. length
+	// of result will be the same as length of keys, even if
+	// no objects found
+	MultiGetObjects(keys ...cipher.SHA256) (objects []*Object)
+	// Ascend over all objects. Use ErrStopIteration to break iteration
+	AscendObjects(func(key cipher.SHA256, obj *Object) error) (err error)
+
+	Amount() uint32 // total amount of all objects
+	Volume() Volume // total volume of all obejcts
 }
 
 // UpdateObjects represents read-write bucket of objects
@@ -48,8 +60,12 @@ type UpdateObjects interface {
 	Del(key cipher.SHA256) (err error)
 	// Set key->value pair
 	Set(key cipher.SHA256, value []byte) (err error)
-	// Add value getting key
+	// Add object and get its key back
 	Add(value []byte) (key cipher.SHA256, err error)
+
+	// MultiAdd appends given objects, But it doesn't
+	// returns keys
+	MultiAdd(values ...[]byte) (err error)
 
 	// SetMap performs Set for each element of given map.
 	// The method sorts given data by key increasing performance
@@ -67,8 +83,7 @@ type UpdateObjects interface {
 
 // ViewFeeds represents read-only bucket of feeds
 type ViewFeeds interface {
-	IsExist(pk cipher.PubKey) (ok bool) // presence check
-	List() (list []cipher.PubKey)       // list of all
+	List() (list []cipher.PubKey) // list of all
 
 	// Ascend itterates all feeds. Use ErrStopIteration to break
 	// the iteration
@@ -78,6 +93,12 @@ type ViewFeeds interface {
 	// given feed doesn't exist. Use this method to access
 	// root objects
 	Roots(pk cipher.PubKey) ViewRoots
+
+	// IsExist returns true if given feed exists in database
+	IsExist(pk cipher.PubKey) bool
+
+	// Stat of the Feed
+	Stat(pk cipher.PubKey) FeedStat
 }
 
 // UpdateFeeds represents bucket of feeds
@@ -87,9 +108,10 @@ type UpdateFeeds interface {
 	// inherited from ViewFeeds
 	//
 
-	IsExist(pk cipher.PubKey) (ok bool)
 	List() (list []cipher.PubKey)
 	Ascend(func(pk cipher.PubKey) error) (err error)
+	IsExist(pk cipher.PubKey) bool
+	Stat(pk cipher.PubKey) FeedStat
 
 	//
 	// change feed/roots
@@ -143,12 +165,12 @@ type UpdateRoots interface {
 	// The method doesn't modify rp. And if rp.IsFull is
 	// true then it will be saved as full
 	Add(rp *RootPack) (err error)
+	// Update a Root. The method allows to update fields:
+	// Volume, Amount and IsFull
+	Update(rp *RootPack) (err error)
 	// Del deletes root object by seq number. It never
 	// returns "not found" error
 	Del(seq uint64) (err error)
-	// MarkFull marks root with given seq as full.
-	// The method can return ErrNotFound
-	MarkFull(seq uint64) (err error)
 
 	// AscendDel used to delete Root obejcts.
 	// If given function returns del = true, then
@@ -231,7 +253,8 @@ type DB interface {
 }
 
 // A RootPack represents encoded root object with signature,
-// seq number, and next/prev/this hashes
+// seq number, prev/this hashes and some necessary metadata,
+// such as "is full", "space"
 type RootPack struct {
 	Root []byte
 
@@ -244,17 +267,21 @@ type RootPack struct {
 	Hash cipher.SHA256 // hash of the Root filed
 	Sig  cipher.Sig    // signature of the Hash field
 
-	// TODO (kostyarin): move the field from here making it
-	//                   machine local
+	// machine local fields
 
 	// IsFull is true if the Root has all related objects in
 	// this DB. The field is temporary added and likely to
 	// be moved outside the RootPack
 	IsFull bool
 
-	// Space holded by all obejcts of the Root. The field is
-	// machine-local and likely to be removed from the RootPack
-	Space uint64
+	// Volume fit by this Root and all nested objects
+	// including registry (wihtout place fit by keys)
+	Volume Volume
+
+	// Amount of all nested objects of this Root
+	// including registry. E.g. for an empty root
+	// the field will be 1 (registry onyl)
+	Amount uint32
 }
 
 // A RootError represents error that can be returned by AddRoot method
@@ -292,6 +319,28 @@ func newRootError(pk cipher.PubKey, rp *RootPack, descr string) (r *RootError) {
 	}
 }
 
+type skeys []cipher.SHA256
+
+// for sorting
+
+func (k skeys) Len() int {
+	return len(k)
+}
+
+func (k skeys) Less(i, j int) bool {
+	return bytes.Compare(k[i][:], k[j][:]) == -1
+}
+
+func (k skeys) Swap(i, j int) {
+	k[i], k[j] = k[j], k[i]
+}
+
+func sortKeys(keys ...cipher.SHA256) []cipher.SHA256 {
+	s := skeys(keys)
+	sort.Sort(s)
+	return []cipher.SHA256(s)
+}
+
 type keyValue struct {
 	key cipher.SHA256
 	val []byte
@@ -321,4 +370,75 @@ func sortMap(m map[cipher.SHA256][]byte) (slice keyValues) {
 	}
 	sort.Sort(slice)
 	return
+}
+
+func canUpdateRoot(er, rp *RootPack) (err error) {
+	if er.Seq != rp.Seq {
+		panic("canUpdateRoot called with Roots with different Seq")
+	}
+	if er.Prev != rp.Prev {
+		return errors.New("can't update Root, different Prev hashes")
+	}
+	if er.Hash != rp.Hash {
+		return errors.New("can't update Root, different hashes")
+	}
+	if er.Sig != rp.Sig {
+		return errors.New("can't update Root, different signatures")
+	}
+	if bytes.Compare(er.Root, rp.Root) != 0 {
+		return errors.New("can't update Root, different encoded values")
+	}
+	return
+}
+
+// An Object represents encoded object
+// with brief information about subtree
+// of the object. The Object is representation
+// of every object (object or registry)
+// inside DB
+type Object struct {
+	Subtree        // brief info about subtree of the Object
+	Value   []byte // encoded object in person
+}
+
+// Volue of the Object and its subtree
+func (o *Object) Volume() Volume {
+	return Volume(len(o.Value)) + o.Subtree.Volume
+}
+
+// Amount is amount of subtree + 1, lol.
+// E.g. this method returns total amount of
+// objects of this Object including the Object
+func (o *Object) Amount() uint32 {
+	return o.Subtree.Amount + 1
+}
+
+// Encode is fast way to encode the Object.
+// The Object can be encoded using cipher/encoder,
+// this method returns the same result
+func (o *Object) Encode() (val []byte) {
+	// amount and volume are uint32
+	val = make([]byte, 4+4, 4+4+len(o.Value))
+	binary.LittleEndian.PutUint32(val, o.Subtree.Amount)
+	binary.LittleEndian.PutUint32(val[4:], uint32(o.Subtree.Volume))
+	val = append(val, o.Value)
+	return
+}
+
+// DecodeObject from raw encoded Object
+func DecodeObject(val []byte) (o Object) {
+	if len(val) <= 8 {
+		panic(fmt.Errorf("invalid object stored, length %d", len(val)))
+	}
+	o.Subtree.Amount = binary.LittleEndian.Uint32(val)
+	o.Subtree.Volume = Volume(binary.LittleEndian.Uint32(val[4:]))
+	o.Value = val[8:]
+	return
+}
+
+// A Subtree contains brief information
+// about subtree of an object
+type Subtree struct {
+	Amount uint32 // total amount of all elements in subtree
+	Volume Volume // total volume of all elements in subtree
 }

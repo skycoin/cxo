@@ -7,25 +7,19 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// A Space represents memory space
-type Space int
+// A Volume represents memory space
+type Volume uint32
 
 // String implements fmt.Stringer interface
-func (s Space) String() string {
-	return HumanMemory(int(s))
+func (v Volume) String() string {
+	return HumanMemory(int(v))
 }
 
 // A Stat represents database statistic
 type Stat struct {
-	// Objects is amount of all objects
-	// and schemas except root objects
-	Objects int `json:"objects"`
-	// Space taken by the Objects. The
-	// Space is total size of all
-	// encoded objects, but the Space
-	// doesn't include space taken by
-	// key and other
-	Space Space `json:"space"`
+	// Objects contains statistic of all
+	// necessary objects
+	Objects ObjectsStat `json:"objects"`
 
 	// Feeds represents statistic
 	// of root objects by feed. This
@@ -34,14 +28,25 @@ type Stat struct {
 	Feeds map[cipher.PubKey]FeedStat `json:"feeds"` // feeds
 }
 
+// An ObjectsStat represents statistic of
+// a group of objects
+type ObjectsStat struct {
+	Amount uint32 `json:"amount"` // amount of objects
+	Volume Volume `json:"volume"` // volume without keys
+}
+
 // A FeedStat represents statistic
-// of a feed. The statistic contains
-// informations about root objects only
-type FeedStat struct {
-	// Roots is amount of root objects of feed
-	Roots int `json:"roots"`
-	// Space taken by root (only root) objects of feed
-	Space Space `json:"space"`
+// of a feed
+type FeedStat []RootStat
+
+type RootStat struct {
+	// Amount of all nested objects
+	Amount uint32 `json:"amount"`
+	// Volume taken by the Root
+	// with all related obejcts
+	Volume Volume `json:"volume"`
+	// Seq number of the Root
+	Seq uint64 `json:"seq"`
 }
 
 func shortHex(a string) string {
@@ -49,20 +54,9 @@ func shortHex(a string) string {
 }
 
 // String implemets fmt.Stringer interface and returns
-// human readable string
-func (s Stat) String() (x string) {
-	feeds := ""
-	for k, r := range s.Feeds {
-		feeds += fmt.Sprintf("<%s>{roots %d, space: %s}",
-			shortHex(k.Hex()),
-			r.Roots,
-			r.Space.String())
-	}
-	x = fmt.Sprintf("{objects: %d, space: %s, feeds: [%s]}",
-		s.Objects,
-		s.Space.String(),
-		feeds)
-	return
+// human readable string (not implemented yet)
+func (s Stat) String() string {
+	return fmt.Sprintf("%#v", s)
 }
 
 // HumanMemory returns human readable memory string
