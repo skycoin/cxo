@@ -152,26 +152,25 @@ type driveObjects struct {
 	bk *bolt.Bucket
 }
 
-func (d *driveObjects) Set(key cipher.SHA256, val []byte) (err error) {
-	if len(val) == 0 {
-		return
+func (d *driveObjects) Set(key cipher.SHA256, obj *Object) (err error) {
+	if obj == nil {
+		panic("given *data.Object is nil")
 	}
-	return d.bk.Put(key[:], val)
+	if len(obj.Value) == 0 {
+		panic("given *data.Object contains empty Value")
+	}
+	return d.bk.Put(key[:], obj.Encode())
 }
 
-func (d *driveObjects) Add(val []byte) (key cipher.SHA256, err error) {
-	key = cipher.SumSHA256(val)
-	err = d.Set(key, val)
+func (d *driveObjects) Add(obj *Object) (key cipher.SHA256, err error) {
+	key = cipher.SumSHA256(obj.Value)
+	err = d.Set(key, obj)
 	return
 }
 
-func (d *driveObjects) MultiAdd(vals ...[]byte) (err error) {
-	keys := make([]cipher.SHA256, 0, len(vals))
-	for _, val := range vals {
-		keys = append(keys, cipher.SumSHA256(val))
-	}
-	for i, key := range sortKeys(keys...) {
-		if err = d.Set(key, vals[i]); err != nil {
+func (d *driveObjects) MultiAdd(objs []*Object) (err error) {
+	for _, ko := range sortObjs(objs) {
+		if err = d.Set(ko.key, ko.obj); err != nil {
 			return
 		}
 	}
@@ -182,36 +181,63 @@ func (d *driveObjects) Del(key cipher.SHA256) (err error) {
 	return d.bk.Delete(key[:])
 }
 
-func (d *driveObjects) Get(key cipher.SHA256) (val []byte) {
+func (d *driveObjects) GetObject(key cipher.SHA256) (obj *Object) {
 	if got := d.bk.Get(key[:]); len(got) != 0 {
-		val = make([]byte, len(got))
-		copy(val, got)
+		obj = DecodeObject(got)
+
+		// make long lived copy of obj.Value
+
+		val := make([]byte, len(obj.Value)) // make
+		copy(val, obj.Value)                // copy
+		obj.Value = val                     // replace
 	}
 	return
 }
 
-func (d *driveObjects) MultiGet(keys ...cipher.SHA256) (values [][]byte) {
+func (d *driveObjects) Get(key cipher.SHA256) (val []byte) {
+	if got := d.bk.Get(key[:]); len(got) != 0 {
+		val = make([]byte, len(got)-8) // make long lived copy
+		copy(val, got[8:])             //
+	}
+	return
+}
+
+func (d *driveObjects) MultiGetObjects(keys []cipher.SHA256) (objs []*Object) {
 	if len(keys) == 0 {
 		return
 	}
-	values = make([][]byte, len(keys))
-	for i, key := range sortKeys(keys...) {
-		values[i] = d.Get(key)
-	}
-	return
-}
-
-func (d *driveObjects) SetMap(m map[cipher.SHA256][]byte) (err error) {
-	for _, kv := range sortMap(m) {
-		if err = d.Set(kv.key, kv.val); err != nil {
-			return
+	objs = make([]*Object, len(keys))
+	for _, key := range sortKeys(keys) {
+		obj := d.GetObject(key)
+		for i, k := range keys {
+			if k == key {
+				objs[i] = obj
+				break
+			}
 		}
 	}
 	return
 }
 
-func (d *driveObjects) Ascend(
-	fn func(key cipher.SHA256, value []byte) error) (err error) {
+func (d *driveObjects) MultiGet(keys []cipher.SHA256) (values [][]byte) {
+	if len(keys) == 0 {
+		return
+	}
+	values = make([][]byte, len(keys))
+	for _, key := range sortKeys(keys) {
+		val := d.Get(key)
+		for i, k := range keys {
+			if k == key {
+				values[i] = val
+				break
+			}
+		}
+	}
+	return
+}
+
+func (d *driveObjects) AscendObjects(ascendObjectsFunc func(key cipher.SHA256,
+	obj *Object) error) (err error) {
 
 	c := d.bk.Cursor()
 
@@ -219,7 +245,7 @@ func (d *driveObjects) Ascend(
 
 	for k, v := c.First(); k != nil; k, v = c.Next() {
 		copy(ck[:], k)
-		if err = fn(ck, v); err != nil {
+		if err = ascendObjectsFunc(ck, DecodeObject(v)); err != nil {
 			break
 		}
 	}
@@ -230,8 +256,28 @@ func (d *driveObjects) Ascend(
 	return
 }
 
-func (d *driveObjects) AscendDel(
-	fn func(key cipher.SHA256, value []byte) (bool, error)) (err error) {
+func (d *driveObjects) Ascend(ascendFunc func(key cipher.SHA256,
+	value []byte) error) (err error) {
+
+	c := d.bk.Cursor()
+
+	var ck cipher.SHA256
+
+	for k, v := c.First(); k != nil; k, v = c.Next() {
+		copy(ck[:], k)
+		if err = ascendFunc(ck, v[8:]); err != nil {
+			break
+		}
+	}
+
+	if err == ErrStopIteration {
+		err = nil
+	}
+	return
+}
+
+func (d *driveObjects) AscendDel(ascendDelFunc func(key cipher.SHA256,
+	value []byte) (bool, error)) (err error) {
 
 	c := d.bk.Cursor()
 
@@ -243,7 +289,7 @@ func (d *driveObjects) AscendDel(
 		// next loop
 		for {
 			copy(ck[:], k)
-			if del, err = fn(ck, v); err != nil {
+			if del, err = ascendDelFunc(ck, v[8:]); err != nil {
 				if err == ErrStopIteration {
 					err = nil
 				}
@@ -476,12 +522,11 @@ func (d *driveFeeds) Stat(pk cipher.PubKey) (fs FeedStat) {
 		return
 	}
 	roots.Ascend(func(rp *RootPack) (_ error) {
-		vol := Volume(len(encoder.Serialize(rp)))
-		fs.Roots = append(fs.Roots, RootStat{
-			Volume: vol,
+		fs = append(fs, RootStat{
+			Amount: rp.Amount,
+			Volume: rp.Volume,
 			Seq:    rp.Seq,
 		})
-		fs.Volume += vol
 		return
 	})
 	return

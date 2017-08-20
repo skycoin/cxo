@@ -186,6 +186,7 @@ func (c *Container) DetailedStat() (ds DetailedStat) {
 
 		feeds.Ascend(func(pk cipher.PubKey) (_ error) {
 			//
+			return
 		})
 
 		return

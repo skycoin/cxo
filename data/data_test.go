@@ -73,34 +73,38 @@ func getRootPack(seq uint64, content string) (rp RootPack) {
 	}
 	rp.Root = []byte(content)
 	rp.Hash = cipher.SumSHA256(rp.Root)
+
+	rp.Amount = 1    //
+	rp.Volume = 1    // values for tests
+	rp.IsFull = true //
 	return
 }
 
-type testObjectKeyValue struct {
-	key   cipher.SHA256
-	value []byte
+type testObjectKeyObj struct {
+	key cipher.SHA256
+	obj *Object
 }
 
-type testObjectKeyValues []testObjectKeyValue
+type testObjectKeyObjs []testObjectKeyObj
 
-func (t testObjectKeyValues) Len() int {
+func (t testObjectKeyObjs) Len() int {
 	return len(t)
 }
 
-func (t testObjectKeyValues) Less(i, j int) bool {
+func (t testObjectKeyObjs) Less(i, j int) bool {
 	return bytes.Compare(t[i].key[:], t[j].key[:]) < 0
 }
 
-func (t testObjectKeyValues) Swap(i, j int) {
+func (t testObjectKeyObjs) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
 
-func testSortedObjects(input ...string) (to testObjectKeyValues) {
-	to = make(testObjectKeyValues, 0, len(input))
+func testSortedObjects(input ...string) (to testObjectKeyObjs) {
+	to = make(testObjectKeyObjs, 0, len(input))
 	for _, s := range input {
-		to = append(to, testObjectKeyValue{
-			key:   cipher.SumSHA256([]byte(s)),
-			value: []byte(s),
+		to = append(to, testObjectKeyObj{
+			key: cipher.SumSHA256([]byte(s)),
+			obj: testObjectOf(s),
 		})
 	}
 	sort.Sort(to)
@@ -136,11 +140,13 @@ func testComparePublicKeyLists(t *testing.T, a, b []cipher.PubKey) {
 		if bx := b[i]; bx != ax {
 			t.Errorf("wrong item %d: want %s, got %s",
 				i,
-				ax.Hex(), // shortHex(
-				bx.Hex()) // shortHex(
+				ax.Hex()[7:],
+				bx.Hex()[7:])
 		}
 	}
 }
+
+func testObjectOf(s string) *Object { return &Object{Value: []byte(s)} }
 
 //
 // Tests
@@ -208,7 +214,7 @@ func testDBUpdate(t *testing.T, db DB) {
 	ae := errors.New("just an average error to rollback this transaction")
 
 	err := db.Update(func(tx Tu) (err error) {
-		key, err = tx.Objects().Add([]byte("a value"))
+		key, err = tx.Objects().Add(testObjectOf("a value"))
 		if err != nil {
 			return
 		}
@@ -265,7 +271,7 @@ func testDBStat(t *testing.T, db DB) {
 	err := db.Update(func(tx Tu) (_ error) {
 		objs := tx.Objects()
 		for _, s := range objects {
-			if _, err := objs.Add([]byte(s)); err != nil {
+			if _, err := objs.Add(testObjectOf(s)); err != nil {
 				return err
 			}
 		}
@@ -300,10 +306,8 @@ func testDBStat(t *testing.T, db DB) {
 		}
 		if fs, ok := stat.Feeds[pk]; !ok {
 			t.Error("mising feed in stat")
-		} else if len(fs.Roots) != 3 {
+		} else if len(fs) != 3 {
 			t.Error("wrong root count")
-		} else if fs.Volume == 0 {
-			t.Error("wrong amount of space of roots")
 		}
 
 	})

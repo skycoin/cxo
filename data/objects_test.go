@@ -11,10 +11,77 @@ import (
 // ViewObjects
 //
 
+func testViewObjectsGetObject(t *testing.T, db DB) {
+
+	obj := testObjectOf("any")
+	key := cipher.SumSHA256(obj.Value)
+
+	t.Run("not exist", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			objs := tx.Objects()
+
+			if objs.GetObject(key) != nil {
+				t.Error("got unexisting value")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	err := db.Update(func(tx Tu) (_ error) {
+		return tx.Objects().Set(key, obj)
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("exists", func(t *testing.T) {
+		err := db.View(func(tx Tv) (_ error) {
+			objs := tx.Objects()
+
+			got := objs.GetObject(key)
+
+			if got == nil {
+				t.Error("missing value")
+				return
+			}
+
+			if bytes.Compare(got.Value, obj.Value) != 0 {
+				t.Error("wrong value")
+			}
+
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
+func TestViewObjects_GetObject(t *testing.T) {
+	// Get(key cipher.SHA256) (value []byte)
+
+	t.Run("memory", func(t *testing.T) {
+		testViewObjectsGetObject(t, NewMemoryDB())
+	})
+
+	t.Run("drive", func(t *testing.T) {
+		db, cleanUp := testDriveDB(t)
+		defer cleanUp()
+		testViewObjectsGetObject(t, db)
+	})
+
+}
+
 func testViewObjectsGet(t *testing.T, db DB) {
 
-	value := []byte("any")
-	key := cipher.SumSHA256(value)
+	obj := testObjectOf("any")
+	key := cipher.SumSHA256(obj.Value)
 
 	t.Run("not exist", func(t *testing.T) {
 		err := db.View(func(tx Tv) (_ error) {
@@ -32,7 +99,7 @@ func testViewObjectsGet(t *testing.T, db DB) {
 	})
 
 	err := db.Update(func(tx Tu) (_ error) {
-		return tx.Objects().Set(key, value)
+		return tx.Objects().Set(key, obj)
 	})
 	if err != nil {
 		t.Error(err)
@@ -50,7 +117,7 @@ func testViewObjectsGet(t *testing.T, db DB) {
 				return
 			}
 
-			if bytes.Compare(got, value) != 0 {
+			if bytes.Compare(got, obj.Value) != 0 {
 				t.Error("wrong value")
 			}
 
@@ -111,7 +178,7 @@ func testViewObjectsAscend(t *testing.T, db DB) {
 		objs := tx.Objects()
 
 		for _, o := range to {
-			if err := objs.Set(o.key, o.value); err != nil {
+			if err := objs.Set(o.key, o.obj); err != nil {
 				return err // rollback and bubble the err up
 			}
 		}
@@ -144,7 +211,7 @@ func testViewObjectsAscend(t *testing.T, db DB) {
 						shortHex(tObj.key.Hex()),
 						shortHex(key.Hex()))
 				}
-				if bytes.Compare(tObj.value, value) != 0 {
+				if bytes.Compare(tObj.obj.Value, value) != 0 {
 					t.Error("wrong or missing value")
 				}
 
@@ -272,7 +339,7 @@ func testUpdateObjectsAscend(t *testing.T, db DB) {
 		objs := tx.Objects()
 
 		for _, o := range to {
-			if err := objs.Set(o.key, o.value); err != nil {
+			if err := objs.Set(o.key, o.obj); err != nil {
 				return err // rollback and bubble the err up
 			}
 		}
@@ -305,7 +372,7 @@ func testUpdateObjectsAscend(t *testing.T, db DB) {
 						shortHex(tObj.key.Hex()),
 						shortHex(key.Hex()))
 				}
-				if bytes.Compare(tObj.value, value) != 0 {
+				if bytes.Compare(tObj.obj.Value, value) != 0 {
 					t.Error("wrong or missing value")
 				}
 
@@ -371,8 +438,8 @@ func TestUpdateObjects_Ascend(t *testing.T) {
 
 func testUpdateObjectsDel(t *testing.T, db DB) {
 
-	value := []byte("ha-ha")
-	key := cipher.SumSHA256(value)
+	obj := testObjectOf("ho-ho-ho")
+	key := cipher.SumSHA256(obj.Value)
 
 	t.Run("not exist", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
@@ -388,7 +455,7 @@ func testUpdateObjectsDel(t *testing.T, db DB) {
 
 	// fill
 	err := db.Update(func(tx Tu) error {
-		return tx.Objects().Set(key, value)
+		return tx.Objects().Set(key, obj)
 	})
 	if err != nil {
 		t.Error(err)
@@ -425,20 +492,20 @@ func TestUpdateObjects_Del(t *testing.T) {
 
 func testUpdateObjectsSet(t *testing.T, db DB) {
 
-	value := []byte("yo-h-ho")
-	key := cipher.SumSHA256(value)
+	obj := testObjectOf("ha-ha-ha")
+	key := cipher.SumSHA256(obj.Value)
 
 	t.Run("set", func(t *testing.T) {
 
 		err := db.Update(func(tx Tu) (_ error) {
 			objs := tx.Objects()
 
-			if err := objs.Set(key, value); err != nil {
+			if err := objs.Set(key, obj); err != nil {
 				t.Error(err)
 				return
 			}
 
-			if bytes.Compare(objs.Get(key), value) != 0 {
+			if bytes.Compare(objs.Get(key), obj.Value) != 0 {
 				t.Error("wrong of missing value")
 			}
 
@@ -456,15 +523,15 @@ func testUpdateObjectsSet(t *testing.T, db DB) {
 		err := db.Update(func(tx Tu) (_ error) {
 			objs := tx.Objects()
 
-			replace := []byte("zorro!")
+			replace := testObjectOf("zorro!")
 
 			if err := objs.Set(key, replace); err != nil {
 				t.Error(err)
 				return
 			}
 
-			if bytes.Compare(objs.Get(key), replace) != 0 {
-				t.Error("wrong of missing value")
+			if bytes.Compare(objs.Get(key), replace.Value) != 0 {
+				t.Error("wrong or missing value")
 			}
 
 			return
@@ -493,14 +560,14 @@ func TestUpdateObjects_Set(t *testing.T) {
 
 func testUpdateObjectsAdd(t *testing.T, db DB) {
 
-	value := []byte("value")
-	key := cipher.SumSHA256(value)
+	obj := testObjectOf("any")
+	key := cipher.SumSHA256(obj.Value)
 
 	t.Run("name", func(t *testing.T) {
 		err := db.Update(func(tx Tu) (_ error) {
 			objs := tx.Objects()
 
-			if rk, err := objs.Add(value); err != nil {
+			if rk, err := objs.Add(obj); err != nil {
 				t.Error(err)
 				return
 			} else if bytes.Compare(rk[:], key[:]) != 0 {
@@ -508,12 +575,12 @@ func testUpdateObjectsAdd(t *testing.T, db DB) {
 				return
 			}
 
-			if bytes.Compare(objs.Get(key), value) != 0 {
+			if bytes.Compare(objs.Get(key), obj.Value) != 0 {
 				t.Error("wrong of missing value")
 			}
 
 			// adding many times should not produce an error
-			if _, err := objs.Add(value); err != nil {
+			if _, err := objs.Add(obj); err != nil {
 				t.Error(err)
 			}
 
@@ -537,58 +604,6 @@ func TestUpdateObjects_Add(t *testing.T) {
 		db, cleanUp := testDriveDB(t)
 		defer cleanUp()
 		testUpdateObjectsAdd(t, db)
-	})
-
-}
-
-func testUpdateObjectsSetMap(t *testing.T, db DB) {
-
-	mp := make(map[cipher.SHA256][]byte)
-
-	for _, s := range []string{
-		"one",
-		"two",
-		"three",
-		"c4",
-	} {
-		value := []byte(s)
-		key := cipher.SumSHA256(value)
-		mp[key] = value
-	}
-
-	err := db.Update(func(tx Tu) (_ error) {
-		objs := tx.Objects()
-
-		if err := objs.SetMap(mp); err != nil {
-			t.Error(err)
-			return
-		}
-
-		for k, v := range mp {
-			if bytes.Compare(objs.Get(k), v) != 0 {
-				t.Error("missing or wrong value")
-			}
-		}
-
-		return
-	})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestUpdateObjects_SetMap(t *testing.T) {
-	// SetMap(map[cipher.SHA256][]byte) (err error)
-
-	t.Run("memory", func(t *testing.T) {
-		testUpdateObjectsSetMap(t, NewMemoryDB())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		db, cleanUp := testDriveDB(t)
-		defer cleanUp()
-		testUpdateObjectsSetMap(t, db)
 	})
 
 }
@@ -628,7 +643,7 @@ func testUpdateObjectsAscendDel(t *testing.T, db DB) {
 		objs := tx.Objects()
 
 		for _, o := range to {
-			if err := objs.Set(o.key, o.value); err != nil {
+			if err := objs.Set(o.key, o.obj); err != nil {
 				return err // rollback and bubble the err up
 			}
 		}
@@ -661,7 +676,7 @@ func testUpdateObjectsAscendDel(t *testing.T, db DB) {
 						shortHex(tObj.key.Hex()),
 						shortHex(key.Hex()))
 				}
-				if bytes.Compare(tObj.value, value) != 0 {
+				if bytes.Compare(tObj.obj.Value, value) != 0 {
 					t.Error("wrong or missing value")
 				}
 
@@ -681,7 +696,7 @@ func testUpdateObjectsAscendDel(t *testing.T, db DB) {
 
 			// check deleting
 			for _, o := range to {
-				if string(o.value) == "two" {
+				if string(o.obj.Value) == "two" {
 					// should be deleted
 					if objs.Get(o.key) != nil {
 						t.Error("undeleted")

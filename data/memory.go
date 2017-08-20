@@ -103,27 +103,26 @@ func (m *memoryObjects) key(key cipher.SHA256) string {
 	return "object:" + key.Hex()
 }
 
-func (m *memoryObjects) Set(key cipher.SHA256, value []byte) (err error) {
-	if len(value) == 0 {
-		return // don't save blank objects
+func (m *memoryObjects) Set(key cipher.SHA256, obj *Object) (err error) {
+	if obj == nil {
+		panic("given *data.Object is nil")
 	}
-	_, _, err = m.tx.Set(m.key(key), encValue(value), nil)
+	if len(obj.Value) == 0 {
+		panic("given *data.Object contains empty Value")
+	}
+	_, _, err = m.tx.Set(m.key(key), encValue(obj.Encode()), nil)
 	return
 }
 
-func (m *memoryObjects) Add(val []byte) (key cipher.SHA256, err error) {
-	key = cipher.SumSHA256(val)
-	err = m.Set(key, val)
+func (m *memoryObjects) Add(obj *Object) (key cipher.SHA256, err error) {
+	key = cipher.SumSHA256(obj.Value)
+	err = m.Set(key, obj)
 	return
 }
 
-func (m *memoryObjects) MultiAdd(vals ...[]byte) (err error) {
-	keys := make([]cipher.SHA256, 0, len(vals))
-	for _, val := range vals {
-		keys = append(keys, cipher.SumSHA256(val))
-	}
-	for i, key := range sortKeys(keys...) {
-		if err = m.Set(key, vals[i]); err != nil {
+func (m *memoryObjects) MultiAdd(objs []*Object) (err error) {
+	for _, ko := range sortObjs(objs) {
+		if err = m.Set(ko.key, ko.obj); err != nil {
 			return
 		}
 	}
@@ -137,31 +136,49 @@ func (m *memoryObjects) Del(key cipher.SHA256) (err error) {
 	return
 }
 
-func (m *memoryObjects) Get(key cipher.SHA256) (p []byte) {
-	if val, _ := m.tx.Get(m.key(key)); len(val) != 0 {
-		if p = decValue(val); len(p) == 0 {
-			p = nil
-		}
-		return
-	}
-	return nil
-}
-
-func (m *memoryObjects) MultiGet(keys ...cipher.SHA256) (vals [][]byte) {
-	if len(keys) == 0 {
-		return
-	}
-	vals = make([][]byte, len(keys))
-	for i, key := range sortKeys(keys...) {
-		vals[i] = m.Get(key)
+func (m *memoryObjects) GetObject(key cipher.SHA256) (obj *Object) {
+	if got, _ := m.tx.Get(m.key(key)); len(got) != 0 {
+		obj = DecodeObject(decValue(got))
 	}
 	return
 }
 
-func (m *memoryObjects) SetMap(mp map[cipher.SHA256][]byte) (err error) {
-	for k, v := range mp {
-		if err = m.Set(k, v); err != nil {
-			return
+func (m *memoryObjects) Get(key cipher.SHA256) (val []byte) {
+	if got, _ := m.tx.Get(m.key(key)); len(got) != 0 {
+		val = decValue(got)[8:]
+	}
+	return
+}
+
+func (m *memoryObjects) MultiGetObjects(keys []cipher.SHA256) (objs []*Object) {
+	if len(keys) == 0 {
+		return
+	}
+	objs = make([]*Object, len(keys))
+	for _, key := range sortKeys(keys) {
+		obj := m.GetObject(key)
+		for i, k := range keys {
+			if k == key {
+				objs[i] = obj
+				break
+			}
+		}
+	}
+	return
+}
+
+func (m *memoryObjects) MultiGet(keys []cipher.SHA256) (vals [][]byte) {
+	if len(keys) == 0 {
+		return
+	}
+	vals = make([][]byte, len(keys))
+	for _, key := range sortKeys(keys) {
+		val := m.Get(key)
+		for i, k := range keys {
+			if k == key {
+				vals[i] = val
+				break
+			}
 		}
 	}
 	return
@@ -175,11 +192,12 @@ func (m *memoryObjects) getKey(k string) cipher.SHA256 {
 	return cp
 }
 
-func (m *memoryObjects) Ascend(
-	fn func(key cipher.SHA256, value []byte) error) (err error) {
+func (m *memoryObjects) AscendObjects(ascendObjectsFunc func(key cipher.SHA256,
+	obj *Object) error) (err error) {
 
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
-		if err = fn(m.getKey(k), decValue(v)); err != nil {
+		obj := DecodeObject(decValue(v))
+		if err = ascendObjectsFunc(m.getKey(k), obj); err != nil {
 			if err == ErrStopIteration {
 				err = nil
 			}
@@ -190,8 +208,23 @@ func (m *memoryObjects) Ascend(
 	return
 }
 
-func (m *memoryObjects) AscendDel(
-	fn func(key cipher.SHA256, value []byte) (bool, error)) (err error) {
+func (m *memoryObjects) Ascend(ascendFunc func(key cipher.SHA256,
+	value []byte) error) (err error) {
+
+	m.tx.AscendKeys("object:*", func(k, v string) bool {
+		if err = ascendFunc(m.getKey(k), decValue(v)[8:]); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return false // break
+		}
+		return true // continue
+	})
+	return
+}
+
+func (m *memoryObjects) AscendDel(ascendDelFunc func(key cipher.SHA256,
+	value []byte) (bool, error)) (err error) {
 
 	var del bool
 
@@ -199,7 +232,7 @@ func (m *memoryObjects) AscendDel(
 	collect := []string{}
 
 	m.tx.AscendKeys("object:*", func(k, v string) bool {
-		if del, err = fn(m.getKey(k), decValue(v)); err != nil {
+		if del, err = ascendDelFunc(m.getKey(k), decValue(v)[8:]); err != nil {
 			if err == ErrStopIteration {
 				err = nil
 			}
@@ -537,12 +570,11 @@ func (m *memoryFeeds) Stat(pk cipher.PubKey) (fs FeedStat) {
 		return
 	}
 	roots.Ascend(func(rp *RootPack) (_ error) {
-		vol := Volume(len(encoder.Serialize(rp)))
-		fs.Roots = append(fs.Roots, RootStat{
-			Volume: vol,
+		fs = append(fs, RootStat{
+			Amount: rp.Amount,
+			Volume: rp.Volume,
 			Seq:    rp.Seq,
 		})
-		fs.Volume += vol
 		return
 	})
 	return

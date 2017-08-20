@@ -31,8 +31,9 @@ type ViewObjects interface {
 	Get(key cipher.SHA256) (value []byte)
 	// MultiGet requests many objects returning slice
 	// or objects, and nils for objects not found
-	MultiGet(keys ...cipher.SHA256) (values [][]byte)
-	// Ascend over all objects. Use ErrStopIteration to break iteration
+	MultiGet(keys []cipher.SHA256) (values [][]byte)
+	// Ascend over all objects. Use ErrStopIteration to break iteration.
+	// The value argument can be used only inside transaction
 	Ascend(func(key cipher.SHA256, value []byte) error) (err error)
 
 	// GetObject returns encoded value with meta information
@@ -41,8 +42,9 @@ type ViewObjects interface {
 	// of not found objects will be holded by nil. E.g. length
 	// of result will be the same as length of keys, even if
 	// no objects found
-	MultiGetObjects(keys ...cipher.SHA256) (objects []*Object)
-	// Ascend over all objects. Use ErrStopIteration to break iteration
+	MultiGetObjects(keys []cipher.SHA256) (objects []*Object)
+	// Ascend over all objects. Use ErrStopIteration to break iteration.
+	// Value of obj argument can be used inside transaction
 	AscendObjects(func(key cipher.SHA256, obj *Object) error) (err error)
 
 	Amount() uint32 // total amount of all objects
@@ -53,23 +55,16 @@ type ViewObjects interface {
 type UpdateObjects interface {
 	ViewObjects
 
-	// Del deletes object by key. It never returns
-	// "not found" error. The Del is low level method
-	// and you should not use it. Otherwise, it can
-	// break some things of skyobject package
-	Del(key cipher.SHA256) (err error)
 	// Set key->value pair
-	Set(key cipher.SHA256, value []byte) (err error)
+	Set(key cipher.SHA256, obj *Object) (err error)
 	// Add object and get its key back
-	Add(value []byte) (key cipher.SHA256, err error)
+	Add(obj *Object) (key cipher.SHA256, err error)
+	// Del delete by key. This method used by tests
+	Del(key cipher.SHA256) (err error)
 
 	// MultiAdd appends given objects, But it doesn't
 	// returns keys
-	MultiAdd(values ...[]byte) (err error)
-
-	// SetMap performs Set for each element of given map.
-	// The method sorts given data by key increasing performance
-	SetMap(map[cipher.SHA256][]byte) (err error)
+	MultiAdd(objects []*Object) (err error)
 
 	// AscendDel used for deleting. If given function returns del = true
 	// then this object will be removed. Use ErrStopIteration to break
@@ -335,38 +330,39 @@ func (k skeys) Swap(i, j int) {
 	k[i], k[j] = k[j], k[i]
 }
 
-func sortKeys(keys ...cipher.SHA256) []cipher.SHA256 {
+func sortKeys(keys []cipher.SHA256) []cipher.SHA256 {
 	s := skeys(keys)
 	sort.Sort(s)
 	return []cipher.SHA256(s)
 }
 
-type keyValue struct {
+type keyObj struct {
 	key cipher.SHA256
-	val []byte
+	obj *Object
 }
 
-type keyValues []keyValue
+type keyObjs []keyObj
 
 // for sorting
 
-func (k keyValues) Len() int { return len(k) }
+func (k keyObjs) Len() int { return len(k) }
 
-func (k keyValues) Less(i, j int) bool {
+func (k keyObjs) Less(i, j int) bool {
 	return bytes.Compare(k[i].key[:], k[j].key[:]) == -1
 }
 
-func (k keyValues) Swap(i, j int) {
+func (k keyObjs) Swap(i, j int) {
 	k[i], k[j] = k[j], k[i]
 }
 
-func sortMap(m map[cipher.SHA256][]byte) (slice keyValues) {
-	if len(m) == 0 {
+func sortObjs(objs []*Object) (slice keyObjs) {
+	if len(objs) == 0 {
 		return // nil
 	}
-	slice = make([]keyValue, 0, len(m))
-	for k, v := range m {
-		slice = append(slice, keyValue{k, v})
+	slice = make(keyObjs, 0, len(objs))
+	for _, o := range objs {
+		k := cipher.SumSHA256(o.Value)
+		slice = append(slice, keyObj{k, o})
 	}
 	sort.Sort(slice)
 	return
@@ -403,7 +399,7 @@ type Object struct {
 
 // Volue of the Object and its subtree
 func (o *Object) Volume() Volume {
-	return Volume(len(o.Value)) + o.Subtree.Volume
+	return Volume(len(o.Value)) + o.Subtree.Volume + 4
 }
 
 // Amount is amount of subtree + 1, lol.
@@ -421,15 +417,16 @@ func (o *Object) Encode() (val []byte) {
 	val = make([]byte, 4+4, 4+4+len(o.Value))
 	binary.LittleEndian.PutUint32(val, o.Subtree.Amount)
 	binary.LittleEndian.PutUint32(val[4:], uint32(o.Subtree.Volume))
-	val = append(val, o.Value)
+	val = append(val, o.Value...)
 	return
 }
 
 // DecodeObject from raw encoded Object
-func DecodeObject(val []byte) (o Object) {
+func DecodeObject(val []byte) (o *Object) {
 	if len(val) <= 8 {
 		panic(fmt.Errorf("invalid object stored, length %d", len(val)))
 	}
+	o = new(Object)
 	o.Subtree.Amount = binary.LittleEndian.Uint32(val)
 	o.Subtree.Volume = Volume(binary.LittleEndian.Uint32(val[4:]))
 	o.Value = val[8:]
