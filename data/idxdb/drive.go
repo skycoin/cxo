@@ -179,6 +179,8 @@ func (d *driveObjs) Set(key cipher.SHA256, o *Object) (err error) {
 	var val []byte
 	if val = d.bk.Get(key[:]); len(val) == 0 {
 		o.UpdateAccessTime()
+		o.CreateTime = o.AccessTime // created now
+
 		o.RefsCount = 1 // make sure that RefsCount is 1 (no less , no more)
 		err = d.bk.Put(key[:], o.Encode())
 		return

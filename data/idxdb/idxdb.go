@@ -54,7 +54,8 @@ type Objects interface {
 	// Set new obejct or overwrite existsing. If Obejct already
 	// exists, then nothing chagned inside the Object except
 	// RefsCount and AccessTime. If the Object doesn't exist
-	// then its RefsCount set to 1, before saving
+	// then its RefsCount set to 1 and CreateTime to now,
+	// before saving
 	Set(key cipher.SHA256, o *Object) (err error)
 
 	// MultiSet performs Set for every given
@@ -121,7 +122,7 @@ func (r *Root) Encode() (p []byte) {
 	copy(p[40+len(cipher.SHA256{})*2:], r.Sig[:])
 
 	if r.IsFull {
-		p[len(p)-1] = 0xff
+		p[len(p)-1] = 0x01 // the cipher/encoder uses 0x01 (not 0xff)
 	}
 	return
 }
@@ -133,7 +134,7 @@ func (r *Root) Decode(p []byte) (err error) {
 		return ErrInvalidSize
 	}
 
-	if err = r.Object.Decode(p); err != nil {
+	if err = r.Object.Decode(p[:32]); err != nil {
 		return
 	}
 
@@ -251,13 +252,14 @@ func (v Volume) String() (s string) {
 	fv := float64(v)
 
 	var i int
-	for ; fv > 0; i++ {
+	for ; fv >= 1024.0; i++ {
 		fv /= 1024.0
 	}
 
-	s = fmt.Sprintf("%.2f%s", fv, units[i])
+	s = fmt.Sprintf("%.2f", fv)
 	s = strings.TrimRight(s, "0") // remove trailing zeroes (x.10, x.00)
 	s = strings.TrimRight(s, ".") // remove trailing dot (x.)
+	s += units[i]
 
 	return
 }
