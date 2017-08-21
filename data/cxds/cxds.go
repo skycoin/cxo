@@ -31,7 +31,8 @@ type CXDS interface {
 	// "not found" error. The rc reply is zero if value
 	// not found
 	Inc(key cipher.SHA256) (rc uint32, err error)
-	// Dec decrements references count
+	// Dec decrements references count. The rc is zero if
+	// value was not found or was deleted by the Dec
 	Dec(key cipher.SHA256) (rc uint32, err error)
 
 	// batch operation

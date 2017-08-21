@@ -1,32 +1,7 @@
-data
+Data
 ====
 
-[![GoDoc](https://godoc.org/github.com/skycoin/cxo/data?status.svg)](https://godoc.org/github.com/skycoin/cxo/data)
+The data contains skyobject DB packages.
 
-Data represents CX objects database
-
-#### Structure
-
-To see DB schema, objets representation and similar see
-[ABI.md](https://github.com/logrusorgru/cxo/blob/master/data/ABI.md)
-
-#### Development
-
-The are sublime snippets
-
-- [`dbupdate`](https://github.com/logrusorgru/cxo/blob/master/data/cxo-data-update.sublime-snippet)
-
-```
-Update(func(tx data.Tu) (_ error) {
-	//
-})
-```
-
-
-- [`dbview`](https://github.com/logrusorgru/cxo/blob/master/data/cxo-data-view.sublime-snippet)
-
-```
-View(func(tx data.Tv) (_ error) {
-	//
-})
-```
+The first is CXDS that is `hash`->`[]byte` key-value store.
+The second is machine local index.
