@@ -39,9 +39,39 @@ type Container struct {
 	// clean up
 	cleanmx sync.Mutex // clean up mutex
 
+	// hold required Root objects;
+	// any unpacked Root object using
+	// obects of previous Root and this
+	// objects can't be removed by CleanUp
+	holded map[holdedRoot]int
+
 	closeq chan struct{}  //
 	closeo sync.Once      // clean up by interval
 	await  sync.WaitGroup //
+}
+
+type holdedRoot struct {
+	cipher.PubKey
+	seq uint64
+}
+
+// hold a Root to pevent CleanUp it
+func (c *Container) hold(hr holdedRoot) {
+	c.cleanmx.Lock()
+	defer c.cleanmx.Unlock()
+
+	c.holded[hr] = c.holded[hr] + 1
+}
+
+// unhold a Root
+func (c *Container) unhold(hr holdedRoot) {
+	if n, ok := c.holded[hr]; !ok {
+		return
+	} else if n == 1 {
+		delete(c.holded, hr)
+	} else {
+		c.holded[hr] = c - 1
+	}
 }
 
 // NewContainer by given database (required) and Registry
@@ -66,6 +96,8 @@ func NewContainer(db data.DB, conf *Config) (c *Container) {
 	c.conf = *conf
 	c.stat.init(c.conf.StatSamples)
 
+	c.holded = make(map[holdedRoot]int)
+
 	if conf.Registry != nil {
 		c.coreRegistry = conf.Registry
 		if err := c.AddRegistry(conf.Registry); err != nil {
@@ -86,8 +118,8 @@ func (c *Container) saveRegistry(reg *Registry) error {
 	c.Debug(VerbosePin, "saveRegsitry ", reg.Reference().Short())
 
 	return c.DB().Update(func(tx data.Tu) error {
-		objs := tx.Objects()
-		return objs.Set(cipher.SHA256(reg.Reference()), reg.Encode())
+		return tx.Objects().Set(cipher.SHA256(reg.Reference()),
+			&data.Object{Value: reg.Encode()})
 	})
 }
 
@@ -127,12 +159,17 @@ func (c *Container) DB() data.DB {
 	return c.db
 }
 
-// Set saves single object into database
-func (c *Container) Set(hash cipher.SHA256, val []byte) (err error) {
-	c.Debugln(VerbosePin, "Set", hash.Hex()[:7])
+// Depricated
+//
+// set can be used for dead-end object that has not any subtree and
+// can't be part of a tree; short words: the set can be used for registries;
+// ha-ha; actually one of Root.Refs can be saved using this mthod if the
+// Refs doesn't have nested references
+func (c *Container) set(hash cipher.SHA256, val []byte) (err error) {
+	c.Debugln(VerbosePin, "set", hash.Hex()[:7])
 
 	return c.DB().Update(func(tx data.Tu) error {
-		return tx.Objects().Set(hash, val)
+		return tx.Objects().Set(hash, &data.Object{Value: val})
 	})
 }
 

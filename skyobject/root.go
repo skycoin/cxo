@@ -57,6 +57,8 @@ func (r *Root) Pack() (rp *data.RootPack) {
 	rp.Prev = r.Prev // if set
 	rp.Seq = r.Seq   // if set
 	rp.Sig = r.Sig   // if set
+
+	// TODO
 	return
 }
 
