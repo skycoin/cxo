@@ -222,7 +222,11 @@ func (d *driveObjs) Amount() (amnt Amount) {
 
 func (d *driveObjs) Volume() (vol Volume) {
 	d.bk.ForEach(func(k, v []byte) (_ error) {
-		vol += Volume(len(v))
+		o := new(Object)
+		if err := o.Decode(v); err != nil {
+			panic(err)
+		}
+		vol += o.Vol
 		return
 	})
 	return

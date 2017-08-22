@@ -55,7 +55,9 @@ type Objects interface {
 	// exists, then nothing chagned inside the Object except
 	// RefsCount and AccessTime. If the Object doesn't exist
 	// then its RefsCount set to 1 and CreateTime to now,
-	// before saving
+	// before saving. E.g. the Set cahnges given Object.
+	// It also load object and set the o to loaded if
+	// object with given key already exists
 	Set(key cipher.SHA256, o *Object) (err error)
 
 	// MultiSet performs Set for every given
