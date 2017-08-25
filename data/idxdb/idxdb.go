@@ -87,11 +87,22 @@ type IterateFeedsFunc func(cipher.PubKey) error
 
 // A Feeds represetns bucket of feeds
 type Feeds interface {
-	Add(cipher.PubKey) error            // add feed
-	Del(cipher.PubKey) error            // delete empty feed
-	Iterate(IterateFeedsFunc) error     // iterate all feeds
-	HasFeed(cipher.PubKey) bool         // presence check
-	Roots(cipher.PubKey) (Roots, error) // roots of feed
+	// Add feed. Adding a feed twice or
+	// mote times does nothing
+	Add(cipher.PubKey) error
+	// Del feed if its empty. It's impossible to
+	// delete non-empty feed. This restriction required
+	// for related obejcts. We need to decrement refs count
+	// of all related obejcts. Del never returns 'not found'
+	// error
+	Del(cipher.PubKey) error
+
+	Iterate(IterateFeedsFunc) error // iterate all feeds
+	HasFeed(cipher.PubKey) bool     // presence check
+
+	// Roots of feed. You'll got ErrNoSuchFeed
+	// if given feed doesn't exist
+	Roots(cipher.PubKey) (Roots, error)
 }
 
 // An IterateRootsFunc represents ...

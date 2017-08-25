@@ -271,8 +271,10 @@ func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 }
 
 func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
-	if f := d.bk.Bucket(pk[:]); f == nil || f.Stats().KeyN == 0 {
-		return d.bk.DeleteBucket(pk[:]) // not exist or empty
+	if f := d.bk.Bucket(pk[:]); f == nil {
+		return // not exists
+	} else if f.Stats().KeyN == 0 {
+		return d.bk.DeleteBucket(pk[:]) // empty
 	}
 	return ErrFeedIsNotEmpty // can't remove non-empty feed
 }
@@ -377,19 +379,18 @@ func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 }
 
 func (d *driveRoots) Set(r *Root) (err error) {
-	//
-	return
+	return d.bk.Put(utob(r.Seq), r.Encode())
 }
 
 func (d *driveRoots) Del(seq uint64) (err error) {
-	//
-	return
+	return d.bk.Delete(utob(seq))
 }
 
 func (d *driveRoots) Get(seq uint64) (r *Root, err error) {
 	seqb := utob(seq)
 	val := d.bk.Get(seqb)
 	if len(val) == 0 {
+		err = ErrNotFound
 		return
 	}
 	r = new(Root)
