@@ -198,13 +198,19 @@ func TestRoot_Decode(t *testing.T) {
 
 	r := testRoot("ha-ha")
 
+	p := encoder.Serialize(r)
+
 	x := new(Root)
-	if err := x.Decode(encoder.Serialize(r)); err != nil {
+	if err := x.Decode(p); err != nil {
 		t.Fatal(err)
 	}
 
 	if *x != *r {
 		t.Error("wrong")
+	}
+
+	if err := x.Decode(p[:31]); err == nil {
+		t.Error("misisng error")
 	}
 
 }

@@ -64,7 +64,7 @@ func TestFeeds_Add(t *testing.T) {
 
 func testFeedsDel(t *testing.T, idx IdxDB) {
 
-	pk, _ := cipher.GenerateKeyPair()
+	pk, sk := cipher.GenerateKeyPair()
 
 	// not found (should not return NotFoundError)
 	t.Run("not found", func(t *testing.T) {
@@ -76,11 +76,7 @@ func testFeedsDel(t *testing.T, idx IdxDB) {
 		}
 	})
 
-	err := idx.Tx(func(tx Tx) error {
-		return tx.Feeds().Add(pk)
-	})
-	if err != nil {
-		t.Error(err)
+	if testAddFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -98,6 +94,24 @@ func testFeedsDel(t *testing.T, idx IdxDB) {
 		})
 		if err != nil {
 			t.Error(err)
+		}
+	})
+
+	if testAddFeed(t, idx, pk); t.Failed() {
+		return
+	}
+	if testAddRoot(t, idx, pk, testNewRoot("root", sk)); t.Failed() {
+		return
+	}
+
+	t.Run("not empty", func(t *testing.T) {
+		err := idx.Tx(func(tx Tx) error {
+			return tx.Feeds().Del(pk)
+		})
+		if err == nil {
+			t.Error("missing error")
+		} else if err != ErrFeedIsNotEmpty {
+			t.Error("unexpected error:", err)
 		}
 	})
 }
@@ -143,19 +157,11 @@ func testFeedsIterate(t *testing.T, idx IdxDB) {
 
 	pks := make(map[cipher.PubKey]struct{})
 
-	err := idx.Tx(func(tx Tx) (err error) {
-		feeds := tx.Feeds()
-		for _, pk := range []cipher.PubKey{pk1, pk2} {
-			if err = feeds.Add(pk); err != nil {
-				return
-			}
-			pks[pk] = struct{}{}
+	for _, pk := range []cipher.PubKey{pk1, pk2} {
+		if testAddFeed(t, idx, pk); t.Failed() {
+			return
 		}
-		return
-	})
-	if err != nil {
-		t.Error(err)
-		return
+		pks[pk] = struct{}{}
 	}
 
 	t.Run("itterate", func(t *testing.T) {
@@ -290,11 +296,7 @@ func testFeedsHasFeed(t *testing.T, idx IdxDB) {
 		}
 	})
 
-	err := idx.Tx(func(tx Tx) error {
-		return tx.Feeds().Add(pk)
-	})
-	if err != nil {
-		t.Error(err)
+	if testAddFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -347,11 +349,7 @@ func testFeedsRoots(t *testing.T, idx IdxDB) {
 		}
 	})
 
-	err := idx.Tx(func(tx Tx) error {
-		return tx.Feeds().Add(pk)
-	})
-	if err != nil {
-		t.Error(err)
+	if testAddFeed(t, idx, pk); t.Failed() {
 		return
 	}
 

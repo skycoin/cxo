@@ -14,7 +14,7 @@ import (
 var (
 	ErrInvalidSize    = errors.New("invalid size of encoded obejct")
 	ErrStopIteration  = errors.New("stop iteration")
-	ErrFeedIsNotEmpty = errors.New("can't emove feed: feed is not empty")
+	ErrFeedIsNotEmpty = errors.New("can't remove feed: feed is not empty")
 	ErrNoSuchFeed     = errors.New("no such feed")
 	ErrNotFound       = errors.New("not found")
 )
@@ -112,9 +112,19 @@ type IterateRootsFunc func(*Root) error
 type Roots interface {
 	Ascend(IterateRootsFunc) error  // iterate ascending oreder
 	Descend(IterateRootsFunc) error // iterate descending order
-	Set(*Root) error                // add/update Root
-	Del(uint64) error               // delete by seq
-	Get(uint64) (*Root, error)      // get by seq
+
+	// Set or update Root. Method modifies orginal Root
+	// setting AccessTime and CreateTime to appropriate
+	// values. If Root already exists, then it's possible
+	// to update only IsFull field (AccessTime will be
+	// updated)
+	Set(*Root) error
+
+	// Del Root by seq number
+	Del(uint64) error
+
+	// Get Root by seq
+	Get(uint64) (*Root, error)
 }
 
 // A Tx represetns ACID-transaction
@@ -175,9 +185,7 @@ func (r *Root) Decode(p []byte) (err error) {
 		return ErrInvalidSize
 	}
 
-	if err = r.Object.Decode(p[:32]); err != nil {
-		return
-	}
+	r.Object.Decode(p[:32])
 
 	r.Seq = binary.LittleEndian.Uint64(p[32:])
 
@@ -230,9 +238,7 @@ func (o *Object) Encode() (p []byte) {
 	// thus it's faster
 
 	p = make([]byte, 4+8+4+8+8)
-	if err := o.EncodeTo(p); err != nil {
-		panic(err)
-	}
+	o.EncodeTo(p)
 	return
 }
 

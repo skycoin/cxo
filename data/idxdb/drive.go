@@ -212,10 +212,6 @@ func (d *driveObjs) Set(key cipher.SHA256, o *Object) (err error) {
 	return
 }
 
-func (d *driveObjs) SetOrInc() {
-
-}
-
 func (d *driveObjs) MultiSet(kos []KeyObject) (err error) {
 	for _, ko := range kos {
 		if err = d.Set(ko.Key, ko.Object); err != nil {
@@ -328,7 +324,8 @@ type driveRoots struct {
 func (d *driveRoots) Ascend(iterateRootsFunc IterateRootsFunc) (err error) {
 
 	var seq uint64
-	var r *Root
+	var r *Root = new(Root)
+	var sb []byte = make([]byte, 8)
 
 	c := d.bk.Cursor()
 
@@ -348,14 +345,15 @@ func (d *driveRoots) Ascend(iterateRootsFunc IterateRootsFunc) (err error) {
 		}
 
 		seq++
-		binary.LittleEndian.PutUint64(seqb, seq)
+		binary.LittleEndian.PutUint64(sb, seq)
+		seqb = sb
 	}
 	return
 }
 
 func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 
-	var r *Root
+	var r *Root = new(Root)
 
 	c := d.bk.Cursor()
 
@@ -379,7 +377,33 @@ func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 }
 
 func (d *driveRoots) Set(r *Root) (err error) {
-	return d.bk.Put(utob(r.Seq), r.Encode())
+	var val, seqb []byte
+
+	seqb = utob(r.Seq)
+
+	if val = d.bk.Get(seqb); len(val) == 0 {
+		// not found
+		r.UpdateAccessTime()
+		r.CreateTime = r.AccessTime
+		r.RefsCount = 1
+		return d.bk.Put(seqb, r.Encode())
+	}
+
+	// found
+	nr := new(Root)
+
+	if err = nr.Decode(val); err != nil {
+		panic(err)
+	}
+
+	nr.UpdateAccessTime()
+	nr.RefsCount++ // actually it should panic here (todo)
+	nr.IsFull = r.IsFull
+
+	r.AccessTime = nr.AccessTime
+	r.RefsCount = nr.RefsCount
+
+	return d.bk.Put(seqb, nr.Encode())
 }
 
 func (d *driveRoots) Del(seq uint64) (err error) {
@@ -404,8 +428,4 @@ func utob(u uint64) (p []byte) {
 	p = make([]byte, 8)
 	binary.LittleEndian.PutUint64(p, u)
 	return
-}
-
-func btou(p []byte) (u uint64) {
-	return binary.LittleEndian.Uint64(p)
 }
