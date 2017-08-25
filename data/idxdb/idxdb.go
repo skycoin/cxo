@@ -12,8 +12,11 @@ import (
 
 // common errors
 var (
-	ErrInvalidSize   = errors.New("invalid size of encoded obejct")
-	ErrStopIteration = errors.New("stop iteration")
+	ErrInvalidSize    = errors.New("invalid size of encoded obejct")
+	ErrStopIteration  = errors.New("stop iteration")
+	ErrFeedIsNotEmpty = errors.New("can't emove feed: feed is not empty")
+	ErrNoSuchFeed     = errors.New("no such feed")
+	ErrNotFound       = errors.New("not found")
 )
 
 // An IterateObjectsFunc ...
@@ -24,12 +27,13 @@ type IterateObjectsFunc func(key cipher.SHA256, o *Object) (err error)
 type Objects interface {
 	// Inc increments RefsCount by given key.
 	// The method never returns "not found" error.
-	// The rc reply is new RefsCount
+	// The rc reply is new RefsCount, if the rc is
+	// zero, then object hasn't been found
 	Inc(key cipher.SHA256) (rc uint32, err error)
-	// Get object by key. It returns (nil, nil)
-	// if object has not found. Returned Object
+	// Get object by key. Returned Object
 	// will have previous AccessTime, but the
-	// AccessTime will be updated in DB
+	// AccessTime will be updated in DB. If
+	// object not found, then it returns ErrNotFound
 	Get(key cipher.SHA256) (o *Object, err error)
 
 	// MultiGet returns all existsing obejcts by
@@ -39,25 +43,28 @@ type Objects interface {
 	// updated inside DB
 	MultiGet(keys []cipher.SHA256) (os []*Object, err error)
 	// MultiInc increments RefsCount of all existing
-	// objects by given keys. The method never returns
-	// "not found" error
-	MultiInc(keys []cipher.SHA256) (err error)
+	// objects by given keys. It returns new refs. counts.
+	// If a count is zero, then this object doesn't
+	// exist
+	MultiInc(keys []cipher.SHA256) (rcs []uint32, err error)
 
 	// Iterate all Obejcts
 	Iterate(IterateObjectsFunc) (err error)
 
 	// Dec decrements RefsCount by given key.
 	// If the RefsCount turns zero, then this method
-	// deletes the Object. The rc reply is new RefsCount.
+	// deletes the Object or the Object has not been
+	// found. The rc reply is new RefsCount.
 	// The method never returns "not found" error
 	Dec(key cipher.SHA256) (rc uint32, err error)
-	// Set new obejct or overwrite existsing. If Obejct already
-	// exists, then nothing chagned inside the Object except
-	// RefsCount and AccessTime. If the Object doesn't exist
-	// then its RefsCount set to 1 and CreateTime to now,
-	// before saving. E.g. the Set cahnges given Object.
-	// It also load object and set the o to loaded if
-	// object with given key already exists
+	// Set new obejct or overwrite existsing. The
+	// method changes CreateTime, AcessTime and RefsCount
+	// of given object. If object already exists the
+	// method increments RefsCount and updates AccessTime
+	// of saved value (ignoring given object). If obejct
+	// doesn't exists, then this method sets CreateTime,
+	// AccessTime, and RefsCount (=1) (changing given object)
+	// to appropriate values and saves it
 	Set(key cipher.SHA256, o *Object) (err error)
 
 	// MultiSet performs Set for every given
@@ -65,17 +72,38 @@ type Objects interface {
 	MultiSet(ko []KeyObject) (err error)
 	// MultiDec decrements RefsCount of all obejcts
 	// by given keys, removing objects for which
-	//  the RefCount turns zero. The method ignores
-	// obejcts has not found
-	MulitDec(keys []cipher.SHA256) (err error)
+	// the RefCount turns zero. The method ignores
+	// obejcts has not found. It returns resulting
+	// references count. A ref. count is zero for
+	// objects not found or deleted during the call
+	MulitDec(keys []cipher.SHA256) (rcs []uint32, err error)
 
 	Amount() Amount // total objects
 	Volume() Volume // total size of all objects
 }
 
+// An IterateFeedsFunc represetns ...
+type IterateFeedsFunc func(cipher.PubKey) error
+
 // A Feeds represetns bucket of feeds
 type Feeds interface {
-	// TODO
+	Add(cipher.PubKey) error            // add feed
+	Del(cipher.PubKey) error            // delete empty feed
+	Iterate(IterateFeedsFunc) error     // iterate all feeds
+	HasFeed(cipher.PubKey) bool         // presence check
+	Roots(cipher.PubKey) (Roots, error) // roots of feed
+}
+
+// An IterateRootsFunc represents ...
+type IterateRootsFunc func(*Root) error
+
+// A Roots represents bucket of Root objects
+type Roots interface {
+	Ascend(IterateRootsFunc) error  // iterate ascending oreder
+	Descend(IterateRootsFunc) error // iterate descending order
+	Set(*Root) error                // add/update Root
+	Del(uint64) error               // delete by seq
+	Get(uint64) (*Root, error)      // get by seq
 }
 
 // A Tx represetns ACID-transaction

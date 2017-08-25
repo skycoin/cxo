@@ -125,12 +125,12 @@ func testIdxDBTx(t *testing.T, idx IdxDB) {
 
 		err = idx.Tx(func(tx Tx) (err error) {
 			objs := tx.Objects()
-			var x *Object
-			if x, err = objs.Get(key); err != nil {
-				return
-			}
-			if x != nil {
+			if _, err = objs.Get(key); err == nil {
 				t.Error("has not been rolled back")
+			} else if err != ErrNotFound {
+				t.Error("unexpected error:", err)
+			} else {
+				err = nil
 			}
 			feeds := tx.Feeds()
 			// TODO (kostyarin): feeds

@@ -1,6 +1,7 @@
 package idxdb
 
 import (
+	"encoding/binary"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -58,7 +59,7 @@ func (d *driveTx) Objects() Objects {
 }
 
 func (d *driveTx) Feeds() Feeds {
-	return nil // TODO (kostyarin): implement
+	return &driveFeeds{d.tx.Bucket(feedsBucket)}
 }
 
 type driveObjs struct {
@@ -84,6 +85,7 @@ func (d *driveObjs) Inc(key cipher.SHA256) (rc uint32, err error) {
 func (d *driveObjs) Get(key cipher.SHA256) (o *Object, err error) {
 	var val []byte
 	if val = d.bk.Get(key[:]); len(val) == 0 {
+		err = ErrNotFound
 		return
 	}
 	o, err = d.decodeAndUpdateAccessTime(key, val)
@@ -118,6 +120,11 @@ func (d *driveObjs) MultiGet(keys []cipher.SHA256) (os []*Object, err error) {
 	for i, key := range keys {
 		var o *Object
 		if o, err = d.Get(key); err != nil {
+			if err == ErrNotFound {
+				err = nil
+				os[i] = nil
+				continue
+			}
 			os = nil
 			return
 		}
@@ -128,13 +135,19 @@ func (d *driveObjs) MultiGet(keys []cipher.SHA256) (os []*Object, err error) {
 
 // TODO (kostyarin): use ordered get to speed up the MultiGet,
 // because of B+-tree index
-func (d *driveObjs) MultiInc(keys []cipher.SHA256) (err error) {
+func (d *driveObjs) MultiInc(keys []cipher.SHA256) ([]uint32, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	rcs := make([]uint32, 0, len(keys))
 	for _, key := range keys {
-		if _, err = d.Inc(key); err != nil {
-			return
+		if rc, err := d.Inc(key); err != nil {
+			return nil, err // don't return rcs if err != nil
+		} else {
+			rcs = append(rcs, rc)
 		}
 	}
-	return
+	return rcs, nil
 }
 
 func (d *driveObjs) Iterate(iterateObjectsFunc IterateObjectsFunc) (err error) {
@@ -186,15 +199,21 @@ func (d *driveObjs) Set(key cipher.SHA256, o *Object) (err error) {
 		return
 	}
 	// already exists:
+	//  - ignore given obejct
 	//  - inc RefsCount
 	//  - update access time
-	if err = o.Decode(val); err != nil {
+	no := new(Object)
+	if err = no.Decode(val); err != nil {
 		panic(err) // critical
 	}
-	o.RefsCount++
-	o.UpdateAccessTime()
-	err = d.bk.Put(key[:], o.Encode())
+	no.RefsCount++
+	no.UpdateAccessTime()
+	err = d.bk.Put(key[:], no.Encode())
 	return
+}
+
+func (d *driveObjs) SetOrInc() {
+
 }
 
 func (d *driveObjs) MultiSet(kos []KeyObject) (err error) {
@@ -206,13 +225,19 @@ func (d *driveObjs) MultiSet(kos []KeyObject) (err error) {
 	return
 }
 
-func (d *driveObjs) MulitDec(keys []cipher.SHA256) (err error) {
+func (d *driveObjs) MulitDec(keys []cipher.SHA256) ([]uint32, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	rcs := make([]uint32, 0, len(keys))
 	for _, key := range keys {
-		if _, err = d.Dec(key); err != nil {
-			return
+		if rc, err := d.Dec(key); err != nil {
+			return nil, err
+		} else {
+			rcs = append(rcs, rc)
 		}
 	}
-	return
+	return rcs, nil
 }
 
 func (d *driveObjs) Amount() (amnt Amount) {
@@ -234,4 +259,152 @@ func (d *driveObjs) Volume() (vol Volume) {
 
 func (d *driveDB) Close() (err error) {
 	return d.b.Close()
+}
+
+type driveFeeds struct {
+	bk *bolt.Bucket
+}
+
+func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
+	_, err = d.bk.CreateBucketIfNotExists(pk[:])
+	return
+}
+
+func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
+	if f := d.bk.Bucket(pk[:]); f == nil || f.Stats().KeyN == 0 {
+		return d.bk.DeleteBucket(pk[:]) // not exist or empty
+	}
+	return ErrFeedIsNotEmpty // can't remove non-empty feed
+}
+
+func (d *driveFeeds) Iterate(iterateFeedsFunc IterateFeedsFunc) (err error) {
+	var pk cipher.PubKey
+	c := d.bk.Cursor()
+	// we have to Seek(next) instead of using Next
+	// because we allows mutations during the iteration
+	for k, _ := c.First(); k != nil; k, _ = c.Seek(pk[:]) {
+		copy(pk[:], k)
+		if err = iterateFeedsFunc(pk); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return
+		}
+		incSlice(pk[:])
+	}
+	return
+}
+
+// increment slice
+func incSlice(b []byte) {
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] == 0xff {
+			b[i] = 0
+			continue // increase next byte
+		}
+		b[i]++
+		return
+	}
+}
+
+func (d *driveFeeds) HasFeed(pk cipher.PubKey) bool {
+	return d.bk.Bucket(pk[:]) != nil
+}
+
+func (d *driveFeeds) Roots(pk cipher.PubKey) (rs Roots, err error) {
+	bk := d.bk.Bucket(pk[:])
+	if bk == nil {
+		return nil, ErrNoSuchFeed
+	}
+	return &driveRoots{bk}, nil
+}
+
+type driveRoots struct {
+	bk *bolt.Bucket
+}
+
+func (d *driveRoots) Ascend(iterateRootsFunc IterateRootsFunc) (err error) {
+
+	var seq uint64
+	var r *Root
+
+	c := d.bk.Cursor()
+
+	for seqb, er := c.First(); seqb != nil; seqb, er = c.Seek(seqb) {
+
+		seq = binary.LittleEndian.Uint64(seqb)
+
+		if err = r.Decode(er); err != nil {
+			panic(err)
+		}
+
+		if err = iterateRootsFunc(r); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return
+		}
+
+		seq++
+		binary.LittleEndian.PutUint64(seqb, seq)
+	}
+	return
+}
+
+func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
+
+	var r *Root
+
+	c := d.bk.Cursor()
+
+	for seqb, er := c.Last(); seqb != nil; {
+
+		if err = r.Decode(er); err != nil {
+			panic(err)
+		}
+
+		if err = iterateRootsFunc(r); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return
+		}
+
+		c.Seek(seqb)        // rewind
+		seqb, er = c.Prev() // prev
+	}
+	return
+}
+
+func (d *driveRoots) Set(r *Root) (err error) {
+	//
+	return
+}
+
+func (d *driveRoots) Del(seq uint64) (err error) {
+	//
+	return
+}
+
+func (d *driveRoots) Get(seq uint64) (r *Root, err error) {
+	seqb := utob(seq)
+	val := d.bk.Get(seqb)
+	if len(val) == 0 {
+		return
+	}
+	r = new(Root)
+	if err := r.Decode(val); err != nil {
+		panic(err)
+	}
+	return
+}
+
+func utob(u uint64) (p []byte) {
+	p = make([]byte, 8)
+	binary.LittleEndian.PutUint64(p, u)
+	return
+}
+
+func btou(p []byte) (u uint64) {
+	return binary.LittleEndian.Uint64(p)
 }

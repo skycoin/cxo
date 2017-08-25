@@ -17,6 +17,9 @@ func init() {
 	binary.LittleEndian.PutUint32(one, 1)
 }
 
+// A CXDS is interface of CX data store that is client
+// for CX data server or any stub package. The CXDS is
+// key-value store with references count
 type CXDS interface {
 	// Get value by key. Result is value and references count
 	Get(key cipher.SHA256) (val []byte, rc uint32, err error)

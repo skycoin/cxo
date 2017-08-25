@@ -10,24 +10,16 @@ import (
 
 const testFileName = "test.db"
 
-func testShouldNotPanic(t *testing.T) {
-	if pc := recover(); pc != nil {
-		t.Error("unexpected panic:", pc)
-	}
-}
-
-func testDriveDS(t *testing.T) (ds CXDS) {
-	var err error
-	if ds, err = NewDriveCXDS(testFileName); err != nil {
-		t.Fatal(err)
-	}
-	return
-}
-
 func testKeyValue(s string) (key cipher.SHA256, val []byte) {
 	val = []byte(s)
 	key = cipher.SumSHA256(val)
 	return
+}
+
+func testShouldNotPanic(t *testing.T) {
+	if pc := recover(); pc != nil {
+		t.Error("unexpected panic:", pc)
+	}
 }
 
 func Test_one(t *testing.T) {
@@ -39,18 +31,26 @@ func Test_one(t *testing.T) {
 	}
 }
 
+func testDriveDS(t *testing.T) (ds CXDS) {
+	var err error
+	if ds, err = NewDriveCXDS(testFileName); err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
 func TestNewDriveCXDS(t *testing.T) {
 	// NewDriveCXDS(filePath string) (ds CXDS, err error)
 
 	ds := testDriveDS(t)
-	ds.Close()
+	defer ds.Close()
 }
 
 func TestNewMemoryCXDS(t *testing.T) {
 	// NewMemoryCXDS() (ds CXDS, err error)
 
 	ds := NewMemoryCXDS()
-	ds.Close()
+	defer ds.Close()
 }
 
 func testGet(t *testing.T, ds CXDS) {

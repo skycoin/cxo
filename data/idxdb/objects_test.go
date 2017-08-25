@@ -70,8 +70,10 @@ func testObjectsGet(t *testing.T, idx IdxDB) {
 	t.Run("not exist", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (_ error) {
 			objs := tx.Objects()
-			if o, err := objs.Get(key); err != nil {
-				t.Error(err)
+			if o, err := objs.Get(key); err == nil {
+				t.Error("missing 'not found' error")
+			} else if err != ErrNotFound {
+				t.Error("unexpecetd error:", err)
 			} else if o != nil {
 				t.Error("unexpected object")
 			}
@@ -315,8 +317,16 @@ func testObjectsMultiInc(t *testing.T, idx IdxDB) {
 
 	t.Run("not exist", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (_ error) {
-			if err := tx.Objects().MultiInc(keys); err != nil {
+			if rcs, err := tx.Objects().MultiInc(keys); err != nil {
 				t.Error(err)
+			} else if len(rcs) != len(keys) {
+				t.Error("wrong rcs length")
+			} else {
+				for _, rc := range rcs {
+					if rc != 0 {
+						t.Error("wrong rc", rc)
+					}
+				}
 			}
 			return
 		})
@@ -347,9 +357,21 @@ func testObjectsMultiInc(t *testing.T, idx IdxDB) {
 	t.Run("exist", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (_ error) {
 			objs := tx.Objects()
-			if err := objs.MultiInc(keys); err != nil {
+			if rcs, err := objs.MultiInc(keys); err != nil {
 				t.Error(err)
 				return
+			} else if len(rcs) != len(keys) {
+				t.Error("wrong rcs length")
+			} else {
+				for i, rc := range rcs {
+					if i%2 != 0 {
+						if rc != 0 {
+							t.Error("wrong rc (expected 0):", rc)
+						}
+					} else if rc != 2 {
+						t.Error("wrong rc (expected 1):", rc)
+					}
+				}
 			}
 			if xs, err := objs.MultiGet(keys); err != nil {
 				t.Error(err)
@@ -396,7 +418,7 @@ func testObjectsMultiInc(t *testing.T, idx IdxDB) {
 	t.Run("access time", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (_ error) {
 			objs := tx.Objects()
-			if err := objs.MultiInc(keys); err != nil {
+			if _, err := objs.MultiInc(keys); err != nil {
 				t.Error(err)
 				return
 			}
@@ -669,9 +691,11 @@ func testObjectsDec(t *testing.T, idx IdxDB) {
 			} else if rc != 0 {
 				t.Error("wrong rc", rc)
 			}
-			if o, err := objs.Get(key); err != nil {
-				t.Error(err)
-			} else if o != nil {
+			if _, err := objs.Get(key); err != nil {
+				if err != ErrNotFound {
+					t.Error(err)
+				}
+			} else {
 				t.Error("object was not deleted")
 			}
 			return
@@ -740,7 +764,9 @@ func testObjectsSet(t *testing.T, idx IdxDB) {
 				t.Error(err)
 				return
 			}
-			if o.RefsCount != 2 {
+			if x, err := objs.Get(key); err != nil {
+				t.Error(err)
+			} else if x.RefsCount != 2 {
 				t.Error("wrong RefsCount", o.RefsCount)
 			}
 			return
@@ -787,22 +813,19 @@ func testObjectsMultiSet(t *testing.T, idx IdxDB) {
 			objs := tx.Objects()
 			if err := objs.MultiSet(kos); err != nil {
 				t.Error(err)
-				return
-			}
-			for _, ko := range kos {
-				if ko.Object.RefsCount != 1 {
-					t.Error("wrong RefsCount", ko.Object.RefsCount)
-				}
-				if ko.Object.AccessTime == 776 {
-					t.Error("access time was not changed")
-				}
-				if ko.Object.CreateTime == 778 {
-					t.Error("CreateTime was not changed")
-				}
-				if x, err := objs.Get(ko.Key); err != nil {
-					t.Error(err)
-				} else if *x != *ko.Object {
-					t.Error("wrong value")
+			} else if os, err := objs.MultiGet(keys); err != nil {
+				t.Error(err)
+			} else {
+				for _, x := range os {
+					if x.RefsCount != 1 {
+						t.Error("wrong RefsCount", x.RefsCount)
+					}
+					if x.AccessTime == 776 {
+						t.Error("access time was not changed")
+					}
+					if x.CreateTime == 778 {
+						t.Error("CreateTime was not changed")
+					}
 				}
 			}
 			return
@@ -821,11 +844,13 @@ func testObjectsMultiSet(t *testing.T, idx IdxDB) {
 			objs := tx.Objects()
 			if err := objs.MultiSet(kos); err != nil {
 				t.Error(err)
-				return
-			}
-			for _, ko := range kos {
-				if ko.Object.RefsCount != 2 {
-					t.Error("wrong RefsCount", ko.Object.RefsCount)
+			} else if os, err := objs.MultiGet(keys); err != nil {
+				t.Error(err)
+			} else {
+				for _, x := range os {
+					if x.RefsCount != 2 {
+						t.Error("wrong RefsCount", x.RefsCount)
+					}
 				}
 			}
 			return
@@ -863,8 +888,20 @@ func testObjectsMulitDec(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("not exist", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) error {
-			return tx.Objects().MulitDec(keys)
+		err := idx.Tx(func(tx Tx) (err error) {
+			var rcs []uint32
+			if rcs, err = tx.Objects().MulitDec(keys); err != nil {
+				return
+			} else if len(rcs) != len(keys) {
+				t.Error("wrong rcs length")
+			} else {
+				for _, rc := range rcs {
+					if rc != 0 {
+						t.Error("wrong rc", rc)
+					}
+				}
+			}
+			return
 		})
 		if err != nil {
 			t.Error(err)
@@ -882,7 +919,8 @@ func testObjectsMulitDec(t *testing.T, idx IdxDB) {
 				return
 			}
 		}
-		return objs.MultiInc(keys)
+		_, err = objs.MultiInc(keys)
+		return
 	})
 	if err != nil {
 		t.Error(err)
@@ -892,8 +930,17 @@ func testObjectsMulitDec(t *testing.T, idx IdxDB) {
 	t.Run("decrement", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (err error) {
 			objs := tx.Objects()
-			if err = objs.MulitDec(keys); err != nil {
+			var rcs []uint32
+			if rcs, err = objs.MulitDec(keys); err != nil {
 				return
+			} else if len(rcs) != len(keys) {
+				t.Error("wring rcs length")
+			} else {
+				for _, rc := range rcs {
+					if rc != 1 {
+						t.Error("wrong rc")
+					}
+				}
 			}
 			for i := 0; i < len(keys); i++ {
 				var o *Object
@@ -917,14 +964,25 @@ func testObjectsMulitDec(t *testing.T, idx IdxDB) {
 	t.Run("delete", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (err error) {
 			objs := tx.Objects()
-			if err = objs.MulitDec(keys); err != nil {
+			var rcs []uint32
+			if rcs, err = objs.MulitDec(keys); err != nil {
 				return
+			} else if len(rcs) != len(keys) {
+				t.Error("wrong rcs length")
+			} else {
+				for _, rc := range rcs {
+					if rc != 0 {
+						t.Error("wrong rc", rc)
+					}
+				}
 			}
 			for i := 0; i < len(keys); i++ {
-				var o *Object
-				if o, err = objs.Get(keys[i]); err != nil {
-					return
-				} else if o != nil {
+				if _, err = objs.Get(keys[i]); err != nil {
+					if err != ErrNotFound {
+						t.Error("unexpected error:", err)
+					}
+					err = nil
+				} else {
 					t.Error("not deleted")
 				}
 			}
@@ -981,7 +1039,8 @@ func testObjectsAmount(t *testing.T, idx IdxDB) {
 				return
 			}
 		}
-		return objs.MultiInc(keys)
+		_, err = objs.MultiInc(keys)
+		return
 	})
 	if err != nil {
 		t.Error(err)
@@ -1049,7 +1108,8 @@ func testObjectsVolume(t *testing.T, idx IdxDB) {
 			}
 			total += vals[i].Vol
 		}
-		return objs.MultiInc(keys)
+		_, err = objs.MultiInc(keys)
+		return
 	})
 	if err != nil {
 		t.Error(err)
