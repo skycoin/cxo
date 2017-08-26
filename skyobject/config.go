@@ -2,7 +2,6 @@ package skyobject
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/skycoin/cxo/node/log"
 )
@@ -12,13 +11,7 @@ const (
 	Prefix       string = "[skyobject] " // default log prefix
 	MerkleDegree int    = 16             // default References' degree
 
-	StatSamples int           = 5                // it's enough
-	CleanUp     time.Duration = 59 * time.Second // every minute
-	KeepRoots   bool          = false            // remove
-	KeepNonFull bool          = false            // remove
-
-	CleanUpPin        log.Pin = 1 << iota // show time of CleanUp in logs
-	PackSavePin                           // show time of (*Pack).Save in logs
+	PackSavePin       log.Pin = 1 << iota // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
 	FillVerbosePin                        // show filling debug logs
 
@@ -38,26 +31,6 @@ type Config struct {
 
 	// Log configs
 	Log log.Config // logging
-
-	// StatSamples is number of samples of rolling average of
-	// statistic of Container. Durations of (*Container).CleanUp
-	// and (*Pack).Save are collected in Stat as rolling average
-	// (wiki: 'moving average')
-	StatSamples int
-
-	// CleanUp by provided interval. Set to 0 to disable. The
-	// cleaning can be stopped by (*Container).Close() only
-	CleanUp time.Duration
-
-	// KeepRoots instead of removing. By default (e.g. if it is false)
-	// (*Container).CleanUp removes all Root obejcts of a feed before
-	// last full
-	KeepRoots bool
-
-	// KeepNonFull root objects before shutdown. By default (e.g. if it is
-	// false) all non-full root objects will be removed from database
-	// before shutdown
-	KeepNonFull bool
 }
 
 // NewConfig returns pointer to Config with default values
@@ -72,17 +45,7 @@ func NewConfig() (conf *Config) {
 
 	conf.Log = log.NewConfig()
 	conf.Log.Prefix = Prefix
-	conf.Log.Pins = CleanUpPin | PackSavePin
-
-	// stat
-
-	conf.StatSamples = StatSamples
-
-	// clean up
-
-	conf.CleanUp = CleanUp
-	conf.KeepRoots = KeepRoots
-	conf.KeepNonFull = KeepNonFull
+	conf.Log.Pins = PackSavePin
 	return
 }
 

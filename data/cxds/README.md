@@ -11,4 +11,29 @@ The CXDS based on [boltdb](github.com/boltdb/bolt) and
 [buntdb](github.com/tidwall/buntdb). E.g. it can be used as long time store
 on HDD (SSD or vinil disks). And there is in-memeory store for test.
 
+
+## Schema
+
+Schema is simple.
+
+```
+hash - > object
+```
+
+Where the hash is SHA256 hash of the obejct. And the obejct is any
+obejct encoded to `[]byte`
+
+
+## Binary internals
+
+Every object is
+
+```
+[4 byte: refs count][encode obejct]
+```
+
+Where `4 byte: refs count` is little-endian encoded `uint32` that represents
+references count for this obejct.
+
+
 ---

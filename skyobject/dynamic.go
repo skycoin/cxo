@@ -146,8 +146,7 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 	}
 
 	if d.IsBlank() {
-		d.trackChanges() // if AutoTrackChangses flag set
-		return           // this Dynamic represents nil interface{}
+		return // this Dynamic represents nil interface{}
 	}
 
 	if d.dn.value != nil {
@@ -165,7 +164,6 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 			return
 		}
 		d.dn.value = obj // keep
-		d.trackChanges() // if AutoTrackChanges flag set
 		return
 	}
 
@@ -181,14 +179,7 @@ func (d *Dynamic) Value() (obj interface{}, err error) {
 
 	d.dn.value = obj // keep
 
-	d.trackChanges() // if AutoTrackChanges flag set
 	return
-}
-
-func (d *Dynamic) trackChanges() {
-	if f := d.dn.pack.flags; f&AutoTrackChanges != 0 && f&ViewOnly == 0 {
-		d.dn.pack.Push(d) // track
-	}
 }
 
 // SetValue replacing the Dynamic with new, that points
@@ -231,7 +222,6 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 		d.Object = key
 	}
 
-	d.trackChanges()
 	return
 }
 

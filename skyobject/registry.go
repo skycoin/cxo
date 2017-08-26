@@ -10,7 +10,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/idxdb"
 )
 
 // TAG is name of struct tag the skyobject package use to determine
@@ -209,8 +209,8 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 type Registry struct {
 	done bool // stop registration and use
 
-	ref RegistryRef // reference to the registry
-	vol data.Volume // volume of the encoded registry
+	ref RegistryRef  // reference to the registry
+	vol idxdb.Volume // volume of the encoded registry
 
 	reg map[string]Schema    // by name
 	srf map[SchemaRef]Schema // by reference (for Dynamic references)
@@ -304,7 +304,7 @@ func (r *Registry) SchemaByName(name string) (Schema, error) {
 }
 
 // Volume is size of encoded Registry
-func (r *Registry) Volume() data.Volume {
+func (r *Registry) Volume() idxdb.Volume {
 	return r.vol
 }
 
@@ -415,7 +415,7 @@ func (r *Registry) finialize() {
 	}
 
 	encoded := r.Encode()
-	r.vol = data.Volume(len(encoded))
+	r.vol = idxdb.Volume(len(encoded))
 	r.ref = RegistryRef(cipher.SumSHA256(encoded))
 }
 

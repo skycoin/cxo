@@ -9,7 +9,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/idxdb"
 )
 
 // some of Root dropping reasons
@@ -19,8 +19,8 @@ var (
 
 // A WCXO represents wanted CX object
 type WCXO struct {
-	Hash cipher.SHA256 // hash of wanted CX object
-	GotQ chan []byte   // cahnnel to sent requested CX object
+	Hash cipher.SHA256      // hash of wanted CX object
+	GotQ chan FillingObject // cahnnel to sent requested CX object
 
 	Announce []cipher.SHA256 // announce get
 }
@@ -44,13 +44,16 @@ type Filler struct {
 	r   *Root     // filling Root
 	reg *Registry // registry of the Root
 
-	volume data.Volume // volume of the Root
-	amount uint32      // amount of the Root
-
-	gotq chan []byte // reply
+	gotq chan FillingObject // reply
 
 	closeq chan struct{}
 	closeo sync.Once
+}
+
+type FillingObject struct {
+	Amount idxdb.Amount // of subtree
+	Volume idxdb.Volume // of subtree
+	Value  []byte       // encoded obejct in person
 }
 
 func (c *Container) NewFiller(r *Root, wantq chan<- WCXO, fullq chan<- *Root,
@@ -67,7 +70,7 @@ func (c *Container) NewFiller(r *Root, wantq chan<- WCXO, fullq chan<- *Root,
 	fl.fullq = fullq
 
 	fl.r = r
-	fl.gotq = make(chan []byte, 1)
+	fl.gotq = make(chan FillingObject, 1)
 
 	fl.closeq = make(chan struct{})
 
@@ -85,13 +88,27 @@ func (f *Filler) drop(err error) {
 	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
 
 	f.dropq <- DropRootError{f.r, err}
+
+	// TODO (kostyarin): decrement all related
 }
 
 func (f *Filler) full() {
 	f.c.Debugln(FillVerbosePin, "(*Filler).full", f.r.Short())
 
-	// TODO
-	if err := f.c.MarkFull(f.r); err != nil {
+	// mark full
+	err := f.c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
+		var rs idxdb.Roots
+		if rs, err = tx.Feeds().Roots(f.r.Pub); err != nil {
+			return
+		}
+		var ir *idxdb.Root
+		if ir, err = rs.Get(f.r.Seq); err != nil {
+			return
+		}
+		ir.IsFull = true
+		return rs.Set(ir)
+	})
+	if err != nil {
 		// detailed error
 		err = fmt.Errorf("can't mark root %s as full in DB: %v",
 			f.r.Short(),
@@ -107,32 +124,35 @@ func (f *Filler) fill(wg *sync.WaitGroup) {
 	f.c.Debugln(FillVerbosePin, "(*Filler).fill", f.r.Short())
 
 	defer wg.Done()
+
 	if f.r.Reg == (RegistryRef{}) {
 		f.drop(ErrEmptyRegsitryRef)
 		return
 	}
+
 	var val []byte
 	var ok bool
 	var err error
-	if f.reg = f.c.Registry(f.r.Reg); f.reg == nil {
-		if val, ok = f.request(cipher.SHA256(f.r.Reg)); !ok {
-			return // drop
-		}
-		if f.reg, err = DecodeRegistry(val); err != nil {
+	if f.reg, err = f.c.Registry(f.r.Reg); err != nil {
+		if err == idxdb.ErrNotFound {
+			if val, ok = f.request(cipher.SHA256(f.r.Reg)); !ok {
+				return // drop
+			}
+			if f.reg, err = DecodeRegistry(val); err != nil {
+				f.drop(err)
+				return
+			}
+		} else {
 			f.drop(err)
 		}
-		f.c.addRegistry(f.reg) // already saved by the request call
 	}
-
-	f.amount++
-	f.volume += f.reg.Volume()
 
 	if len(f.r.Refs) == 0 {
 		f.full()
 		return
 	}
 	for _, dr := range f.r.Refs {
-		if err = f.fillDynamic(nil, dr); err != nil {
+		if err = f.fillDynamic(dr); err != nil {
 			f.drop(err)
 			return
 		}
@@ -147,14 +167,20 @@ func (f *Filler) fill(wg *sync.WaitGroup) {
 func (f *Filler) request(hash cipher.SHA256,
 	announce ...cipher.SHA256) (val []byte, ok bool) {
 
+	// TODO (kostarin): announce
+
 	select {
 	case f.wantq <- WCXO{hash, f.gotq, announce}:
 	case <-f.closeq:
 		return
 	}
 	select {
-	case val = <-f.gotq:
-		ok = true
+	case fo := <-f.gotq:
+		if err := f.c.SaveFillingObject(hash, fo); err != nil {
+			f.drop(err)
+			return // nil, false
+		}
+		val, ok = fo.Value, true
 	case <-f.closeq:
 	}
 	return
@@ -164,7 +190,7 @@ func (f *Filler) get(hash cipher.SHA256,
 	announce ...cipher.SHA256) (val []byte, ok bool) {
 
 	if len(announce) == 0 {
-		if val = f.c.Get(hash); val != nil {
+		if val, _, _ = f.c.DB().CXDS().Get(hash); val != nil {
 			return val, true
 		}
 		val, ok = f.request(hash)

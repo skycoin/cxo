@@ -198,17 +198,12 @@ func (d *driveObjs) Set(key cipher.SHA256, o *Object) (err error) {
 		err = d.bk.Put(key[:], o.Encode())
 		return
 	}
-	// already exists:
-	//  - ignore given obejct
-	//  - inc RefsCount
-	//  - update access time
-	no := new(Object)
-	if err = no.Decode(val); err != nil {
+	if err = o.Decode(val); err != nil {
 		panic(err) // critical
 	}
-	no.RefsCount++
-	no.UpdateAccessTime()
-	err = d.bk.Put(key[:], no.Encode())
+	o.RefsCount++
+	o.UpdateAccessTime()
+	err = d.bk.Put(key[:], o.Encode())
 	return
 }
 
@@ -374,6 +369,54 @@ func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 		seqb, er = c.Prev() // prev
 	}
 	return
+}
+
+func (d *driveRoots) Inc(seq uint64) (err error) {
+	var val, seqb []byte
+	var r *Root
+
+	seqb = utob(seq)
+
+	if val = d.bk.Get(seqb); len(val) == 0 {
+		err = ErrNotFound
+		return
+	}
+
+	r = new(Root)
+
+	if err = r.Decode(val); err != nil {
+		panic(err)
+	}
+
+	r.UpdateAccessTime()
+	r.RefsCount++
+
+	return d.bk.Put(seqb, r.Encode())
+}
+
+func (d *driveRoots) Dec(seq uint64) (err error) {
+	var val, seqb []byte
+	var r *Root
+
+	seqb = utob(seq)
+
+	if val = d.bk.Get(seqb); len(val) == 0 {
+		err = ErrNotFound
+		return
+	}
+
+	r = new(Root)
+
+	if err = r.Decode(val); err != nil {
+		panic(err)
+	}
+
+	r.UpdateAccessTime()
+	if r.RefsCount >= 1 {
+		r.RefsCount--
+	}
+
+	return d.bk.Put(seqb, r.Encode())
 }
 
 func (d *driveRoots) Set(r *Root) (err error) {

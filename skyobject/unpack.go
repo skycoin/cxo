@@ -9,7 +9,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/idxdb"
 )
 
 // common packing and unpacking errors
@@ -31,16 +31,10 @@ const (
 	HashTableIndex
 	// VieOnly don't allows modifications
 	ViewOnly
-	// AutoTrackChanges is experimental
-	AutoTrackChanges
-)
 
-// A Types represents mapping from registered names
-// of a Regsitry to reflect.Type and inversed way
-type Types struct {
-	Direct  map[string]reflect.Type // registered name -> refelect.Type
-	Inverse map[reflect.Type]string // refelct.Type -> registered name
-}
+	// intrnal flags
+	basedOnRoot // root based on some other Root we should not remove
+)
 
 // A Pack represents database cache for
 // new objects. It uses in-memory cache
@@ -61,8 +55,12 @@ type Pack struct {
 	sk cipher.SecKey // secret key
 
 	unsaved map[cipher.SHA256][]byte // cache
+}
 
-	updateStack // track changes
+func (p *Pack) Close() {
+	if p.flags&basedOnRoot != 0 {
+		p.c.unholdRoot(p.r.Pub, p.r.Seq)
+	}
 }
 
 // don't save, just get k-v
@@ -84,15 +82,11 @@ func (p *Pack) get(key cipher.SHA256) (val []byte, err error) {
 		return
 	}
 	// ignore DB error
-	err = p.c.DB().View(func(tx data.Tv) (_ error) {
-		val = tx.Objects().Get(key)
-		return
-	})
-
-	if err == nil && val == nil {
+	var rc uint32
+	val, rc, err = p.c.DB().CXDS().Get(key)
+	if err == nil && rc == 0 {
 		err = fmt.Errorf("object [%s] not found", key.Hex()[:7])
 	}
-
 	return
 }
 
@@ -122,7 +116,7 @@ func (p *Pack) del(key cipher.SHA256) {
 
 // Save all changes in DB returning packed updated Root.
 // Use the result to publish upates (node package related)
-func (p *Pack) Save() (rp data.RootPack, err error) {
+func (p *Pack) Save() (err error) {
 	p.c.Debugln(VerbosePin, "(*Pack).Save", p.r.Pub.Hex()[:7], p.r.Seq)
 
 	tp := time.Now() // time point
@@ -137,73 +131,131 @@ func (p *Pack) Save() (rp data.RootPack, err error) {
 		return
 	}
 
-	if err = p.updateStack.Commit(); err != nil {
-		return
-	}
+	// 1) keep the seq to decrement it next time
+	// 2) range over tree getting Volume/Amount of related objects
+	//   2.1) get the V/A of already existeing obejcts
+	//   2.2) save new obejcts indexing them
+	// 3) keep all saved objects to decrement them on failure
+	var seqDec uint64 = p.r.Seq          // base
+	var saved map[cipher.SHA256]struct{} // decr. on fail
 
-	// single transaction required (to perform rollback on error)
-	err = p.c.DB().Update(func(tx data.Tu) (err error) {
+	err = p.c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
 
-		// save Root
+		objs := tx.Objects()
 
-		roots := tx.Feeds().Roots(p.r.Pub)
-		if roots == nil {
-			return ErrNoSuchFeed
+		var rs idxdb.Roots
+		if rs, err = tx.Feeds().Roots(p.r.Pub); err != nil {
+			return
 		}
 
-		// seq number and prev hash
-		var seq uint64
-		var prev cipher.SHA256
-		if last := roots.Last(); last != nil {
-			seq, prev = last.Seq+1, last.Hash
+		// get seq + 1 of last saved
+		var called bool
+		err = rs.Descend(func(ir *idxdb.Root) (err error) {
+			p.r.Seq = ir.Seq + 1 // next seq
+			p.r.Prev = ir.Hash   // previous
+			called = true
+			return idxdb.ErrStopIteration
+		})
+		if err != nil {
+			return
+		}
+
+		if called == false {
+			p.r.Seq = 0                // frist Root
+			p.r.Prev = cipher.SHA256{} // first Root
 		}
 
 		// setup
-		p.r.Seq = seq
 		p.r.Time = time.Now().UnixNano()
-		p.r.Prev = prev
 
 		val := p.r.Encode()
 
 		p.r.Hash = cipher.SumSHA256(val)
 		p.r.Sig = cipher.SignHash(p.r.Hash, p.sk)
 
-		rp.Hash = p.r.Hash
-		rp.IsFull = true
-		rp.Prev = p.r.Prev
-		rp.Root = val
-		rp.Seq = p.r.Seq
-		rp.Sig = p.r.Sig
+		var ir *idxdb.Root = new(idxdb.Root)
 
-		if err = roots.Add(&rp); err != nil {
+		// set up the ir
+		ir.Seq = p.r.Seq
+		ir.Prev = p.r.Prev
+		ir.Hash = p.r.Hash
+		ir.Sig = p.r.Sig
+		ir.IsFull = true // going to be full
+
+		ir.Object.Vol = idxdb.Volume(len(val)) // volume of the Root itself
+
+		// save recursive
+		sr := new(saveRecursive)
+		sr.p = p
+		sr.objs = objs
+		sr.saved = saved
+
+		var pamnt idxdb.Amount
+		var pvol idxdb.Volume
+
+		for i := range p.r.Refs {
+			rv := reflect.ValueOf(p.r.Refs[i])
+			pamnt, pvol, err = sr.saveRecursiveDynamic(rv)
+			if err != nil {
+				return
+			}
+			ir.Object.Subtree.Amount += pamnt
+			ir.Object.Subtree.Volume += pvol
+		}
+
+		p.r.Amount = ir.Amount()
+		p.r.Volume = ir.Volume()
+
+		if err = rs.Set(ir); err != nil {
 			return
 		}
-		// save objects
-		return tx.Objects().SetMap(p.unsaved)
-	})
 
-	if err == nil {
+		// increment ref to related registry
+		_, err = objs.Inc(cipher.SHA256(p.r.Reg))
+		return
+	})
+	if err != nil {
+		// sec saved
+		for hash := range saved {
+			p.c.DB().CXDS().Dec(hash) // ignore error (TODO: log  the err)
+		}
+	} else {
+		if p.flags&basedOnRoot != 0 {
+			p.c.unholdRoot(p.r.Pub, seqDec)
+			p.c.holdRoot(p.r.Pub, p.r.Seq) // hold this Root
+		}
 		p.unsaved = make(map[cipher.SHA256][]byte) // clear
 	}
 
 	st := time.Now().Sub(tp)
 
 	p.c.Debugf(PackSavePin, "%s saved after %v", p.r.Short(), st)
-
-	p.c.stat.addPackSave(st)
 	return
 }
 
 // Initialize the Pack. It creates Root WalkNode and
 // unpack entire tree if appropriate flag is set
 func (p *Pack) init() (err error) {
-	if p.flags&ViewOnly == 0 {
-		p.updateStack.init()
+	// we need to inc refs count for underlying Root
+	// to prevent deleting, because we can use objects
+	// related to this (base) Root
+	err = p.c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
+		var rs idxdb.Roots
+		if rs, err = tx.Feeds().Roots(p.r.Pub); err != nil {
+			return
+		}
+		// inc Refs count of the Root
+		return rs.Inc(p.r.Seq)
+	})
+	if err != nil {
+		return
 	}
 	// Do we need to unpack entire tree?
 	if p.flags&EntireTree != 0 {
 		// unpack all possible
-		_, err = p.RootRefs()
+		if _, err = p.RootRefs(); err != nil {
+			return
+		}
 	}
 	return
 }

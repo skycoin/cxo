@@ -1301,7 +1301,7 @@ func (r *RefsElem) Value() (obj interface{}, err error) {
 	}
 
 	if r.value != nil {
-		obj = r.value // already have (already tracked)
+		obj = r.value // already have
 		return
 	}
 
@@ -1322,7 +1322,6 @@ func (r *RefsElem) Value() (obj interface{}, err error) {
 	}
 	r.value = obj // keep
 
-	r.trackChanges() // if AutoTrackChanges enabled
 	return
 }
 
@@ -1378,14 +1377,6 @@ func (r *RefsElem) SetValue(obj interface{}) (err error) {
 		}
 	}
 
-	r.trackChanges()
-	return
-}
-
-func (r *RefsElem) trackChanges() {
-	if r.rn.pack.flags&AutoTrackChanges != 0 {
-		r.rn.pack.Push(r) // track
-	}
 	return
 }
 

@@ -8,51 +8,6 @@ import (
 )
 
 //
-// RegistryRef
-//
-
-// RegistryRef represents unique identifier of
-// a Registry. The id is hash of encoded registry
-type RegistryRef cipher.SHA256
-
-// IsBlank returns true if the reference is blank
-func (r RegistryRef) IsBlank() bool {
-	return r == (RegistryRef{})
-}
-
-// String implements fmt.Stringer interface
-func (r RegistryRef) String() string {
-	return cipher.SHA256(r).Hex()
-}
-
-// Short returns first seven bytes of String
-func (r RegistryRef) Short() string {
-	return r.String()[:7]
-}
-
-//
-// SchemaRef
-//
-
-// A SchemaRef represents reference to Schema
-type SchemaRef cipher.SHA256
-
-// IsBlank returns true if the reference is blank
-func (s SchemaRef) IsBlank() bool {
-	return s == (SchemaRef{})
-}
-
-// String implements fmt.Stringer interface
-func (s SchemaRef) String() string {
-	return cipher.SHA256(s).Hex()
-}
-
-// Short returns first seven bytes of String
-func (r SchemaRef) Short() string {
-	return r.String()[:7]
-}
-
-//
 // Ref
 //
 
@@ -74,8 +29,6 @@ type refNode struct {
 	sch   Schema      // scehma of related Ref
 	value interface{} // golang-value of related Ref
 	pack  *Pack       // related Pack
-
-	// TOTH (kostyarin): upper node etc
 }
 
 // IsBlank returns true if the Ref is blank
@@ -133,7 +86,7 @@ func (r *Ref) Value() (obj interface{}, err error) {
 	}
 
 	if r.rn.value != nil {
-		obj = r.rn.value // already have (already tracked)
+		obj = r.rn.value // already have
 		return
 	}
 
@@ -147,7 +100,6 @@ func (r *Ref) Value() (obj interface{}, err error) {
 			return
 		}
 		r.rn.value = obj // keep
-		r.trackChanges() // if AutoTrackChanges enabled
 		return
 	}
 
@@ -163,7 +115,6 @@ func (r *Ref) Value() (obj interface{}, err error) {
 	}
 	r.rn.value = obj // keep
 
-	r.trackChanges() // if AutoTrackChanges enabled
 	return
 }
 
@@ -177,12 +128,6 @@ func (r *Ref) SetHash(hash cipher.SHA256) {
 		r.rn.value = nil // clear related value
 	}
 	return
-}
-
-func (r *Ref) trackChanges() {
-	if f := r.rn.pack.flags; f&AutoTrackChanges != 0 && f&ViewOnly == 0 {
-		r.rn.pack.Push(r) // track
-	}
 }
 
 // SetValue replacing the Ref with new, that points
@@ -258,7 +203,6 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 		// }
 	}
 
-	r.trackChanges()
 	return
 }
 

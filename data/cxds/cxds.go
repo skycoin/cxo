@@ -21,7 +21,9 @@ func init() {
 // for CX data server or any stub package. The CXDS is
 // key-value store with references count
 type CXDS interface {
-	// Get value by key. Result is value and references count
+	// Get value by key. Result is value and references count.
+	// It never retusn 'not found' error. If rc is zero then
+	// object has not been found
 	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
 	// Set key-value pair. If value already exists the Set
 	// increments references count

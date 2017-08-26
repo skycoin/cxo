@@ -58,13 +58,11 @@ type Objects interface {
 	// The method never returns "not found" error
 	Dec(key cipher.SHA256) (rc uint32, err error)
 	// Set new obejct or overwrite existsing. The
-	// method changes CreateTime, AcessTime and RefsCount
-	// of given object. If object already exists the
-	// method increments RefsCount and updates AccessTime
-	// of saved value (ignoring given object). If obejct
-	// doesn't exists, then this method sets CreateTime,
-	// AccessTime, and RefsCount (=1) (changing given object)
-	// to appropriate values and saves it
+	// method changes given object. If object already exist
+	// the stored object will be loaded to given.
+	// RefsCount, AccessTime and CreateTie fields will
+	// be set to appropriate values (even if the obejct
+	// does not exist)
 	Set(key cipher.SHA256, o *Object) (err error)
 
 	// MultiSet performs Set for every given
@@ -119,6 +117,11 @@ type Roots interface {
 	// to update only IsFull field (AccessTime will be
 	// updated)
 	Set(*Root) error
+
+	// Inc refs count of Root by seq number
+	Inc(seq uint64) error
+	// Dec refs count of Root by seq numeber
+	Dec(seq uint64) error
 
 	// Del Root by seq number
 	Del(uint64) error
