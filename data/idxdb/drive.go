@@ -231,20 +231,8 @@ func (d *driveObjs) MulitDec(keys []cipher.SHA256) ([]uint32, error) {
 	return rcs, nil
 }
 
-func (d *driveObjs) Amount() (amnt Amount) {
-	amnt = Amount(d.bk.Stats().KeyN)
-	return
-}
-
-func (d *driveObjs) Volume() (vol Volume) {
-	d.bk.ForEach(func(k, v []byte) (_ error) {
-		o := new(Object)
-		if err := o.Decode(v); err != nil {
-			panic(err)
-		}
-		vol += o.Vol
-		return
-	})
+func (d *driveObjs) Amount() (amnt int) {
+	amnt = d.bk.Stats().KeyN
 	return
 }
 

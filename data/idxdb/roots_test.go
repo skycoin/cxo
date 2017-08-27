@@ -18,9 +18,6 @@ func testAddFeed(t *testing.T, idx IdxDB, pk cipher.PubKey) {
 
 func testNewRoot(seed string, sk cipher.SecKey) (r *Root) {
 	r = new(Root)
-	r.Vol = 500
-	r.Subtree.Amount = 1000
-	r.Subtree.Volume = 9000
 	r.RefsCount = 888
 	r.CreateTime = 111
 	r.AccessTime = 222
@@ -443,8 +440,7 @@ func testRootsSet(t *testing.T, idx IdxDB) {
 		}
 	})
 
-	r.IsFull = true      // should be updated
-	r.Subtree.Volume = 1 // should not be updated
+	r.IsFull = true // should be updated
 
 	t.Run("unpdate", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (err error) {
@@ -459,7 +455,6 @@ func testRootsSet(t *testing.T, idx IdxDB) {
 			if x, err = rs.Get(r.Seq); err != nil {
 				return
 			}
-			r.Subtree.Volume = 9000 // restore
 			if *x != *r {
 				t.Error("wrong")
 			}

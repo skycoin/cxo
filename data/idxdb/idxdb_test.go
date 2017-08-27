@@ -26,9 +26,6 @@ func testNewDriveIdxDB(t *testing.T) (idx IdxDB) {
 func testKeyObject(s string) (key cipher.SHA256, o *Object) {
 	key = cipher.SumSHA256([]byte(s))
 	o = new(Object)
-	o.Vol = Volume(len(s))
-	o.Subtree.Amount = 1
-	o.Subtree.Volume = 100
 	o.AccessTime = 776
 	o.CreateTime = 778
 	o.RefsCount = 0
@@ -40,9 +37,6 @@ func testRoot(s string) (r *Root) {
 	_, sk := cipher.GenerateDeterministicKeyPair([]byte("test"))
 
 	r = new(Root)
-	r.Vol = Volume(len(s))
-	r.Subtree.Amount = 1000
-	r.Subtree.Volume = 8000
 	r.AccessTime = 996
 	r.CreateTime = 998
 	r.RefsCount = 1
@@ -209,28 +203,10 @@ func TestRoot_Decode(t *testing.T) {
 		t.Error("wrong")
 	}
 
-	if err := x.Decode(p[:31]); err == nil {
+	if err := x.Decode(p[:12]); err == nil {
 		t.Error("misisng error")
 	}
 
-}
-
-func TestObject_Volume(t *testing.T) {
-	// Volume() (vol Volume)
-
-	_, o := testKeyObject("obj")
-	if o.Volume() != o.Vol+o.Subtree.Volume {
-		t.Error("wrong")
-	}
-}
-
-func TestObject_Amount(t *testing.T) {
-	// Amount() (amnt Amount)
-
-	_, o := testKeyObject("obj")
-	if o.Amount() != 1+o.Subtree.Amount {
-		t.Error("wrong")
-	}
 }
 
 func TestObject_UpdateAccessTime(t *testing.T) {
@@ -262,7 +238,7 @@ func TestObject_EncodeTo(t *testing.T) {
 
 	_, o := testKeyObject("obj")
 
-	p := make([]byte, 32)
+	p := make([]byte, 20)
 	if err := o.EncodeTo(p); err != nil {
 		t.Error(err)
 	} else if bytes.Compare(p, encoder.Serialize(o)) != 0 {
@@ -272,11 +248,11 @@ func TestObject_EncodeTo(t *testing.T) {
 	p = make([]byte, 64)
 	if err := o.EncodeTo(p); err != nil {
 		t.Error(err)
-	} else if bytes.Compare(p[:32], encoder.Serialize(o)) != 0 {
+	} else if bytes.Compare(p[:20], encoder.Serialize(o)) != 0 {
 		t.Error("wrong")
 	}
 
-	if err := o.EncodeTo(p[:31]); err == nil {
+	if err := o.EncodeTo(p[:12]); err == nil {
 		t.Error("misisng error")
 	}
 }
@@ -295,12 +271,13 @@ func TestObject_Decode(t *testing.T) {
 		t.Error("wrong")
 	}
 
-	if err := x.Decode(p[:31]); err == nil {
+	if err := x.Decode(p[:12]); err == nil {
 		t.Error("misisng error")
 	}
 
 }
 
+/*
 func TestVolume_String(t *testing.T) {
 	// String() (s string)
 
@@ -325,3 +302,4 @@ func TestVolume_String(t *testing.T) {
 		}
 	}
 }
+*/

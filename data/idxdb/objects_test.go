@@ -1049,7 +1049,7 @@ func testObjectsAmount(t *testing.T, idx IdxDB) {
 
 	t.Run("full", func(t *testing.T) {
 		err := idx.Tx(func(tx Tx) (_ error) {
-			if tx.Objects().Amount() != Amount(len(keys)) {
+			if tx.Objects().Amount() != len(keys) {
 				t.Error("wrong Amount")
 			}
 			return
@@ -1072,74 +1072,5 @@ func TestObjects_Amount(t *testing.T) {
 		defer idx.Close()
 
 		testObjectsAmount(t, idx)
-	})
-}
-
-func testObjectsVolume(t *testing.T, idx IdxDB) {
-
-	var keys []cipher.SHA256
-	var vals []*Object
-
-	for i := 0; i < 8; i++ {
-		key, o := testKeyObject(fmt.Sprintf("ha #%d", i))
-		keys = append(keys, key)
-		vals = append(vals, o)
-	}
-
-	t.Run("empty", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (_ error) {
-			if tx.Objects().Volume() != 0 {
-				t.Error("wrong volume")
-			}
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-	var total Volume
-
-	err := idx.Tx(func(tx Tx) (err error) {
-		objs := tx.Objects()
-		for i := 0; i < len(keys); i++ {
-			if err = objs.Set(keys[i], vals[i]); err != nil {
-				return
-			}
-			total += vals[i].Vol
-		}
-		_, err = objs.MultiInc(keys)
-		return
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("full", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (_ error) {
-			if vol := tx.Objects().Volume(); vol != total {
-				t.Error("wrong Volume:", vol, total)
-			}
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
-
-}
-
-func TestObjects_Volume(t *testing.T) {
-	// Volume() Volume
-
-	// TODO (kostyarin): memory
-
-	t.Run("drive", func(t *testing.T) {
-		idx := testNewDriveIdxDB(t)
-		defer os.Remove(testFileName)
-		defer idx.Close()
-
-		testObjectsVolume(t, idx)
 	})
 }

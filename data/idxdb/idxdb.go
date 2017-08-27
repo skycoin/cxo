@@ -3,8 +3,6 @@ package idxdb
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -76,8 +74,7 @@ type Objects interface {
 	// objects not found or deleted during the call
 	MulitDec(keys []cipher.SHA256) (rcs []uint32, err error)
 
-	Amount() Amount // total objects
-	Volume() Volume // total size of all objects
+	Amount() int // total objects
 }
 
 // An IterateFeedsFunc represetns ...
@@ -162,18 +159,18 @@ type Root struct {
 func (r *Root) Encode() (p []byte) {
 
 	// the method genertes bytes equal to genrated by
-	// github.com/skycoin/skycoin/sr/cipher/encoder
+	// github.com/skycoin/skycoin/src/cipher/encoder
 	// but the Encode doesn't mess with reflection
 
-	p = make([]byte, 32+8+len(cipher.SHA256{})*2+len(cipher.Sig{})+1)
+	p = make([]byte, 20+8+len(cipher.SHA256{})*2+len(cipher.Sig{})+1)
 
 	r.Object.EncodeTo(p)
 
-	binary.LittleEndian.PutUint64(p[32:], r.Seq)
+	binary.LittleEndian.PutUint64(p[20:], r.Seq)
 
-	copy(p[40:], r.Prev[:])
-	copy(p[40+len(cipher.SHA256{}):], r.Hash[:])
-	copy(p[40+len(cipher.SHA256{})*2:], r.Sig[:])
+	copy(p[28:], r.Prev[:])
+	copy(p[28+len(cipher.SHA256{}):], r.Hash[:])
+	copy(p[28+len(cipher.SHA256{})*2:], r.Sig[:])
 
 	if r.IsFull {
 		p[len(p)-1] = 0x01 // the cipher/encoder uses 0x01 (not 0xff)
@@ -184,17 +181,17 @@ func (r *Root) Encode() (p []byte) {
 // Decode given encode Root to this one
 func (r *Root) Decode(p []byte) (err error) {
 
-	if len(p) != 41+len(cipher.SHA256{})*2+len(cipher.Sig{}) {
+	if len(p) != 20+8+len(cipher.SHA256{})*2+len(cipher.Sig{})+1 {
 		return ErrInvalidSize
 	}
 
-	r.Object.Decode(p[:32])
+	r.Object.Decode(p[:20])
 
-	r.Seq = binary.LittleEndian.Uint64(p[32:])
+	r.Seq = binary.LittleEndian.Uint64(p[20:])
 
-	copy(r.Prev[:], p[40:])
-	copy(r.Hash[:], p[40+len(cipher.SHA256{}):])
-	copy(r.Sig[:], p[40+len(cipher.SHA256{})*2:])
+	copy(r.Prev[:], p[28:])
+	copy(r.Hash[:], p[28+len(cipher.SHA256{}):])
+	copy(r.Sig[:], p[28+len(cipher.SHA256{})*2:])
 
 	r.IsFull = (p[len(p)-1] != 0)
 
@@ -210,21 +207,9 @@ type KeyObject struct {
 
 // An Object represents meta information of an obejct
 type Object struct {
-	Vol        Volume // size of the Object
-	Subtree           // subtree info
 	RefsCount  uint32 // refs to this Obejct (to this meta info)
 	CreateTime int64  // created at, unix nano
 	AccessTime int64  // last access time, unix nano
-}
-
-// Volume returns total volume
-func (o *Object) Volume() (vol Volume) {
-	return o.Subtree.Volume + o.Vol
-}
-
-// Amount returns total amount
-func (o *Object) Amount() (amnt Amount) {
-	return o.Subtree.Amount + 1
 }
 
 // UpdateAccessTime updates access time
@@ -240,7 +225,7 @@ func (o *Object) Encode() (p []byte) {
 	// but the Encode doesn't mess with reflection,
 	// thus it's faster
 
-	p = make([]byte, 4+8+4+8+8)
+	p = make([]byte, 4+8+8)
 	o.EncodeTo(p)
 	return
 }
@@ -248,43 +233,37 @@ func (o *Object) Encode() (p []byte) {
 // EncodeTo encodes the Object to given slice
 func (o *Object) EncodeTo(p []byte) (err error) {
 
-	if len(p) < 32 {
+	if len(p) < 20 {
 		return ErrInvalidSize
 	}
 
-	// Vol        4          |  0
-	// Subtree    8 (4 + 4)  |  4, 8
-	// RefsCount  4          | 12
-	// CreateTime 8          | 16
-	// AccessTime 8          | 24
+	// RefsCount  4          |  0
+	// CreateTime 8          |  4
+	// AccessTime 8          | 12
 	// ----------------------|-------
-	//           32          |
+	//           20          |
 
-	binary.LittleEndian.PutUint32(p, uint32(o.Vol))
-	binary.LittleEndian.PutUint32(p[4:], uint32(o.Subtree.Volume))
-	binary.LittleEndian.PutUint32(p[8:], uint32(o.Subtree.Amount))
-	binary.LittleEndian.PutUint32(p[12:], o.RefsCount)
-	binary.LittleEndian.PutUint64(p[16:], uint64(o.CreateTime))
-	binary.LittleEndian.PutUint64(p[24:], uint64(o.AccessTime))
+	binary.LittleEndian.PutUint32(p, o.RefsCount)
+	binary.LittleEndian.PutUint64(p[4:], uint64(o.CreateTime))
+	binary.LittleEndian.PutUint64(p[12:], uint64(o.AccessTime))
 	return
 }
 
 // Decode given encoded Object to this one
 func (o *Object) Decode(p []byte) (err error) {
 
-	if len(p) != 32 {
+	if len(p) != 20 {
 		return ErrInvalidSize
 	}
 
-	o.Vol = Volume(binary.LittleEndian.Uint32(p))
-	o.Subtree.Volume = Volume(binary.LittleEndian.Uint32(p[4:]))
-	o.Subtree.Amount = Amount(binary.LittleEndian.Uint32(p[8:]))
-	o.RefsCount = binary.LittleEndian.Uint32(p[12:])
-	o.CreateTime = int64(binary.LittleEndian.Uint64(p[16:]))
-	o.AccessTime = int64(binary.LittleEndian.Uint64(p[24:]))
+	o.RefsCount = binary.LittleEndian.Uint32(p)
+	o.CreateTime = int64(binary.LittleEndian.Uint64(p[4:]))
+	o.AccessTime = int64(binary.LittleEndian.Uint64(p[12:]))
 
 	return
 }
+
+/*
 
 // A Volume represents size
 // of an object in bytes
@@ -314,13 +293,4 @@ func (v Volume) String() (s string) {
 	return
 }
 
-// An Amount represetns amount
-// of all realted obejcts
-type Amount uint32
-
-// A Subtree represent brief information
-// about subtree of an Object
-type Subtree struct {
-	Volume Volume // total volume of all elements in the Subtree
-	Amount Amount // total amout fo elements of the Subtree
-}
+*/
