@@ -2,7 +2,6 @@ package node
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 

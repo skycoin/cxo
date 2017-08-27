@@ -17,25 +17,28 @@ var (
 	ErrEmptyRegsitryRef = errors.New("empty registry reference")
 )
 
-// A WCXO represents wanted CX object
+// internal
 type WCXO struct {
-	Hash cipher.SHA256      // hash of wanted CX object
-	GotQ chan FillingObject // cahnnel to sent requested CX object
+	Hash cipher.SHA256 // hash of wanted CX object
+	GotQ chan []byte   // cahnnel to sent requested CX object
 
 	Announce []cipher.SHA256 // announce get
 }
 
-// A Filler represents filling Root. The Filelr is
-// not thread safe
+// internal
+type FillingBus struct {
+	WantQ chan WCXO
+	FullQ chan *Root
+	DropQ chan DropRootError
+	WG    *sync.WaitGroup
+}
+
+// internal
 type Filler struct {
 
 	// references from host
 
-	// TODO (kostyarin): organize them better way
-
-	wantq chan<- WCXO          // reference
-	fullq chan<- *Root         // reference
-	dropq chan<- DropRootError // reference
+	bus FillingBus
 
 	// own fields
 
@@ -44,20 +47,13 @@ type Filler struct {
 	r   *Root     // filling Root
 	reg *Registry // registry of the Root
 
-	gotq chan FillingObject // reply
+	gotq chan []byte // reply
 
 	closeq chan struct{}
 	closeo sync.Once
 }
 
-type FillingObject struct {
-	Amount idxdb.Amount // of subtree
-	Volume idxdb.Volume // of subtree
-	Value  []byte       // encoded obejct in person
-}
-
-func (c *Container) NewFiller(r *Root, wantq chan<- WCXO, fullq chan<- *Root,
-	dropq chan<- DropRootError, wg *sync.WaitGroup) (fl *Filler) {
+func (c *Container) NewFiller(r *Root, bus FillingBus) (fl *Filler) {
 
 	c.Debugln(FillVerbosePin, "NewFiller", r.Short())
 
@@ -65,17 +61,15 @@ func (c *Container) NewFiller(r *Root, wantq chan<- WCXO, fullq chan<- *Root,
 
 	fl.c = c
 
-	fl.wantq = wantq
-	fl.dropq = dropq
-	fl.fullq = fullq
+	fl.bus = bus
 
 	fl.r = r
-	fl.gotq = make(chan FillingObject, 1)
+	fl.gotq = make(chan []byte, 1)
 
 	fl.closeq = make(chan struct{})
 
-	wg.Add(1)
-	go fl.fill(wg)
+	fl.bus.WG.Add(1)
+	go fl.fill()
 
 	return
 }
@@ -87,7 +81,7 @@ func (f *Filler) Root() *Root {
 func (f *Filler) drop(err error) {
 	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
 
-	f.dropq <- DropRootError{f.r, err}
+	f.bus.DropQ <- DropRootError{f.r, err}
 
 	// TODO (kostyarin): decrement all related
 }
@@ -116,14 +110,14 @@ func (f *Filler) full() {
 		f.drop(err) // can't mark as full
 		return
 	}
-	f.fullq <- f.r
+	f.bus.FullQ <- f.r
 }
 
-func (f *Filler) fill(wg *sync.WaitGroup) {
+func (f *Filler) fill() {
 
 	f.c.Debugln(FillVerbosePin, "(*Filler).fill", f.r.Short())
 
-	defer wg.Done()
+	defer f.bus.WG.Done()
 
 	if f.r.Reg == (RegistryRef{}) {
 		f.drop(ErrEmptyRegsitryRef)
@@ -170,17 +164,17 @@ func (f *Filler) request(hash cipher.SHA256,
 	// TODO (kostarin): announce
 
 	select {
-	case f.wantq <- WCXO{hash, f.gotq, announce}:
+	case f.bus.WantQ <- WCXO{hash, f.gotq, announce}:
 	case <-f.closeq:
 		return
 	}
 	select {
-	case fo := <-f.gotq:
-		if err := f.c.SaveFillingObject(hash, fo); err != nil {
+	case val = <-f.gotq:
+		if err := f.c.SaveObject(hash, val); err != nil {
 			f.drop(err)
 			return // nil, false
 		}
-		val, ok = fo.Value, true
+		ok = true
 	case <-f.closeq:
 	}
 	return

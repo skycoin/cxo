@@ -182,29 +182,18 @@ func (p *Pack) Save() (err error) {
 		ir.Sig = p.r.Sig
 		ir.IsFull = true // going to be full
 
-		ir.Object.Vol = idxdb.Volume(len(val)) // volume of the Root itself
-
 		// save recursive
 		sr := new(saveRecursive)
 		sr.p = p
 		sr.objs = objs
 		sr.saved = saved
 
-		var pamnt idxdb.Amount
-		var pvol idxdb.Volume
-
 		for i := range p.r.Refs {
-			rv := reflect.ValueOf(p.r.Refs[i])
-			pamnt, pvol, err = sr.saveRecursiveDynamic(rv)
+			err = sr.saveRecursiveDynamic(reflect.ValueOf(&p.r.Refs[i]))
 			if err != nil {
 				return
 			}
-			ir.Object.Subtree.Amount += pamnt
-			ir.Object.Subtree.Volume += pvol
 		}
-
-		p.r.Amount = ir.Amount()
-		p.r.Volume = ir.Volume()
 
 		if err = rs.Set(ir); err != nil {
 			return

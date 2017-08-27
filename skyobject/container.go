@@ -124,12 +124,7 @@ func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
 	c.Debugln(VerbosePin, "Registry", rr.Short())
 
 	var val []byte
-	var rc uint32
-	if val, rc, err = c.DB().CXDS().Get(cipher.SHA256(rr)); err != nil {
-		return
-	}
-	if rc == 0 {
-		err = idxdb.ErrNotFound
+	if val, _, err = c.DB().CXDS().Get(cipher.SHA256(rr)); err != nil {
 		return
 	}
 	r, err = DecodeRegistry(val)
@@ -137,8 +132,7 @@ func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
 }
 
 // internal method
-func (c *Container) SaveFillingObject(key cipher.SHA256,
-	fo FillingObject) (err error) {
+func (c *Container) SaveObject(key cipher.SHA256, val []byte) (err error) {
 
 	return c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
 		objs := tx.Objects()
@@ -147,16 +141,10 @@ func (c *Container) SaveFillingObject(key cipher.SHA256,
 		if rc > 0 {
 			return
 		}
-		io := new(idxdb.Object)
-		io.Vol = idxdb.Volume(len(fo.Value))
-
-		io.Subtree.Amount = fo.Amount
-		io.Subtree.Volume = fo.Volume
-
-		if err = objs.Set(key, io); err != nil {
+		if err = objs.Set(key, new(idxdb.Object)); err != nil {
 			return
 		}
-		_, err = c.DB().CXDS().Set(key, fo.Value)
+		_, err = c.DB().CXDS().Set(key, val)
 		return
 	})
 
@@ -185,19 +173,13 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 	// request CXDS
 
 	var val []byte
-	var rc uint32
-	if val, rc, err = c.DB().CXDS().Get(ir.Hash); err != nil {
-		return
-	}
-	if rc == 0 {
-		err = idxdb.ErrNotFound
+	if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
 		return
 	}
 
 	// decode
 
 	r = new(Root)
-
 	if err = encoder.DeserializeRaw(val, r); err != nil {
 		return
 	}
@@ -207,8 +189,6 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 	r.Sig = ir.Sig
 	r.Hash = ir.Hash
 	r.IsFull = ir.IsFull
-	r.Amount = ir.Amount()
-	r.Volume = ir.Volume()
 
 	return
 

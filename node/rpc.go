@@ -120,6 +120,7 @@ func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 	return
 }
 
+/*
 type Stat struct {
 	Data data.Stat      // data.DB
 	CXO  skyobject.Stat // skyobject.Container
@@ -131,6 +132,7 @@ func (r *RPC) Stat(_ struct{}, stat *Stat) (_ error) {
 	*stat = r.ns.Stat()
 	return
 }
+*/
 
 // Connections of a node
 func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {

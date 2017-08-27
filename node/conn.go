@@ -2,7 +2,6 @@ package node
 
 import (
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -92,15 +91,15 @@ func (c *Conn) SendPing() {
 }
 
 type waitResponse struct {
-	req  msg.MsgType   // request
+	req  msg.Msg       // request
 	rspn chan msg.Msg  // response (nil if no message required)
 	err  chan error    // some err (must not be nil)
 	ttm  chan struct{} // teminate timeout (nil if not timeout set)
 }
 
 // id id ID of the req Msg
-func (c *Conn) sendRequest(id ID, req msg.Msg,
-	cerr chan err, rspn chan msg.MsgType) (wr *waitResponse, err error) {
+func (c *Conn) sendRequest(id msg.ID, req msg.Msg,
+	cerr chan error, rspn chan msg.Msg) (wr *waitResponse, err error) {
 
 	wr = new(waitResponse)
 	wr.req = req
@@ -111,19 +110,19 @@ func (c *Conn) sendRequest(id ID, req msg.Msg,
 	c.rr[id] = wr
 
 	// TODO (kostyarin): send queue can't be zero size-channel
-	if err = c.Send(m); err != nil {
+	if err = c.Send(req); err != nil {
 		delete(c.rr, id)
 		return
 	}
 
 	if rt := c.s.conf.ResponseTimeout; rt > 0 {
 		wr.ttm = make(chan struct{})
-		go c.waitTimeout(id, wr)
+		go c.waitTimeout(id, wr, rt)
 	}
-
+	return
 }
 
-func (c *Conn) waitTimeout(id msg.ID, wr *waitResponse) {
+func (c *Conn) waitTimeout(id msg.ID, wr *waitResponse, rt time.Duration) {
 
 	tm := time.NewTimer(rt)
 	defer tm.Stop()
@@ -161,12 +160,12 @@ func (c *Conn) Unsubscrube(pk cipher.PubKey) {
 func (c *Conn) ListOfFeeds() (list []cipher.PubKey, err error) {
 	errc := make(chan error)
 	rspn := make(chan msg.Msg)
-	c.listOfFeedsEvent(rpsn, errc)
+	c.listOfFeedsEvent(rspn, errc)
 	select {
-	case err <- errc:
+	case err = <-errc:
 		return
 	case m := <-rspn:
-		lof, ok := m.(msg.ListOfFeeds)
+		lof, ok := m.(*msg.ListOfFeeds)
 		if !ok {
 			err = ErrWrongResponseMsgType
 			return
@@ -191,7 +190,11 @@ func (c *Conn) acceptHandshake() (err error) {
 	c.s.Debugf(ConnPin, "[%s] acceptHandshake", c.gc.Address())
 
 	select {
-	case m := <-c.gc.ReceiveQueue():
+	case raw := <-c.gc.ReceiveQueue():
+		var m msg.Msg
+		if m, err = msg.Decode(raw); err != nil {
+			return
+		}
 		if hello, ok := m.(*msg.Hello); ok {
 			if hello.Protocol == msg.Version {
 				return c.Send(c.s.src.Accept(hello))
@@ -200,7 +203,7 @@ func (c *Conn) acceptHandshake() (err error) {
 				ErrIncompatibleProtocolVersion.Error()))
 		}
 		return ErrWrongResponseMsgType
-	case c.Closed():
+	case <-c.gc.Closed():
 		return ErrConnClsoed
 	}
 }
@@ -216,7 +219,11 @@ func (c *Conn) performHandshake() (err error) {
 	}
 
 	select {
-	case m := <-c.gc.ReceiveQueue():
+	case raw := <-c.gc.ReceiveQueue():
+		var m msg.Msg
+		if m, err = msg.Decode(raw); err != nil {
+			return
+		}
 		switch tt := m.(type) {
 		case *msg.Accept:
 			if tt.ResponseFor == hello.ID {
@@ -228,7 +235,7 @@ func (c *Conn) performHandshake() (err error) {
 		default:
 			return ErrWrongResponseMsgType
 		}
-	case c.Closed():
+	case <-c.gc.Closed():
 		return ErrConnClsoed
 	}
 
@@ -256,8 +263,8 @@ func (c *Conn) handle() {
 		timeout = c.timeout
 
 		raw []byte
-		m   Msg
-		evt Event
+		m   msg.Msg
+		evt event
 		id  msg.ID
 	)
 
@@ -272,14 +279,14 @@ func (c *Conn) handle() {
 		for {
 			select {
 			case dre := <-fill.drop:
-				s.dropRoot(c, dre.Root, dre.Err)
+				c.dropRoot(dre.Root, dre.Err)
 				fill.del(dre.Root)
 			case fr := <-fill.full:
 				s.rootFilled(fr, c)
 				fill.del(fr)
 			case <-done:
 				for _, fr := range fill.fillers {
-					s.dropRoot(c, fr.Root(), ErrConnClsoed) // drop
+					c.dropRoot(fr.Root(), ErrConnClsoed) // drop
 				}
 				return
 			}
@@ -315,7 +322,7 @@ func (c *Conn) handle() {
 
 		// filling (TODO)
 		case dre := <-fill.drop:
-			c.dropRoot(dre)
+			c.dropRoot(dre.Root, dre.Err)
 			fill.del(dre.Root)
 		case fr := <-fill.full:
 			c.rootFilled(fr)
@@ -332,11 +339,11 @@ func (c *Conn) handle() {
 
 }
 
-func (c *Conn) dropRoot(dre *skyobject.DropRootError) {
-	c.s.Debugf(FillPin, "[%s] dropRoot %s", c.gc.Address(), dre.Root.Short())
+func (c *Conn) dropRoot(r *skyobject.Root, err error) {
+	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(), r.Short(), err)
 
-	if ofb := s.conf.OnFillingBreaks; ofb != nil {
-		ofb(s, c, dre, err)
+	if ofb := c.s.conf.OnFillingBreaks; ofb != nil {
+		ofb(c, r, err)
 	}
 
 	if s.conf.DropNonFullRotos {
@@ -350,8 +357,8 @@ func (c *Conn) dropRoot(dre *skyobject.DropRootError) {
 func (c *Conn) rootFilled(r *skyobject.Root) {
 	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.gc.Address(), r.Short())
 
-	if orf := s.conf.OnRootFilled; orf != nil {
-		orf(s, c, r)
+	if orf := c.s.conf.OnRootFilled; orf != nil {
+		orf(c, r)
 	}
 
 	// TODO

@@ -16,13 +16,7 @@ type saveRecursive struct {
 }
 
 // setup references of a golang-value
-func (p *saveRecursive) saveRecursive(
-	obj reflect.Value,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursive(obj reflect.Value) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursive", obj)
 
@@ -31,9 +25,9 @@ func (p *saveRecursive) saveRecursive(
 	}
 	switch obj.Kind() {
 	case reflect.Array, reflect.Slice:
-		amnt, vol, err = p.saveRecursiveArrayOrSlice(obj)
+		err = p.saveRecursiveArrayOrSlice(obj)
 	case reflect.Struct:
-		amnt, vol, err = p.saveRecursiveStruct(obj)
+		err = p.saveRecursiveStruct(obj)
 	}
 	return
 }
@@ -53,13 +47,7 @@ func (p *saveRecursive) saveRecursive(
 //       - the array is obj
 //       - a value of the array is idx
 //
-func (p *saveRecursive) saveRecursiveDynamic(
-	obj reflect.Value,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 
 	p.p.c.Debugf(VerbosePin, "saveRecursiveDynamic %s", obj)
 
@@ -71,45 +59,20 @@ func (p *saveRecursive) saveRecursiveDynamic(
 	}
 
 	if dr.dn != nil && dr.dn.value != nil {
-
 		// check out the dr.dn.value
-		amnt, vol, err = p.saveRecursive(reflect.ValueOf(dr.dn.value))
+		err = p.saveRecursive(reflect.ValueOf(dr.dn.value))
 		if err != nil {
 			return
 		}
-
 		// save the value
 		key, val := p.p.dsave(dr.dn.value)
 		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
 			return
 		}
 		p.saved[key] = struct{}{}
-
-		io := new(idxdb.Object)
-		io.Subtree.Amount = amnt
-		io.Subtree.Volume = vol
-		io.Vol = idxdb.Volume(len(val))
-
-		if err = p.objs.Set(key, io); err != nil {
+		if err = p.objs.Set(key, new(idxdb.Object)); err != nil {
 			return
 		}
-
-		amnt = io.Amount()
-		vol = io.Volume()
-
-	} else {
-		// get from database
-
-		if dr.Object == (cipher.SHA256{}) {
-			return // empty obejct
-		}
-
-		var io *idxdb.Object
-		if io, err = p.objs.Get(dr.Object); err != nil {
-			return
-		}
-		amnt = io.Amount()
-		vol = io.Volume()
 	}
 
 	obj.Set(reflect.ValueOf(dr)) // set it back
@@ -118,73 +81,36 @@ func (p *saveRecursive) saveRecursiveDynamic(
 
 //     sf  - field
 //     val - field value, type of which is Reference
-func (p *saveRecursive) saveRecursiveRef(
-	sf reflect.StructField,
-	val reflect.Value,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveRef(sf reflect.StructField,
+	val reflect.Value) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRef", sf)
 
 	ref := val.Interface().(Ref)
 
 	if ref.rn != nil && ref.rn.value != nil {
-
 		// check out the dr.dn.value
-		amnt, vol, err = p.saveRecursive(reflect.ValueOf(ref.rn.value))
+		err = p.saveRecursive(reflect.ValueOf(ref.rn.value))
 		if err != nil {
 			return
 		}
-
 		// save the value
 		key, val := p.p.dsave(ref.rn.value)
 		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
 			return
 		}
 		p.saved[key] = struct{}{}
-
-		io := new(idxdb.Object)
-		io.Subtree.Amount = amnt
-		io.Subtree.Volume = vol
-		io.Vol = idxdb.Volume(len(val))
-
-		if err = p.objs.Set(key, io); err != nil {
+		if err = p.objs.Set(key, new(idxdb.Object)); err != nil {
 			return
 		}
-
-		amnt = io.Amount()
-		vol = io.Volume()
-
-	} else {
-		// get from database
-
-		if ref.Hash == (cipher.SHA256{}) {
-			return // empty obejct
-		}
-
-		var io *idxdb.Object
-		if io, err = p.objs.Get(ref.Hash); err != nil {
-			return
-		}
-		amnt = io.Amount()
-		vol = io.Volume()
 	}
 
 	val.Set(reflect.ValueOf(ref)) // set it anyway
 	return
 }
 
-func (p *saveRecursive) saveRecursiveRefs(
-	sf reflect.StructField,
-	val reflect.Value,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveRefs(sf reflect.StructField,
+	val reflect.Value) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRefs", sf, val)
 
@@ -197,40 +123,21 @@ func (p *saveRecursive) saveRecursiveRefs(
 		return
 	}
 
-	if refs.rn == nil {
-		// get from database
-		if refs.Hash == (cipher.SHA256{}) {
-			return // empty refs
-		}
-		var io *idxdb.Object
-		if io, err = p.objs.Get(refs.Hash); err != nil {
-			return
-		}
-		amnt = io.Amount()
-		vol = io.Volume()
-	} else {
+	if refs.rn != nil {
 		// check out branches
 		if refs.length == 0 {
 			return // empty refs
 		}
-		amnt, vol, err = p.saveRecursiveRefsNode(&refs, refs.depth)
-		if err != nil {
+		if err = p.saveRecursiveRefsNode(&refs, refs.depth); err != nil {
 			return
 		}
 	}
 
-	val.Set(reflect.ValueOf(refs)) // set it anyway
+	val.Set(reflect.ValueOf(refs))
 	return
 }
 
-func (p *saveRecursive) saveRecursiveRefsNode(
-	rn *Refs,
-	depth int,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveRefsNode(rn *Refs, depth int) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRefsNode", rn.Hash.Hex()[:7], depth)
 
@@ -238,82 +145,36 @@ func (p *saveRecursive) saveRecursiveRefsNode(
 		return // empty branch
 	}
 
-	var pamnt idxdb.Amount
-	var pvol idxdb.Volume
-
 	if len(rn.leafs) == 0 && len(rn.branches) == 0 {
-
-		// get from DB (not loaded)
-		var io *idxdb.Object
-		if io, err = p.objs.Get(rn.Hash); err != nil {
-			return
-		}
-		amnt = io.Amount()
-		vol = io.Volume()
 		return
-
 	}
 
 	if rn.depth == 0 {
-
 		for _, leaf := range rn.leafs {
-			pamnt, pvol, err = p.saveRecursiveRefsElem(leaf)
-			if err != nil {
+			if err = p.saveRecursiveRefsElem(leaf); err != nil {
 				return
 			}
-			amnt += pamnt
-			vol += pvol
 		}
-
 	} else {
-
 		for _, br := range rn.branches {
-			pamnt, pvol, err = p.saveRecursiveRefsNode(br, depth-1)
-			if err != nil {
+			if err = p.saveRecursiveRefsNode(br, depth-1); err != nil {
 				return
 			}
-			amnt += pamnt
-			vol += pvol
 		}
-
 	}
-
-	// save the refs
-
 	return
 }
 
-func (p *saveRecursive) saveRecursiveRefsElem(
-	rn *RefsElem,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveRefsElem(rn *RefsElem) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRefsElem", rn.Hash.Hex()[:7])
 
-	if rn.value == nil {
-
-		// get from DB (not loaded)
-		var io *idxdb.Object
-		if io, err = p.objs.Get(rn.Hash); err != nil {
-			return
-		}
-		amnt = io.Amount()
-		vol = io.Volume()
-
-		return
-
-	} else {
-
+	if rn.value != nil {
 		// loaded
 		// check out the dr.dn.value
-		amnt, vol, err = p.saveRecursive(reflect.ValueOf(rn.value))
-		if err != nil {
+		if err = p.saveRecursive(reflect.ValueOf(rn.value)); err != nil {
 			return
 		}
-
 		// save the value
 		key, val := p.p.dsave(rn.value)
 		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
@@ -321,17 +182,9 @@ func (p *saveRecursive) saveRecursiveRefsElem(
 		}
 		p.saved[key] = struct{}{}
 
-		io := new(idxdb.Object)
-		io.Subtree.Amount = amnt
-		io.Subtree.Volume = vol
-		io.Vol = idxdb.Volume(len(val))
-
-		if err = p.objs.Set(key, io); err != nil {
+		if err = p.objs.Set(key, new(idxdb.Object)); err != nil {
 			return
 		}
-
-		amnt = io.Amount()
-		vol = io.Volume()
 	}
 
 	return
@@ -340,28 +193,18 @@ func (p *saveRecursive) saveRecursiveRefsElem(
 // an array or slice can contain references (we interest):
 //   - array of Dynamic
 //   - array of structs
-func (p *saveRecursive) saveRecursiveArrayOrSlice(
-	obj reflect.Value,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveArrayOrSlice(obj reflect.Value) (
+	err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveArrayOrSlice", obj)
-
-	var pamnt idxdb.Amount
-	var pvol idxdb.Volume
 
 	typ := obj.Type().Elem()
 	if typ == typeOfDynamic {
 		for i := 0; i < obj.Len(); i++ {
 			idx := obj.Index(i)
-			if pamnt, pvol, err = p.saveRecursiveDynamic(idx); err != nil {
+			if err = p.saveRecursiveDynamic(idx); err != nil {
 				return
 			}
-			amnt += pamnt
-			vol += pvol
 		}
 		return
 	}
@@ -369,11 +212,9 @@ func (p *saveRecursive) saveRecursiveArrayOrSlice(
 	if typ.Kind() == reflect.Struct {
 		for i := 0; i < obj.Len(); i++ {
 			idx := obj.Index(i)
-			if pamnt, pvol, err = p.saveRecursiveStruct(idx); err != nil {
+			if err = p.saveRecursiveStruct(idx); err != nil {
 				return
 			}
-			amnt += pamnt
-			vol += pvol
 		}
 	}
 
@@ -387,59 +228,33 @@ func (p *saveRecursive) saveRecursiveArrayOrSlice(
 //   - field of Ref
 //   - field of Refs
 //   - field of struct
-func (p *saveRecursive) saveRecursiveStruct(
-	obj reflect.Value,
-) (
-	amnt idxdb.Amount,
-	vol idxdb.Volume,
-	err error,
-) {
+func (p *saveRecursive) saveRecursiveStruct(obj reflect.Value) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveStruct", obj)
 
-	var pamnt idxdb.Amount
-	var pvol idxdb.Volume
-
 	typ := obj.Type()
-
 	for i := 0; i < typ.NumField(); i++ {
-
 		sf := typ.Field(i)
-
 		if sf.Type == typeOfDynamic {
-
-			pamnt, pvol, err = p.saveRecursiveDynamic(obj.Field(i))
-			if err != nil {
+			if err = p.saveRecursiveDynamic(obj.Field(i)); err != nil {
 				return
 			}
-
-			amnt += pamnt
-			vol += pvol
 			continue
-
 		}
-
 		if sf.Tag.Get("enc") == "-" || sf.PkgPath != "" || sf.Name == "_" {
 			continue // skip unexported, unencoded and _-named fields
 		}
-
 		switch sf.Type {
 		case typeOfRef:
-			pamnt, pvol, err = p.saveRecursiveRef(sf, obj.Field(i))
+			err = p.saveRecursiveRef(sf, obj.Field(i))
 		case typeOfRefs:
-			pamnt, pvol, err = p.saveRecursiveRefs(sf, obj.Field(i))
+			err = p.saveRecursiveRefs(sf, obj.Field(i))
 		default:
 			continue
 		}
-
 		if err != nil {
 			return
 		}
-
-		amnt += pamnt
-		vol += pvol
-
 	}
-
 	return
 }

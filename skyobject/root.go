@@ -5,8 +5,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-
-	"github.com/skycoin/cxo/data/idxdb"
 )
 
 // A Root represents root object of a feed
@@ -31,12 +29,6 @@ type Root struct {
 	// IsFull set to true if DB contains all objects
 	// required by this Root
 	IsFull bool `enc:"-"`
-
-	// Amount of all objects of the Root
-	Amount idxdb.Amount `enc:"-"`
-
-	// Volume is total size of all objects of the Root
-	Volume idxdb.Volume `enc:"-"`
 }
 
 func (r *Root) Encode() []byte {
