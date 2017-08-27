@@ -23,15 +23,6 @@ func testNewDriveIdxDB(t *testing.T) (idx IdxDB) {
 	return
 }
 
-func testKeyObject(s string) (key cipher.SHA256, o *Object) {
-	key = cipher.SumSHA256([]byte(s))
-	o = new(Object)
-	o.AccessTime = 776
-	o.CreateTime = 778
-	o.RefsCount = 0
-	return
-}
-
 func testRoot(s string) (r *Root) {
 
 	_, sk := cipher.GenerateDeterministicKeyPair([]byte("test"))
@@ -51,107 +42,19 @@ func testRoot(s string) (r *Root) {
 	return
 }
 
-func testIdxDBTx(t *testing.T, idx IdxDB) {
-
-	key, o := testKeyObject("ha-ha")
-
-	t.Run("commit", func(t *testing.T) {
-
-		err := idx.Tx(func(tx Tx) (err error) {
-			objs := tx.Objects()
-			if err = objs.Set(key, o); err != nil {
-				return
-			}
-			feeds := tx.Feeds()
-			// TODO (kostyarin): feeds
-			_ = feeds
-			return
-		})
-
-		if err != nil {
-			t.Error(err)
-			return
-		}
-
-		err = idx.Tx(func(tx Tx) (err error) {
-			objs := tx.Objects()
-			var x *Object
-			if x, err = objs.Get(key); err != nil {
-				return
-			}
-			if x == nil {
-				t.Error("misisng saved object")
-			}
-			feeds := tx.Feeds()
-			// TODO (kostyarin): feeds
-			_ = feeds
-			return
-		})
-
-		if err != nil {
-			t.Error(err)
-		}
-
-	})
-
-	key, o = testKeyObject("ho-ho") // another obejct
-
-	t.Run("rollback", func(t *testing.T) {
-
-		err := idx.Tx(func(tx Tx) (err error) {
-			objs := tx.Objects()
-			if err = objs.Set(key, o); err != nil {
-				return
-			}
-			feeds := tx.Feeds()
-			// TODO (kostyarin): feeds
-			_ = feeds
-			return errTestError
-		})
-
-		if err == nil {
-			t.Error("mising error")
-			return
-		} else if err != errTestError {
-			t.Error("unexpected error:", err)
-			return
-		}
-
-		err = idx.Tx(func(tx Tx) (err error) {
-			objs := tx.Objects()
-			if _, err = objs.Get(key); err == nil {
-				t.Error("has not been rolled back")
-			} else if err != ErrNotFound {
-				t.Error("unexpected error:", err)
-			} else {
-				err = nil
-			}
-			feeds := tx.Feeds()
-			// TODO (kostyarin): feeds
-			_ = feeds
-			return
-		})
-
-		if err != nil {
-			t.Error(err)
-		}
-
-	})
-
+func testKeyObject(seed string) (key cipher.SHA256, o *Object) {
+	o = new(Object)
+	key = cipher.SumSHA256([]byte(seed))
+	o.AccessTime = 3
+	o.CreateTime = 2
+	o.RefsCount = 1
+	return
 }
 
 func TestIdxDB_Tx(t *testing.T) {
 	// Tx(func(Tx) error) error
 
-	// TODO (kostyarin): memory
-
-	t.Run("drive", func(t *testing.T) {
-		idx := testNewDriveIdxDB(t)
-		defer os.Remove(testFileName)
-		defer idx.Close()
-
-		testIdxDBTx(t, idx)
-	})
+	// TODO (kostyarin):
 }
 
 func testIdxDBClose(t *testing.T, idx IdxDB) {

@@ -1,17 +1,8 @@
 package data
 
 import (
-	"errors"
-
-	"github.com/skycoin/skycoin/src/cipher"
-
 	"github.com/skycoin/cxo/data/cxds"
 	"github.com/skycoin/cxo/data/idxdb"
-)
-
-// common errors
-var (
-	ErrObjectRemovedFromCXDS = errors.New("obejct removed from CXDS")
 )
 
 // A DB represents joiner of
@@ -51,75 +42,4 @@ func NewDriveDB(prefix string) (db *DB, err error) {
 		return
 	}
 	return
-}
-
-// Get Object by key
-func (d *DB) Get(key cipher.SHA256) (o *Object, err error) {
-	var io *idxdb.Object
-	err = d.idxdb.Tx(func(tx idxdb.Tx) (err error) {
-		io, err = tx.Objects().Get(key)
-		return
-	})
-	if err != nil {
-		return
-	}
-	var val []byte
-	var rc uint32
-	if val, rc, err = d.cxds.Get(key); err != nil {
-		return
-	}
-	if rc == 0 {
-		err = ErrObjectRemovedFromCXDS // alert
-		return
-	}
-	o = new(Object)
-	o.Value = val
-	o.Rc = rc
-	o.Object = io
-	return
-}
-
-// GetMeta information of object
-func (d *DB) GetMeta(key cipher.SHA256) (meta *idxdb.Object, err error) {
-	err = d.idxdb.Tx(func(tx idxdb.Tx) (err error) {
-		meta, err = tx.Objects().Get(key)
-		return
-	})
-	return
-}
-
-// Set object
-func (d *DB) Set(key cipher.SHA256, o *Object) error {
-	return d.idxdb.Tx(func(tx idxdb.Tx) (err error) {
-		if err = tx.Objects().Set(key, o.Object); err != nil {
-			return
-		}
-		if o.Object.RefsCount == 1 {
-			// new object we need to push to CXDS
-			_, err = d.cxds.Set(key, o.Value)
-		}
-		return // rollback on error
-	})
-}
-
-// Dec decrements RefsCount of an obejct. It's like delete,
-// if RefsCount turn zero, then obejct will be deleted
-func (d *DB) Dec(key cipher.SHA256) error {
-	return d.idxdb.Tx(func(tx idxdb.Tx) (err error) {
-		var rc uint32
-		if rc, err = tx.Objects().Dec(key); err != nil {
-			return
-		}
-		if rc == 0 { // deleted
-			_, err = d.cxds.Dec(key)
-		}
-		return // rollback on error
-	})
-}
-
-// An Object represents encoded value with meta information
-type Object struct {
-	Value         []byte // encoded obejct
-	Rc            uint32 // refs count of CXDS
-	*idxdb.Object        // meta information
 }

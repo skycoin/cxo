@@ -282,7 +282,7 @@ func (c *Conn) handle() {
 				c.dropRoot(dre.Root, dre.Err)
 				fill.del(dre.Root)
 			case fr := <-fill.full:
-				s.rootFilled(fr, c)
+				c.rootFilled(fr)
 				fill.del(fr)
 			case <-done:
 				for _, fr := range fill.fillers {
@@ -308,7 +308,7 @@ func (c *Conn) handle() {
 			// already
 
 		// receive
-		case raw <- receive:
+		case raw = <-receive:
 			if m, err = msg.Decode(raw); err != nil {
 				c.s.Printf("[ERR] [%s] error decoding message: %v",
 					c.gc.Address(), err)
@@ -346,8 +346,9 @@ func (c *Conn) dropRoot(r *skyobject.Root, err error) {
 		ofb(c, r, err)
 	}
 
-	if s.conf.DropNonFullRotos {
-		s.Debug(FillPin, "can't drop non-full Root: feature is not implemented")
+	if c.s.conf.DropNonFullRotos {
+		c.s.Debug(FillPin,
+			"can't drop non-full Root: feature is not implemented")
 		// TODO (kostyarin): remove root using Container
 		//                   (add appropriate method to the
 		//                   Container)
@@ -360,9 +361,7 @@ func (c *Conn) rootFilled(r *skyobject.Root) {
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		orf(c, r)
 	}
-
-	// TODO
-	s.sendToFeed(r.Pub, c.s.src.Root(r.Pub, val, ir))
+	c.s.sendToAllOfFeed(r.Pub, c.s.src.Root(r.Pub, r))
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {
@@ -407,7 +406,7 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 }
 
 func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
-	if wr, ok := c.rr[as.ResponseFor]; ok {
+	if wr, ok := c.rr[rs.ResponseFor]; ok {
 		if wr.ttm != nil {
 			close(wr.ttm) // terminate timeout goroutine
 		}
@@ -418,7 +417,7 @@ func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
 		} else {
 			wr.err <- ErrSubscriptionRejected
 		}
-		delete(c.rr, as.ResponseFor)
+		delete(c.rr, rs.ResponseFor)
 	} else {
 		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg")
 	}
@@ -429,7 +428,7 @@ func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
 		c.Send(c.s.src.NonPublicServer(rlof))
 		return
 	}
-	c.Send(c.s.src.ListOfFeeds(rls, c.s.Feeds()))
+	c.Send(c.s.src.ListOfFeeds(rlof, c.s.Feeds()))
 }
 
 func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {

@@ -17,7 +17,7 @@ type subscribeEvent struct {
 
 func (s *subscribeEvent) Handle(c *Conn) {
 	sub := c.s.src.Subscribe(s.pk)
-	if _, err := c.sendRequest(sub.ID, sub); err != nil {
+	if _, err := c.sendRequest(sub.ID, sub, s.err, nil); err != nil {
 		s.err <- err
 	}
 }
@@ -37,7 +37,7 @@ func (u *unsubscribeEvent) Handle(c *Conn) {
 }
 
 func (c *Conn) unsubscribeEvent(pk cipher.PubKey) {
-	c.events <- &unsubscribeEvent{pk, err}
+	c.events <- &unsubscribeEvent{pk}
 }
 
 type listOfFeedsEvent struct {
@@ -47,11 +47,11 @@ type listOfFeedsEvent struct {
 
 func (s *listOfFeedsEvent) Handle(c *Conn) {
 	rlof := c.s.src.RequestListOfFeeds()
-	if _, err := c.sendRequest(rlof.ID, rlof); err != nil {
+	if _, err := c.sendRequest(rlof.ID, rlof, s.err, s.rspn); err != nil {
 		s.err <- err
 	}
 }
 
-func (c *Conn) listOfFeedsEvent(rpsn chan msg.Msg, err chan error) {
-	c.events <- &listOfFeedsEvent{pk, err}
+func (c *Conn) listOfFeedsEvent(rspn chan msg.Msg, err chan error) {
+	c.events <- &listOfFeedsEvent{rspn, err}
 }

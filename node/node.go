@@ -82,7 +82,7 @@ func NewNode(sc Config) (s *Node, err error) {
 
 	// database
 
-	var db data.DB
+	var db *data.DB
 	if sc.InMemoryDB {
 		db = data.NewMemoryDB()
 	} else {
@@ -111,12 +111,12 @@ func NewNode(sc Config) (s *Node, err error) {
 	s.db = db
 
 	s.so = so
-	s.feeds = make(map[cipher.PubKey]map[*gnet.Conn]struct{})
+	s.feeds = make(map[cipher.PubKey]map[*Conn]struct{})
 
 	// fill up feeds from database
 	err = s.db.IdxDB().Tx(func(tx idxdb.Tx) (err error) {
 		return tx.Feeds().Iterate(func(pk cipher.PubKey) (err error) {
-			s.feeds[pk] = make(map[*gnet.Conn]struct{})
+			s.feeds[pk] = make(map[*Conn]struct{})
 			return
 		})
 	})
@@ -339,6 +339,17 @@ func (n *Node) HasFeed(pk cipher.PubKey) (ok bool) {
 	defer n.fmx.RUnlock()
 	_, ok = n.feeds[pk]
 	return
+}
+
+func (s *Node) sendToAllOfFeed(pk cipher.PubKey, m msg.Msg) {
+	s.fmx.RLock()
+	defer s.fmx.Unlock()
+
+	raw := msg.Encode(m)
+
+	for c := range s.feeds[pk] {
+		c.SendRaw(raw)
+	}
 }
 
 func (s *Node) addConnToFeed(c *Conn, pk cipher.PubKey) (ok bool) {

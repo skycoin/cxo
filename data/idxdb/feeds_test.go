@@ -11,8 +11,7 @@ func testFeedsAdd(t *testing.T, idx IdxDB) {
 	pk, _ := cipher.GenerateKeyPair()
 
 	t.Run("add", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
-			feeds := tx.Feeds()
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			if err = feeds.Add(pk); err != nil {
 				return
 			}
@@ -31,8 +30,7 @@ func testFeedsAdd(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("twice", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
-			feeds := tx.Feeds()
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			if err = feeds.Add(pk); err != nil {
 				return
 			}
@@ -68,8 +66,8 @@ func testFeedsDel(t *testing.T, idx IdxDB) {
 
 	// not found (should not return NotFoundError)
 	t.Run("not found", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) error {
-			return tx.Feeds().Del(pk)
+		err := idx.Tx(func(feeds Feeds) error {
+			return feeds.Del(pk)
 		})
 		if err != nil {
 			t.Error(err)
@@ -82,8 +80,7 @@ func testFeedsDel(t *testing.T, idx IdxDB) {
 
 	// delete
 	t.Run("delete", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
-			feeds := tx.Feeds()
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			if err = feeds.Del(pk); err != nil {
 				return
 			}
@@ -105,8 +102,8 @@ func testFeedsDel(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("not empty", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) error {
-			return tx.Feeds().Del(pk)
+		err := idx.Tx(func(feeds Feeds) error {
+			return feeds.Del(pk)
 		})
 		if err == nil {
 			t.Error("missing error")
@@ -133,9 +130,9 @@ func TestFeeds_Del(t *testing.T) {
 func testFeedsIterate(t *testing.T, idx IdxDB) {
 
 	t.Run("no feeds", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var called int
-			err = tx.Feeds().Iterate(func(pk cipher.PubKey) (err error) {
+			err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
 				called++
 				return
 			})
@@ -165,9 +162,9 @@ func testFeedsIterate(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("itterate", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var called int
-			err = tx.Feeds().Iterate(func(pk cipher.PubKey) (err error) {
+			err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
 				if _, ok := pks[pk]; !ok {
 					t.Error("wrong pk given", pk.Hex())
 				} else {
@@ -193,9 +190,9 @@ func testFeedsIterate(t *testing.T, idx IdxDB) {
 	})
 
 	t.Run("stop iteration", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var called int
-			err = tx.Feeds().Iterate(func(pk cipher.PubKey) (err error) {
+			err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
 				called++
 				return ErrStopIteration
 			})
@@ -218,8 +215,7 @@ func testFeedsIterate(t *testing.T, idx IdxDB) {
 
 	t.Run("mutate add", func(t *testing.T) {
 		var called int
-		err := idx.Tx(func(tx Tx) (err error) {
-			feeds := tx.Feeds()
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
 				called++
 				if called == 1 {
@@ -242,8 +238,7 @@ func testFeedsIterate(t *testing.T, idx IdxDB) {
 
 	t.Run("mutate delete", func(t *testing.T) {
 		var called int
-		err := idx.Tx(func(tx Tx) (err error) {
-			feeds := tx.Feeds()
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
 				called++
 				if called == 1 {
@@ -285,8 +280,8 @@ func testFeedsHasFeed(t *testing.T, idx IdxDB) {
 	pk, _ := cipher.GenerateKeyPair()
 
 	t.Run("not exist", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (_ error) {
-			if tx.Feeds().HasFeed(pk) == true {
+		err := idx.Tx(func(feeds Feeds) (_ error) {
+			if feeds.HasFeed(pk) == true {
 				t.Error("has unexisting feed")
 			}
 			return
@@ -301,8 +296,8 @@ func testFeedsHasFeed(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("exists", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (_ error) {
-			if tx.Feeds().HasFeed(pk) == false {
+		err := idx.Tx(func(feeds Feeds) (_ error) {
+			if feeds.HasFeed(pk) == false {
 				t.Error("has not existing feed")
 			}
 			return
@@ -333,9 +328,9 @@ func testFeedsRoots(t *testing.T, idx IdxDB) {
 	pk, _ := cipher.GenerateKeyPair()
 
 	t.Run("no such feed", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err == nil {
+			if rs, err = feeds.Roots(pk); err == nil {
 				t.Error("missng ErrNoSuchFeed")
 			} else if err != ErrNoSuchFeed {
 				return // bubble the err up
@@ -354,9 +349,9 @@ func testFeedsRoots(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("empty", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return // bubble the err up
 			}
 			if rs == nil {

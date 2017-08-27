@@ -6,6 +6,8 @@ import (
 	"errors"
 
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/skyobject"
 )
 
 // common errors
@@ -129,10 +131,11 @@ func (s *Src) NonPublicServer(rls *RequestListOfFeeds) (nps *NonPublicServer) {
 	return
 }
 
-func (s *Src) Root(pk cipher.PubKey, val []byte) (root *Root) {
+func (s *Src) Root(pk cipher.PubKey, r *skyobject.Root) (root *Root) {
 	root = new(Root)
 	root.Feed = pk
-	root.Value = val
+	root.Value = r.Encode()
+	root.Sig = r.Sig
 	return
 }
 

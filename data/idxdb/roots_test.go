@@ -8,8 +8,8 @@ import (
 )
 
 func testAddFeed(t *testing.T, idx IdxDB, pk cipher.PubKey) {
-	err := idx.Tx(func(tx Tx) (err error) {
-		return tx.Feeds().Add(pk)
+	err := idx.Tx(func(feeds Feeds) (err error) {
+		return feeds.Add(pk)
 	})
 	if err != nil {
 		t.Error(err)
@@ -32,9 +32,9 @@ func testNewRoot(seed string, sk cipher.SecKey) (r *Root) {
 }
 
 func testAddRoot(t *testing.T, idx IdxDB, pk cipher.PubKey, r *Root) {
-	err := idx.Tx(func(tx Tx) (err error) {
+	err := idx.Tx(func(feeds Feeds) (err error) {
 		var rs Roots
-		if rs, err = tx.Feeds().Roots(pk); err != nil {
+		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
 		return rs.Set(r)
@@ -53,10 +53,10 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("empty feed", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var called int
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			err = rs.Ascend(func(r *Root) (err error) {
@@ -90,9 +90,9 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("ascend", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -122,9 +122,9 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	})
 
 	t.Run("stop iteration", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -149,9 +149,9 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	r3.Seq = 2
 
 	t.Run("mutate add", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -178,9 +178,9 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	})
 
 	t.Run("mutate del", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -232,10 +232,10 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("empty feed", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var called int
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			err = rs.Ascend(func(r *Root) (err error) {
@@ -269,9 +269,9 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("descend", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -301,9 +301,9 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 	})
 
 	t.Run("stop iteration", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -327,9 +327,9 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 	r1 := testNewRoot("w", sk)
 
 	t.Run("mutate add", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -356,9 +356,9 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 	})
 
 	t.Run("mutate del", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			var called int
@@ -412,9 +412,9 @@ func testRootsSet(t *testing.T, idx IdxDB) {
 	r := testNewRoot("r", sk)
 
 	t.Run("create", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			if err = rs.Set(r); err != nil {
@@ -443,9 +443,9 @@ func testRootsSet(t *testing.T, idx IdxDB) {
 	r.IsFull = true // should be updated
 
 	t.Run("unpdate", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			if err = rs.Set(r); err != nil {
@@ -516,9 +516,9 @@ func testRootsGet(t *testing.T, idx IdxDB) {
 	}
 
 	t.Run("not found", func(t *testing.T) {
-		err := idx.Tx(func(tx Tx) (err error) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
-			if rs, err = tx.Feeds().Roots(pk); err != nil {
+			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
 			_, err = rs.Get(0)

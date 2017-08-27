@@ -20,63 +20,6 @@ var (
 // An IterateObjectsFunc ...
 type IterateObjectsFunc func(key cipher.SHA256, o *Object) (err error)
 
-// An Objects represents
-// bucket of objects
-type Objects interface {
-	// Inc increments RefsCount by given key.
-	// The method never returns "not found" error.
-	// The rc reply is new RefsCount, if the rc is
-	// zero, then object hasn't been found
-	Inc(key cipher.SHA256) (rc uint32, err error)
-	// Get object by key. Returned Object
-	// will have previous AccessTime, but the
-	// AccessTime will be updated in DB. If
-	// object not found, then it returns ErrNotFound
-	Get(key cipher.SHA256) (o *Object, err error)
-
-	// MultiGet returns all existsing obejcts by
-	// given keys. The method never returns
-	// "not found" error. AccessTime of returned obejcts
-	// will be previous, but the AccessTime will be
-	// updated inside DB
-	MultiGet(keys []cipher.SHA256) (os []*Object, err error)
-	// MultiInc increments RefsCount of all existing
-	// objects by given keys. It returns new refs. counts.
-	// If a count is zero, then this object doesn't
-	// exist
-	MultiInc(keys []cipher.SHA256) (rcs []uint32, err error)
-
-	// Iterate all Obejcts
-	Iterate(IterateObjectsFunc) (err error)
-
-	// Dec decrements RefsCount by given key.
-	// If the RefsCount turns zero, then this method
-	// deletes the Object or the Object has not been
-	// found. The rc reply is new RefsCount.
-	// The method never returns "not found" error
-	Dec(key cipher.SHA256) (rc uint32, err error)
-	// Set new obejct or overwrite existsing. The
-	// method changes given object. If object already exist
-	// the stored object will be loaded to given.
-	// RefsCount, AccessTime and CreateTie fields will
-	// be set to appropriate values (even if the obejct
-	// does not exist)
-	Set(key cipher.SHA256, o *Object) (err error)
-
-	// MultiSet performs Set for every given
-	// key-objects pairs
-	MultiSet(ko []KeyObject) (err error)
-	// MultiDec decrements RefsCount of all obejcts
-	// by given keys, removing objects for which
-	// the RefCount turns zero. The method ignores
-	// obejcts has not found. It returns resulting
-	// references count. A ref. count is zero for
-	// objects not found or deleted during the call
-	MulitDec(keys []cipher.SHA256) (rcs []uint32, err error)
-
-	Amount() int // total objects
-}
-
 // An IterateFeedsFunc represetns ...
 type IterateFeedsFunc func(cipher.PubKey) error
 
@@ -127,16 +70,10 @@ type Roots interface {
 	Get(uint64) (*Root, error)
 }
 
-// A Tx represetns ACID-transaction
-type Tx interface {
-	Objects() Objects
-	Feeds() Feeds
-}
-
 // An IdxDB repesents API of the index-DB
 type IdxDB interface {
-	Tx(func(Tx) error) error // lookup transaction
-	Close() error            // close the DB
+	Tx(func(Feeds) error) error // lookup transaction
+	Close() error               // close the DB
 
 	// TODO: stat
 }

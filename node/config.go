@@ -124,8 +124,8 @@ type Config struct {
 
 	// connections create/close
 
-	OnCreateConnection func(n *Node, c *gnet.Conn)
-	OnCloseConnection  func(n *Node, c *gnet.Conn)
+	OnCreateConnection func(c *Conn)
+	OnCloseConnection  func(c *Conn)
 
 	// subscribe/unsubscribe from a remote peer
 
@@ -140,22 +140,11 @@ type Config struct {
 	// never called if subscription rejected by any reason.
 	// If this callback returns a non-nil error the subscription
 	// willl be rejected, even if it's ok
-	OnSubscribeRemote func(n *Node, c *gnet.Conn,
-		feed cipher.PubKey) (reject error)
+	OnSubscribeRemote func(c *Conn, feed cipher.PubKey) (reject error)
 	// OnUnsubscribeRemote called while a remote peer wants
 	// to unsubscribe from feed of this (local) node. This
 	// callback never called if remote peer is not susbcribed
-	OnUnsubscribeRemote func(n *Node, c *gnet.Conn, feed cipher.PubKey)
-
-	// replies for subscriptions
-
-	// OnSubscriptionAccepted called when a remote peer accepts
-	// you subscription. It never called if remote peer already
-	// subscribed to the feed by this (local) node
-	OnSubscriptionAccepted func(n *Node, c *gnet.Conn, feed cipher.PubKey)
-	// OnSubscriptionRejected called when a remote peer rejects
-	// you subscription
-	OnSubscriptionRejected func(n *Node, c *gnet.Conn, feed cipher.PubKey)
+	OnUnsubscribeRemote func(c *Conn, feed cipher.PubKey)
 
 	// root objects
 
@@ -163,10 +152,10 @@ type Config struct {
 	// when Client receive new Root object.
 	// The callback never called for rejected
 	// Roots (including "already exists")
-	OnRootReceived func(n *Node, c *gnet.Conn, root *skyobject.Root)
+	OnRootReceived func(c *Conn, root *skyobject.Root)
 	// OnRootFilled is callback that called when
 	// Client finishes filling received Root object
-	OnRootFilled func(n *Node, c *gnet.Conn, root *skyobject.Root)
+	OnRootFilled func(c *Conn, root *skyobject.Root)
 	// OnFillingBreaks occurs when a filling Root
 	// can't be filled up because connection breaks.
 	// The Root can be removed or can not, depending
@@ -176,7 +165,7 @@ type Config struct {
 	// if any other error occured, such as DB can't
 	// save received object, the Root it fills malformed
 	// and can't be filled, etc
-	OnFillingBreaks func(n *Node, c *gnet.Conn, root *skyobject.Root, err error)
+	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
 }
 
 // NewConfig returns Config

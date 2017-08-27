@@ -55,16 +55,16 @@ func (f *filler) waiting(wcxo skyobject.WCXO) {
 
 // add received data. It returns database
 // saving error (that is fatal)
-func (f *filler) add(data []byte) (err error) {
-	hash := cipher.SumSHA256(data)
-	if rs, ok := f.requests[hash]; ok {
-		if err = f.c.Set(hash, data); err != nil {
+func (f *filler) add(val []byte) (err error) {
+	key := cipher.SumSHA256(val)
+	if rs, ok := f.requests[key]; ok {
+		if err = f.c.SaveObject(key, val); err != nil {
 			return
 		}
 		for _, r := range rs {
-			r <- data // wake up
+			r <- val // wake up
 		}
-		delete(f.requests, hash)
+		delete(f.requests, key)
 	}
 	return
 }
@@ -78,7 +78,8 @@ func (f *filler) fill(r *skyobject.Root) {
 		// - drop Root (chan of skyobject.DropRootError that is {*Root, err})
 		// - a Root is full (chan of *Root)
 		// - wait group
-		f.fillers[r.Hash] = f.c.NewFiller(r, f.wantq, f.full, f.drop, &f.wg)
+		f.fillers[r.Hash] = f.c.NewFiller(r,
+			skyobject.FillingBus{f.wantq, f.full, f.drop, &f.wg})
 	}
 }
 
