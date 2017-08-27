@@ -40,7 +40,7 @@ func (d *driveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	err = d.b.View(func(tx *bolt.Tx) (_ error) {
 		got := tx.Bucket(objs).Get(key[:])
 		if len(got) == 0 {
-			return
+			return ErrNotFound // pass through
 		}
 		rc = getRefsCount(got)
 		val = make([]byte, len(got)-4)
@@ -80,7 +80,7 @@ func (d *driveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 		bk := tx.Bucket(objs)
 		got := bk.Get(key[:])
 		if len(got) == 0 {
-			return
+			return ErrNotFound
 		}
 
 		// TODO (kostyarin): take a look the issue
@@ -98,7 +98,7 @@ func (d *driveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 		bk := tx.Bucket(objs)
 		got := bk.Get(key[:])
 		if len(got) == 0 {
-			return
+			return ErrNotFound
 		}
 
 		// TODO (kostyarin): take a look the issue

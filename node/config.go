@@ -42,7 +42,7 @@ const (
 	skycoinDataDir = ".skycoin"
 	cxoSubDir      = "cxo"
 
-	dbFile = "bolt.db"
+	dbFilePrefix = "cxodb"
 )
 
 // log pins
@@ -51,6 +51,7 @@ const (
 	SubscrPin                     // subscriptions
 	ConnPin
 	RootPin
+	FillPin
 )
 
 func dataDir() string {
@@ -192,7 +193,7 @@ func NewConfig() (sc Config) {
 	sc.PingInterval = PingInterval
 	sc.InMemoryDB = InMemoryDB
 	sc.DataDir = dataDir()
-	sc.DBPath = filepath.Join(sc.DataDir, dbFile)
+	sc.DBPath = filepath.Join(sc.DataDir, dbFilePrefix)
 	sc.ResponseTimeout = ResponseTimeout
 	sc.PublicServer = PublicServer
 	sc.Config.OnDial = OnDialFilter

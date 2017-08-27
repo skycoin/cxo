@@ -35,7 +35,7 @@ func (m *memoryCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 		var s string
 		if s, err = tx.Get(key.Hex()); err != nil {
 			if err == buntdb.ErrNotFound {
-				return nil // suppress ErrNotFound
+				return ErrNotFound // replace error
 			}
 			return
 		}
@@ -77,7 +77,7 @@ func (m *memoryCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 		var s, k string = "", key.Hex()
 		if s, err = tx.Get(k); err != nil {
 			if err == buntdb.ErrNotFound {
-				return nil // suppress ErrNotFound
+				return ErrNotFound // replace
 			}
 		}
 		got := m.decodeString(s)
@@ -93,7 +93,7 @@ func (m *memoryCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 		var s, k string = "", key.Hex()
 		if s, err = tx.Get(k); err != nil {
 			if err == buntdb.ErrNotFound {
-				return nil // suppress ErrNotFound
+				return ErrNotFound // replace
 			}
 		}
 		got := m.decodeString(s)

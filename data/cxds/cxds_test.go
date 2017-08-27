@@ -58,8 +58,10 @@ func testGet(t *testing.T, ds CXDS) {
 	key, value := testKeyValue("something")
 
 	t.Run("not exist", func(t *testing.T) {
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
+		if val, rc, err := ds.Get(key); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		} else if val != nil {
@@ -214,14 +216,18 @@ func testInc(t *testing.T, ds CXDS) {
 	key, value := testKeyValue("something")
 
 	t.Run("not exist", func(t *testing.T) {
-		if rc, err := ds.Inc(key); err != nil {
-			t.Error(err)
+		if rc, err := ds.Inc(key); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		}
 
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
+		if val, rc, err := ds.Get(key); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		} else if got := string(val); got != "" {
@@ -272,14 +278,18 @@ func testDec(t *testing.T, ds CXDS) {
 	key, value := testKeyValue("something")
 
 	t.Run("not exist", func(t *testing.T) {
-		if rc, err := ds.Dec(key); err != nil {
-			t.Error(err)
+		if rc, err := ds.Dec(key); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		}
 
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
+		if val, rc, err := ds.Get(key); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		} else if got := string(val); got != "" {
@@ -320,8 +330,10 @@ func testDec(t *testing.T, ds CXDS) {
 			t.Error("wrong rc", rc)
 		}
 
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
+		if val, rc, err := ds.Get(key); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		} else if got := string(val); got != "" {
@@ -687,8 +699,10 @@ func testMultiDec(t *testing.T, ds CXDS) {
 
 		// value must not be changes by MultiInc
 		for _, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
+			if val, rc, err := ds.Get(k); err == nil {
+				t.Error("missing error")
+			} else if err != ErrNotFound {
+				t.Error("unexpected error:", err)
 			} else if rc != 0 {
 				t.Error("wrong rc", rc)
 			} else if got := string(val); got != "" {
