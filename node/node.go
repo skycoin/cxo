@@ -114,8 +114,8 @@ func NewNode(sc Config) (s *Node, err error) {
 	s.feeds = make(map[cipher.PubKey]map[*Conn]struct{})
 
 	// fill up feeds from database
-	err = s.db.IdxDB().Tx(func(tx idxdb.Tx) (err error) {
-		return tx.Feeds().Iterate(func(pk cipher.PubKey) (err error) {
+	err = s.db.IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+		return feeds.Iterate(func(pk cipher.PubKey) (err error) {
 			s.feeds[pk] = make(map[*Conn]struct{})
 			return
 		})
@@ -131,18 +131,18 @@ func NewNode(sc Config) (s *Node, err error) {
 
 	// gnet related callbacks
 	if ch := sc.Config.OnCreateConnection; ch == nil {
-		sc.Config.OnCreateConnection = s.connectHandler
+		sc.Config.OnCreateConnection = s.onConnect
 	} else {
 		sc.Config.OnCreateConnection = func(c *gnet.Conn) {
-			s.connectHandler(c)
+			s.onConnect(c)
 			ch(c)
 		}
 	}
 	if dh := sc.Config.OnCloseConnection; dh == nil {
-		sc.Config.OnCloseConnection = s.disconnectHandler
+		sc.Config.OnCloseConnection = s.onDisconnect
 	} else {
 		sc.Config.OnCloseConnection = func(c *gnet.Conn) {
-			s.disconnectHandler(c)
+			s.onDisconnect(c)
 			dh(c)
 		}
 	}
@@ -271,6 +271,47 @@ func (s *Node) start() (err error) {
 	return
 }
 
+func (n *Node) addConn(c *Conn) {
+	n.cmx.Lock()
+	defer n.cmx.Unlock()
+
+	n.conns = append(n.conns, c)
+}
+
+func (n *Node) delConn(c *Conn) {
+	n.cmx.Lock()
+	defer n.cmx.Unlock()
+
+	for i, x := range n.conns {
+		if x == c {
+			n.conns[i] = n.conns[len(n.conns)-1]
+			n.conns[len(n.conns)-1] = nil
+			n.conns = n.conns[:len(n.conns)-1]
+			return
+		}
+	}
+
+}
+
+// Connections of the Node
+func (n *Node) Connections() (cs []*Conn) {
+	n.cmx.RLock()
+	defer n.cmx.RUnlock()
+
+	cs = make([]*Conn, len(n.conns))
+	copy(cs, n.conns)
+	return
+}
+
+// Connections by address. Itreturns nil if conenction not
+// found or not established yet
+func (n *Node) Connection(address string) (c *Conn) {
+	if gc := n.pool.Connection(address); gc != nil {
+		c, _ = gc.Value().(*Conn)
+	}
+	return
+}
+
 // Close the Node
 func (s *Node) Close() (err error) {
 	s.quito.Do(func() {
@@ -295,7 +336,7 @@ func (s *Node) Close() (err error) {
 }
 
 // DB of the Node
-func (n *Node) DB() data.DB { return n.db }
+func (n *Node) DB() *data.DB { return n.db }
 
 // Container of the Node
 func (n *Node) Container() *skyobject.Container {
@@ -352,12 +393,12 @@ func (s *Node) sendToAllOfFeed(pk cipher.PubKey, m msg.Msg) {
 	}
 }
 
-func (s *Node) addConnToFeed(c *Conn, pk cipher.PubKey) (ok bool) {
+func (s *Node) addConnToFeed(c *Conn, pk cipher.PubKey) (added bool) {
 	s.fmx.Lock()
 	defer s.fmx.Unlock()
 
-	if cs, ok = s.feeds[pk]; ok {
-		cs[*Conn], ok = struct{}{}, true
+	if cs, ok := s.feeds[pk]; ok {
+		cs[c], added = struct{}{}, true
 	}
 	return
 }
@@ -374,105 +415,39 @@ func (s *Node) delConnFromFeed(c *Conn, pk cipher.PubKey) (deleted bool) {
 	return
 }
 
+func (s *Node) onConnect(gc *gnet.Conn) {
+	s.Debugf(ConnPin, "[%s] new conenctions", gc.Address(), gc.IsIncoming())
+
+	c := new(Conn)
+	c.s = s
+	c.gc = gc
+	c.subs = make(map[cipher.PubKey]struct{})
+	c.rr = make(map[msg.ID]*waitResponse)
+	c.events = make(chan event, 10)
+	c.timeout = make(chan msg.ID, 10)
+	c.pings = make(map[msg.ID]chan struct{})
+
+	gc.SetValue(c) // for resubscriptions
+
+	s.await.Add(1)
+	go c.handle()
+}
+
+func (s *Node) onDisconnect(gc *gnet.Conn) {
+	s.Debugf(ConnPin, "[%s] close conenctions", gc.Address(), gc.IsIncoming())
+}
+
+func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {
+	if c, ok := gc.Value().(*Conn); ok {
+		c.events <- resubscribeEvent{}
+	}
+	return
+}
+
 // Quiting returns cahnnel that closed
 // when the Node closed
 func (s *Node) Quiting() <-chan struct{} {
 	return s.done // when quit done
-}
-
-// SubscribeResponseTimeout uses provided timeout instead of configured
-func (s *Node) SubscribeResponseTimeout(c *gnet.Conn, feed cipher.PubKey,
-	timeout time.Duration) (err error) {
-
-	// locks: s.fmx  Lock/Unlock
-	//        s.pmx  Lock/Unlock
-	//        s.rpmx Lock/Unlock (twice)
-
-	if c == nil {
-		err = ErrNilConnection
-		return
-	}
-
-	// add feed
-	s.addFeed(feed)
-
-	// add to pending to make handling by handleAcceptSusbcriptionMsg
-	// successful
-	s.addToPending(c, feed)
-
-	var response Msg
-	response, err = s.sendMsgAndWaitForResponse(c,
-		s.src.NewSubscribeMsg(feed),
-		timeout)
-	if err != nil {
-		// delete from pending to not subscribe the connection on
-		// timeout error; but this way remote peer can subscribe the
-		// node anyway;
-		// TODO: to send UnsusbcribeMsg or not to send, that
-		//       is the fucking question (c) Hamlet
-		s.deleteConnFeedFromPending(c, feed)
-		return
-	}
-
-	// look at response
-	typ := response.MsgType()
-	if typ == RejectSubscriptionMsgType {
-		err = ErrSubscriptionRejected
-		return
-	} else if typ == AcceptSubscriptionMsgType {
-		return // nil
-	}
-
-	s.Debug(SubscrPin, "unexpected response for subscription: ", typ.String())
-	err = ErrUnexpectedResponse
-	return
-}
-
-// ListOfFeedsResponse reuqests list of feeds of a public server (peer).
-// It receive connection to the server that should not be nil and must be
-// form connections pool of this Node. It returns error if the server is
-// not public or if the server not responding (timeout errror).
-func (s *Node) ListOfFeedsResponse(c *gnet.Conn) ([]cipher.PubKey, error) {
-
-	// locks: s.rpmx Lock/Unlock (twice)
-
-	return s.ListOfFeedsResponseTimeout(c, s.conf.ResponseTimeout)
-}
-
-// ListOfFeedsResponseTimeout uses provided timeout instead of configured
-func (s *Node) ListOfFeedsResponseTimeout(c *gnet.Conn,
-	timeout time.Duration) (list []cipher.PubKey, err error) {
-
-	// locks: s.rpmx Lock/Unlock (twice)
-
-	if c == nil {
-		err = ErrNilConnection
-		return
-	}
-
-	var response Msg
-	response, err = s.sendMsgAndWaitForResponse(c,
-		s.src.NewRequestListOfFeedsMsg(),
-		timeout)
-	if err != nil {
-		return
-	}
-
-	// look at response
-	typ := response.MsgType()
-	if typ == NonPublicServerMsgType {
-		err = ErrNonPublicPeer
-		return
-	} else if typ == ListOfFeedsMsgType {
-		list = response.(*ListOfFeedsMsg).List
-		return
-	}
-
-	s.Debug(SubscrPin, "unexpected response for list of feeds requesting: ",
-		typ.String())
-	err = ErrUnexpectedResponse
-	return
-
 }
 
 // RPCAddress returns address of RPC listener or an empty
@@ -486,12 +461,108 @@ func (s *Node) RPCAddress() (address string) {
 
 // Publish given Root (send to feed)
 func (s *Node) Publish(r *skyobject.Root) {
-	s.sendToFeed(r.Pub, s.src.NewRootMsg(r.Pub, *r.Pack()), nil)
+	s.sendToAllOfFeed(r.Pub, s.src.Root(r))
 }
 
+// AddFeed to list of feed the Node shares.
+// This method adds feed to undrlying skyobject.Container
+// and database. But it doesn't starts exchanging
+// the feed with peers. Use following code to
+// subscribe al connections to the feed
+//
+//     if err := n.AddFeed(pk); err != nil {
+//         // database failure
+//     }
+//     for _, c := range n.Connections() {
+//         // blocking call
+//         if err := c.Subscribe(pk); err != nil {
+//             // handle the err
+//         }
+//     }
+//
+func (n *Node) AddFeed(pk cipher.PubKey) (err error) {
+	n.fmx.Lock()
+	defer n.fmx.Unlock()
+
+	if _, ok := n.feeds[pk]; !ok {
+		if err = n.so.AddFeed(pk); err != nil {
+			return
+		}
+		n.feeds[pk] = make(map[*Conn]struct{})
+	}
+	return
+}
+
+func (n *Node) delFeed(pk cipher.PubKey) (ok bool, err error) {
+	n.fmx.Lock()
+	defer n.fmx.Unlock()
+
+	if _, ok = n.feeds[pk]; ok {
+		delete(n.feeds, pk)
+		if err = n.so.DelFeed(pk); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// DelFed stops sharing given feed. It unsubscribes
+// from all conenctions
+func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
+	var ok bool
+	ok, err = n.delFeed(pk)
+
+	if !ok {
+		return // not deleted
+	}
+
+	n.cmx.RLock()
+	defer n.cmx.RUnlock()
+
+	evt := &unsubscribeFromDeletedFeedEvent{pk}
+
+	for _, c := range n.conns {
+		c.events <- evt
+	}
+	return
+}
+
+/*
 // Stat of underlying DB and Container
 func (s *Node) Stat() (st Stat) {
 	st.Data = s.DB().Stat()
 	st.CXO = s.Container().Stat()
 	return
+}
+*/
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (s *Node) pingsLoop() {
+	defer s.await.Done()
+
+	tk := time.NewTicker(s.conf.PingInterval)
+	defer tk.Stop()
+
+	for {
+		select {
+		case <-tk.C:
+			now := time.Now()
+			for _, c := range s.Connections() {
+				md := maxDuration(now.Sub(c.gc.LastRead()),
+					now.Sub(c.gc.LastWrite()))
+				if md < s.conf.PingInterval {
+					continue
+				}
+				c.SendPing()
+			}
+		case <-s.quit:
+			return
+		}
+	}
 }

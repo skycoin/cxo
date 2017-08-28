@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -66,50 +67,45 @@ func (r *rpcServer) Close() (err error) {
 // RPC methods
 //
 
-// - Subscribe
-// - Unsubscribe
-// - Feeds
-// - Stat
-// - Connections
-// - IncomingConnections
-// - OutgoingConnections
-// - Connect
-// - Disconnect
-// - Associate
-// - ListeningAddress
-// - Roots
-// - Tree
-// - Terminate
+// AddFeed to the Node
+func (r *RPC) AddFeed(pk cipher.PubKey, _ *struct{}) error {
+	return r.ns.AddFeed(pk)
+}
 
-// A ConnFeed represetns connection->feed pair. The struct used
-// by RPC methods Subscribe and Unsubscribe
+// DelFeed of the node
+func (r *RPC) DelFeed(pk cipher.PubKey, _ *struct{}) error {
+	return r.ns.DelFeed(pk)
+}
+
+// internal/RPC
 type ConnFeed struct {
 	Address string // remote address
 	Feed    cipher.PubKey
 }
 
-// Subscribe to a connection+feed
+// Subscribe to a connection + feed
 func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
 	if cf.Address == "" {
-		r.ns.Subscribe(nil, cf.Feed)
-		return
+		return errors.New("missing address")
 	}
-	if c := r.ns.Pool().Connection(cf.Address); c != nil {
-		err = r.ns.SubscribeResponse(c, cf.Feed)
-		return
+	if gc := r.ns.Pool().Connection(cf.Address); gc != nil {
+		if c, ok := gc.Value().(*Conn); ok {
+			return c.Subscribe(cf.Feed)
+		}
 	}
 	return errors.New("no such connection: " + cf.Address)
 }
 
-// Unsubscribe from a connection+feed
+// Unsubscribe from a connection + feed
 func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
 	if cf.Address == "" {
-		r.ns.Unsubscribe(nil, cf.Feed)
-		return
+		return errors.New("missing address")
 	}
-	if c := r.ns.Pool().Connection(cf.Address); c != nil {
-		r.ns.Unsubscribe(c, cf.Feed)
-		return
+	if gc := r.ns.Pool().Connection(cf.Address); gc != nil {
+		if c, ok := gc.Value().(*Conn); ok {
+			c.Unsubscrube(cf.Feed)
+			return
+		}
 	}
 	return errors.New("no such connection: " + cf.Address)
 }
@@ -136,7 +132,7 @@ func (r *RPC) Stat(_ struct{}, stat *Stat) (_ error) {
 
 // Connections of a node
 func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
-	cs := r.ns.pool.Connections()
+	cs := r.ns.Connections()
 	if len(cs) == 0 {
 		return
 	}
@@ -151,8 +147,8 @@ func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
 // IncomingConnections of a node
 func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
 	var l []string
-	for _, c := range r.ns.pool.Connections() {
-		if c.IsIncoming() {
+	for _, c := range r.ns.Connections() {
+		if c.gc.IsIncoming() {
 			l = append(l, c.Address())
 		}
 	}
@@ -163,8 +159,8 @@ func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
 // OutgoingConnections of a node
 func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
 	var l []string
-	for _, c := range r.ns.pool.Connections() {
-		if !c.IsIncoming() {
+	for _, c := range r.ns.Connections() {
+		if !c.gc.IsIncoming() {
 			l = append(l, c.Address())
 		}
 	}
@@ -197,34 +193,62 @@ type RootInfo struct {
 	Time   time.Time
 	Seq    uint64
 	Hash   cipher.SHA256
+	Prev   cipher.SHA256
 	IsFull bool
+
+	CreateTime time.Time
+	AccessTime time.Time
+	RefsCount  uint32
+}
+
+func decodeRoot(val []byte) (r *skyobject.Root, err error) {
+	r = new(skyobject.Root)
+	if err = encoder.DeserializeRaw(val, r); err != nil {
+		r = nil
+	}
+	return
 }
 
 // Roots returns basic information about all root obejcts of a feed.
 // It returns (by RPC) list sorted from old roots to new
-func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (_ error) {
-	rs := make([]RootInfo, 0)
-	r.ns.DB().View(func(tx data.Tv) (_ error) {
-		roots := tx.Feeds().Roots(feed)
-		if roots == nil {
+func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
+	ris := make([]RootInfo, 0)
+	err = r.ns.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+		var rs idxdb.Roots
+		if rs, err = feeds.Roots(feed); err != nil {
 			return
 		}
-		return roots.Ascend(func(rp *data.RootPack) (err error) {
+		return rs.Ascend(func(ir *idxdb.Root) (err error) {
 			var ri RootInfo
-			var root *skyobject.Root
-			root, err = r.ns.Container().PackToRoot(feed, rp)
-			if err != nil {
+			ri.IsFull = ir.IsFull
+			ri.Hash = ir.Hash
+			ri.Seq = ir.Seq
+
+			ri.CreateTime = time.Unix(0, ir.CreateTime)
+			ri.AccessTime = time.Unix(0, ir.AccessTime)
+			ri.RefsCount = ir.RefsCount
+
+			var val []byte
+			if val, _, err = r.ns.DB().CXDS().Get(ir.Hash); err != nil {
 				return
 			}
-			ri.Hash = rp.Hash
-			ri.Time = time.Unix(0, root.Time)
-			ri.Seq = rp.Seq
-			ri.IsFull = rp.IsFull
-			rs = append(rs, ri)
+
+			var r *skyobject.Root
+			if r, err = decodeRoot(val); err != nil {
+				return
+			}
+
+			ri.Time = time.Unix(0, r.Time)
+			ri.Prev = r.Prev
+
+			ris = append(ris, ri)
 			return
 		})
 	})
-	*roots = rs
+	if err != nil {
+		return
+	}
+	*roots = ris
 	return
 }
 
@@ -237,7 +261,7 @@ type SelectRoot struct {
 // Tree prints objects tree of chosen root object (chosen by pk+seq)
 func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 	var root *skyobject.Root
-	if sel.LastFull {
+	if sel.LastFull == true {
 		root, err = r.ns.so.LastFull(sel.Pub)
 	} else {
 		root, err = r.ns.so.Root(sel.Pub, sel.Seq)

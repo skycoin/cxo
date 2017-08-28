@@ -43,3 +43,12 @@ func NewDriveDB(prefix string) (db *DB, err error) {
 	}
 	return
 }
+
+func (d *DB) Close() (err error) {
+	if err = d.cxds.Close(); err != nil {
+		d.idxdb.Close() // drop error
+	} else {
+		err = d.idxdb.Close() // use this error
+	}
+	return
+}

@@ -139,12 +139,10 @@ func (p *Pack) Save() (err error) {
 	var seqDec uint64 = p.r.Seq          // base
 	var saved map[cipher.SHA256]struct{} // decr. on fail
 
-	err = p.c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
-
-		objs := tx.Objects()
+	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 
 		var rs idxdb.Roots
-		if rs, err = tx.Feeds().Roots(p.r.Pub); err != nil {
+		if rs, err = feeds.Roots(p.r.Pub); err != nil {
 			return
 		}
 
@@ -185,7 +183,6 @@ func (p *Pack) Save() (err error) {
 		// save recursive
 		sr := new(saveRecursive)
 		sr.p = p
-		sr.objs = objs
 		sr.saved = saved
 
 		for i := range p.r.Refs {
@@ -199,8 +196,9 @@ func (p *Pack) Save() (err error) {
 			return
 		}
 
-		// increment ref to related registry
-		_, err = objs.Inc(cipher.SHA256(p.r.Reg))
+		// registry
+		saved[cipher.SHA256(p.r.Reg)] = struct{}{}
+		_, err = p.c.db.CXDS().Set(cipher.SHA256(p.r.Reg), p.reg.Encode())
 		return
 	})
 	if err != nil {
@@ -228,9 +226,9 @@ func (p *Pack) init() (err error) {
 	// we need to inc refs count for underlying Root
 	// to prevent deleting, because we can use objects
 	// related to this (base) Root
-	err = p.c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
+	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 		var rs idxdb.Roots
-		if rs, err = tx.Feeds().Roots(p.r.Pub); err != nil {
+		if rs, err = feeds.Roots(p.r.Pub); err != nil {
 			return
 		}
 		// inc Refs count of the Root

@@ -35,6 +35,13 @@ type Conn struct {
 
 	events  chan event  // events of the Conn
 	timeout chan msg.ID // timeouts
+
+	pings map[msg.ID]chan struct{} //
+}
+
+// Address returns remote address
+func (c *Conn) Address() string {
+	return c.gc.Address()
 }
 
 // Node returns related node
@@ -87,7 +94,7 @@ func (c *Conn) SendPing() {
 	if c.s.conf.PingInterval <= 0 {
 		return
 	}
-	//
+	c.events <- &sendPingEvent{make(chan struct{})}
 }
 
 type waitResponse struct {
@@ -203,6 +210,9 @@ func (c *Conn) acceptHandshake() (err error) {
 				ErrIncompatibleProtocolVersion.Error()))
 		}
 		return ErrWrongResponseMsgType
+
+		// TODO (kostyarin): handshake timeout
+
 	case <-c.gc.Closed():
 		return ErrConnClsoed
 	}
@@ -235,6 +245,9 @@ func (c *Conn) performHandshake() (err error) {
 		default:
 			return ErrWrongResponseMsgType
 		}
+
+	// TODO (kostyarin): handshake timeout
+
 	case <-c.gc.Closed():
 		return ErrConnClsoed
 	}
@@ -246,7 +259,6 @@ func (c *Conn) handle() {
 	defer c.s.Debug(ConnPin, "[%s] stop handling", c.gc.Address())
 
 	defer c.s.await.Done()
-	// TODO
 
 	var err error
 
@@ -254,6 +266,19 @@ func (c *Conn) handle() {
 		c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
 		return
 	}
+
+	c.s.addConn(c)
+	defer c.s.delConn(c)
+
+	if occ := c.s.conf.OnCreateConnection; occ != nil {
+		go occ(c) // don't block
+	}
+
+	defer func() {
+		if occ := c.s.conf.OnCloseConnection; occ != nil {
+			go occ(c) // don't block
+		}
+	}()
 
 	var (
 		closed  = c.gc.Closed()
@@ -297,7 +322,7 @@ func (c *Conn) handle() {
 		select {
 
 		// events
-		case evt = <-c.events:
+		case evt = <-events:
 			evt.Handle(c)
 
 		case id = <-timeout:
@@ -356,16 +381,19 @@ func (c *Conn) dropRoot(r *skyobject.Root, err error) {
 }
 
 func (c *Conn) rootFilled(r *skyobject.Root) {
-	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.gc.Address(), r.Short())
+	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), r.Short())
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		orf(c, r)
 	}
-	c.s.sendToAllOfFeed(r.Pub, c.s.src.Root(r.Pub, r))
+	c.s.sendToAllOfFeed(r.Pub, c.s.src.Root(r))
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {
-	// TODO
+	if ttm, ok := c.pings[pong.ResponseFor]; ok {
+		close(ttm) // ok
+	}
+	c.s.Debugf(ConnPin, "[%s] unexpected Pong received", c.Address())
 }
 
 func (c *Conn) handlePing(ping *msg.Ping) {
@@ -535,35 +563,3 @@ func (c *Conn) handleMsg(m msg.Msg) (err error) {
 
 	return
 }
-
-/*
-func maxDuration(a, b time.Duration) time.Duration {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func (s *Node) pingsLoop() {
-	defer s.await.Done()
-
-	tk := time.NewTicker(s.conf.PingInterval)
-	defer tk.Stop()
-
-	for {
-		select {
-		case <-tk.C:
-			now := time.Now()
-			for _, c := range s.pool.Connections() {
-				md := maxDuration(now.Sub(c.LastRead()), now.Sub(c.LastWrite()))
-				if md < s.conf.PingInterval {
-					continue
-				}
-				s.sendMessage(c, s.src.Ping())
-			}
-		case <-s.quit:
-			return
-		}
-	}
-}
-*/

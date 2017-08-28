@@ -131,25 +131,6 @@ func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
 	return
 }
 
-// internal method
-func (c *Container) SaveObject(key cipher.SHA256, val []byte) (err error) {
-
-	return c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
-		objs := tx.Objects()
-		var rc uint32
-		rc, err = objs.Inc(key)
-		if rc > 0 {
-			return
-		}
-		if err = objs.Set(key, new(idxdb.Object)); err != nil {
-			return
-		}
-		_, err = c.DB().CXDS().Set(key, val)
-		return
-	})
-
-}
-
 // Root of a feed by seq. The method can returns database error or
 // idxdb.ErrNotfound if requested Root has not been found
 func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
@@ -158,9 +139,9 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 	// request index
 
 	var ir *idxdb.Root
-	err = c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
+	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 		var rs idxdb.Roots
-		if rs, err = tx.Feeds().Roots(pk); err != nil {
+		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
 		ir, err = rs.Get(seq)
@@ -342,8 +323,8 @@ func (c *Container) Close() error {
 func (c *Container) AddFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "AddFeed", pk.Hex()[:7])
 
-	return c.DB().IdxDB().Tx(func(tx idxdb.Tx) error {
-		return tx.Feeds().Add(pk)
+	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) error {
+		return feeds.Add(pk)
 	})
 }
 
@@ -353,7 +334,7 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 func (c *Container) DelFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
 
-	return c.DB().IdxDB().Tx(func(tx idxdb.Tx) error {
-		return tx.Feeds().Del(pk)
+	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) error {
+		return feeds.Del(pk)
 	})
 }

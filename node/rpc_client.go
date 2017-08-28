@@ -54,11 +54,13 @@ func (r *RPCClient) Feeds() (list []cipher.PubKey, err error) {
 	return
 }
 
+/*
 // Stat returns database statistic
 func (r *RPCClient) Stat() (stat Stat, err error) {
 	r.c.Call("cxo.Stat", struct{}{}, &stat)
 	return
 }
+*/
 
 // Connections return list of all connections
 func (r *RPCClient) Connections() (list []string, err error) {

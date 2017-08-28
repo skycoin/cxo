@@ -37,7 +37,6 @@ func getRegisty() *Registry {
 func getConf() *Config {
 	conf := NewConfig()
 	conf.Registry = getRegisty()
-	conf.CleanUp = 0 // don't clean up
 	if testing.Verbose() {
 		conf.Log.Debug = true
 		conf.Log.Pins = log.All

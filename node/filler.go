@@ -58,7 +58,7 @@ func (f *filler) waiting(wcxo skyobject.WCXO) {
 func (f *filler) add(val []byte) (err error) {
 	key := cipher.SumSHA256(val)
 	if rs, ok := f.requests[key]; ok {
-		if err = f.c.SaveObject(key, val); err != nil {
+		if _, err = f.c.DB().CXDS().Set(key, val); err != nil {
 			return
 		}
 		for _, r := range rs {

@@ -90,9 +90,9 @@ func (f *Filler) full() {
 	f.c.Debugln(FillVerbosePin, "(*Filler).full", f.r.Short())
 
 	// mark full
-	err := f.c.DB().IdxDB().Tx(func(tx idxdb.Tx) (err error) {
+	err := f.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 		var rs idxdb.Roots
-		if rs, err = tx.Feeds().Roots(f.r.Pub); err != nil {
+		if rs, err = feeds.Roots(f.r.Pub); err != nil {
 			return
 		}
 		var ir *idxdb.Root
@@ -170,7 +170,7 @@ func (f *Filler) request(hash cipher.SHA256,
 	}
 	select {
 	case val = <-f.gotq:
-		if err := f.c.SaveObject(hash, val); err != nil {
+		if _, err := f.c.db.CXDS().Set(hash, val); err != nil {
 			f.drop(err)
 			return // nil, false
 		}

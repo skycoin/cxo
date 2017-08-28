@@ -5,13 +5,10 @@ import (
 	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/data/idxdb"
 )
 
 type saveRecursive struct {
 	p     *Pack                      // related pack
-	objs  idxdb.Objects              // save index
 	saved map[cipher.SHA256]struct{} // saved obejct (to rollback on failure)
 }
 
@@ -70,9 +67,6 @@ func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 			return
 		}
 		p.saved[key] = struct{}{}
-		if err = p.objs.Set(key, new(idxdb.Object)); err != nil {
-			return
-		}
 	}
 
 	obj.Set(reflect.ValueOf(dr)) // set it back
@@ -100,9 +94,6 @@ func (p *saveRecursive) saveRecursiveRef(sf reflect.StructField,
 			return
 		}
 		p.saved[key] = struct{}{}
-		if err = p.objs.Set(key, new(idxdb.Object)); err != nil {
-			return
-		}
 	}
 
 	val.Set(reflect.ValueOf(ref)) // set it anyway
@@ -181,10 +172,6 @@ func (p *saveRecursive) saveRecursiveRefsElem(rn *RefsElem) (err error) {
 			return
 		}
 		p.saved[key] = struct{}{}
-
-		if err = p.objs.Set(key, new(idxdb.Object)); err != nil {
-			return
-		}
 	}
 
 	return
