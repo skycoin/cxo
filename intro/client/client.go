@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/node/gnet"
+	"github.com/skycoin/cxo/node/log"
 	sky "github.com/skycoin/cxo/skyobject"
 
 	"github.com/skycoin/cxo/intro"
@@ -58,25 +59,48 @@ func main() {
 
 	c.DBPath = "./client.db"
 
+	// suppress gnet logs
+	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
+
 	c.Log.Debug = true
-	c.Log.Pins = ^c.Log.Pins // all
+	c.Log.Pins = log.All // all
 	c.Log.Prefix = "[client] "
 
 	c.Skyobject.Registry = reg // <-- registry
 
 	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = ^c.Skyobject.Log.Pins // all
+	c.Skyobject.Log.Pins = log.All // all
 	c.Skyobject.Log.Prefix = "[client cxo]"
 
 	c.FromFlags()
 	flag.Parse()
 
 	// show full root objects
-	c.OnRootFilled = func(s *node.Node, c *gnet.Conn, r *sky.Root) {
+	c.OnRootFilled = func(c *node.Conn, r *sky.Root) {
 		fmt.Println("\n\n\n") // space
 		fmt.Println("----")
-		fmt.Println(s.Container().Inspect(r))
+		fmt.Println(c.Node().Container().Inspect(r))
 		fmt.Println("----")
+	}
+
+	pk, _ := cipher.GenerateDeterministicKeyPair([]byte("x"))
+
+	c.OnCreateConnection = func(c *node.Conn) {
+		fmt.Println("OnCreateConnection {", c.Address())
+		if err := c.Subscribe(pk); err != nil {
+			fmt.Println("[ERR] subscribing:", err)
+			c.Close()
+		}
+		fmt.Println("OnCreateConnection }", c.Address())
+	}
+
+	c.OnCloseConnection = func(c *node.Conn) {
+		fmt.Println("OnCloseConnection", c.Address())
+	}
+
+	c.OnRootReceived = func(c *node.Conn, r *sky.Root) {
+		fmt.Println("OnRootReceived", c.Address(), r.Short())
+
 	}
 
 	var s *node.Node
@@ -90,17 +114,16 @@ func main() {
 	}
 	defer s.Close() // close
 
-	pk, _ := cipher.GenerateDeterministicKeyPair([]byte("x"))
-	s.Subscribe(nil, pk)
+	if err = s.AddFeed(pk); err != nil {
+		s.Println("[ERR] database failure:", err)
+		return
+	}
 	// conenct to pipe
 
-	conn, err := s.Pool().Dial(PipeAddress)
-	if err != nil {
+	if err := s.Connect(PipeAddress); err != nil {
 		s.Println("[ERR] can't conenct to server:", err)
 		return
 	}
-	s.Subscribe(conn, pk) // subscribe to conn
 
 	waitInterrupt(s.Quiting())
-
 }

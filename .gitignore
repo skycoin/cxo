@@ -50,6 +50,9 @@ node/test/
 
 *.go.ignore
 
+*.db.cxds
+*.db.index
+
 intro/server/server
 intro/server/server.db
 intro/pipe/pipe

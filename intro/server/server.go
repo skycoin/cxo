@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"sync"
@@ -11,7 +12,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	sky "github.com/skycoin/cxo/skyobject"
 
@@ -58,6 +58,9 @@ func main() {
 
 	c.DBPath = "./server.db"
 
+	// suppress gnet logs
+	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
+
 	c.Log.Prefix = "[server] "
 	c.Log.Debug = true
 	c.Log.Pins = log.All // all
@@ -65,9 +68,8 @@ func main() {
 	c.Skyobject.Registry = reg
 
 	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = sky.CleanUpPin | sky.PackSavePin // all
+	c.Skyobject.Log.Pins = sky.PackSavePin // all
 	c.Skyobject.Log.Prefix = "[server cxo] "
-	c.Skyobject.CleanUp = 59 * time.Second
 
 	c.FromFlags()
 	flag.Parse()
@@ -75,9 +77,12 @@ func main() {
 	// subscribe all incoming connections
 	pk, sk := cipher.GenerateDeterministicKeyPair([]byte("x"))
 
-	c.OnCreateConnection = func(s *node.Node, c *gnet.Conn) {
-		if c.IsIncoming() {
-			go s.Subscribe(c, pk) // don't block
+	c.OnCreateConnection = func(c *node.Conn) {
+		if c.Gnet().IsIncoming() {
+			if err := c.Subscribe(pk); err != nil {
+				fmt.Println("[ERR] can't subscribe:", err)
+				c.Close()
+			}
 		}
 	}
 
@@ -92,7 +97,10 @@ func main() {
 	}
 	defer s.Close() // close
 
-	s.Subscribe(nil, pk)
+	if err = s.AddFeed(pk); err != nil {
+		fmt.Println("[ERR] database failure:", err)
+		return
+	}
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
@@ -125,7 +133,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 
 	// create Root (and initialize the "content" var)
 	pack.Append(content)
-	if _, err := pack.Save(); err != nil {
+	if err := pack.Save(); err != nil {
 		c.Print("[FATAL] ", err)
 		return
 	}
@@ -151,7 +159,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 			c.Print("[FATAL] ", err)
 			return
 		}
-		if _, err := pack.Save(); err != nil {
+		if err := pack.Save(); err != nil {
 			c.Print("[FATAL] ", err)
 			return
 		}

@@ -145,10 +145,9 @@ func (s *Src) RequestObject(key cipher.SHA256) (ro *RequestObject) {
 	return
 }
 
-func (s *Src) Object(key cipher.SHA256, val []byte) (o *Object) {
+func (s *Src) Object(val []byte) (o *Object) {
 	o = new(Object)
 	o.Value = val
-	o.Key = key
 	return
 }
 

@@ -416,18 +416,9 @@ func (s *Node) delConnFromFeed(c *Conn, pk cipher.PubKey) (deleted bool) {
 }
 
 func (s *Node) onConnect(gc *gnet.Conn) {
-	s.Debugf(ConnPin, "[%s] new conenctions", gc.Address(), gc.IsIncoming())
+	s.Debugf(ConnPin, "[%s] new connection %t", gc.Address(), gc.IsIncoming())
 
-	c := new(Conn)
-	c.s = s
-	c.gc = gc
-	c.subs = make(map[cipher.PubKey]struct{})
-	c.rr = make(map[msg.ID]*waitResponse)
-	c.events = make(chan event, 10)
-	c.timeout = make(chan msg.ID, 10)
-	c.pings = make(map[msg.ID]chan struct{})
-
-	gc.SetValue(c) // for resubscriptions
+	c := s.newConn(gc)
 
 	s.await.Add(1)
 	go c.handle()
@@ -462,6 +453,12 @@ func (s *Node) RPCAddress() (address string) {
 // Publish given Root (send to feed)
 func (s *Node) Publish(r *skyobject.Root) {
 	s.sendToAllOfFeed(r.Pub, s.src.Root(r))
+}
+
+// Connect to peer. Use callback to handle the Conn
+func (n *Node) Connect(address string) (err error) {
+	_, err = n.pool.Dial(address)
+	return
 }
 
 // AddFeed to list of feed the Node shares.

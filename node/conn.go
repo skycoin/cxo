@@ -36,7 +36,45 @@ type Conn struct {
 	events  chan event  // events of the Conn
 	timeout chan msg.ID // timeouts
 
-	pings map[msg.ID]chan struct{} //
+	pings map[msg.ID]chan struct{}
+
+	// filling
+
+	wantq    chan skyobject.WCXO             // request wanted CX object
+	requests map[cipher.SHA256][]chan []byte // wait reply
+
+	// must drain
+	full chan *skyobject.Root         // fill Root obejcts
+	drop chan skyobject.DropRootError // root reference with error (reason)
+
+	// filling Roots (hash of Root -> *Filler)
+	fillers map[cipher.SHA256]*skyobject.Filler
+}
+
+func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
+
+	c = new(Conn)
+
+	c.s = s
+	c.gc = gc
+
+	// TODO (kostyarin): make all the 128s and 8s below configurable
+
+	c.subs = make(map[cipher.PubKey]struct{})
+	c.rr = make(map[msg.ID]*waitResponse)
+	c.events = make(chan event, 128)
+	c.timeout = make(chan msg.ID, 128)
+	c.pings = make(map[msg.ID]chan struct{})
+
+	c.wantq = make(chan skyobject.WCXO, 128)
+	c.requests = make(map[cipher.SHA256][]chan []byte)
+	c.full = make(chan *skyobject.Root, 8)         // saved
+	c.drop = make(chan skyobject.DropRootError, 8) // need to drop
+	c.fillers = make(map[cipher.SHA256]*skyobject.Filler)
+
+	gc.SetValue(c) // for resubscriptions
+
+	return
 }
 
 // Address returns remote address
@@ -196,6 +234,15 @@ func (c *Conn) acceptHandshake() (err error) {
 
 	c.s.Debugf(ConnPin, "[%s] acceptHandshake", c.gc.Address())
 
+	var tc <-chan time.Time
+
+	if pi := c.s.conf.PingInterval; pi > 0 {
+		tm := time.NewTimer(pi)
+		defer tm.Stop()
+
+		tc = tm.C
+	}
+
 	select {
 	case raw := <-c.gc.ReceiveQueue():
 		var m msg.Msg
@@ -211,7 +258,9 @@ func (c *Conn) acceptHandshake() (err error) {
 		}
 		return ErrWrongResponseMsgType
 
-		// TODO (kostyarin): handshake timeout
+	// handshake timeout
+	case <-tc:
+		return ErrTimeout
 
 	case <-c.gc.Closed():
 		return ErrConnClsoed
@@ -226,6 +275,15 @@ func (c *Conn) performHandshake() (err error) {
 
 	if err = c.Send(hello); err != nil {
 		return
+	}
+
+	var tc <-chan time.Time
+
+	if pi := c.s.conf.PingInterval; pi > 0 {
+		tm := time.NewTimer(pi)
+		defer tm.Stop()
+
+		tc = tm.C
 	}
 
 	select {
@@ -246,7 +304,9 @@ func (c *Conn) performHandshake() (err error) {
 			return ErrWrongResponseMsgType
 		}
 
-	// TODO (kostyarin): handshake timeout
+	//  handshake timeout
+	case <-tc:
+		return ErrTimeout
 
 	case <-c.gc.Closed():
 		return ErrConnClsoed
@@ -283,7 +343,6 @@ func (c *Conn) handle() {
 	var (
 		closed  = c.gc.Closed()
 		receive = c.gc.ReceiveQueue()
-		fill    = c.s.newFiller() // TODO
 		events  = c.events
 		timeout = c.timeout
 
@@ -345,9 +404,8 @@ func (c *Conn) handle() {
 				return
 			}
 
-		// filling (TODO)
-		case dre := <-fill.drop:
-			c.dropRoot(dre.Root, dre.Err)
+		case dre := <-c.drop: // drop root
+			c.dropRoot(dre.Root, dre.Err, dre.Saved)
 			fill.del(dre.Root)
 		case fr := <-fill.full:
 			c.rootFilled(fr)
@@ -390,17 +448,27 @@ func (c *Conn) rootFilled(r *skyobject.Root) {
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {
+	c.s.Debugf(ConnPin, "[%s] handlePong %s: %d", c.gc.Address(),
+		pong.ResponseFor.Uint64())
+
 	if ttm, ok := c.pings[pong.ResponseFor]; ok {
 		close(ttm) // ok
+		return
 	}
 	c.s.Debugf(ConnPin, "[%s] unexpected Pong received", c.Address())
 }
 
 func (c *Conn) handlePing(ping *msg.Ping) {
+	c.s.Debugf(ConnPin, "[%s] handlePing %s: %d", c.gc.Address(),
+		ping.ID.Uint64())
+
 	c.Send(c.s.src.Pong(ping))
 }
 
 func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
+	c.s.Debugf(SubscrPin, "[%s] handleSubscribe %s: %s", c.gc.Address(),
+		subs.Feed.Hex()[:7])
+
 	if c.s.addConnToFeed(c, subs.Feed) == false {
 		c.Send(c.s.src.RejectSubscription(subs))
 		return
@@ -409,13 +477,23 @@ func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
 	c.Send(c.s.src.AcceptSubscription(subs))
 }
 
+func (c *Conn) unsubscribe(pk cipher.PubKey) {
+	c.s.delConnFromFeed(c, u.pk)  // delete from Node feed->conns mapping
+	delete(c.subs, u.pk)          // delete from resubscriptions
+	c.delFillingRootsOfFeed(u.pk) // stop filling
+}
+
 func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
-	if deleted := c.s.delConnFromFeed(c, unsub.Feed); deleted {
-		delete(c.subs, unsub.Feed)
-	}
+	c.s.Debugf(SubscrPin, "[%s] handleUnsubscribe %s: %s", c.gc.Address(),
+		unsub.Feed.Hex()[:7])
+
+	c.unsubscribe(unsub.Feed)
 }
 
 func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
+	c.s.Debugf(SubscrPin, "[%s] handleAcceptSubscription %s: %s",
+		c.gc.Address(), as.Feed.Hex()[:7])
+
 	if wr, ok := c.rr[as.ResponseFor]; ok {
 		if wr.ttm != nil {
 			close(wr.ttm) // terminate timeout goroutine
@@ -434,6 +512,9 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 }
 
 func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
+	c.s.Debugf(SubscrPin, "[%s] handleRejectSubscription %s: %s",
+		c.gc.Address(), rs.Feed.Hex()[:7])
+
 	if wr, ok := c.rr[rs.ResponseFor]; ok {
 		if wr.ttm != nil {
 			close(wr.ttm) // terminate timeout goroutine
@@ -447,11 +528,13 @@ func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
 		}
 		delete(c.rr, rs.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg")
+		c.s.Printf("[ERR] [%s] unexpected RejectSubscription msg")
 	}
 }
 
 func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
+	c.s.Debugf(ConnPin, "[%s] handleRequestListOfFeeds %s", c.gc.Address())
+
 	if c.s.conf.PublicServer == false {
 		c.Send(c.s.src.NonPublicServer(rlof))
 		return
@@ -460,6 +543,8 @@ func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
 }
 
 func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
+	c.s.Debugf(ConnPin, "[%s] handleListOfFeeds %s", c.gc.Address())
+
 	if wr, ok := c.rr[lof.ResponseFor]; ok {
 		if wr.ttm != nil {
 			close(wr.ttm) // terminate timeout goroutine
@@ -476,6 +561,8 @@ func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
 }
 
 func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
+	c.s.Debugf(ConnPin, "[%s] handleNonPublicServer %s", c.gc.Address())
+
 	if wr, ok := c.rr[nps.ResponseFor]; ok {
 		if wr.ttm != nil {
 			close(wr.ttm) // terminate timeout goroutine
@@ -492,22 +579,64 @@ func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
 }
 
 func (c *Conn) handleRoot(r *msg.Root) {
-	// TODO: filling
+	c.s.Debugf(FillPin, "[%s] handleRoot %s: %s", c.gc.Address(),
+		r.Feed.Hex()[:7])
+
+	r, err := c.s.so.AddEncodedRoot(r.Sig, r.Value)
+	if err != nil {
+		c.s.Printf("[ERR] [%s] error adding received Root: %v", c.Address(),
+			err)
+		return
+	}
+	if r.IsFull { // we already have the Root and it's full
+		return // don't call OnRootRecived and OnRootFilled callbacks
+	}
+	// TODO (kostyarin): fill
 }
 
 func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
+	c.s.Debugf(FillPin, "[%s] handleRequestObject %s: %s", c.gc.Address(),
+		ro.Key.Hex()[:7])
+
 	if val, _, _ := c.s.db.CXDS().Get(ro.Key); val != nil {
-		c.Send(c.s.src.Object(ro.Key, val))
+		c.Send(c.s.src.Object(val))
 		return
 	}
 	c.Send(c.s.src.NotFound(ro.Key))
 }
 
 func (c *Conn) handleObject(o *msg.Object) {
-	// TODO: filling
+
+	key := cipher.SumSHA256(o.Value)
+
+	c.s.Debugf(FillPin, "[%s] handleObject %s: %s", c.gc.Address(),
+		key.Hex()[:7])
+
+	if rs, ok := c.requests[key]; ok {
+		if _, err := c.s.db.CXDS().Set(key, o.Value); err != nil {
+			c.s.Printf(
+				"[CRIT] [%s] can't set received obejct: %v, terminating...",
+				c.Address(), err)
+			go c.s.Close() // terminate all
+			return
+		}
+		for _, gotq := range rs {
+			// the gotq has 1 length and this sending is not blocking
+			gotq <- o.Value
+		}
+		delete(c.requests, key)
+	} else {
+		c.s.Debugf(FillPin, "[%s] got obejct don't want: %s", c.Address(),
+			key.Hex()[:7])
+		return
+	}
+
 }
 
 func (c *Conn) handleNotFound(nf *msg.NotFound) {
+	c.s.Debugf(FillPin, "[%s] handleNotFound %s: %s", c.gc.Address(),
+		nf.Key.Hex()[:7])
+
 	// TODO: filling (fatal for the connection)
 }
 

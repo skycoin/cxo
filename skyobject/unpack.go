@@ -186,7 +186,7 @@ func (p *Pack) Save() (err error) {
 		sr.saved = saved
 
 		for i := range p.r.Refs {
-			err = sr.saveRecursiveDynamic(reflect.ValueOf(&p.r.Refs[i]))
+			err = sr.saveRecursiveDynamic(reflect.ValueOf(&p.r.Refs[i]).Elem())
 			if err != nil {
 				return
 			}

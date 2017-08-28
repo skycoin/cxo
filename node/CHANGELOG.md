@@ -1,15 +1,11 @@
 changes
 =======
 
-### TODO
-
-- [ ] improve documentation
-- [ ] add RPC methods to see conn->feeds and feed->conns
-- [ ] add more tests
-- [ ] dry benchmarks
-- [ ] add long running tests
-
 ### Done
+
+#### ...
+
+- [x] re-refactored (ha-ha)
 
 #### ...
 

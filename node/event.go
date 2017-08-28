@@ -33,9 +33,8 @@ type unsubscribeEvent struct {
 }
 
 func (u *unsubscribeEvent) Handle(c *Conn) {
-	c.s.delConnFromFeed(c, u.pk)
-	delete(c.subs, u.pk)
-	c.Send(c.s.src.Unsubscribe(u.pk))
+	c.unsubscribe(u.pk)               //
+	c.Send(c.s.src.Unsubscribe(u.pk)) // send Unsubscribe message to peer
 }
 
 func (c *Conn) unsubscribeEvent(pk cipher.PubKey) {

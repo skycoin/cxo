@@ -10,6 +10,20 @@ import (
 
 const testFileName = "test.db"
 
+// copy pasted from data because of import cycles
+type CXDS interface {
+	Get(cipher.SHA256) ([]byte, uint32, error)
+	Set(cipher.SHA256, []byte) (uint32, error)
+	Add([]byte) (cipher.SHA256, uint32, error)
+	Inc(cipher.SHA256) (uint32, error)
+	Dec(cipher.SHA256) (uint32, error)
+	MultiGet([]cipher.SHA256) ([][]byte, error)
+	MultiAdd([][]byte) error
+	MultiInc([]cipher.SHA256) error
+	MultiDec([]cipher.SHA256) error
+	Close() error
+}
+
 func testKeyValue(s string) (key cipher.SHA256, val []byte) {
 	val = []byte(s)
 	key = cipher.SumSHA256(val)
@@ -40,14 +54,14 @@ func testDriveDS(t *testing.T) (ds CXDS) {
 }
 
 func TestNewDriveCXDS(t *testing.T) {
-	// NewDriveCXDS(filePath string) (ds CXDS, err error)
+	// NewDriveCXDS(filePath string) (ds *DriveCXDS, err error)
 
 	ds := testDriveDS(t)
 	defer ds.Close()
 }
 
 func TestNewMemoryCXDS(t *testing.T) {
-	// NewMemoryCXDS() (ds CXDS, err error)
+	// NewMemoryCXDS() (ds *MemoryCXDS, err error)
 
 	ds := NewMemoryCXDS()
 	defer ds.Close()
@@ -367,19 +381,10 @@ func testMultiGet(t *testing.T, ds CXDS) {
 	values := [][]byte{v1, v2}
 
 	t.Run("not exist", func(t *testing.T) {
-		if vals, err := ds.MultiGet(keys); err != nil {
-			t.Error(err)
-		} else {
-			if want, got := len(keys), len(vals); want != got {
-				t.Error("wrong number of values returned: want %d, got %d",
-					want, got)
-				return
-			}
-			for _, val := range vals {
-				if val != nil {
-					t.Errorf("got unexpected value: %q", val)
-				}
-			}
+		if _, err := ds.MultiGet(keys); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		}
 	})
 
@@ -415,28 +420,10 @@ func testMultiGet(t *testing.T, ds CXDS) {
 	}
 
 	t.Run("mix", func(t *testing.T) {
-		if vals, err := ds.MultiGet(mix); err != nil {
+		if _, err := ds.MultiGet(mix); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
 			t.Error(err)
-		} else {
-			if want, got := len(mix), len(vals); want != got {
-				t.Errorf("wrong number of values returned: want %d, got %d",
-					want, got)
-				return
-			}
-			for i, val := range vals {
-				if i == 1 || i == 3 {
-					if val != nil {
-						t.Error("unexpected value", string(val))
-					}
-					continue
-				}
-				if i != 0 {
-					i = 1
-				}
-				if want, got := string(values[i]), string(val); want != got {
-					t.Errorf("wrong %d value: want %q, got %q", i, want, got)
-				}
-			}
 		}
 	})
 
@@ -574,16 +561,17 @@ func testMultiInc(t *testing.T, ds CXDS) {
 
 	t.Run("mix", func(t *testing.T) {
 		// MultiInc shoud silently ignore unexisting values
-		if err := ds.MultiInc(mix); err != nil {
-			t.Error(err)
-			return
+		if err := ds.MultiInc(mix); err == nil {
+			t.Error("misisng error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		}
 
 		// value must not be changes by MultiInc
 		for i, k := range keys {
 			if val, rc, err := ds.Get(k); err != nil {
 				t.Error(err)
-			} else if rc != 4 {
+			} else if false == (rc == 4 || rc == 3) {
 				t.Error("wrong rc", rc)
 			} else if want, got := string(values[i]), string(val); want != got {
 				t.Errorf("wrong value: want %q, got %q", want, got)
@@ -621,7 +609,7 @@ func testMultiDec(t *testing.T, ds CXDS) {
 		return
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		// otherwise, the MultiDec below removes values
 		if err := ds.MultiInc(keys); err != nil {
 			t.Error(err)
@@ -639,7 +627,7 @@ func testMultiDec(t *testing.T, ds CXDS) {
 		for i, k := range keys {
 			if val, rc, err := ds.Get(k); err != nil {
 				t.Error(err)
-			} else if rc != 3 {
+			} else if rc != 2 {
 				t.Error("wrong rc", rc)
 			} else if want, got := string(values[i]), string(val); want != got {
 				t.Errorf("wrong value: want %q, got %q", want, got)
@@ -657,7 +645,7 @@ func testMultiDec(t *testing.T, ds CXDS) {
 		for i, k := range keys {
 			if val, rc, err := ds.Get(k); err != nil {
 				t.Error(err)
-			} else if rc != 2 {
+			} else if rc != 1 {
 				t.Error("wrong rc", rc)
 			} else if want, got := string(values[i]), string(val); want != got {
 				t.Errorf("wrong value: want %q, got %q", want, got)
@@ -666,28 +654,17 @@ func testMultiDec(t *testing.T, ds CXDS) {
 	})
 
 	mix := []cipher.SHA256{
-		k1,
 		cipher.SumSHA256([]byte("mi")),
-		k2,
+		k1,
 		cipher.SumSHA256([]byte("ix")),
+		k2,
 	}
 
 	t.Run("mix", func(t *testing.T) {
-		// MultiInc shoud silently ignore unexisting values
-		if err := ds.MultiDec(mix); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// value must not be changes by MultiInc
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 1 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
+		if err := ds.MultiDec(mix); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Error("unexpected error:", err)
 		}
 	})
 
@@ -699,14 +676,10 @@ func testMultiDec(t *testing.T, ds CXDS) {
 
 		// value must not be changes by MultiInc
 		for _, k := range keys {
-			if val, rc, err := ds.Get(k); err == nil {
+			if _, _, err := ds.Get(k); err == nil {
 				t.Error("missing error")
 			} else if err != ErrNotFound {
 				t.Error("unexpected error:", err)
-			} else if rc != 0 {
-				t.Error("wrong rc", rc)
-			} else if got := string(val); got != "" {
-				t.Errorf("got unexpected value: %q", got)
 			}
 		}
 	})

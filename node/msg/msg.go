@@ -48,7 +48,6 @@ var (
 
 	_ Msg = &RequestObject{} // <- RqO
 	_ Msg = &Object{}        // -> O
-	_ Msg = &NotFound{}      // -> NF
 )
 
 //
@@ -198,23 +197,13 @@ type RequestObject struct {
 // MsgType implements Msg interface
 func (*RequestObject) MsgType() MsgType { return RequestObjectType }
 
-// An Object reperesents encode obejct
-// with meta information
+// An Object reperesents encoded obejct
 type Object struct {
-	Key   cipher.SHA256 //
-	Value []byte        // encoded object in person
+	Value []byte // encoded object in person
 }
 
 // MsgType implements Msg interface
 func (*Object) MsgType() MsgType { return ObjectType }
-
-// An NotFound object
-type NotFound struct {
-	Key cipher.SHA256
-}
-
-// MsgType implements Msg interface
-func (*NotFound) MsgType() MsgType { return NotFoundType }
 
 //
 // MsgType / Encode / Deocode / String()
@@ -244,7 +233,6 @@ const (
 	RootType          // Root           10
 	RequestObjectType // RequestObject  11
 	ObjectType        // Object         12
-	NotFoundType      // NotFound       13
 )
 
 // MsgType to string mapping
@@ -268,7 +256,6 @@ var msgTypeString = [...]string{
 	RootType:          "Root",
 	RequestObjectType: "RequestObject",
 	ObjectType:        "Object",
-	NotFoundType:      "NotFound",
 }
 
 // String implements fmt.Stringer interface
@@ -299,7 +286,6 @@ var forwardRegistry = [...]reflect.Type{
 	RootType:          reflect.TypeOf(Root{}),
 	RequestObjectType: reflect.TypeOf(RequestObject{}),
 	ObjectType:        reflect.TypeOf(Object{}),
-	NotFoundType:      reflect.TypeOf(NotFound{}),
 }
 
 // An ErrInvalidMsgType represents decoding error when

@@ -10,6 +10,10 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+var (
+	ErrNotFound = errors.New("not found")
+)
+
 // A Refs represetns array of referencs.
 // The Refs contains RefsElem(s). To delete
 // an element use Delete method of the
@@ -322,12 +326,15 @@ func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 	}
 
 	if r.rn.pack.flags&HashTableIndex != 0 {
-		needle = r.rn.index[hash]
+		if needle = r.rn.index[hash]; needle == nil {
+			err = ErrNotFound
+		}
 		return
 	}
 
 	if r.length == 0 {
-		return // nil, nil (not found)
+		err = ErrNotFound
+		return // nil, 'not found'
 	}
 
 	_, err = r.descend(r.depth, r.length-1,
@@ -356,6 +363,7 @@ func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 	if r.rn.pack.flags&HashTableIndex != 0 {
 		var ok bool
 		if needle, ok = r.rn.index[hash]; !ok {
+			err = ErrNotFound
 			return // 0, nil, nil
 		}
 		// walk up
@@ -399,7 +407,8 @@ func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 	}
 
 	if r.length == 0 {
-		return // 0, nil, nil (not found)
+		err = ErrNotFound
+		return // 0, nil, {not found}
 	}
 
 	_, err = r.descend(r.depth, r.length-1,
@@ -413,7 +422,9 @@ func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 	if err == ErrStopIteration {
 		err = nil
 	}
-
+	if err == nil && needle == nil {
+		err = ErrNotFound
+	}
 	return
 }
 

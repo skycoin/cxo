@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -17,9 +18,13 @@ var (
 	ErrEmptyRegsitryRef = errors.New("empty registry reference")
 )
 
+//
+// TODO (kostyarin): announce
+//
+
 // internal
 type WCXO struct {
-	Hash cipher.SHA256 // hash of wanted CX object
+	Key  cipher.SHA256 // hash of wanted CX object
 	GotQ chan []byte   // cahnnel to sent requested CX object
 
 	Announce []cipher.SHA256 // announce get
@@ -30,7 +35,6 @@ type FillingBus struct {
 	WantQ chan WCXO
 	FullQ chan *Root
 	DropQ chan DropRootError
-	WG    *sync.WaitGroup
 }
 
 // internal
@@ -47,7 +51,11 @@ type Filler struct {
 	r   *Root     // filling Root
 	reg *Registry // registry of the Root
 
+	saved []cipher.SHA256 // decrement on fail
+
 	gotq chan []byte // reply
+
+	tp time.Time
 
 	closeq chan struct{}
 	closeo sync.Once
@@ -68,9 +76,9 @@ func (c *Container) NewFiller(r *Root, bus FillingBus) (fl *Filler) {
 
 	fl.closeq = make(chan struct{})
 
-	fl.bus.WG.Add(1)
-	go fl.fill()
+	fl.tp = time.Now() // time point
 
+	go fl.fill()
 	return
 }
 
@@ -81,9 +89,7 @@ func (f *Filler) Root() *Root {
 func (f *Filler) drop(err error) {
 	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
 
-	f.bus.DropQ <- DropRootError{f.r, err}
-
-	// TODO (kostyarin): decrement all related
+	f.bus.DropQ <- DropRootError{f.r, f.saved, err}
 }
 
 func (f *Filler) full() {
@@ -117,10 +123,8 @@ func (f *Filler) fill() {
 
 	f.c.Debugln(FillVerbosePin, "(*Filler).fill", f.r.Short())
 
-	defer f.bus.WG.Done()
-
 	if f.r.Reg == (RegistryRef{}) {
-		f.drop(ErrEmptyRegsitryRef)
+		f.Terminate(ErrEmptyRegsitryRef)
 		return
 	}
 
@@ -133,71 +137,61 @@ func (f *Filler) fill() {
 				return // drop
 			}
 			if f.reg, err = DecodeRegistry(val); err != nil {
-				f.drop(err)
+				f.Terminate(err)
 				return
 			}
 		} else {
-			f.drop(err)
+			f.Terminate(err)
 		}
 	}
 
-	if len(f.r.Refs) == 0 {
-		f.full()
-		return
-	}
 	for _, dr := range f.r.Refs {
 		if err = f.fillDynamic(dr); err != nil {
-			f.drop(err)
+			f.Terminate(err)
 			return
 		}
 	}
+
 	f.full()
-	return
 }
 
 // Requset given object from remove peer. If announce is not
 // blank, then request them too, but don't sent them through
 // the got-channel
-func (f *Filler) request(hash cipher.SHA256,
+func (f *Filler) request(key cipher.SHA256,
 	announce ...cipher.SHA256) (val []byte, ok bool) {
 
-	// TODO (kostarin): announce
-
 	select {
-	case f.bus.WantQ <- WCXO{hash, f.gotq, announce}:
+	case f.bus.WantQ <- WCXO{key, f.gotq, announce}:
 	case <-f.closeq:
 		return
 	}
 	select {
 	case val = <-f.gotq:
-		if _, err := f.c.db.CXDS().Set(hash, val); err != nil {
-			f.drop(err)
-			return // nil, false
-		}
+		f.saved = append(f.saved, key)
 		ok = true
 	case <-f.closeq:
 	}
 	return
 }
 
-func (f *Filler) get(hash cipher.SHA256,
+func (f *Filler) get(key cipher.SHA256,
 	announce ...cipher.SHA256) (val []byte, ok bool) {
 
-	if len(announce) == 0 {
-		if val, _, _ = f.c.DB().CXDS().Get(hash); val != nil {
-			return val, true
-		}
-		val, ok = f.request(hash)
-		return
+	var err error
+	if val, _, err = f.c.DB().CXDS().Get(key); val != nil {
+		return val, true
 	}
-
-	val, ok = f.request(hash)
-	return
+	if err != nil {
+		f.Terminate(err) // database error
+		return           // nil, false
+	}
+	return f.request(key, announce...)
 }
 
-// Close the Filler
-func (f *Filler) Close() {
+func (f *Filler) Terminate(err error) {
 	f.closeo.Do(func() {
+		f.drop(err)
 		close(f.closeq)
 	})
 }
@@ -409,8 +403,8 @@ func (f *Filler) fillDataRefs(sch Schema, val []byte) (err error) {
 func (f *Filler) fillRefsNode(depth uint32, hs []cipher.SHA256,
 	sch Schema) (err error) {
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillRefsNode", f.r.Short(),
-		depth, len(hs), sch.String())
+	f.c.Debugln(FillVerbosePin, "(*Filler).fillRefsNode", f.r.Short(), depth,
+		len(hs), sch.String())
 
 	if depth == 0 { // the leaf
 		for _, hash := range hs {
@@ -429,11 +423,11 @@ func (f *Filler) fillRefsNode(depth uint32, hs []cipher.SHA256,
 		if !ok {
 			return
 		}
-		var ers encodedRefs
-		if err = encoder.DeserializeRaw(val, &ers); err != nil {
+		var ern encodedRefsNode
+		if err = encoder.DeserializeRaw(val, &ern); err != nil {
 			return
 		}
-		if err = f.fillRefsNode(depth-1, ers.Nested, sch); err != nil {
+		if err = f.fillRefsNode(depth-1, ern.Nested, sch); err != nil {
 			return
 		}
 	}
@@ -453,11 +447,17 @@ func (f *Filler) fillDataDynamic(val []byte) (err error) {
 
 }
 
+// StartTime retursn time while the Filler starts
+func (f *Filler) StartTime() time.Time {
+	return f.tp
+}
+
 // A DropRootError represents error
 // of dropping a Root
 type DropRootError struct {
-	Root *Root
-	Err  error
+	Root  *Root
+	Saved []cipher.SHA256
+	Err   error
 }
 
 // Error implements error interface

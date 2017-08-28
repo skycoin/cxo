@@ -3,15 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
-	// sky "github.com/skycoin/cxo/skyobject"
 )
 
 // defaults
@@ -52,6 +51,9 @@ func main() {
 
 	c.DBPath = "./pipe.db"
 
+	// suppress gnet logs
+	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
+
 	// node logger
 	c.Log.Prefix = "[pipe] "
 	c.Log.Debug = true
@@ -70,9 +72,12 @@ func main() {
 	// subscribe all incoming connections
 	pk, _ := cipher.GenerateDeterministicKeyPair([]byte("x"))
 
-	c.OnCreateConnection = func(s *node.Node, c *gnet.Conn) {
-		if c.IsIncoming() {
-			go s.Subscribe(c, pk) // don't block
+	c.OnCreateConnection = func(c *node.Conn) {
+		if c.Gnet().IsIncoming() {
+			if err := c.Subscribe(pk); err != nil {
+				fmt.Println("[ERR] subscribing error")
+				c.Close()
+			}
 		}
 	}
 
@@ -87,17 +92,17 @@ func main() {
 	}
 	defer s.Close() // close
 
-	s.Subscribe(nil, pk)
+	if err = s.AddFeed(pk); err != nil {
+		fmt.Println("[ERR] database failure:", err)
+		return
+	}
 
 	// conenct to server
 
-	conn, err := s.Pool().Dial(ServerAddress)
-	if err != nil {
+	if err := s.Connect(ServerAddress); err != nil {
 		s.Println("[ERR] can't conenct to server:", err)
 		return
 	}
-	s.Subscribe(conn, pk) // subscribe to conn
 
 	waitInterrupt(s.Quiting())
-
 }

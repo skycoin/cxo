@@ -13,7 +13,8 @@ import (
 
 // comon errors
 var (
-	ErrNotFound = errors.New("not found in CXDS")
+	ErrNotFound   = errors.New("not found in CXDS")
+	ErrEmptyValue = errors.New("empty value")
 )
 
 var one []byte
@@ -21,41 +22,6 @@ var one []byte
 func init() {
 	one = make([]byte, 4)
 	binary.LittleEndian.PutUint32(one, 1)
-}
-
-// A CXDS is interface of CX data store that is client
-// for CX data server or any stub package. The CXDS is
-// key-value store with references count
-type CXDS interface {
-	// Get value by key. Result is value and references count
-	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
-	// Set key-value pair. If value already exists the Set
-	// increments references count
-	Set(key cipher.SHA256, val []byte) (rc uint32, err error)
-	// Add value, calculating hash internally. If
-	// value already exists the Add increments references
-	// count
-	Add(val []byte) (key cipher.SHA256, rc uint32, err error)
-	// Inc increments references count
-	Inc(key cipher.SHA256) (rc uint32, err error)
-	// Dec decrements references count. The rc is zero if
-	// value has been deleted by the Dec
-	Dec(key cipher.SHA256) (rc uint32, err error)
-
-	// batch operation
-
-	// MultiGet returns values by keys
-	MultiGet(keys []cipher.SHA256) (vals [][]byte, err error)
-	// MultiAdd append given values
-	MultiAdd(vals [][]byte) (err error)
-
-	// MultiInc increments all existsing
-	MultiInc(keys []cipher.SHA256) (err error)
-	// MultiDec decrements all existsing
-	MultiDec(keys []cipher.SHA256) (err error)
-
-	// Clsoe the CXDS
-	Close() (err error)
 }
 
 //
