@@ -314,6 +314,18 @@ func (c *Conn) performHandshake() (err error) {
 
 }
 
+func (c *Conn) onCreateCallback() {
+	if occ := c.s.conf.OnCreateConnection; occ != nil {
+		go occ(c) // don't block
+	}
+}
+
+func (c *Conn) onCloseCallback() {
+	if occ := c.s.conf.OnCloseConnection; occ != nil {
+		go occ(c) // don't block
+	}
+}
+
 func (c *Conn) handle() {
 	c.s.Debug(ConnPin, "[%s] start handling", c.gc.Address())
 	defer c.s.Debug(ConnPin, "[%s] stop handling", c.gc.Address())
@@ -327,18 +339,13 @@ func (c *Conn) handle() {
 		return
 	}
 
+	defer c.s.delConnFromWantedObjects(c)
+
 	c.s.addConn(c)
 	defer c.s.delConn(c)
 
-	if occ := c.s.conf.OnCreateConnection; occ != nil {
-		go occ(c) // don't block
-	}
-
-	defer func() {
-		if occ := c.s.conf.OnCloseConnection; occ != nil {
-			go occ(c) // don't block
-		}
-	}()
+	c.onCreateCallback()
+	defer c.onCloseCallback()
 
 	var (
 		closed  = c.gc.Closed()
@@ -444,7 +451,7 @@ func (c *Conn) rootFilled(r *skyobject.Root) {
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		orf(c, r)
 	}
-	c.s.sendToAllOfFeed(r.Pub, c.s.src.Root(r))
+	c.s.sendToAllOfFeedExcept(r.Pub, c.s.src.Root(r), c)
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {
@@ -578,20 +585,25 @@ func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
 	}
 }
 
-func (c *Conn) handleRoot(r *msg.Root) {
+func (c *Conn) handleRoot(rm *msg.Root) {
 	c.s.Debugf(FillPin, "[%s] handleRoot %s: %s", c.gc.Address(),
-		r.Feed.Hex()[:7])
+		rm.Feed.Hex()[:7])
 
-	r, err := c.s.so.AddEncodedRoot(r.Sig, r.Value)
+	r, err := c.s.so.AddEncodedRoot(rm.Sig, rm.Value)
 	if err != nil {
 		c.s.Printf("[ERR] [%s] error adding received Root: %v", c.Address(),
 			err)
 		return
 	}
+
+	// send the Root forward for all
+	c.s.sendToAllOfFeedExcept(r.Pub, rm, c)
+
 	if r.IsFull { // we already have the Root and it's full
 		return // don't call OnRootRecived and OnRootFilled callbacks
 	}
-	// TODO (kostyarin): fill
+
+	// TODO (kostyarin): fill the Root
 }
 
 func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
@@ -602,7 +614,10 @@ func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
 		c.Send(c.s.src.Object(val))
 		return
 	}
-	c.Send(c.s.src.NotFound(ro.Key))
+
+	// add to list of requested obejcts, waiting for incoming objects
+	// to send it later
+	c.s.wantObejct(ro.Key, c)
 }
 
 func (c *Conn) handleObject(o *msg.Object) {
@@ -613,6 +628,8 @@ func (c *Conn) handleObject(o *msg.Object) {
 		key.Hex()[:7])
 
 	if rs, ok := c.requests[key]; ok {
+
+		// store in CXDS
 		if _, err := c.s.db.CXDS().Set(key, o.Value); err != nil {
 			c.s.Printf(
 				"[CRIT] [%s] can't set received obejct: %v, terminating...",
@@ -620,24 +637,24 @@ func (c *Conn) handleObject(o *msg.Object) {
 			go c.s.Close() // terminate all
 			return
 		}
+
+		// awake fillers
 		for _, gotq := range rs {
 			// the gotq has 1 length and this sending is not blocking
 			gotq <- o.Value
 		}
 		delete(c.requests, key)
+
+		// notify another conections that has been requested
+		// for this obejct
+		c.s.gotObject(o)
+
 	} else {
-		c.s.Debugf(FillPin, "[%s] got obejct don't want: %s", c.Address(),
-			key.Hex()[:7])
+		c.s.Debugf(FillPin, "[%s] got obejct the node doesn't want: %s",
+			c.Address(), key.Hex()[:7])
 		return
 	}
 
-}
-
-func (c *Conn) handleNotFound(nf *msg.NotFound) {
-	c.s.Debugf(FillPin, "[%s] handleNotFound %s: %s", c.gc.Address(),
-		nf.Key.Hex()[:7])
-
-	// TODO: filling (fatal for the connection)
 }
 
 func (c *Conn) handleMsg(m msg.Msg) (err error) {
@@ -683,8 +700,6 @@ func (c *Conn) handleMsg(m msg.Msg) (err error) {
 		c.handleRequestObject(tt)
 	case *msg.Object:
 		c.handleObject(tt)
-	case *msg.NotFound:
-		c.handleNotFound(tt)
 
 	default:
 		err = ErrWrongMsgType

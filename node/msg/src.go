@@ -150,9 +150,3 @@ func (s *Src) Object(val []byte) (o *Object) {
 	o.Value = val
 	return
 }
-
-func (s *Src) NotFound(key cipher.SHA256) (nf *NotFound) {
-	nf = new(NotFound)
-	nf.Key = key
-	return
-}

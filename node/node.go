@@ -49,8 +49,13 @@ type Node struct {
 	fmx   sync.RWMutex
 	feeds map[cipher.PubKey]map[*Conn]struct{}
 
+	// connections
 	cmx   sync.RWMutex
-	conns []*Conn // connections
+	conns []*Conn
+
+	// waiting/wanted obejcts
+	wmx sync.Mutex
+	wos map[cipher.SHA256]map[*Conn]struct{}
 
 	// connections
 	pool *gnet.Pool
@@ -112,6 +117,8 @@ func NewNode(sc Config) (s *Node, err error) {
 
 	s.so = so
 	s.feeds = make(map[cipher.PubKey]map[*Conn]struct{})
+
+	s.wos = make(map[cipher.SHA256]map[*Conn]struct{})
 
 	// fill up feeds from database
 	err = s.db.IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
@@ -293,20 +300,50 @@ func (n *Node) delConn(c *Conn) {
 
 }
 
-// Connections of the Node
-func (n *Node) Connections() (cs []*Conn) {
-	n.cmx.RLock()
-	defer n.cmx.RUnlock()
+func (s *Node) gotObject(obj *msg.Object) {
+	s.wmx.Lock()
+	defer s.wmx.Unlock()
 
-	cs = make([]*Conn, len(n.conns))
-	copy(cs, n.conns)
+	for c := range s.wos[obj.Key] {
+		c.Send(obj)
+	}
+	delete(s.wos, obj.Key)
+}
+
+func (s *Node) wantObejct(key cipher.SHA256, c *Conn) {
+	s.wmx.Lock()
+	defer s.wmx.Unlock()
+
+	if cs, ok := s.wos[key]; ok {
+		cs[c] = struct{}{}
+		return
+	}
+	s.wos[key] = map[*Conn]struct{}{c: {}}
+}
+
+func (s *Node) delConnFromWantedObjects(c *Conn) {
+	s.wmx.Lock()
+	defer s.wmx.Unlock()
+
+	for _, cs := range s.wos {
+		delete(cs, c)
+	}
+}
+
+// Connections of the Node
+func (s *Node) Connections() (cs []*Conn) {
+	s.cmx.RLock()
+	defer s.cmx.RUnlock()
+
+	cs = make([]*Conn, len(s.conns))
+	copy(cs, s.conns)
 	return
 }
 
 // Connections by address. Itreturns nil if conenction not
 // found or not established yet
-func (n *Node) Connection(address string) (c *Conn) {
-	if gc := n.pool.Connection(address); gc != nil {
+func (s *Node) Connection(address string) (c *Conn) {
+	if gc := s.pool.Connection(address); gc != nil {
 		c, _ = gc.Value().(*Conn)
 	}
 	return
@@ -382,13 +419,16 @@ func (n *Node) HasFeed(pk cipher.PubKey) (ok bool) {
 	return
 }
 
-func (s *Node) sendToAllOfFeed(pk cipher.PubKey, m msg.Msg) {
+func (s *Node) sendToAllOfFeedExcept(pk cipher.PubKey, m msg.Msg, e *Conn) {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
 
 	raw := msg.Encode(m)
 
 	for c := range s.feeds[pk] {
+		if c == e {
+			continue // except
+		}
 		c.SendRaw(raw)
 	}
 }
@@ -452,7 +492,7 @@ func (s *Node) RPCAddress() (address string) {
 
 // Publish given Root (send to feed)
 func (s *Node) Publish(r *skyobject.Root) {
-	s.sendToAllOfFeed(r.Pub, s.src.Root(r))
+	s.sendToAllOfFeedExcept(r.Pub, s.src.Root(r), nil)
 }
 
 // Connect to peer. Use callback to handle the Conn
