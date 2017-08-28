@@ -33,7 +33,7 @@ const (
 	ViewOnly
 
 	// intrnal flags
-	basedOnRoot // root based on some other Root we should not remove
+	freshRoot // root is not based on some other Root we should not remove
 )
 
 // A Pack represents database cache for
@@ -58,7 +58,7 @@ type Pack struct {
 }
 
 func (p *Pack) Close() {
-	if p.flags&basedOnRoot != 0 {
+	if p.flags&freshRoot == 0 {
 		p.c.unholdRoot(p.r.Pub, p.r.Seq)
 	}
 }
@@ -136,8 +136,8 @@ func (p *Pack) Save() (err error) {
 	//   2.1) get the V/A of already existeing obejcts
 	//   2.2) save new obejcts indexing them
 	// 3) keep all saved objects to decrement them on failure
-	var seqDec uint64 = p.r.Seq          // base
-	var saved map[cipher.SHA256]struct{} // decr. on fail
+	var seqDec uint64 = p.r.Seq                  // base
+	var saved = make(map[cipher.SHA256]struct{}) // decr. on fail
 
 	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 
@@ -192,11 +192,18 @@ func (p *Pack) Save() (err error) {
 			}
 		}
 
+		// save Root in CXDS
+		saved[p.r.Hash] = struct{}{}
+		if _, err = p.c.db.CXDS().Set(p.r.Hash, val); err != nil {
+			return
+		}
+
+		// save Root in index
 		if err = rs.Set(ir); err != nil {
 			return
 		}
 
-		// registry
+		// save registry in CXDS
 		saved[cipher.SHA256(p.r.Reg)] = struct{}{}
 		_, err = p.c.db.CXDS().Set(cipher.SHA256(p.r.Reg), p.reg.Encode())
 		return
@@ -207,7 +214,7 @@ func (p *Pack) Save() (err error) {
 			p.c.DB().CXDS().Dec(hash) // ignore error (TODO: log  the err)
 		}
 	} else {
-		if p.flags&basedOnRoot != 0 {
+		if p.flags&freshRoot == 0 {
 			p.c.unholdRoot(p.r.Pub, seqDec)
 			p.c.holdRoot(p.r.Pub, p.r.Seq) // hold this Root
 		}
@@ -223,20 +230,6 @@ func (p *Pack) Save() (err error) {
 // Initialize the Pack. It creates Root WalkNode and
 // unpack entire tree if appropriate flag is set
 func (p *Pack) init() (err error) {
-	// we need to inc refs count for underlying Root
-	// to prevent deleting, because we can use objects
-	// related to this (base) Root
-	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
-		if rs, err = feeds.Roots(p.r.Pub); err != nil {
-			return
-		}
-		// inc Refs count of the Root
-		return rs.Inc(p.r.Seq)
-	})
-	if err != nil {
-		return
-	}
 	// Do we need to unpack entire tree?
 	if p.flags&EntireTree != 0 {
 		// unpack all possible

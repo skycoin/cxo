@@ -129,6 +129,7 @@ func Test_roots(t *testing.T) {
 		}
 
 		pk, _ := cipher.GenerateKeyPair()
+		n.AddFeed(pk)
 
 		err = roots(cl, []string{
 			"roots",
@@ -161,7 +162,7 @@ func Test_roots(t *testing.T) {
 
 		pk, sk := cipher.GenerateKeyPair()
 
-		n.Subscribe(nil, pk)
+		n.AddFeed(pk)
 
 		cnt := n.Container()
 		pack, err := cnt.NewRoot(pk, sk, 0, cnt.CoreRegistry().Types())
@@ -171,7 +172,7 @@ func Test_roots(t *testing.T) {
 		}
 
 		// 1
-		if _, err = pack.Save(); err != nil {
+		if err = pack.Save(); err != nil {
 			t.Error(err)
 			return
 		}
@@ -179,7 +180,7 @@ func Test_roots(t *testing.T) {
 		h1 := pack.Root().Hash
 		t1 := time.Unix(0, pack.Root().Time)
 		// 2
-		if _, err = pack.Save(); err != nil {
+		if err = pack.Save(); err != nil {
 			t.Error(err)
 			return
 		}
@@ -240,7 +241,7 @@ func Test_tree(t *testing.T) {
 
 	pk, sk := cipher.GenerateKeyPair()
 
-	n.Subscribe(nil, pk)
+	n.AddFeed(pk)
 
 	cnt := n.Container()
 
@@ -260,7 +261,7 @@ func Test_tree(t *testing.T) {
 				Name: "Jim Cobley",
 				Age:  80}),
 	})
-	if _, err = pack.Save(); err != nil {
+	if err = pack.Save(); err != nil {
 		t.Error(err)
 		return
 	}

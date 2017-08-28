@@ -384,7 +384,7 @@ func (n *Node) HasFeed(pk cipher.PubKey) (ok bool) {
 
 func (s *Node) sendToAllOfFeed(pk cipher.PubKey, m msg.Msg) {
 	s.fmx.RLock()
-	defer s.fmx.Unlock()
+	defer s.fmx.RUnlock()
 
 	raw := msg.Encode(m)
 

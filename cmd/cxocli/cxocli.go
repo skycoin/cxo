@@ -32,9 +32,9 @@ var (
 	errTooManyArguments = errors.New("too many arguments")
 
 	commands = []string{
-		"subscribe",
+		"add_feed",
 		"subscribe_to",
-		"unsubscribe",
+		"del_feed",
 		"unsubscribe_from",
 		"feeds",
 		"stat",
@@ -221,12 +221,12 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		return
 	}
 	switch strings.ToLower(ss[0]) {
-	case "subscribe":
-		err = subscribe(rpc, ss)
+	case "add_feed":
+		err = add_feed(rpc, ss)
 	case "subscribe_to":
 		err = subscribeTo(rpc, ss)
-	case "unsubscribe":
-		err = unsubscribe(rpc, ss)
+	case "del_feed":
+		err = del_feed(rpc, ss)
 	case "unsubscribe_from":
 		err = unsubscribeFrom(rpc, ss)
 	case "feeds":
@@ -266,11 +266,11 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 func showHelp() {
 	fmt.Fprintln(out, `
 
-  subscribe <public key>
+  add_feed <public key>
     start shareing feed
   subscribe_to <address> <pub key>
     subscribe to feed of a connected peer
-  unsubscribe <public key>
+  del_feed <public key>
     stop sharing feed
   unsubscribe_from <address> <public key>
     unsubscribe_from feed of a connected peer
@@ -319,7 +319,7 @@ func publicKeyArg(ss []string) (pub cipher.PubKey, err error) {
 	return
 }
 
-func subscribe(rpc *node.RPCClient, ss []string) (err error) {
+func add_feed(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	if pk, err = publicKeyArg(ss); err != nil {
 		return
@@ -359,7 +359,7 @@ func subscribeTo(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func unsubscribe(rpc *node.RPCClient, ss []string) (err error) {
+func del_feed(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	if pk, err = publicKeyArg(ss); err != nil {
 		return
@@ -400,25 +400,28 @@ func feeds(rpc *node.RPCClient) (err error) {
 }
 
 func stat(rpc *node.RPCClient) (err error) {
-	var stat node.Stat
-	if stat, err = rpc.Stat(); err != nil {
+	return errors.New("method temporary removed")
+	/*
+		var stat node.Stat
+		if stat, err = rpc.Stat(); err != nil {
+			return
+		}
+		fmt.Fprintln(out, "  ----")
+		fmt.Fprintln(out, "  Objects:", stat.Data.Objects)
+		fmt.Fprintln(out, "  Space:  ", stat.Data.Space.String())
+		fmt.Fprintln(out, "  ----")
+		for pk, fs := range stat.Data.Feeds {
+			fmt.Fprintln(out, "  -", pk.Hex())
+			fmt.Fprintln(out, "    Root Objects: ", fs.Roots)
+			fmt.Fprintln(out, "    Space:        ", fs.Space.String())
+		}
+		fmt.Fprintln(out, "  ----")
+		fmt.Fprintln(out, "  Registries:    ", stat.CXO.Registries)
+		fmt.Fprintln(out, "  Save    (avg): ", stat.CXO.Save)
+		fmt.Fprintln(out, "  Cleanup (avg): ", stat.CXO.CleanUp)
+		fmt.Fprintln(out, "  ----")
 		return
-	}
-	fmt.Fprintln(out, "  ----")
-	fmt.Fprintln(out, "  Objects:", stat.Data.Objects)
-	fmt.Fprintln(out, "  Space:  ", stat.Data.Space.String())
-	fmt.Fprintln(out, "  ----")
-	for pk, fs := range stat.Data.Feeds {
-		fmt.Fprintln(out, "  -", pk.Hex())
-		fmt.Fprintln(out, "    Root Objects: ", fs.Roots)
-		fmt.Fprintln(out, "    Space:        ", fs.Space.String())
-	}
-	fmt.Fprintln(out, "  ----")
-	fmt.Fprintln(out, "  Registries:    ", stat.CXO.Registries)
-	fmt.Fprintln(out, "  Save    (avg): ", stat.CXO.Save)
-	fmt.Fprintln(out, "  Cleanup (avg): ", stat.CXO.CleanUp)
-	fmt.Fprintln(out, "  ----")
-	return
+	*/
 }
 
 func connections(rpc *node.RPCClient) (err error) {

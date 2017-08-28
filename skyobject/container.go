@@ -272,10 +272,12 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 
 	if err = pack.init(); err != nil { // initialize
 		pack = nil // release for GC
+		return
 	}
 
-	flags = pack.flags | basedOnRoot
-	c.holdRoot(r.Pub, r.Seq)
+	if flags&freshRoot == 0 {
+		c.holdRoot(r.Pub, r.Seq)
+	}
 
 	return
 
@@ -300,7 +302,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 	r := new(Root)
 	r.Pub = pk
 	r.Reg = c.coreRegistry.Reference()
-	return c.Unpack(r, flags, types, sk)
+	return c.Unpack(r, flags|freshRoot, types, sk)
 }
 
 // Close the Container. The
