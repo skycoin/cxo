@@ -1,33 +1,31 @@
 package node
 
 import (
-	"sync"
+	"errors"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/skyobject"
 )
 
+var ErrUnsubscribed = errors.New("unsubscribed")
+
 // unsubscribe
 func (c *Conn) delFillingRootsOfFeed(pk cipher.PubKey) {
 	for _, fl := range c.fillers {
 		if r := fl.Root(); r.Pub == pk {
-			fl.Close()                // close skyobject.Filler
-			delete(c.fillers, r.Hash) // delete
+			fl.Terminate(ErrUnsubscribed) // close skyobject.Filler
 		}
 	}
 }
 
 // full/drop
 func (c *Conn) delFillingRoot(r *skyobject.Root) {
-	if fr, ok := f.fillers[r.Hash]; ok {
-		fr.Close()                // close skyobejct.Filler
-		delete(f.fillers, r.Hash) // delete
-	}
+	delete(c.fillers, r.Hash) // delete
 }
 
 func (c *Conn) addRequestedObjectToWaitingList(wcxo skyobject.WCXO) {
-	c.requests[wcxo.Hash] = append(c.requests[wcxo.Hash], wcxo.GotQ)
+	c.requests[wcxo.Key] = append(c.requests[wcxo.Key], wcxo.GotQ)
 }
 
 // fill a *skyobject.Root
@@ -37,13 +35,12 @@ func (c *Conn) fillRoot(r *skyobject.Root) {
 			c.wantq,
 			c.full,
 			c.drop,
-			&c.s.await,
 		})
 	}
 }
 
 func (c *Conn) closeFillers() {
 	for _, fl := range c.fillers {
-		fl.Close()
+		fl.Terminate(ErrConnClsoed)
 	}
 }

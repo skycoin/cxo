@@ -326,6 +326,21 @@ func (c *Conn) onCloseCallback() {
 	}
 }
 
+func (c *Conn) terminateFillers() {
+	go c.closeFillers()
+	for {
+		select {
+		case dre := <-c.drop:
+			c.dropRoot(dre.Root, dre.Err, dre.Saved)
+		case fr := <-c.full:
+			c.rootFilled(fr)
+		}
+		if len(c.fillers) == 0 {
+			return // all done
+		}
+	}
+}
+
 func (c *Conn) handle() {
 	c.s.Debug(ConnPin, "[%s] start handling", c.gc.Address())
 	defer c.s.Debug(ConnPin, "[%s] stop handling", c.gc.Address())
@@ -359,30 +374,7 @@ func (c *Conn) handle() {
 		id  msg.ID
 	)
 
-	// TODO
-	defer func() {
-		fill.clsoe()
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			fill.wait()
-		}()
-		for {
-			select {
-			case dre := <-fill.drop:
-				c.dropRoot(dre.Root, dre.Err)
-				fill.del(dre.Root)
-			case fr := <-fill.full:
-				c.rootFilled(fr)
-				fill.del(fr)
-			case <-done:
-				for _, fr := range fill.fillers {
-					c.dropRoot(fr.Root(), ErrConnClsoed) // drop
-				}
-				return
-			}
-		}
-	}()
+	defer c.terminateFillers()
 
 	for {
 		select {
@@ -413,13 +405,11 @@ func (c *Conn) handle() {
 
 		case dre := <-c.drop: // drop root
 			c.dropRoot(dre.Root, dre.Err, dre.Saved)
-			fill.del(dre.Root)
-		case fr := <-fill.full:
+		case fr := <-c.full:
 			c.rootFilled(fr)
-			fill.del(fr)
-		case wcxo := <-fill.wantq:
-			fill.waiting(wcxo)
-			c.Send(c.s.src.RequestObject(wcxo.Hash))
+		case wcxo := <-c.wantq:
+			c.addRequestedObjectToWaitingList(wcxo)
+			c.Send(c.s.src.RequestObject(wcxo.Key))
 
 		// closing
 		case <-closed:
@@ -429,24 +419,26 @@ func (c *Conn) handle() {
 
 }
 
-func (c *Conn) dropRoot(r *skyobject.Root, err error) {
+func (c *Conn) dropRoot(r *skyobject.Root, err error, saved []cipher.SHA256) {
+
 	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(), r.Short(), err)
+
+	c.delFillingRoot(r)
 
 	if ofb := c.s.conf.OnFillingBreaks; ofb != nil {
 		ofb(c, r, err)
 	}
 
-	if c.s.conf.DropNonFullRotos {
-		c.s.Debug(FillPin,
-			"can't drop non-full Root: feature is not implemented")
-		// TODO (kostyarin): remove root using Container
-		//                   (add appropriate method to the
-		//                   Container)
-	}
+	// TODO: remove the Root and decrement all saved objects
+
+	//
+
 }
 
 func (c *Conn) rootFilled(r *skyobject.Root) {
 	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), r.Short())
+
+	c.delFillingRoot(r)
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		orf(c, r)
@@ -476,6 +468,15 @@ func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
 	c.s.Debugf(SubscrPin, "[%s] handleSubscribe %s: %s", c.gc.Address(),
 		subs.Feed.Hex()[:7])
 
+	if osr := c.s.conf.OnSubscribeRemote; osr != nil {
+		if reject := osr(c, subs.Feed); reject != nil {
+			c.s.Debugf(SubscrPin, "[%s] remote subscription rejected: %v",
+				c.Address(), reject)
+			c.Send(c.s.src.RejectSubscription(subs))
+			return
+		}
+	}
+
 	if c.s.addConnToFeed(c, subs.Feed) == false {
 		c.Send(c.s.src.RejectSubscription(subs))
 		return
@@ -485,14 +486,18 @@ func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
 }
 
 func (c *Conn) unsubscribe(pk cipher.PubKey) {
-	c.s.delConnFromFeed(c, u.pk)  // delete from Node feed->conns mapping
-	delete(c.subs, u.pk)          // delete from resubscriptions
-	c.delFillingRootsOfFeed(u.pk) // stop filling
+	c.s.delConnFromFeed(c, pk)  // delete from Node feed->conns mapping
+	delete(c.subs, pk)          // delete from resubscriptions
+	c.delFillingRootsOfFeed(pk) // stop filling
 }
 
 func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
 	c.s.Debugf(SubscrPin, "[%s] handleUnsubscribe %s: %s", c.gc.Address(),
 		unsub.Feed.Hex()[:7])
+
+	if our := c.s.conf.OnUnsubscribeRemote; our != nil {
+		our(c, unsub.Feed)
+	}
 
 	c.unsubscribe(unsub.Feed)
 }
@@ -603,7 +608,11 @@ func (c *Conn) handleRoot(rm *msg.Root) {
 		return // don't call OnRootRecived and OnRootFilled callbacks
 	}
 
-	// TODO (kostyarin): fill the Root
+	if orr := c.s.conf.OnRootReceived; orr != nil {
+		go orr(c, r)
+	}
+
+	c.fillRoot(r)
 }
 
 func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
@@ -647,7 +656,7 @@ func (c *Conn) handleObject(o *msg.Object) {
 
 		// notify another conections that has been requested
 		// for this obejct
-		c.s.gotObject(o)
+		c.s.gotObject(key, o)
 
 	} else {
 		c.s.Debugf(FillPin, "[%s] got obejct the node doesn't want: %s",

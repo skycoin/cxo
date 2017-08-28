@@ -300,14 +300,14 @@ func (n *Node) delConn(c *Conn) {
 
 }
 
-func (s *Node) gotObject(obj *msg.Object) {
+func (s *Node) gotObject(key cipher.SHA256, obj *msg.Object) {
 	s.wmx.Lock()
 	defer s.wmx.Unlock()
 
-	for c := range s.wos[obj.Key] {
+	for c := range s.wos[key] {
 		c.Send(obj)
 	}
-	delete(s.wos, obj.Key)
+	delete(s.wos, key)
 }
 
 func (s *Node) wantObejct(key cipher.SHA256, c *Conn) {

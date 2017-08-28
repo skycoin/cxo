@@ -115,10 +115,6 @@ type Config struct {
 	// PublicServer never keeps secret feeds it share
 	PublicServer bool
 
-	// DropNonFullRoots removes Root object from
-	// DB if it can't be filled
-	DropNonFullRotos bool
-
 	//
 	// callbacks
 	//
