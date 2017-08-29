@@ -185,7 +185,7 @@ func (c *Conn) waitTimeout(id msg.ID, wr *waitResponse, rt time.Duration) {
 }
 
 // Subscribe starts exchanging given feed with peer.
-// It's blocking call
+// It's blocking call. The Subscribe adds feed to related node
 func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
 	if err = pk.Verify(); err != nil {
 		return
