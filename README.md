@@ -271,7 +271,7 @@ func performAllCahgnesPossible(quit <-chan struct{}, events <-chan Event,
 }
 
 func publish(n *node.Node, pack *skyobject.Pack) {
-	if _, err := pack.Save(); err != nil {
+	if err := pack.Save(); err != nil {
 		// fatality: handle the err
 	}
 	n.Publish(pack.Root())
