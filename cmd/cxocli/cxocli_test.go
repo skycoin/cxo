@@ -276,11 +276,11 @@ func Test_tree(t *testing.T) {
 		return
 	}
 
-	const want = `(root) %s
+	const want = `(root) %s (reg: ecf785f)
 └── *(dynamic) {7409ab3:baef146}
     └── Group
         ├── Name: "Just an average Group"
-        └── Users: *(refs) d31349b
+        └── Users: *(refs) d31349b 2
             ├── *(ref) ff1eaf4
             │   └── User
             │       ├── Name: "Bob Simple"
