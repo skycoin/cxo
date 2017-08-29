@@ -46,7 +46,6 @@ func (r *Refs) encode(root bool, depth int) (val []byte) {
 			ers.Nested = make([]cipher.SHA256, 0, len(r.leafs))
 			for _, leaf := range r.leafs {
 				if leaf.Hash == (cipher.SHA256{}) {
-					println("EMPTY LEAF")
 					continue
 				}
 				ers.Nested = append(ers.Nested, leaf.Hash)
@@ -55,7 +54,6 @@ func (r *Refs) encode(root bool, depth int) (val []byte) {
 			ers.Nested = make([]cipher.SHA256, 0, len(r.branches))
 			for _, br := range r.branches {
 				if br.Hash == (cipher.SHA256{}) {
-					println("EMPTY BRANCH")
 					continue
 				}
 				ers.Nested = append(ers.Nested, br.Hash)

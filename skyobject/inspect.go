@@ -29,7 +29,7 @@ type inspector struct {
 
 func (i *inspector) Inspect() (s string) {
 
-	i.gt.Name = "(root) " + i.r.Short()
+	i.gt.Name = "(root) " + i.r.Short() + " (reg: " + i.r.Reg.Short() + ")"
 	defer func() {
 		s = gotree.StringTree(i.gt)
 	}()
@@ -39,9 +39,10 @@ func (i *inspector) Inspect() (s string) {
 		return
 	}
 
-	if i.reg, _ = i.c.Registry(i.r.Reg); i.reg == nil {
-		i.rootError(fmt.Sprintf("missing Registry [s%s] in container",
-			i.r.Reg.Short()))
+	var err error
+	if i.reg, err = i.c.Registry(i.r.Reg); i.reg == nil {
+		i.rootError(fmt.Sprintf("missing Registry [%s] in container: %v",
+			i.r.Reg.Short(), err))
 		return
 	}
 

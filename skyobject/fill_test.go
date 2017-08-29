@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"testing"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -125,10 +126,12 @@ func Test_filling(t *testing.T) {
 	if ers.Depth != 2 {
 		t.Fatal("wrong depth", ers.Depth)
 	}
-	if len(ers.Nested) != 2 {
-		t.Log(ec.Inspect(er))
+	if len(ers.Nested) != 1 {
 		t.Fatal("wrong nested length", len(ers.Nested))
 	}
+
+	// nested node (split to 2)
+	//
 
 	//
 	//
@@ -155,10 +158,14 @@ func Test_filling(t *testing.T) {
 
 	fl := rc.NewFiller(rr, bus)
 
+	tc := time.After(time.Second)
+	var fr *Root
+
+Loop:
 	for {
 		select {
 		case wcxo := <-bus.WantQ:
-			t.Log("want", wcxo.Key)
+			t.Log("want", wcxo.Key.Hex()[:7])
 			val, _, err := ec.db.CXDS().Get(wcxo.Key)
 			if err != nil {
 				t.Fatal(err)
@@ -166,13 +173,21 @@ func Test_filling(t *testing.T) {
 			if val == nil {
 				t.Fatal("val is nil")
 			}
+			// save receiver side
+			if _, err := rc.db.CXDS().Set(wcxo.Key, val); err != nil {
+				t.Fatal(err)
+			}
 			wcxo.GotQ <- val
 		case dre := <-bus.DropQ:
 			t.Fatal(dre.Err)
-		case fr := <-bus.FullQ:
-			t.Fatal("FULL", fr.Short())
+		case fr = <-bus.FullQ:
+			break Loop
+		case <-tc:
+			t.Fatal("too long")
 		}
 	}
+
+	t.Log(rc.Inspect(fr))
 
 	_ = fl
 
