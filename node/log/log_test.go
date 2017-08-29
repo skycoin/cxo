@@ -8,7 +8,11 @@ import (
 
 func cleanLoggerOut(prefix string, debug bool) (l Logger, out *bytes.Buffer) {
 	out = new(bytes.Buffer)
-	l = NewLogger(prefix, debug)
+	c := NewConfig()
+	c.Prefix = prefix
+	c.Pins = All
+	c.Debug = debug
+	l = NewLogger(c)
 	l.SetOutput(out)
 	l.SetFlags(0)
 	return
@@ -16,38 +20,26 @@ func cleanLoggerOut(prefix string, debug bool) (l Logger, out *bytes.Buffer) {
 
 func TestNewLogger(t *testing.T) {
 	var l Logger
-	t.Run("prefix", func(t *testing.T) {
-		prefix := "prefix"
-		var out *bytes.Buffer
-		l, out = cleanLoggerOut(prefix, false)
-		l.Print()
-		if out.String() != fmt.Sprintln("prefix") { // add line break
-			t.Errorf("wrong prefix: want %q, got %q", prefix, out.String())
-		}
-	})
-	t.Run("debug", func(t *testing.T) {
-		l = NewLogger("", false)
-		if d := l.(*logger).debug; d != false {
-			t.Errorf("wrong debug flag: want false, got %#v", d)
-		}
-		l = NewLogger("", true)
-		if d := l.(*logger).debug; d != true {
-			t.Errorf("wrong debug flag: want true, got %#v", d)
-		}
-	})
+	prefix := "prefix"
+	var out *bytes.Buffer
+	l, out = cleanLoggerOut(prefix, false)
+	l.Print()
+	if out.String() != fmt.Sprintln("prefix") { // add line break
+		t.Errorf("wrong prefix: want %q, got %q", prefix, out.String())
+	}
 }
 
 func TestLogger_Debug(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		l, out := cleanLoggerOut("", true)
-		l.Debug("some")
+		l.Debug(All, "some")
 		if some := "[DBG] " + fmt.Sprintln("some"); some != out.String() {
 			t.Errorf("want %q, got %q", some, out.String())
 		}
 	})
 	t.Run("false", func(t *testing.T) {
 		l, out := cleanLoggerOut("", false)
-		l.Debug("some")
+		l.Debug(All, "some")
 		if out.String() != "" {
 			t.Error("got debug message even it disabled")
 		}
@@ -57,14 +49,14 @@ func TestLogger_Debug(t *testing.T) {
 func TestLogger_Debugln(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		l, out := cleanLoggerOut("", true)
-		l.Debugln("some")
+		l.Debugln(All, "some")
 		if some := "[DBG] " + fmt.Sprintln("some"); some != out.String() {
 			t.Errorf("want %q, got %q", some, out.String())
 		}
 	})
 	t.Run("false", func(t *testing.T) {
 		l, out := cleanLoggerOut("", false)
-		l.Debugln("some")
+		l.Debugln(All, "some")
 		if out.String() != "" {
 			t.Error("got debug message even it disabled")
 		}
@@ -74,28 +66,43 @@ func TestLogger_Debugln(t *testing.T) {
 func TestLogger_Debugf(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		l, out := cleanLoggerOut("", true)
-		l.Debugf("some")
+		l.Debugf(All, "some")
 		if some := "[DBG] " + fmt.Sprintln("some"); some != out.String() {
 			t.Errorf("want %q, got %q", some, out.String())
 		}
 	})
 	t.Run("false", func(t *testing.T) {
 		l, out := cleanLoggerOut("", false)
-		l.Debugf("some")
+		l.Debugf(All, "some")
 		if out.String() != "" {
-			t.Error("got debug message even it disabled")
+			t.Error("got debug message even if it's disabled")
 		}
 	})
 }
 
-func TestLogger_SetDebug(t *testing.T) {
-	l := NewLogger("", false)
-	l.SetDebug(true)
-	if d := l.(*logger).debug; d != true {
-		t.Errorf("wrong debug flag: want true, got %#v", d)
+func TestLogger_Pins(t *testing.T) {
+
+	buf := new(bytes.Buffer)
+
+	c := NewConfig()
+	c.Pins = 1
+	c.Output = buf
+	c.Debug = true
+
+	l := NewLogger(c)
+
+	if l.Pins() != 1 {
+		t.Error("wrong pins")
 	}
-	l.SetDebug(false)
-	if d := l.(*logger).debug; d != false {
-		t.Errorf("wrong debug flag: want false, got %#v", d)
+
+	l.SetFlags(0)
+
+	l.Debug(1, "A")
+	l.Debug(2, "B")
+	l.Debug(3, "C")
+
+	if buf.String() != "[DBG] A\n[DBG] C\n" {
+		t.Error("pins work incorrect", buf.String())
 	}
+
 }

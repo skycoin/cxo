@@ -10,14 +10,19 @@ import (
 
 // defaults
 const (
-	Prefix string = ""    // default prefix
-	Debug  bool   = false // don't show debug logs by default
+	Prefix string = ""      // default prefix
+	Debug  bool   = false   // don't show debug logs by default
+	All    Pin    = ^Pin(0) // default Debug pins (all pins)
+	No     Pin    = 0       // no pins
 )
+
+type Pin uint
 
 // A Config represents configurationf for logger
 type Config struct {
 	Prefix string    // log prefix
 	Debug  bool      // show debug logs
+	Pins   Pin       // debug pins
 	Output io.Writer // provide an output
 }
 
@@ -25,35 +30,89 @@ type Config struct {
 func NewConfig() (c Config) {
 	c.Prefix = Prefix
 	c.Debug = Debug
+	c.Pins = All
 	return
 }
 
 // FromFlags parses commandline flags. So, you need to call
-// flag.Parse after this method
+// flag.Parse after this method. There is -log-prefix flag.
+// And also, it provides -debug flag and -debug-pins. If
+// the debug flag set to false, then -debug-pins ignored and
+// the pins set to No.
 func (c *Config) FromFlags() {
 	flag.StringVar(&c.Prefix,
 		"log-prefix",
-		Prefix,
+		c.Prefix,
 		"provide log-prefix")
 	flag.BoolVar(&c.Debug,
 		"debug",
-		Debug,
+		c.Debug,
 		"print debug logs")
+	var pins uint
+	flag.UintVar(&pins,
+		"debug-pins",
+		uint(c.Pins),
+		"debug pins (default all)")
+	c.Pins = Pin(pins)
 }
 
-// A Logger is similar to log.Logger with Debug(ln|f)? methods
+// A Logger is similar to log.Logger with Debug methods.
+// The Debug methods uses Pin to show or not to show a message.
+// Provided Pin compared with configured using logical AND.
+// If result is not 0, then message will be printed.
+// Thus you can separate debug messages printing
+// only messages you want. For example:
+//
+//     const (
+//         LogTransport log.Pin = 1 < iota
+//         LogMessages
+//         LogSoemthing
+//     )
+//
+//     c := NewConfig()
+//     c.Prefix = "[node] "
+//     c.Debug  = true       // enable debug messages
+//     c.Pins   = log.All    // show all debug messages
+//
+//     //
+//     // show all debug logs
+//     //
+//
+//     l := NewLogger(c)
+//
+//     l.Debug(LogTransport, "new connection from 127.0.0.1:9090")
+//     l.Debug(LogMessage, "message X received")
+//     l.Debug(LogSomething, "something happens")
+//
+//     // [node] new connection from 127.0.0.1:9090
+//     // [node] message X received
+//     // [node] something happens
+//
+//     //
+//     // show only transport and "something" logs
+//     //
+//
+//     // ...
+//
+//     c.Pins = LogTransport | LogSomething
+//
+//     l := NewLogger(c)
+//
+//     // ...
+//
+//     // [node] new connection from 127.0.0.1:9090
+//     // [node] something happens
+//
+// This way you can provide detailed logs without caring
+// about big output. This feature applies only to debug logs.
+// Set Debug field of the Config to turn all debug logs off
 type Logger interface {
-	// SetDebug is used to change debug logs flag. The method is not
-	// safe for async usage
-	SetDebug(bool)
-	// IsDebug returns true if the logger in debug mode.
-	// The method is not safe for async usage if you're
-	// using SetDebug
-	IsDebug() bool
+	// Pins of the Logger
+	Pins() Pin
 
-	SetPrefix(string)    //
-	SetFlags(int)        //
-	SetOutput(io.Writer) //
+	SetPrefix(string)    // set prefix of underlying log.Logger
+	SetFlags(int)        // set Flags of undelrying log.Logger
+	SetOutput(io.Writer) // set Output of underlying log.Logger
 
 	Print(...interface{})          //
 	Println(...interface{})        //
@@ -67,60 +126,52 @@ type Logger interface {
 	Fatalln(...interface{})        //
 	Fatalf(string, ...interface{}) //
 
-	Debug(...interface{})          //
-	Debugln(...interface{})        //
-	Debugf(string, ...interface{}) //
+	Debug(pin Pin, args ...interface{})                 //
+	Debugln(pin Pin, args ...interface{})               //
+	Debugf(pin Pin, format string, args ...interface{}) //
 }
 
 type logger struct {
 	*log.Logger
-	debug bool
+	pins Pin
 }
 
-// NewLogger create new Logger with given prefix and debug-enabling value.
+// NewLogger create new Logger using given Config.
 // By default flags of the Logger is log.Lshortfile|log.Ltime
-func NewLogger(prefix string, debug bool) Logger {
+func NewLogger(c Config) Logger {
+	if c.Debug == false {
+		c.Pins = No // don't show debug logs
+	}
+	if c.Output == nil {
+		c.Output = os.Stderr
+	}
 	return &logger{
-		Logger: log.New(os.Stderr, prefix, log.Lshortfile|log.Ltime),
-		debug:  debug,
+		Logger: log.New(c.Output, c.Prefix, log.Lshortfile|log.Ltime),
+		pins:   c.Pins,
 	}
 }
 
-// NewLoggerByConfig create logger usinng given Config
-func NewLoggerByConfig(conf Config) Logger {
-	var out io.Writer = os.Stderr
-	if conf.Output != nil {
-		out = conf.Output
-	}
-	return &logger{
-		Logger: log.New(out, conf.Prefix, log.Lshortfile|log.Ltime),
-		debug:  conf.Debug,
-	}
-}
-
-func (l *logger) Debug(args ...interface{}) {
-	if l.debug {
+func (l *logger) Debug(pin Pin, args ...interface{}) {
+	if pin&l.pins != 0 {
 		args = append([]interface{}{"[DBG] "}, args...)
 		l.Output(2, fmt.Sprint(args...))
 	}
 }
 
-func (l *logger) Debugln(args ...interface{}) {
-	if l.debug {
+func (l *logger) Debugln(pin Pin, args ...interface{}) {
+	if pin&l.pins != 0 {
 		args = append([]interface{}{"[DBG]"}, args...)
 		l.Output(2, fmt.Sprintln(args...))
 	}
 }
 
-func (l *logger) Debugf(format string, args ...interface{}) {
-	if l.debug {
+func (l *logger) Debugf(pin Pin, format string, args ...interface{}) {
+	if pin&l.pins != 0 {
 		format = "[DBG] " + format
 		l.Output(2, fmt.Sprintf(format, args...))
 	}
 }
 
-func (l *logger) SetDebug(debug bool) {
-	l.debug = debug
+func (l *logger) Pins() Pin {
+	return l.pins
 }
-
-func (l *logger) IsDebug() bool { return l.debug }

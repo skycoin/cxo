@@ -3,7 +3,6 @@ package node
 import (
 	"net/rpc"
 
-	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
@@ -22,19 +21,6 @@ func NewRPCClient(address string) (rc *RPCClient, err error) {
 	}
 	rc = new(RPCClient)
 	rc.c = c
-	return
-}
-
-// Want returns (possible incompile) list of hashes of objects
-// that the feed knows about but doesn't have got (yet)
-func (r *RPCClient) Want(feed cipher.PubKey) (list []cipher.SHA256, err error) {
-	err = r.c.Call("cxo.Want", feed, &list)
-	return
-}
-
-// Got returns list of hashes of object the feed has got
-func (r *RPCClient) Got(feed cipher.PubKey) (list []cipher.SHA256, err error) {
-	err = r.c.Call("cxo.Got", feed, &list)
 	return
 }
 
@@ -68,11 +54,13 @@ func (r *RPCClient) Feeds() (list []cipher.PubKey, err error) {
 	return
 }
 
+/*
 // Stat returns database statistic
-func (r *RPCClient) Stat() (stat data.Stat, err error) {
+func (r *RPCClient) Stat() (stat Stat, err error) {
 	r.c.Call("cxo.Stat", struct{}{}, &stat)
 	return
 }
+*/
 
 // Connections return list of all connections
 func (r *RPCClient) Connections() (list []string, err error) {
@@ -118,8 +106,10 @@ func (r *RPCClient) Roots(feed cipher.PubKey) (ris []RootInfo, err error) {
 
 // Tree returns strigified objects tree of a root object. The
 // method useful for inspecting
-func (r *RPCClient) Tree(hash cipher.SHA256) (tree string, err error) {
-	err = r.c.Call("cxo.Tree", hash, &tree)
+func (r *RPCClient) Tree(pk cipher.PubKey, seq uint64,
+	lastFull bool) (tree string, err error) {
+
+	err = r.c.Call("cxo.Tree", SelectRoot{pk, seq, lastFull}, &tree)
 	return
 }
 

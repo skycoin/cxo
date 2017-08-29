@@ -43,18 +43,13 @@ func main() {
 	var s *node.Node
 	var err error
 
+	// create and launch
 	if s, err = node.NewNode(c); err != nil {
 		log.Print(err)
 		code = 1
 		return
 	}
 	defer s.Close()
-
-	if err = s.Start(); err != nil {
-		log.Print(err)
-		code = 1
-		return
-	}
 
 	// TODO: subscribe and connect to KNOWN
 

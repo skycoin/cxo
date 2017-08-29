@@ -3,7 +3,6 @@ package gnet
 import (
 	"crypto/tls"
 	"io/ioutil"
-	stdlog "log"
 	"net"
 	"testing"
 	"time"
@@ -27,13 +26,15 @@ func newConfig(name string) (c Config) {
 	c.WriteTimeout = 0
 	c.DialTimeout = TM // make it shorter
 	c.RedialTimeout = 0
+	logConf := log.NewConfig()
+	logConf.Prefix = "[" + name + "]"
 	if testing.Verbose() {
-		c.Logger = log.NewLogger("["+name+"] ", true)
-		c.Logger.SetFlags(stdlog.Lshortfile | stdlog.Lmicroseconds)
+		logConf.Debug = true
+		logConf.Pins = log.All
 	} else {
-		c.Logger = log.NewLogger("["+name+"] ", false)
-		c.Logger.SetOutput(ioutil.Discard)
+		logConf.Output = ioutil.Discard
 	}
+	c.Logger = log.NewLogger(logConf)
 	return
 }
 
@@ -69,7 +70,7 @@ func TestNewPool(t *testing.T) {
 			t.Error("logger doen't created")
 		}
 		c := NewConfig()
-		c.Logger = log.NewLogger("[asdf]", false)
+		c.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 		if p, err = NewPool(c); err != nil {
 			t.Fatal(err)
 		}

@@ -1,133 +1,97 @@
 package data
 
 import (
-	"errors"
-	"fmt"
-
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/data/cxds"
+	"github.com/skycoin/cxo/data/idxdb"
 )
 
-// ErrRootAlreadyExists oocurs when you try to save root object
-// that already exist in database. The error required for
-// networking to omit unnessesary work
-var ErrRootAlreadyExists = errors.New("root already exists")
+// A CXDS is interface of CX data store that is client
+// for CX data server or any stub package. The CXDS is
+// key-value store with references count
+type CXDS interface {
+	// Get value by key. Result is value and references count
+	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
+	// Set key-value pair. If value already exists the Set
+	// increments references count
+	Set(key cipher.SHA256, val []byte) (rc uint32, err error)
+	// Add value, calculating hash internally. If
+	// value already exists the Add increments references
+	// count
+	Add(val []byte) (key cipher.SHA256, rc uint32, err error)
+	// Inc increments references count
+	Inc(key cipher.SHA256) (rc uint32, err error)
+	// Dec decrements references count. The rc is zero if
+	// value has been deleted by the Dec
+	Dec(key cipher.SHA256) (rc uint32, err error)
 
-// A DB is common database interface
-type DB interface {
+	// batch operation
 
-	//
-	// Objects and Schemas
-	//
+	// MultiGet returns values by keys
+	MultiGet(keys []cipher.SHA256) (vals [][]byte, err error)
+	// MultiAdd append given values
+	MultiAdd(vals [][]byte) (err error)
 
-	// Del deletes by key
-	Del(key cipher.SHA256)
-	// Get by key
-	Get(key cipher.SHA256) (value []byte, ok bool)
-	// Set value using its precalculated key
-	Set(key cipher.SHA256, value []byte)
-	// Add value returning its key
-	Add(value []byte) cipher.SHA256
-	// IsExist check persistence of a value by key
-	IsExist(key cipher.SHA256) (ok bool)
-	// Range over all objects and schemas (read only)
-	Range(func(key cipher.SHA256, value []byte) (stop bool))
-	// RangeDelete used to delete objects
-	RangeDelete(func(key cipher.SHA256) (del bool))
+	// MultiInc increments
+	MultiInc(keys []cipher.SHA256) (err error)
+	// MultiDec decrements
+	MultiDec(keys []cipher.SHA256) (err error)
 
-	//
-	// Feeds
-	//
-
-	// AddFeed appends empty feed or does nothing if
-	// given feed already exists in database
-	AddFeed(pk cipher.PubKey)
-	// HasFeed returns true if database contains given feed
-	HasFeed(pk cipher.PubKey) (has bool)
-	// Feeds returns list of feeds
-	Feeds() []cipher.PubKey
-	// DelFeed deletes feed and all related root objects.
-	// The method doesn't remove related objects and schemas
-	DelFeed(pk cipher.PubKey)
-	// AddRoot to feed. AddRoot adds feed if it doesn't exist
-	AddRoot(pk cipher.PubKey, rp *RootPack) (err error)
-	// LastRoot returns last root of a feed
-	LastRoot(pk cipher.PubKey) (rp *RootPack, ok bool)
-	// RangeFeed itterate root objects of tgiven feed
-	// ordered by seq from oldest to newest
-	RangeFeed(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
-	// RangeFeedReverse is same as RangeFeed, but order
-	// is reversed
-	RangeFeedReverse(pk cipher.PubKey, fn func(rp *RootPack) (stop bool))
-	// RangeFeedDelete itterates a feed and deletes all root object for which
-	// given function returns true
-	RangeFeedDelete(pk cipher.PubKey, fn func(rp *RootPack) (del bool))
-
-	//
-	// Roots
-	//
-
-	// GetRoot by hash
-	GetRoot(hash cipher.SHA256) (rp *RootPack, ok bool)
-	// DelRootsBefore deletes root objects of given feed
-	// before given seq number (exclusive)
-	DelRootsBefore(pk cipher.PubKey, seq uint64)
-
-	//
-	// Other methods
-	//
-
-	// Stat of the DB
-	Stat() (s Stat)
-	// Close the DB
+	// Clsoe the CXDS
 	Close() (err error)
 }
 
-// A RootPack represents encoded root object with signature,
-// seq number, and next/prev/this hashes
-type RootPack struct {
-	Root []byte
-
-	// both Seq and Prev are encoded inside Root filed above
-	// but we need them for database
-
-	Seq  uint64        // seq number of this Root
-	Prev cipher.SHA256 // previous Root or empty if seq == 0
-
-	Hash cipher.SHA256 // hash of the Root filed
-	Sig  cipher.Sig    // signature of the Hash field
+// A DB represents joiner of
+// IdxDB and CXDS
+type DB struct {
+	cxds  CXDS
+	idxdb idxdb.IdxDB
 }
 
-// A RootError represents error that can be returned by AddRoot method
-type RootError struct {
-	feed  cipher.PubKey // feed of root
-	hash  cipher.SHA256 // hash of root
-	seq   uint64        // seq of root
-	descr string        // description
+// IdxDB of the DB
+func (d *DB) IdxDB() idxdb.IdxDB {
+	return d.idxdb
 }
 
-// Error implements error interface
-func (r *RootError) Error() string {
-	return fmt.Sprintf("[%s:%s:%d] %s",
-		shortHex(r.feed.Hex()),
-		shortHex(r.hash.Hex()),
-		r.seq,
-		r.descr)
+// CXDS of the DB
+func (d *DB) CXDS() CXDS {
+	return d.cxds
 }
 
-// Feed of erroneous Root
-func (r *RootError) Feed() cipher.PubKey { return r.feed }
+// NewMemoryDB returns DB in memory
+func NewMemoryDB() (db *DB) {
+	db = new(DB)
+	db.cxds = cxds.NewMemoryCXDS()
+	db.idxdb = idxdb.NewMemeoryDB()
+	return
+}
 
-// Hash of erroneous Root
-func (r *RootError) Hash() cipher.SHA256 { return r.hash }
-
-// Seq of erroneous Root
-func (r *RootError) Seq() uint64 { return r.seq }
-
-func newRootError(pk cipher.PubKey, rp *RootPack, descr string) (r *RootError) {
-	return &RootError{
-		feed:  pk,
-		hash:  rp.Hash,
-		seq:   rp.Seq,
-		descr: descr,
+// NewDriveDB returns DB on drive. The prefix argument
+// is path to two files: <prefix>.cxds and <prefix>.index
+func NewDriveDB(prefix string) (db *DB, err error) {
+	db = new(DB)
+	if db.cxds, err = cxds.NewDriveCXDS(prefix + ".cxds"); err != nil {
+		return
 	}
+	if db.idxdb, err = idxdb.NewDriveIdxDB(prefix + ".index"); err != nil {
+		db.cxds.Close()
+		return
+	}
+	return
+}
+
+func (d *DB) Close() (err error) {
+	if err = d.cxds.Close(); err != nil {
+		d.idxdb.Close() // drop error
+	} else {
+		err = d.idxdb.Close() // use this error
+	}
+	return
+}
+
+// NewDB creates DB by given CXDS and IdxDB. The arguments
+// must not be nil
+func NewDB(cxds CXDS, idxdb idxdb.IdxDB) *DB {
+	return &DB{cxds, idxdb}
 }

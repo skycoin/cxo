@@ -18,20 +18,17 @@ func shouldNotPanic(t *testing.T) {
 }
 
 func TestNewRegistry(t *testing.T) {
-	r := NewRegistry()
-	if r.done != false {
-		t.Error("unexpected done")
-	}
-	if r.ref != (RegistryReference{}) {
-		t.Error("non-empty reference")
+	r := NewRegistry(func(reg *Reg) {})
+	if r.Reference() == (RegistryRef{}) {
+		t.Error("empty reference")
 	}
 }
 
 func TestDecodeRegistry(t *testing.T) {
-	e := NewRegistry()
-	e.Register("cxo.User", User{})
-	e.Register("cxo.Group", Group{})
-	e.Done()
+	e := NewRegistry(func(r *Reg) {
+		r.Register("cxo.User", User{})
+		r.Register("cxo.Group", Group{})
+	})
 	d, err := DecodeRegistry(e.Encode())
 	if err != nil {
 		t.Fatal(err)
@@ -47,89 +44,25 @@ func TestDecodeRegistry(t *testing.T) {
 	}
 }
 
-func TestRegistry_Register(t *testing.T) {
-	//
-}
-
-func TestRegistry_Done(t *testing.T) {
-	t.Run("panic SchemaByName", func(t *testing.T) {
-		defer shouldPanic(t)
-		r := NewRegistry()
-		r.SchemaByName("cxo.User")
-	})
-	t.Run("panic SchemaByReference", func(t *testing.T) {
-		defer shouldPanic(t)
-		r := NewRegistry()
-		r.SchemaByReference(SchemaReference{})
-	})
-	t.Run("panic SchemaByInterface", func(t *testing.T) {
-		defer shouldPanic(t)
-		r := NewRegistry()
-		r.SchemaReferenceByName("cxo.User")
-	})
-	t.Run("panic Encode", func(t *testing.T) {
-		defer shouldPanic(t)
-		r := NewRegistry()
-		r.Encode()
-	})
-	t.Run("panic Reference", func(t *testing.T) {
-		defer shouldPanic(t)
-		r := NewRegistry()
-		r.Reference()
-	})
-
-	t.Run("panic Done", func(t *testing.T) {
-		defer shouldPanic(t)
-		r := NewRegistry()
-		r.Register("User", User{})
-		r.Register("Group", Group{})
-		r.Done() // must panic with misisng
-	})
-
-	t.Run("Done", func(t *testing.T) {
-		defer shouldNotPanic(t)
-		r := NewRegistry()
+func TestRegistry_identity(t *testing.T) {
+	r1 := NewRegistry(func(r *Reg) {
 		r.Register("cxo.User", User{})
 		r.Register("cxo.Group", Group{})
-		r.Done()
 	})
-
-	t.Run("panic Register", func(t *testing.T) {
-		r := NewRegistry()
-		r.Done()
-		defer shouldPanic(t)
-		type Age struct{}
-		r.Register("internal.Age", Age{})
+	r2 := NewRegistry(func(r *Reg) {
+		r.Register("cxo.Group", Group{})
+		r.Register("cxo.User", User{})
 	})
-
-	t.Run("reference", func(t *testing.T) {
-		r := NewRegistry()
-		r.Done()
-		if r.Reference() == (RegistryReference{}) {
-			t.Error("empty reference")
-		}
-	})
-
-	t.Run("identity", func(t *testing.T) {
-		r1 := NewRegistry()
-		r1.Register("cxo.User", User{})
-		r1.Register("cxo.Group", Group{})
-		r1.Done()
-		r2 := NewRegistry()
-		r2.Register("cxo.User", User{})
-		r2.Register("cxo.Group", Group{})
-		r2.Done()
-		if r1.Reference() != r2.Reference() {
-			t.Error("not equal")
-		}
-	})
+	if r1.Reference() != r2.Reference() {
+		t.Error("not equal")
+	}
 }
 
 func TestRegistry_SchemaByName(t *testing.T) {
-	r := NewRegistry()
-	r.Register("cxo.User", User{})
-	r.Register("cxo.Group", Group{})
-	r.Done()
+	r := NewRegistry(func(r *Reg) {
+		r.Register("cxo.User", User{})
+		r.Register("cxo.Group", Group{})
+	})
 	u, err := r.SchemaByName("cxo.User")
 	if err != nil {
 		t.Error(err)
@@ -180,28 +113,27 @@ func TestRegistry_slice(t *testing.T) {
 		Down uint32
 	}
 	type PostVotePage struct {
-		Post  Reference  `skyobject:"schema=Post"`
-		Votes References `skyobject:"schema=Vote"`
+		Post  Ref  `skyobject:"schema=Post"`
+		Votes Refs `skyobject:"schema=Vote"`
 	}
 	type PostVoteContainer struct {
 		Posts []PostVotePage
 	}
-	r := NewRegistry()
-	r.Register("Post", Post{})
-	r.Register("Vote", Vote{})
-	r.Register("PostVotePage", PostVotePage{})
-	r.Register("PostVoteContainer", PostVoteContainer{})
-	t.Run("done", func(t *testing.T) {
-		defer shouldNotPanic(t)
-		r.Done()
+	r := NewRegistry(func(r *Reg) {
+		r.Register("Post", Post{})
+		r.Register("Vote", Vote{})
+		r.Register("PostVotePage", PostVotePage{})
+		r.Register("PostVoteContainer", PostVoteContainer{})
 	})
-	t.Run("encode decode", func(t *testing.T) {
-		defer shouldNotPanic(t)
-		_, err := DecodeRegistry(r.Encode())
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+
+	defer shouldNotPanic(t)
+	dr, err := DecodeRegistry(r.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dr.Reference() != r.Reference() {
+		t.Error("different decoder reference")
+	}
 }
 
 func TestRegistry_userProvidedName(t *testing.T) {
@@ -209,21 +141,23 @@ func TestRegistry_userProvidedName(t *testing.T) {
 	type Info struct {
 		About string
 	}
+
 	type Brief struct {
 		Note string
 	}
+
 	type Any struct {
 		Info
 		Brief Brief
 	}
-	reg := NewRegistry()
-	reg.Register("test.Info", Info{})
-	reg.Register("test.Brief", Brief{})
-	reg.Register("test.Any", Any{})
 
-	defer shouldNotPanic(t)
-
-	reg.Done()
+	reg := NewRegistry(func(r *Reg) {
+		r.Register("test.Info", Info{})
+		r.Register("test.Brief", Brief{})
+		r.Register("test.Any", Any{})
+	})
 
 	// TODO
+
+	_ = reg
 }

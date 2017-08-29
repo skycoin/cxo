@@ -33,6 +33,10 @@ gui/static/dev/
 cover.out
 cover.html
 
+# any *.out file
+
+*.out
+
 # executables
 
 cmd/cxocli/cxocli
@@ -45,3 +49,14 @@ node/test/
 # suffix for ignore files and directories temporary 
 
 *.go.ignore
+
+*.db.cxds
+*.db.index
+
+intro/server/server
+intro/server/server.db
+intro/pipe/pipe
+intro/pipe/pipe.db
+intro/client/client
+intro/client/client.db
+
