@@ -559,7 +559,11 @@ func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
 	evt := &unsubscribeFromDeletedFeedEvent{pk}
 
 	for _, c := range n.conns {
-		c.events <- evt
+		select {
+		case c.events <- evt:
+		case <-n.quit:
+			return
+		}
 	}
 	return
 }

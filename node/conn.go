@@ -190,6 +190,9 @@ func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
 	if err = pk.Verify(); err != nil {
 		return
 	}
+	if err = c.s.AddFeed(pk); err != nil {
+		return
+	}
 	errc := make(chan error)
 	c.subscribeEvent(pk, errc)
 	return <-errc

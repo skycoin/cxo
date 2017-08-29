@@ -128,6 +128,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 		c.Print("[FATAL] ", err)
 		return
 	}
+	defer pack.Close()
 
 	content := new(intro.Content)
 
