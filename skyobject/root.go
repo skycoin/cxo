@@ -83,6 +83,20 @@ func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 		}
 		var ir *idxdb.Root
 		if ir, err = rs.Get(r.Seq); err != nil {
+			if err == idxdb.ErrNotFound {
+				err = rs.Set(&idxdb.Root{
+					Seq:    r.Seq,
+					Prev:   r.Prev,
+					Hash:   r.Hash,
+					Sig:    r.Sig,
+					IsFull: false,
+				})
+				if err != nil {
+					return
+				}
+				_, err = c.db.CXDS().Set(r.Hash, val)
+				return
+			}
 			return
 		}
 		r.IsFull = ir.IsFull

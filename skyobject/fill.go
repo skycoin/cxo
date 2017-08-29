@@ -10,6 +10,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
+	"github.com/skycoin/cxo/data/cxds" // TODO: cxds.ErrNOtFound
 	"github.com/skycoin/cxo/data/idxdb"
 )
 
@@ -132,7 +133,7 @@ func (f *Filler) fill() {
 	var ok bool
 	var err error
 	if f.reg, err = f.c.Registry(f.r.Reg); err != nil {
-		if err == idxdb.ErrNotFound {
+		if err == cxds.ErrNotFound {
 			if val, ok = f.request(cipher.SHA256(f.r.Reg)); !ok {
 				return // drop
 			}
@@ -142,6 +143,7 @@ func (f *Filler) fill() {
 			}
 		} else {
 			f.Terminate(err)
+			return
 		}
 	}
 
@@ -182,7 +184,7 @@ func (f *Filler) get(key cipher.SHA256,
 	if val, _, err = f.c.DB().CXDS().Get(key); val != nil {
 		return val, true
 	}
-	if err != nil {
+	if err != cxds.ErrNotFound {
 		f.Terminate(err) // database error
 		return           // nil, false
 	}

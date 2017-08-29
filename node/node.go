@@ -465,7 +465,7 @@ func (s *Node) onConnect(gc *gnet.Conn) {
 }
 
 func (s *Node) onDisconnect(gc *gnet.Conn) {
-	s.Debugf(ConnPin, "[%s] close conenctions", gc.Address(), gc.IsIncoming())
+	s.Debugf(ConnPin, "[%s] close conenction %t", gc.Address(), gc.IsIncoming())
 }
 
 func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {

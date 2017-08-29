@@ -430,16 +430,16 @@ func (i *inspector) Refs(sch Schema, val []byte) (it gotree.GTStructure) {
 		it.Name = "*(refs) empty"
 		return
 	}
-	it.Name = "*(refs) " + refs.Short()
-	it.Items = i.refsNode(sch, er.Depth, er)
+	it.Name = "*(refs) " + refs.Short() + " " + fmt.Sprint(er.Length)
+	it.Items = i.refsNode(sch, er.Depth, er.Nested)
 	return
 }
 
 func (i *inspector) refsNode(sch Schema, depth uint32,
-	er encodedRefs) (its []gotree.GTStructure) {
+	nested []cipher.SHA256) (its []gotree.GTStructure) {
 
 	if depth == 0 {
-		for _, h := range er.Nested {
+		for _, h := range nested {
 			if h == (cipher.SHA256{}) {
 				continue // not missing, not nil: zero
 			}
@@ -447,7 +447,7 @@ func (i *inspector) refsNode(sch Schema, depth uint32,
 		}
 		return
 	}
-	for _, h := range er.Nested {
+	for _, h := range nested {
 		if h == (cipher.SHA256{}) {
 			continue // not missing, not nil: zero
 		}
@@ -467,13 +467,13 @@ func (i *inspector) refsHashNode(sch Schema, depth uint32,
 		return
 	}
 
-	var er encodedRefs
-	if err := encoder.DeserializeRaw(val, &er); err != nil {
+	var en encodedRefsNode
+	if err := encoder.DeserializeRaw(val, &en); err != nil {
 		its = append(its, gotree.GTStructure{
 			Name: "(err) " + err.Error(),
 		})
 		return
 	}
 
-	return i.refsNode(sch, depth, er)
+	return i.refsNode(sch, depth, en.Nested)
 }

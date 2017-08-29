@@ -36,6 +36,57 @@ type Refs struct {
 	rn    *refsNode `enc:"-"` // pack, schema, index
 }
 
+func (r *Refs) encode(root bool, depth int) (val []byte) {
+	if root {
+		var ers encodedRefs
+		ers.Degree = uint32(r.degree)
+		ers.Length = uint32(r.length)
+		ers.Depth = uint32(r.depth)
+		if depth == 0 {
+			ers.Nested = make([]cipher.SHA256, 0, len(r.leafs))
+			for _, leaf := range r.leafs {
+				if leaf.Hash == (cipher.SHA256{}) {
+					println("EMPTY LEAF")
+					continue
+				}
+				ers.Nested = append(ers.Nested, leaf.Hash)
+			}
+		} else {
+			ers.Nested = make([]cipher.SHA256, 0, len(r.branches))
+			for _, br := range r.branches {
+				if br.Hash == (cipher.SHA256{}) {
+					println("EMPTY BRANCH")
+					continue
+				}
+				ers.Nested = append(ers.Nested, br.Hash)
+			}
+		}
+		val = encoder.Serialize(&ers)
+	} else {
+		var ern encodedRefsNode
+		ern.Length = uint32(r.length)
+		if depth == 0 {
+			ern.Nested = make([]cipher.SHA256, 0, len(r.leafs))
+			for _, leaf := range r.leafs {
+				if leaf.Hash == (cipher.SHA256{}) {
+					continue
+				}
+				ern.Nested = append(ern.Nested, leaf.Hash)
+			}
+		} else {
+			ern.Nested = make([]cipher.SHA256, 0, len(r.branches))
+			for _, br := range r.branches {
+				if br.Hash == (cipher.SHA256{}) {
+					continue
+				}
+				ern.Nested = append(ern.Nested, br.Hash)
+			}
+		}
+		val = encoder.Serialize(&ern)
+	}
+	return
+}
+
 func (r *Refs) isInitialized() bool {
 	return r.rn != nil
 }
@@ -1208,7 +1259,7 @@ func (r *Refs) commit() (_ error) {
 // to print pass true
 func (r *Refs) DebugString(forceLoad bool) string {
 	var gt gotree.GTStructure
-	gt.Name = "[](refs) " + r.Short()
+	gt.Name = "[](refs) " + r.Short() + " " + fmt.Sprint(r.length)
 
 	if !forceLoad && !r.isLoaded() {
 		gt.Name += " (not loaded)"
@@ -1242,7 +1293,7 @@ func (r *Refs) debugItems(forceLoad bool,
 
 	for _, br := range r.branches {
 		its = append(its, gotree.GTStructure{
-			Name:  br.Hash.Hex()[:7],
+			Name:  br.Hash.Hex()[:7] + " " + fmt.Sprint(br.length),
 			Items: br.debugItems(forceLoad, depth-1),
 		})
 	}

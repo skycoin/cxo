@@ -67,6 +67,11 @@ func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 			return
 		}
 		p.saved[key] = struct{}{}
+	} else if dr.Object != (cipher.SHA256{}) {
+		if _, err = p.p.c.DB().CXDS().Inc(dr.Object); err != nil {
+			return
+		}
+		p.saved[dr.Object] = struct{}{}
 	}
 
 	obj.Set(reflect.ValueOf(dr)) // set it back
@@ -94,6 +99,11 @@ func (p *saveRecursive) saveRecursiveRef(sf reflect.StructField,
 			return
 		}
 		p.saved[key] = struct{}{}
+	} else if ref.Hash != (cipher.SHA256{}) {
+		if _, err = p.p.c.DB().CXDS().Inc(ref.Hash); err != nil {
+			return
+		}
+		p.saved[ref.Hash] = struct{}{}
 	}
 
 	val.Set(reflect.ValueOf(ref)) // set it anyway
@@ -119,9 +129,32 @@ func (p *saveRecursive) saveRecursiveRefs(sf reflect.StructField,
 		if refs.length == 0 {
 			return // empty refs
 		}
-		if err = p.saveRecursiveRefsNode(&refs, refs.depth); err != nil {
+		if refs.depth == 0 {
+			for _, leaf := range refs.leafs {
+				if err = p.saveRecursiveRefsElem(leaf); err != nil {
+					return
+				}
+			}
+		} else {
+			for _, br := range refs.branches {
+				if err = p.saveRecursiveRefsNode(br, refs.depth-1); err != nil {
+					return
+				}
+			}
+		}
+
+		// save the refs
+		val := refs.encode(true, refs.depth)
+		key := cipher.SumSHA256(val)
+		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
 			return
 		}
+		p.saved[key] = struct{}{}
+	} else if refs.Hash != (cipher.SHA256{}) {
+		if _, err = p.p.c.DB().CXDS().Inc(refs.Hash); err != nil {
+			return
+		}
+		p.saved[refs.Hash] = struct{}{}
 	}
 
 	val.Set(reflect.ValueOf(refs))
@@ -132,27 +165,35 @@ func (p *saveRecursive) saveRecursiveRefsNode(rn *Refs, depth int) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRefsNode", rn.Hash.Hex()[:7], depth)
 
-	if rn.Hash == (cipher.SHA256{}) {
-		return // empty branch
-	}
-
-	if len(rn.leafs) == 0 && len(rn.branches) == 0 {
-		return
-	}
-
-	if rn.depth == 0 {
-		for _, leaf := range rn.leafs {
-			if err = p.saveRecursiveRefsElem(leaf); err != nil {
-				return
+	if rn.isLoaded() {
+		if depth == 0 {
+			for _, leaf := range rn.leafs {
+				if err = p.saveRecursiveRefsElem(leaf); err != nil {
+					return
+				}
+			}
+		} else {
+			for _, br := range rn.branches {
+				if err = p.saveRecursiveRefsNode(br, depth-1); err != nil {
+					return
+				}
 			}
 		}
-	} else {
-		for _, br := range rn.branches {
-			if err = p.saveRecursiveRefsNode(br, depth-1); err != nil {
-				return
-			}
+
+		val := rn.encode(false, depth)
+		key := cipher.SumSHA256(val)
+		rn.Hash = key
+		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
+			return
 		}
+		p.saved[key] = struct{}{}
+	} else if rn.Hash != (cipher.SHA256{}) {
+		if _, err = p.p.c.DB().CXDS().Inc(rn.Hash); err != nil {
+			return
+		}
+		p.saved[rn.Hash] = struct{}{}
 	}
+
 	return
 }
 
@@ -168,10 +209,16 @@ func (p *saveRecursive) saveRecursiveRefsElem(rn *RefsElem) (err error) {
 		}
 		// save the value
 		key, val := p.p.dsave(rn.value)
+		rn.Hash = key
 		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
 			return
 		}
 		p.saved[key] = struct{}{}
+	} else if rn.Hash != (cipher.SHA256{}) {
+		if _, err = p.p.c.DB().CXDS().Inc(rn.Hash); err != nil {
+			return
+		}
+		p.saved[rn.Hash] = struct{}{}
 	}
 
 	return

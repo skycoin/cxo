@@ -327,23 +327,27 @@ func (c *Conn) onCloseCallback() {
 }
 
 func (c *Conn) terminateFillers() {
+
+	c.s.Debugf(FillPin, "[%s] terminate fillers", c.Address())
+	defer c.s.Debugf(FillPin, "[%s] fillers have been terminated", c.Address())
+
 	go c.closeFillers()
 	for {
+		if len(c.fillers) == 0 {
+			return // all done
+		}
 		select {
 		case dre := <-c.drop:
 			c.dropRoot(dre.Root, dre.Err, dre.Saved)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		}
-		if len(c.fillers) == 0 {
-			return // all done
-		}
 	}
 }
 
 func (c *Conn) handle() {
-	c.s.Debug(ConnPin, "[%s] start handling", c.gc.Address())
-	defer c.s.Debug(ConnPin, "[%s] stop handling", c.gc.Address())
+	c.s.Debugf(ConnPin, "[%s] start handling", c.gc.Address())
+	defer c.s.Debugf(ConnPin, "[%s] stop handling", c.gc.Address())
 
 	defer c.s.await.Done()
 
@@ -403,6 +407,7 @@ func (c *Conn) handle() {
 				return
 			}
 
+		// filling
 		case dre := <-c.drop: // drop root
 			c.dropRoot(dre.Root, dre.Err, dre.Saved)
 		case fr := <-c.full:
@@ -443,11 +448,10 @@ func (c *Conn) rootFilled(r *skyobject.Root) {
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		orf(c, r)
 	}
-	c.s.sendToAllOfFeedExcept(r.Pub, c.s.src.Root(r), c)
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {
-	c.s.Debugf(ConnPin, "[%s] handlePong %s: %d", c.gc.Address(),
+	c.s.Debugf(ConnPin, "[%s] handlePong: %d", c.gc.Address(),
 		pong.ResponseFor.Uint64())
 
 	if ttm, ok := c.pings[pong.ResponseFor]; ok {
@@ -458,14 +462,20 @@ func (c *Conn) handlePong(pong *msg.Pong) {
 }
 
 func (c *Conn) handlePing(ping *msg.Ping) {
-	c.s.Debugf(ConnPin, "[%s] handlePing %s: %d", c.gc.Address(),
+	c.s.Debugf(ConnPin, "[%s] handlePing: %d", c.gc.Address(),
 		ping.ID.Uint64())
 
 	c.Send(c.s.src.Pong(ping))
 }
 
+func (c *Conn) sendLastFull(pk cipher.PubKey) {
+	if r, err := c.s.so.LastFull(pk); err == nil {
+		c.Send(c.s.src.Root(r))
+	}
+}
+
 func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
-	c.s.Debugf(SubscrPin, "[%s] handleSubscribe %s: %s", c.gc.Address(),
+	c.s.Debugf(SubscrPin, "[%s] handleSubscribe: %s", c.gc.Address(),
 		subs.Feed.Hex()[:7])
 
 	if osr := c.s.conf.OnSubscribeRemote; osr != nil {
@@ -483,6 +493,7 @@ func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
 	}
 	c.subs[subs.Feed] = struct{}{} // add to internal list
 	c.Send(c.s.src.AcceptSubscription(subs))
+	c.sendLastFull(subs.Feed)
 }
 
 func (c *Conn) unsubscribe(pk cipher.PubKey) {
@@ -492,7 +503,7 @@ func (c *Conn) unsubscribe(pk cipher.PubKey) {
 }
 
 func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
-	c.s.Debugf(SubscrPin, "[%s] handleUnsubscribe %s: %s", c.gc.Address(),
+	c.s.Debugf(SubscrPin, "[%s] handleUnsubscribe: %s", c.gc.Address(),
 		unsub.Feed.Hex()[:7])
 
 	if our := c.s.conf.OnUnsubscribeRemote; our != nil {
@@ -503,7 +514,7 @@ func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
 }
 
 func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
-	c.s.Debugf(SubscrPin, "[%s] handleAcceptSubscription %s: %s",
+	c.s.Debugf(SubscrPin, "[%s] handleAcceptSubscription: %s",
 		c.gc.Address(), as.Feed.Hex()[:7])
 
 	if wr, ok := c.rr[as.ResponseFor]; ok {
@@ -517,6 +528,13 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 		} else {
 			wr.err <- nil // ok
 		}
+
+		if c.s.addConnToFeed(c, as.Feed) == false {
+			return // don't share the feed anymore
+		}
+		c.subs[as.Feed] = struct{}{} // add to internal list
+		c.sendLastFull(as.Feed)
+
 	} else {
 		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg")
 	}
@@ -524,7 +542,7 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 }
 
 func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
-	c.s.Debugf(SubscrPin, "[%s] handleRejectSubscription %s: %s",
+	c.s.Debugf(SubscrPin, "[%s] handleRejectSubscription: %s",
 		c.gc.Address(), rs.Feed.Hex()[:7])
 
 	if wr, ok := c.rr[rs.ResponseFor]; ok {
@@ -545,7 +563,7 @@ func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
 }
 
 func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
-	c.s.Debugf(ConnPin, "[%s] handleRequestListOfFeeds %s", c.gc.Address())
+	c.s.Debugf(ConnPin, "[%s] handleRequestListOfFeeds", c.gc.Address())
 
 	if c.s.conf.PublicServer == false {
 		c.Send(c.s.src.NonPublicServer(rlof))
@@ -555,7 +573,7 @@ func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
 }
 
 func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
-	c.s.Debugf(ConnPin, "[%s] handleListOfFeeds %s", c.gc.Address())
+	c.s.Debugf(ConnPin, "[%s] handleListOfFeeds", c.gc.Address())
 
 	if wr, ok := c.rr[lof.ResponseFor]; ok {
 		if wr.ttm != nil {
@@ -573,7 +591,7 @@ func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
 }
 
 func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
-	c.s.Debugf(ConnPin, "[%s] handleNonPublicServer %s", c.gc.Address())
+	c.s.Debugf(ConnPin, "[%s] handleNonPublicServer", c.gc.Address())
 
 	if wr, ok := c.rr[nps.ResponseFor]; ok {
 		if wr.ttm != nil {
@@ -591,7 +609,7 @@ func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
 }
 
 func (c *Conn) handleRoot(rm *msg.Root) {
-	c.s.Debugf(FillPin, "[%s] handleRoot %s: %s", c.gc.Address(),
+	c.s.Debugf(FillPin, "[%s] handleRoot of %s", c.gc.Address(),
 		rm.Feed.Hex()[:7])
 
 	r, err := c.s.so.AddEncodedRoot(rm.Sig, rm.Value)
@@ -616,7 +634,7 @@ func (c *Conn) handleRoot(rm *msg.Root) {
 }
 
 func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
-	c.s.Debugf(FillPin, "[%s] handleRequestObject %s: %s", c.gc.Address(),
+	c.s.Debugf(FillPin, "[%s] handleRequestObject: %s", c.gc.Address(),
 		ro.Key.Hex()[:7])
 
 	if val, _, _ := c.s.db.CXDS().Get(ro.Key); val != nil {
@@ -633,7 +651,7 @@ func (c *Conn) handleObject(o *msg.Object) {
 
 	key := cipher.SumSHA256(o.Value)
 
-	c.s.Debugf(FillPin, "[%s] handleObject %s: %s", c.gc.Address(),
+	c.s.Debugf(FillPin, "[%s] handleObject: %s", c.gc.Address(),
 		key.Hex()[:7])
 
 	if rs, ok := c.requests[key]; ok {
