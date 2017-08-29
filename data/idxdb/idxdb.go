@@ -92,6 +92,26 @@ type Root struct {
 	IsFull bool // is the Root full
 }
 
+func (r *Root) Validate() (err error) {
+	if r.Seq == 0 {
+		if r.Prev != (cipher.SHA256{}) {
+			return errors.New("(idxdb.Root.Validate) unexpected Prev hash")
+		}
+	} else if r.Prev == (cipher.SHA256{}) {
+		return errors.New("(idxdb.Root.Validate) missing Prev hash")
+	}
+
+	if r.Hash == (cipher.SHA256{}) {
+		return errors.New("(idxdb.Root.Validate) empty Hash")
+	}
+
+	if r.Sig == (cipher.Sig{}) {
+		return errors.New("(idxdb.Root.Validate) empty Sig")
+	}
+
+	return
+}
+
 // Encode the Root
 func (r *Root) Encode() (p []byte) {
 
@@ -131,7 +151,6 @@ func (r *Root) Decode(p []byte) (err error) {
 	copy(r.Sig[:], p[28+len(cipher.SHA256{})*2:])
 
 	r.IsFull = (p[len(p)-1] != 0)
-
 	return
 }
 

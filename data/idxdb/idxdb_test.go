@@ -180,6 +180,44 @@ func TestObject_Decode(t *testing.T) {
 
 }
 
+func TestRoot_Validate(t *testing.T) {
+
+	r := testRoot("seed")
+
+	if err := r.Validate(); err != nil {
+		t.Error(err)
+	}
+
+	// empty hash
+	var hash cipher.SHA256
+	hash, r.Hash = r.Hash, cipher.SHA256{}
+	if err := r.Validate(); err == nil {
+		t.Error("missing error")
+	}
+	r.Hash = hash
+
+	// unexpected prev
+	r.Prev = cipher.SumSHA256([]byte("random"))
+
+	if err := r.Validate(); err == nil {
+		t.Error("missing error")
+	}
+
+	// misisng prev
+	r.Seq, r.Prev = 1, cipher.SHA256{}
+	if err := r.Validate(); err == nil {
+		t.Error("missing error")
+	}
+
+	r.Seq = 0
+	r.Sig = (cipher.Sig{})
+
+	if err := r.Validate(); err == nil {
+		t.Error("missing error")
+	}
+
+}
+
 /*
 func TestVolume_String(t *testing.T) {
 	// String() (s string)
