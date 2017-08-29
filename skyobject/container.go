@@ -336,7 +336,22 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 func (c *Container) DelFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
 
-	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) error {
+	return nil
+
+	// TODO (kostyarin): resolve
+
+	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+		if false == feeds.HasFeed(pk) {
+			return // nothing to delete
+		}
+		var rs idxdb.Roots
+		if rs, err = feeds.Roots(pk); err != nil {
+			return
+		}
+
+		// TODO (kostyarin): check out holded Roots
+		_ = rs
+
 		return feeds.Del(pk)
 	})
 }

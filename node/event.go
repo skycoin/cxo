@@ -47,7 +47,7 @@ type unsubscribeFromDeletedFeedEvent struct {
 
 func (u *unsubscribeFromDeletedFeedEvent) Handle(c *Conn) {
 	if _, ok := c.subs[u.pk]; ok {
-		delete(c.subs, u.pk)
+		c.unsubscribe(u.pk) //
 		c.Send(c.s.src.Unsubscribe(u.pk))
 	}
 }
