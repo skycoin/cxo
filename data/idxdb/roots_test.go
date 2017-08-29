@@ -79,7 +79,7 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	r1 := testNewRoot("r", sk)
 	r2 := testNewRoot("e", sk)
 
-	r2.Seq = 1
+	r2.Seq, r2.Prev = 1, cipher.SumSHA256([]byte("random"))
 
 	ra := []*Root{r1, r2}
 
@@ -146,7 +146,7 @@ func testRootsAscend(t *testing.T, idx IdxDB) {
 	})
 
 	r3 := testNewRoot("w", sk)
-	r3.Seq = 2
+	r3.Seq, r3.Prev = 2, cipher.SumSHA256([]byte("random"))
 
 	t.Run("mutate add", func(t *testing.T) {
 		err := idx.Tx(func(feeds Feeds) (err error) {
@@ -238,7 +238,7 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
-			err = rs.Ascend(func(r *Root) (err error) {
+			err = rs.Descend(func(r *Root) (err error) {
 				called++
 				return
 			})
@@ -258,7 +258,8 @@ func testRootsDescend(t *testing.T, idx IdxDB) {
 	r3 := testNewRoot("r", sk)
 	r2 := testNewRoot("e", sk)
 
-	r3.Seq, r2.Seq = 2, 1
+	r3.Seq, r3.Prev = 2, cipher.SumSHA256([]byte("random"))
+	r2.Seq, r2.Prev = 1, cipher.SumSHA256([]byte("random"))
 
 	ra := []*Root{r3, r2}
 

@@ -122,17 +122,20 @@ func (c *Container) LastFull(pk cipher.PubKey) (r *Root, err error) {
 				if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
 					return
 				}
-				r, err = decodeRoot(val)
-				return
+				if r, err = decodeRoot(val); err != nil {
+					return
+				}
+				r.Hash = ir.Hash
+				r.Sig = ir.Sig
+				r.IsFull = ir.IsFull
+				return idxdb.ErrStopIteration // break
 			}
-			return
+			return // continue
 		})
 	})
 	if err != nil {
 		r = nil
-		return
-	}
-	if r == nil {
+	} else if r == nil {
 		err = idxdb.ErrNotFound
 	}
 	return

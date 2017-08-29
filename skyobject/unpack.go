@@ -163,6 +163,18 @@ func (p *Pack) Save() (err error) {
 			p.r.Prev = cipher.SHA256{} // first Root
 		}
 
+		// save recursive
+		sr := new(saveRecursive)
+		sr.p = p
+		sr.saved = saved
+
+		for i := range p.r.Refs {
+			err = sr.saveRecursiveDynamic(reflect.ValueOf(&p.r.Refs[i]).Elem())
+			if err != nil {
+				return
+			}
+		}
+
 		// setup
 		p.r.Time = time.Now().UnixNano()
 
@@ -179,18 +191,6 @@ func (p *Pack) Save() (err error) {
 		ir.Hash = p.r.Hash
 		ir.Sig = p.r.Sig
 		ir.IsFull = true // going to be full
-
-		// save recursive
-		sr := new(saveRecursive)
-		sr.p = p
-		sr.saved = saved
-
-		for i := range p.r.Refs {
-			err = sr.saveRecursiveDynamic(reflect.ValueOf(&p.r.Refs[i]).Elem())
-			if err != nil {
-				return
-			}
-		}
 
 		// save Root in CXDS
 		saved[p.r.Hash] = struct{}{}

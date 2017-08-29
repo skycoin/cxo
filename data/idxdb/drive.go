@@ -218,6 +218,11 @@ func (d *driveRoots) Dec(seq uint64) (err error) {
 }
 
 func (d *driveRoots) Set(r *Root) (err error) {
+
+	if err = r.Validate(); err != nil {
+		return
+	}
+
 	var val, seqb []byte
 
 	seqb = utob(r.Seq)
