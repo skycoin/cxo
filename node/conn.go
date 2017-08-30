@@ -448,6 +448,17 @@ func (c *Conn) rootFilled(r *skyobject.Root) {
 
 	c.delFillingRoot(r)
 
+	// we have to be sure that this connection
+	// is subscribed to feed of this Root
+	if _, ok := c.subs[r.Pub]; !ok {
+		// TODO (kostyarin): drop the Root and remove all related
+		//                   saved obejcts, because we are not
+		//                   subscribed to the feed anymore
+		return // drop the Root
+	}
+
+	// TODO (kostyarin): add the Root to database
+
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		orf(c, r)
 	}

@@ -17,9 +17,6 @@ var (
 	ErrNotFound       = errors.New("not found")
 )
 
-// An IterateObjectsFunc ...
-type IterateObjectsFunc func(key cipher.SHA256, o *Object) (err error)
-
 // An IterateFeedsFunc represetns ...
 type IterateFeedsFunc func(cipher.PubKey) error
 
@@ -36,7 +33,7 @@ type Feeds interface {
 	Del(cipher.PubKey) error
 
 	Iterate(IterateFeedsFunc) error // iterate all feeds
-	HasFeed(cipher.PubKey) bool     // presence check
+	Has(cipher.PubKey) bool         // presence check
 
 	// Roots of feed. You'll got ErrNoSuchFeed
 	// if given feed doesn't exist
@@ -53,21 +50,21 @@ type Roots interface {
 
 	// Set or update Root. Method modifies orginal Root
 	// setting AccessTime and CreateTime to appropriate
-	// values. If Root already exists, then it's possible
-	// to update only IsFull field (AccessTime will be
-	// updated)
+	// values. If Root already exists, then this method
+	// updates access time only
 	Set(*Root) error
-
-	// Inc refs count of Root by seq number
-	Inc(seq uint64) error
-	// Dec refs count of Root by seq numeber
-	Dec(seq uint64) error
 
 	// Del Root by seq number
 	Del(uint64) error
 
 	// Get Root by seq
 	Get(uint64) (*Root, error)
+
+	// Has the Roots Root with given seq?
+	Has(uint64) bool
+
+	// Len returns amount of saved Root oebjcts
+	Len() int
 }
 
 // An IdxDB repesents API of the index-DB
@@ -81,17 +78,17 @@ type IdxDB interface {
 // A Root represetns meta information
 // of Root obejct
 type Root struct {
-	Object // root is object
+	CreateTime int64 // created at, unix nano
+	AccessTime int64 // last access time, unix nano
 
 	Seq  uint64        // seq number of this Root
 	Prev cipher.SHA256 // previous Root or empty if seq == 0
 
 	Hash cipher.SHA256 // hash of the Root filed
 	Sig  cipher.Sig    // signature of the Hash field
-
-	IsFull bool // is the Root full
 }
 
+// Validate the Root
 func (r *Root) Validate() (err error) {
 	if r.Seq == 0 {
 		if r.Prev != (cipher.SHA256{}) {
@@ -108,7 +105,6 @@ func (r *Root) Validate() (err error) {
 	if r.Sig == (cipher.Sig{}) {
 		return errors.New("(idxdb.Root.Validate) empty Sig")
 	}
-
 	return
 }
 
@@ -119,104 +115,41 @@ func (r *Root) Encode() (p []byte) {
 	// github.com/skycoin/skycoin/src/cipher/encoder
 	// but the Encode doesn't mess with reflection
 
-	p = make([]byte, 20+8+len(cipher.SHA256{})*2+len(cipher.Sig{})+1)
+	p = make([]byte, 8+8+8+len(cipher.SHA256{})*2+len(cipher.Sig{}))
 
-	r.Object.EncodeTo(p)
+	binary.LittleEndian.PutUint64(p, uint64(r.CreateTime))
+	binary.LittleEndian.PutUint64(p[8:], uint64(r.AccessTime))
 
-	binary.LittleEndian.PutUint64(p[20:], r.Seq)
+	binary.LittleEndian.PutUint64(p[8+8:], r.Seq)
 
-	copy(p[28:], r.Prev[:])
-	copy(p[28+len(cipher.SHA256{}):], r.Hash[:])
-	copy(p[28+len(cipher.SHA256{})*2:], r.Sig[:])
+	copy(p[8+8+8:], r.Prev[:])
+	copy(p[8+8+8+len(cipher.SHA256{}):], r.Hash[:])
+	copy(p[8+8+8+len(cipher.SHA256{})*2:], r.Sig[:])
 
-	if r.IsFull {
-		p[len(p)-1] = 0x01 // the cipher/encoder uses 0x01 (not 0xff)
-	}
 	return
 }
 
-// Decode given encode Root to this one
+// Decode given encoded Root to this one
 func (r *Root) Decode(p []byte) (err error) {
 
-	if len(p) != 20+8+len(cipher.SHA256{})*2+len(cipher.Sig{})+1 {
+	if len(p) != 8+8+8+len(cipher.SHA256{})*2+len(cipher.Sig{}) {
 		return ErrInvalidSize
 	}
 
-	r.Object.Decode(p[:20])
+	r.CreateTime = int64(binary.LittleEndian.Uint64(p))
+	r.AccessTime = int64(binary.LittleEndian.Uint64(p[8:]))
 
-	r.Seq = binary.LittleEndian.Uint64(p[20:])
+	r.Seq = binary.LittleEndian.Uint64(p[8+8:])
 
-	copy(r.Prev[:], p[28:])
-	copy(r.Hash[:], p[28+len(cipher.SHA256{}):])
-	copy(r.Sig[:], p[28+len(cipher.SHA256{})*2:])
-
-	r.IsFull = (p[len(p)-1] != 0)
+	copy(r.Prev[:], p[8+8+8:])
+	copy(r.Hash[:], p[8+8+8+len(cipher.SHA256{}):])
+	copy(r.Sig[:], p[8+8+8+len(cipher.SHA256{})*2:])
 	return
-}
-
-// A KeyObject represents
-// Object with its key
-type KeyObject struct {
-	Key    cipher.SHA256
-	Object *Object
-}
-
-// An Object represents meta information of an obejct
-type Object struct {
-	RefsCount  uint32 // refs to this Obejct (to this meta info)
-	CreateTime int64  // created at, unix nano
-	AccessTime int64  // last access time, unix nano
 }
 
 // UpdateAccessTime updates access time
-func (o *Object) UpdateAccessTime() {
-	o.AccessTime = time.Now().UnixNano()
-}
-
-// Encode the Object
-func (o *Object) Encode() (p []byte) {
-
-	// the Encode generates equal []byte if we are using
-	// github.com/skycoin/skycoin/src/cipher/encoder,
-	// but the Encode doesn't mess with reflection,
-	// thus it's faster
-
-	p = make([]byte, 4+8+8)
-	o.EncodeTo(p)
-	return
-}
-
-// EncodeTo encodes the Object to given slice
-func (o *Object) EncodeTo(p []byte) (err error) {
-
-	if len(p) < 20 {
-		return ErrInvalidSize
-	}
-
-	// RefsCount  4          |  0
-	// CreateTime 8          |  4
-	// AccessTime 8          | 12
-	// ----------------------|-------
-	//           20          |
-
-	binary.LittleEndian.PutUint32(p, o.RefsCount)
-	binary.LittleEndian.PutUint64(p[4:], uint64(o.CreateTime))
-	binary.LittleEndian.PutUint64(p[12:], uint64(o.AccessTime))
-	return
-}
-
-// Decode given encoded Object to this one
-func (o *Object) Decode(p []byte) (err error) {
-
-	if len(p) != 20 {
-		return ErrInvalidSize
-	}
-
-	o.RefsCount = binary.LittleEndian.Uint32(p)
-	o.CreateTime = int64(binary.LittleEndian.Uint64(p[4:]))
-	o.AccessTime = int64(binary.LittleEndian.Uint64(p[12:]))
-
-	return
+func (r *Root) UpdateAccessTime() {
+	r.AccessTime = time.Now().UnixNano()
 }
 
 /*

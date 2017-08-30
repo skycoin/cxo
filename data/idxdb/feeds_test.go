@@ -15,7 +15,7 @@ func testFeedsAdd(t *testing.T, idx IdxDB) {
 			if err = feeds.Add(pk); err != nil {
 				return
 			}
-			if feeds.HasFeed(pk) == false {
+			if feeds.Has(pk) == false {
 				t.Error("missing feed")
 			}
 			return
@@ -34,7 +34,7 @@ func testFeedsAdd(t *testing.T, idx IdxDB) {
 			if err = feeds.Add(pk); err != nil {
 				return
 			}
-			if feeds.HasFeed(pk) == false {
+			if feeds.Has(pk) == false {
 				t.Error("missing feed")
 			}
 			return
@@ -84,7 +84,7 @@ func testFeedsDel(t *testing.T, idx IdxDB) {
 			if err = feeds.Del(pk); err != nil {
 				return
 			}
-			if feeds.HasFeed(pk) == true {
+			if feeds.Has(pk) == true {
 				t.Error("feed was not deleted")
 			}
 			return
@@ -275,13 +275,13 @@ func TestFeeds_Iterate(t *testing.T) {
 
 }
 
-func testFeedsHasFeed(t *testing.T, idx IdxDB) {
+func testFeedsHas(t *testing.T, idx IdxDB) {
 
 	pk, _ := cipher.GenerateKeyPair()
 
 	t.Run("not exist", func(t *testing.T) {
 		err := idx.Tx(func(feeds Feeds) (_ error) {
-			if feeds.HasFeed(pk) == true {
+			if feeds.Has(pk) == true {
 				t.Error("has unexisting feed")
 			}
 			return
@@ -297,7 +297,7 @@ func testFeedsHasFeed(t *testing.T, idx IdxDB) {
 
 	t.Run("exists", func(t *testing.T) {
 		err := idx.Tx(func(feeds Feeds) (_ error) {
-			if feeds.HasFeed(pk) == false {
+			if feeds.Has(pk) == false {
 				t.Error("has not existing feed")
 			}
 			return
@@ -309,8 +309,8 @@ func testFeedsHasFeed(t *testing.T, idx IdxDB) {
 
 }
 
-func TestFeeds_HasFeed(t *testing.T) {
-	// HasFeed(cipher.PubKey) bool
+func TestFeeds_Has(t *testing.T) {
+	// Has(cipher.PubKey) bool
 
 	// TODO (kostyarin): memory
 
@@ -318,7 +318,7 @@ func TestFeeds_HasFeed(t *testing.T) {
 		idx := testNewDriveIdxDB(t)
 		defer os.Remove(testFileName)
 		defer idx.Close()
-		testFeedsHasFeed(t, idx)
+		testFeedsHas(t, idx)
 	})
 
 }

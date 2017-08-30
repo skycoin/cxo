@@ -18,7 +18,6 @@ func testAddFeed(t *testing.T, idx IdxDB, pk cipher.PubKey) {
 
 func testNewRoot(seed string, sk cipher.SecKey) (r *Root) {
 	r = new(Root)
-	r.RefsCount = 888
 	r.CreateTime = 111
 	r.AccessTime = 222
 
@@ -26,8 +25,6 @@ func testNewRoot(seed string, sk cipher.SecKey) (r *Root) {
 	r.Prev = cipher.SHA256{}
 	r.Hash = cipher.SumSHA256([]byte(seed))
 	r.Sig = cipher.SignHash(r.Hash, sk)
-	r.IsFull = false
-
 	return
 }
 
@@ -441,9 +438,7 @@ func testRootsSet(t *testing.T, idx IdxDB) {
 		}
 	})
 
-	r.IsFull = true // should be updated
-
-	t.Run("unpdate", func(t *testing.T) {
+	t.Run("update", func(t *testing.T) {
 		err := idx.Tx(func(feeds Feeds) (err error) {
 			var rs Roots
 			if rs, err = feeds.Roots(pk); err != nil {
@@ -456,6 +451,7 @@ func testRootsSet(t *testing.T, idx IdxDB) {
 			if x, err = rs.Get(r.Seq); err != nil {
 				return
 			}
+			r.AccessTime = x.AccessTime
 			if *x != *r {
 				t.Error("wrong")
 			}
@@ -545,6 +541,65 @@ func TestRoots_Get(t *testing.T) {
 		defer idx.Close()
 
 		testRootsGet(t, idx)
+	})
+
+}
+
+func testRootsHas(t *testing.T, idx IdxDB) {
+
+	pk, sk := cipher.GenerateKeyPair()
+
+	if testAddFeed(t, idx, pk); t.Failed() {
+		return
+	}
+
+	t.Run("not found", func(t *testing.T) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
+			var rs Roots
+			if rs, err = feeds.Roots(pk); err != nil {
+				return
+			}
+			if true == rs.Has(0) {
+				t.Error("has unexisting root")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	testAddRoot(t, idx, pk, testNewRoot("seed", sk))
+
+	t.Run("has", func(t *testing.T) {
+		err := idx.Tx(func(feeds Feeds) (err error) {
+			var rs Roots
+			if rs, err = feeds.Roots(pk); err != nil {
+				return
+			}
+			if true != rs.Has(0) {
+				t.Error("has not existing root")
+			}
+			return
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+}
+
+func TestRoots_Has(t *testing.T) {
+	// Has(uint64) bool
+
+	// TODO (kostyarin): memeory
+
+	t.Run("drive", func(t *testing.T) {
+		idx := testNewDriveIdxDB(t)
+		defer os.Remove(testFileName)
+		defer idx.Close()
+
+		testRootsHas(t, idx)
 	})
 
 }

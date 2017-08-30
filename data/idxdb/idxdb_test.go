@@ -30,24 +30,12 @@ func testRoot(s string) (r *Root) {
 	r = new(Root)
 	r.AccessTime = 996
 	r.CreateTime = 998
-	r.RefsCount = 1
 
 	r.Seq = 0
 	r.Prev = cipher.SHA256{}
 
 	r.Hash = cipher.SumSHA256([]byte(s))
 	r.Sig = cipher.SignHash(r.Hash, sk)
-
-	r.IsFull = true
-	return
-}
-
-func testKeyObject(seed string) (key cipher.SHA256, o *Object) {
-	o = new(Object)
-	key = cipher.SumSHA256([]byte(seed))
-	o.AccessTime = 3
-	o.CreateTime = 2
-	o.RefsCount = 1
 	return
 }
 
@@ -112,72 +100,18 @@ func TestRoot_Decode(t *testing.T) {
 
 }
 
-func TestObject_UpdateAccessTime(t *testing.T) {
+func TestRoot_UpdateAccessTime(t *testing.T) {
 	// UpdateAccessTime()
 
-	_, o := testKeyObject("obj")
+	r := testRoot("r1")
 	start := time.Now().UnixNano()
-	o.UpdateAccessTime()
+	r.UpdateAccessTime()
 	end := time.Now().UnixNano()
-	if o.AccessTime < start {
+	if r.AccessTime < start {
 		t.Error("not updated")
-	} else if o.AccessTime > end {
-		t.Error("wrong time", o.AccessTime, end)
+	} else if r.AccessTime > end {
+		t.Error("wrong time", r.AccessTime, end)
 	}
-}
-
-func TestObject_Encode(t *testing.T) {
-	// Encode() (p []byte)
-
-	_, o := testKeyObject("obj")
-
-	if bytes.Compare(o.Encode(), encoder.Serialize(o)) != 0 {
-		t.Error("wrong")
-	}
-}
-
-func TestObject_EncodeTo(t *testing.T) {
-	// EncodeTo(p []byte) (err error)
-
-	_, o := testKeyObject("obj")
-
-	p := make([]byte, 20)
-	if err := o.EncodeTo(p); err != nil {
-		t.Error(err)
-	} else if bytes.Compare(p, encoder.Serialize(o)) != 0 {
-		t.Error("wrong")
-	}
-
-	p = make([]byte, 64)
-	if err := o.EncodeTo(p); err != nil {
-		t.Error(err)
-	} else if bytes.Compare(p[:20], encoder.Serialize(o)) != 0 {
-		t.Error("wrong")
-	}
-
-	if err := o.EncodeTo(p[:12]); err == nil {
-		t.Error("misisng error")
-	}
-}
-
-func TestObject_Decode(t *testing.T) {
-	// Decode(p []byte) (err error)
-
-	_, o := testKeyObject("obj")
-	p := encoder.Serialize(o)
-
-	x := new(Object)
-	if err := x.Decode(p); err != nil {
-		t.Error(err)
-	}
-	if *x != *o {
-		t.Error("wrong")
-	}
-
-	if err := x.Decode(p[:12]); err == nil {
-		t.Error("misisng error")
-	}
-
 }
 
 func TestRoot_Validate(t *testing.T) {

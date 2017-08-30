@@ -98,7 +98,7 @@ func incSlice(b []byte) {
 	}
 }
 
-func (d *driveFeeds) HasFeed(pk cipher.PubKey) bool {
+func (d *driveFeeds) Has(pk cipher.PubKey) bool {
 	return d.bk.Bucket(pk[:]) != nil
 }
 
@@ -169,54 +169,6 @@ func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 	return
 }
 
-func (d *driveRoots) Inc(seq uint64) (err error) {
-	var val, seqb []byte
-	var r *Root
-
-	seqb = utob(seq)
-
-	if val = d.bk.Get(seqb); len(val) == 0 {
-		err = ErrNotFound
-		return
-	}
-
-	r = new(Root)
-
-	if err = r.Decode(val); err != nil {
-		panic(err)
-	}
-
-	r.UpdateAccessTime()
-	r.RefsCount++
-
-	return d.bk.Put(seqb, r.Encode())
-}
-
-func (d *driveRoots) Dec(seq uint64) (err error) {
-	var val, seqb []byte
-	var r *Root
-
-	seqb = utob(seq)
-
-	if val = d.bk.Get(seqb); len(val) == 0 {
-		err = ErrNotFound
-		return
-	}
-
-	r = new(Root)
-
-	if err = r.Decode(val); err != nil {
-		panic(err)
-	}
-
-	r.UpdateAccessTime()
-	if r.RefsCount >= 1 {
-		r.RefsCount--
-	}
-
-	return d.bk.Put(seqb, r.Encode())
-}
-
 func (d *driveRoots) Set(r *Root) (err error) {
 
 	if err = r.Validate(); err != nil {
@@ -231,7 +183,6 @@ func (d *driveRoots) Set(r *Root) (err error) {
 		// not found
 		r.UpdateAccessTime()
 		r.CreateTime = r.AccessTime
-		r.RefsCount = 1
 		return d.bk.Put(seqb, r.Encode())
 	}
 
@@ -241,14 +192,7 @@ func (d *driveRoots) Set(r *Root) (err error) {
 	if err = nr.Decode(val); err != nil {
 		panic(err)
 	}
-
 	nr.UpdateAccessTime()
-	nr.RefsCount++ // actually it should panic here (todo)
-	nr.IsFull = r.IsFull
-
-	r.AccessTime = nr.AccessTime
-	r.RefsCount = nr.RefsCount
-
 	return d.bk.Put(seqb, nr.Encode())
 }
 
@@ -268,6 +212,14 @@ func (d *driveRoots) Get(seq uint64) (r *Root, err error) {
 		panic(err)
 	}
 	return
+}
+
+func (d *driveRoots) Has(seq uint64) (yep bool) {
+	return len(d.bk.Get(utob(seq))) > 0
+}
+
+func (d *driveRoots) Len() int {
+	return d.bk.Stats().KeyN
 }
 
 func utob(u uint64) (p []byte) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -42,7 +43,11 @@ const (
 // The Pack also used to unpack a Root,
 // modify it and walk through. The Pack is
 // not thread safe. All objects of the
-// Pack are not thread safe
+// Pack are not thread safe. Underlying Root
+// obejct is changing. Fields of the Root
+// contains actual values after Save
+// method (if it's successful) and before
+// one other method of the Pack called
 type Pack struct {
 	c *Container // back reference
 
@@ -52,15 +57,22 @@ type Pack struct {
 	flags Flag   // packing flags
 	types *Types // types mapping
 
-	sk cipher.SecKey // secret key
-
-	unsaved map[cipher.SHA256][]byte // cache
+	sk     cipher.SecKey // secret key
+	unhold sync.Once     // unhold once (for Close method)
 }
 
+// Close the Pack, unhold underlying Root
+// (if it's holded), release some resources
 func (p *Pack) Close() {
 	if p.flags&freshRoot == 0 {
-		p.c.unholdRoot(p.r.Pub, p.r.Seq)
+		p.unhold.Do(func() {
+			p.c.Unhold(p.r.Pub, p.r.Seq)
+		})
 	}
+	p.c = nil     // GC
+	p.r = nil     // GC
+	p.reg = nil   // GC
+	p.types = nil // GC
 }
 
 // don't save, just get k-v

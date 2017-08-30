@@ -530,42 +530,73 @@ func (n *Node) AddFeed(pk cipher.PubKey) (err error) {
 	return
 }
 
-func (n *Node) delFeed(pk cipher.PubKey) (ok bool, err error) {
+// del feed from share-list
+func (n *Node) delFeed(pk cipher.PubKey) (ok bool) {
 	n.fmx.Lock()
 	defer n.fmx.Unlock()
 
 	if _, ok = n.feeds[pk]; ok {
 		delete(n.feeds, pk)
-		if err = n.so.DelFeed(pk); err != nil {
-			return
-		}
 	}
 	return
+}
+
+// del feed from conenctions, every conenction must
+// reply when it done, because we have to know
+// the moment after which our DB doesn't contains
+// non-full Root object; thus, every conenctions
+// terminates fillers of the feed and removes non-full
+// root objects
+func (n *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
+	n.cmx.RLock()
+	defer n.cmx.RUnlock()
+
+	dones = make([]delFeedConnsReply, 0, len(n.conns))
+
+	for _, c := range n.conns {
+
+		done := make(chan struct{})
+		closed := c.gc.Closed()
+
+		select {
+		case c.events <- &unsubscribeFromDeletedFeedEvent{pk, done}:
+		case <-closed:
+			close(done)
+		}
+
+		dones = append(dones, delFeedConnsReply{done, closed})
+	}
+	return
+}
+
+type delFeedConnsReply struct {
+	done   <-chan struct{} // filler closed
+	closed <-chan struct{} // conenctions closed and done
 }
 
 // DelFed stops sharing given feed. It unsubscribes
 // from all conenctions
 func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
-	var ok bool
-	ok, err = n.delFeed(pk)
 
-	if !ok {
-		return // not deleted
+	if false == n.delFeed(pk) {
+		return // not deleted (we haven't the feed)
 	}
 
-	n.cmx.RLock()
-	defer n.cmx.RUnlock()
+	dones := n.delFeedConns(pk)
 
-	evt := &unsubscribeFromDeletedFeedEvent{pk}
-
-	for _, c := range n.conns {
+	// wait
+	for _, dfcr := range dones {
 		select {
-		case c.events <- evt:
-		case <-n.quit:
-			return
+		case <-dfcr.done:
+		case <-dfcr.closed:
 		}
 	}
-	return
+
+	// now, we can remove the feed if there
+	// are not holded Root objects
+	if err = n.so.DelFeed(pk); err != nil {
+		return
+	}
 }
 
 /*

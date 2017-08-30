@@ -42,10 +42,13 @@ func (c *Conn) unsubscribeEvent(pk cipher.PubKey) {
 }
 
 type unsubscribeFromDeletedFeedEvent struct {
-	pk cipher.PubKey
+	pk   cipher.PubKey
+	done chan struct{}
 }
 
 func (u *unsubscribeFromDeletedFeedEvent) Handle(c *Conn) {
+	defer close(u.done)
+
 	if _, ok := c.subs[u.pk]; ok {
 		c.unsubscribe(u.pk) //
 		c.Send(c.s.src.Unsubscribe(u.pk))
