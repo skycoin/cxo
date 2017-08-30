@@ -11,7 +11,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data/cxds" // TODO: cxds.ErrNOtFound
-	"github.com/skycoin/cxo/data/idxdb"
 )
 
 // some of Root dropping reasons
@@ -95,28 +94,9 @@ func (f *Filler) drop(err error) {
 
 func (f *Filler) full() {
 	f.c.Debugln(FillVerbosePin, "(*Filler).full", f.r.Short())
-
-	// mark full
-	err := f.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
-		if rs, err = feeds.Roots(f.r.Pub); err != nil {
-			return
-		}
-		var ir *idxdb.Root
-		if ir, err = rs.Get(f.r.Seq); err != nil {
-			return
-		}
-		ir.IsFull = true
-		return rs.Set(ir)
-	})
-	if err != nil {
-		// detailed error
-		err = fmt.Errorf("can't mark root %s as full in DB: %v",
-			f.r.Short(),
-			err)
-		f.drop(err) // can't mark as full
-		return
-	}
+	// don't save: delegate it for node, because the node
+	// can be unsubscribed from the feed and we should
+	// return proper error
 	f.bus.FullQ <- f.r
 }
 
@@ -133,6 +113,11 @@ func (f *Filler) fill() {
 	var ok bool
 	var err error
 	if f.reg, err = f.c.Registry(f.r.Reg); err != nil {
+
+		// TODO (kostyarin): the cxds.ErrNotFound should be replaced with
+		//                   data.ErrNotFoundCXDS to make anyone use
+		//                   his own implementation of the CXDS
+
 		if err == cxds.ErrNotFound {
 			if val, ok = f.request(cipher.SHA256(f.r.Reg)); !ok {
 				return // drop

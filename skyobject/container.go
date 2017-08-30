@@ -137,7 +137,7 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 
 	r.Sig = ir.Sig
 	r.Hash = ir.Hash
-	r.IsFull = ir.IsFull
+	r.IsFull = true // DB contains full Root objects only
 
 	return
 
@@ -308,7 +308,7 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 
 	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 
-		if false == feeds.HasFeed(pk) {
+		if false == feeds.Has(pk) {
 			return // nothing to delete
 		}
 
@@ -325,8 +325,8 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 		// (and decrement refs count of all related obejcts)
 		// checking out holded Roots
 
-		err = rs.Ascend(func(r *idxdb.Root) (err error) {
-			if err = c.CanRemove(pk, r.Seq); err != nil {
+		err = rs.Ascend(func(ir *idxdb.Root) (err error) {
+			if err = c.CanRemove(pk, ir.Seq); err != nil {
 				return
 			}
 
@@ -334,7 +334,7 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 				return
 			}
 
-			return rs.Del(r.Seq) // delete the Root
+			return rs.Del(ir.Seq) // delete the Root
 		})
 
 		if err != nil {

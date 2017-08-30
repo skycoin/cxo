@@ -57,6 +57,8 @@ type Pack struct {
 	flags Flag   // packing flags
 	types *Types // types mapping
 
+	unsaved map[cipher.SHA256][]byte
+
 	sk     cipher.SecKey // secret key
 	unhold sync.Once     // unhold once (for Close method)
 }
@@ -202,7 +204,6 @@ func (p *Pack) Save() (err error) {
 		ir.Prev = p.r.Prev
 		ir.Hash = p.r.Hash
 		ir.Sig = p.r.Sig
-		ir.IsFull = true // going to be full
 
 		// save Root in CXDS
 		saved[p.r.Hash] = struct{}{}
@@ -227,8 +228,8 @@ func (p *Pack) Save() (err error) {
 		}
 	} else {
 		if p.flags&freshRoot == 0 {
-			p.c.unholdRoot(p.r.Pub, seqDec)
-			p.c.holdRoot(p.r.Pub, p.r.Seq) // hold this Root
+			p.c.Hold(p.r.Pub, p.r.Seq)  // hold this Root
+			p.c.Unhold(p.r.Pub, seqDec) // unhold previous
 		}
 		p.unsaved = make(map[cipher.SHA256][]byte) // clear
 	}

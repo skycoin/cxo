@@ -60,6 +60,14 @@ func decodeRoot(val []byte) (r *Root, err error) {
 	return
 }
 
+// AddEncodedRoot or not to add. The method checks given encoded Root
+// and returns full Root if DB aleady contains the Root and non full
+// Root (that is not stored in DB) if the Root is fresh. The node
+// package must care about filling one Root at the same time, this
+// method only checks signature, hash, etc. Thus, if err is nil, then
+// the Root reply can be full Root, or it can be unsaved non-full Root
+// object, that node required to fill (or drop for some reasons).
+// Actually, this method doesn't add to DB anything
 func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 	err error) {
 
@@ -81,61 +89,44 @@ func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 		if rs, err = feeds.Roots(r.Pub); err != nil {
 			return
 		}
-		var ir *idxdb.Root
-		if ir, err = rs.Get(r.Seq); err != nil {
-			if err == idxdb.ErrNotFound {
-				err = rs.Set(&idxdb.Root{
-					Seq:    r.Seq,
-					Prev:   r.Prev,
-					Hash:   r.Hash,
-					Sig:    r.Sig,
-					IsFull: false,
-				})
-				if err != nil {
-					return
-				}
-				_, err = c.db.CXDS().Set(r.Hash, val)
-				return
-			}
-			return
+		if true == rs.Has(r.Seq) {
+			r.IsFull = true
 		}
-		r.IsFull = ir.IsFull
 		return
 	})
 	if err != nil {
-		r = nil
+		r = nil // can't determine
 	}
-
 	return
 }
 
-// LastFull Root of given feed
-func (c *Container) LastFull(pk cipher.PubKey) (r *Root, err error) {
+// LastRoot of given feed. It receive Root obejct from DB, thus the Root
+// can only be full. E.g. the method is "give me last full Root of this feed"
+func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 		var rs idxdb.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
 		return rs.Descend(func(ir *idxdb.Root) (err error) {
-			if ir.IsFull {
-				var val []byte
-				if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
-					return
-				}
-				if r, err = decodeRoot(val); err != nil {
-					return
-				}
-				r.Hash = ir.Hash
-				r.Sig = ir.Sig
-				r.IsFull = ir.IsFull
-				return idxdb.ErrStopIteration // break
+			var val []byte
+			if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
+				return
 			}
-			return // continue
+			if r, err = decodeRoot(val); err != nil {
+				return
+			}
+			r.Hash = ir.Hash
+			r.Sig = ir.Sig
+			r.IsFull = true
+			return idxdb.ErrStopIteration // break
 		})
 	})
 	if err != nil {
 		r = nil
 	} else if r == nil {
+		// this occurs if feed is empty and the Descend function
+		// above doesn't call given function, returning nil
 		err = idxdb.ErrNotFound
 	}
 	return
