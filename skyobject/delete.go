@@ -58,8 +58,10 @@ func (c *Container) decrementAll(ir *idxdb.Root) (err error) {
 
 // A findRefsFunc used by findRefs. Error reply used
 // to stop finding (use ErrStopIteration) and to
-// terminate the finding returning any other error
-type findRefsFunc func(key cipher.SHA256) (err error)
+// terminate the finding returning any other error.
+// Use the deepper reply to ectract and explore current
+// object. A findRefsFunc never called with empty hash
+type findRefsFunc func(key cipher.SHA256) (deepper bool, err error)
 
 // find refs of an element
 type findRefs struct {
@@ -68,5 +70,35 @@ type findRefs struct {
 }
 
 func (f *findRefs) Dynamic(dr Dynamic, fr findRefsFunc) (err error) {
+	if dr.Object == (cipher.SHA256{}) {
+		return // ignore blank
+	}
+	if false == dr.IsValid() {
+		return ErrInvalidDynamicReference
+	}
+	var deepper bool
+	if deepper, err = fr(dr.Object); err != nil || deepper == false {
+		return
+	}
+	var s Schema
+	if s, err = f.reg.SchemaByReference(dr.SchemaRef); err != nil {
+		return
+	}
+	return f.Ref(s, key, fr)
+}
+
+func (f *findRefs) Ref(s Schema, key cipher.SHA256,
+	fr findRefsFunc) (err error) {
+
+	if key == (cipher.SHA256{}) {
+		return
+	}
+
+	var val []byte
+	if val, _, err = f.c.db.CXDS().Get(key); err != nil {
+		return
+	}
+
 	//
+	return
 }
