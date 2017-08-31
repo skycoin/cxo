@@ -149,13 +149,9 @@ type Config struct {
 	OnRootFilled func(c *Conn, root *skyobject.Root)
 	// OnFillingBreaks occurs when a filling Root
 	// can't be filled up because connection breaks.
-	// The Root can be removed or can not, depending
-	// DropNonFullRoots option. In many cases, connection
-	// will be recreated and the Root will be filled up.
-	// no reason to remove it. But. This callback also called
-	// if any other error occured, such as DB can't
-	// save received object, the Root it fills malformed
-	// and can't be filled, etc
+	// The Root will be removed after this callback
+	// with all related obejcts. The Root is not full
+	// and can't be used in skyobject methods
 	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
 }
 

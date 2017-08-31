@@ -13,10 +13,12 @@ const testFileName = "test.db"
 // copy pasted from data because of import cycles
 type CXDS interface {
 	Get(cipher.SHA256) ([]byte, uint32, error)
+	GetInc(cipher.SHA256) ([]byte, uint32, error)
 	Set(cipher.SHA256, []byte) (uint32, error)
 	Add([]byte) (cipher.SHA256, uint32, error)
 	Inc(cipher.SHA256) (uint32, error)
 	Dec(cipher.SHA256) (uint32, error)
+	DecGet(cipher.SHA256) ([]byte, uint32, error)
 	MultiGet([]cipher.SHA256) ([][]byte, error)
 	MultiAdd([][]byte) error
 	MultiInc([]cipher.SHA256) error

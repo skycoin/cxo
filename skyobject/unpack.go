@@ -128,12 +128,13 @@ func (p *Pack) del(key cipher.SHA256) {
 	delete(p.unsaved, key)
 }
 
-// Save all changes in DB returning packed updated Root.
-// Use the result to publish upates (node package related)
+// Save all changes in DB returning error if any.
+// If the Save returns an error then this Pack instance
+// turn invalid and can't be used anymore
 func (p *Pack) Save() (err error) {
 	p.c.Debugln(VerbosePin, "(*Pack).Save", p.r.Pub.Hex()[:7], p.r.Seq)
 
-	tp := time.Now() // time point
+	var tp = time.Now() // time point
 
 	if p.sk == (cipher.SecKey{}) {
 		err = fmt.Errorf("can't save Root of %s: empty secret key",
@@ -150,8 +151,8 @@ func (p *Pack) Save() (err error) {
 	//   2.1) get the V/A of already existeing obejcts
 	//   2.2) save new obejcts indexing them
 	// 3) keep all saved objects to decrement them on failure
-	var seqDec uint64 = p.r.Seq                  // base
-	var saved = make(map[cipher.SHA256]struct{}) // decr. on fail
+	var seqDec uint64 = p.r.Seq             // base
+	var saved = make(map[cipher.SHA256]int) // decr. on fail
 
 	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 
@@ -206,7 +207,7 @@ func (p *Pack) Save() (err error) {
 		ir.Sig = p.r.Sig
 
 		// save Root in CXDS
-		saved[p.r.Hash] = struct{}{}
+		saved[p.r.Hash]++
 		if _, err = p.c.db.CXDS().Set(p.r.Hash, val); err != nil {
 			return
 		}
@@ -217,14 +218,19 @@ func (p *Pack) Save() (err error) {
 		}
 
 		// save registry in CXDS
-		saved[cipher.SHA256(p.r.Reg)] = struct{}{}
+		saved[cipher.SHA256(p.r.Reg)]++
 		_, err = p.c.db.CXDS().Set(cipher.SHA256(p.r.Reg), p.reg.Encode())
 		return
 	})
 	if err != nil {
 		// sec saved
-		for hash := range saved {
-			p.c.DB().CXDS().Dec(hash) // ignore error (TODO: log  the err)
+		for hash, c := range saved {
+			for i := 0; i < c; i++ {
+				if _, dece := p.c.DB().CXDS().Dec(hash); dece != nil {
+					p.c.Printf("[ERR] can't decrement %s: %v", hash.Hex()[:7],
+						dece)
+				}
+			}
 		}
 	} else {
 		if p.flags&freshRoot == 0 {
@@ -236,12 +242,17 @@ func (p *Pack) Save() (err error) {
 
 	st := time.Now().Sub(tp)
 
-	p.c.Debugf(PackSavePin, "%s saved after %v", p.r.Short(), st)
+	if err == nil {
+		p.c.Debugf(PackSavePin, "%s saved after %v, %d objects saved",
+			p.r.Short(), st, len(saved))
+	} else {
+		p.c.Debugf(PackSavePin, "%s error saving after %v", p.r.Short(), st)
+	}
 	return
 }
 
-// Initialize the Pack. It creates Root WalkNode and
-// unpack entire tree if appropriate flag is set
+// Initialize the Pack. It unpacks entire tree
+// if appropriate flag is set
 func (p *Pack) init() (err error) {
 	// Do we need to unpack entire tree?
 	if p.flags&EntireTree != 0 {

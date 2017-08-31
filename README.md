@@ -5,7 +5,7 @@ CX Object System
 [![Coverage Status](https://coveralls.io/repos/skycoin/cxo/badge.svg?branch=master)](https://coveralls.io/r/skycoin/cxo?branch=master)
 [![GoReportCard](https://goreportcard.com/badge/skycoin/cxo)](https://goreportcard.com/report/skycoin/cxo)
 
-Specs: https://pad.riseup.net/p/cxo
+The CXO is ...
 
 ## Packages
 

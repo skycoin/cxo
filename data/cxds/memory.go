@@ -37,6 +37,23 @@ func (m *MemoryCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	return
 }
 
+func (m *MemoryCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
+	err error) {
+
+	m.mx.Lock()
+	defer m.mx.Unlock()
+
+	if mo, ok := m.kvs[key]; ok {
+		mo.rc++
+		val = mo.val
+		rc = mo.rc
+		m.kvs[key] = mo // save
+		return
+	}
+	err = ErrNotFound
+	return
+}
+
 func (m *MemoryCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	m.mx.Lock()
 	defer m.mx.Unlock()
@@ -87,6 +104,27 @@ func (m *MemoryCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 	if mo, ok := m.kvs[key]; ok {
 		mo.rc--
 		rc = mo.rc
+		if mo.rc == 0 {
+			delete(m.kvs, key)
+			return
+		}
+		m.kvs[key] = mo
+		return
+	}
+	err = ErrNotFound
+	return
+}
+
+func (m *MemoryCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
+	err error) {
+
+	m.mx.Lock()
+	defer m.mx.Unlock()
+
+	if mo, ok := m.kvs[key]; ok {
+		mo.rc--
+		rc = mo.rc
+		val = mo.val
 		if mo.rc == 0 {
 			delete(m.kvs, key)
 			return

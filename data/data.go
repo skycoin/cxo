@@ -13,6 +13,8 @@ import (
 type CXDS interface {
 	// Get value by key. Result is value and references count
 	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
+	// GetInc is the same as Inc+Get
+	GetInc(key cipher.SHA256) (val []byte, rc uint32, err error)
 	// Set key-value pair. If value already exists the Set
 	// increments references count
 	Set(key cipher.SHA256, val []byte) (rc uint32, err error)
@@ -25,6 +27,9 @@ type CXDS interface {
 	// Dec decrements references count. The rc is zero if
 	// value has been deleted by the Dec
 	Dec(key cipher.SHA256) (rc uint32, err error)
+	// DecGet is the same as Dec but it returns value even if
+	// it has been deleted by call
+	DecGet(key cipher.SHA256) (val []byte, rc uint32, err error)
 
 	// batch operation
 

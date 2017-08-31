@@ -54,6 +54,24 @@ func (d *DriveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	return
 }
 
+func (d *DriveCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
+	err error) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
+		got := tx.Bucket(objs).Get(key[:])
+		if len(got) == 0 {
+			return ErrNotFound // pass through
+		}
+
+		got = copy204(got) // this copying required
+
+		rc = incRefsCount(got)
+		val = got[4:]
+		return
+	})
+	return
+}
+
 func (d *DriveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	if len(val) == 0 {
 		err = ErrEmptyValue
@@ -116,6 +134,28 @@ func (d *DriveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 		// TODO (kostyarin): take a look the issue
 		// https://github.com/boltdb/bolt/issues/204
 		got = copy204(got)
+
+		rc = decRefsCount(got)
+		if rc == 0 {
+			return bk.Delete(key[:])
+		}
+		return bk.Put(key[:], got)
+	})
+	return
+}
+
+func (d *DriveCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
+	err error) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
+		bk := tx.Bucket(objs)
+		got := bk.Get(key[:])
+		if len(got) == 0 {
+			return ErrNotFound
+		}
+
+		got = copy204(got) // copying requied
+		val = got[4:]
 
 		rc = decRefsCount(got)
 		if rc == 0 {
