@@ -139,6 +139,13 @@ func (s *Src) Root(r *skyobject.Root) (root *Root) {
 	return
 }
 
+func (s *Src) RootDone(pk cipher.PubKey, seq uint64) (rd *RootDone) {
+	rd = new(RootDone)
+	rd.Feed = pk
+	rd.Seq = seq
+	return
+}
+
 func (s *Src) RequestObject(key cipher.SHA256) (ro *RequestObject) {
 	ro = new(RequestObject)
 	ro.Key = key

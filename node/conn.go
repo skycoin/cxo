@@ -30,13 +30,17 @@ type Conn struct {
 	// not threads safe fields
 
 	// subscriptions of the Conn to resusbcribe OnDial
-	subs map[cipher.PubKey]struct{}
+	subs map[cipher.PubKey]sentRoot
 	rr   map[msg.ID]*waitResponse // request-response
 
 	events  chan event  // events of the Conn
 	timeout chan msg.ID // timeouts
 
 	pings map[msg.ID]chan struct{}
+
+	// send a holded Root to peer, the Root
+	// should be unholded after use
+	sendRoot chan *skyobject.Root
 
 	// filling
 
@@ -51,6 +55,15 @@ type Conn struct {
 	fillers map[cipher.SHA256]*skyobject.Filler
 }
 
+type sentRoot struct {
+	// current Root object that
+	// remote node is filling
+	current *skyobject.Root
+	// next Root object that will be sent
+	// after the current one
+	next *skyobject.Root
+}
+
 func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
 
 	c = new(Conn)
@@ -60,11 +73,12 @@ func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
 
 	// TODO (kostyarin): make all the 128s and 8s below configurable
 
-	c.subs = make(map[cipher.PubKey]struct{})
+	c.subs = make(map[cipher.PubKey]sentRoot)
 	c.rr = make(map[msg.ID]*waitResponse)
 	c.events = make(chan event, 128)
 	c.timeout = make(chan msg.ID, 128)
 	c.pings = make(map[msg.ID]chan struct{})
+	c.sendRoot = make(chan *skyobject.Root, 8)
 
 	c.wantq = make(chan skyobject.WCXO, 128)
 	c.requests = make(map[cipher.SHA256][]chan []byte)
@@ -370,10 +384,13 @@ func (c *Conn) handle() {
 	defer c.onCloseCallback()
 
 	var (
-		closed  = c.gc.Closed()
-		receive = c.gc.ReceiveQueue()
-		events  = c.events
-		timeout = c.timeout
+		closed   = c.gc.Closed()
+		receive  = c.gc.ReceiveQueue()
+		events   = c.events
+		timeout  = c.timeout
+		sendRoot = c.sendRoot
+
+		sentRoots []*skyobject.Root
 
 		raw []byte
 		m   msg.Msg
