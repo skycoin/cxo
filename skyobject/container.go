@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/data/idxdb"
@@ -99,50 +98,6 @@ func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
 	return
 }
 
-// Root of a feed by seq. The method can returns database error or
-// idxdb.ErrNotfound if requested Root has not been found
-func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
-	c.Debugln(VerbosePin, "Root", pk.Hex()[:7], seq)
-
-	// request index
-
-	var ir *idxdb.Root
-	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
-		if rs, err = feeds.Roots(pk); err != nil {
-			return
-		}
-		ir, err = rs.Get(seq)
-		return
-	})
-	if err != nil {
-		return
-	}
-
-	// request CXDS
-
-	var val []byte
-	if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
-		return
-	}
-
-	// decode
-
-	r = new(Root)
-	if err = encoder.DeserializeRaw(val, r); err != nil {
-		return
-	}
-
-	// copy meta information
-
-	r.Sig = ir.Sig
-	r.Hash = ir.Hash
-	r.IsFull = true // DB contains full Root objects only
-
-	return
-
-}
-
 // Unpack given Root obejct. Use flags by your needs
 //
 //     r, err := c.Root(pk, 500)
@@ -166,6 +121,10 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 // and publish changes. In any other cases it is not necessary and can be
 // passed like cipher.SecKey{}. If the sk is empty then ViewOnly flag
 // will be set
+//
+// The Unpack holds given Root object. Thus, you have to Close the
+// Pack after use. Feel free to close it many times. But keep in
+// mind that after closing Pack can't be used
 func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 	sk cipher.SecKey) (pack *Pack, err error) {
 

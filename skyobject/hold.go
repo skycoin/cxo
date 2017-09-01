@@ -17,8 +17,9 @@ type holdedRoot struct {
 	Pub cipher.PubKey
 }
 
-// Hold given Root object to prevent removig
-// it this session (until the Container closed)
+// Hold Root object by feed and seq number to prevent
+// removig it for this session (until the Container
+// closed). It's possible to hold a Root many times
 func (r *rootsHolder) Hold(pk cipher.PubKey, seq uint64) {
 	r.hmx.Lock()
 	defer r.hmx.Unlock()
@@ -26,7 +27,7 @@ func (r *rootsHolder) Hold(pk cipher.PubKey, seq uint64) {
 	r.holded[holdedRoot{seq, pk}]++
 }
 
-// Unhold given Root object
+// Unhold Root object by feed and seq number
 func (r *rootsHolder) Unhold(pk cipher.PubKey, seq uint64) {
 	r.hmx.Lock()
 	defer r.hmx.Unlock()
@@ -42,7 +43,7 @@ func (r *rootsHolder) Unhold(pk cipher.PubKey, seq uint64) {
 	}
 }
 
-// IsHolded given Root or not
+// IsHolded check is Root object holded or not
 func (r *rootsHolder) IsHolded(pk cipher.PubKey, seq uint64) (yep bool) {
 	r.hmx.Lock()
 	defer r.hmx.Unlock()

@@ -100,9 +100,17 @@ func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 	return
 }
 
+// Unhold a holded Root obejct
+func (c *Container) UnholdRoot(r *Root) { c.Unhold(r.Pub, r.Seq) }
+
 // LastRoot of given feed. It receive Root obejct from DB, thus the Root
-// can only be full. E.g. the method is "give me last full Root of this feed"
+// can only be full. E.g. the method is "give me last full Root of this feed".
+// This method returns holded Root obejct and it can't be removed from
+// database. You have to unhold it later using Unhold or UnholdRoot method
 func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
+
+	var holded bool
+
 	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 		var rs idxdb.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
@@ -116,18 +124,69 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 			if r, err = decodeRoot(val); err != nil {
 				return
 			}
+
+			c.Hold(pk, r.Seq) // hold the Root
+			holded = true
+
 			r.Hash = ir.Hash
 			r.Sig = ir.Sig
 			r.IsFull = true
+
 			return idxdb.ErrStopIteration // break
 		})
 	})
 	if err != nil {
+		if holded {
+			c.Unhold(pk, r.Seq)
+		}
 		r = nil
 	} else if r == nil {
 		// this occurs if feed is empty and the Descend function
 		// above doesn't call given function, returning nil
 		err = idxdb.ErrNotFound
+	}
+	return
+}
+
+// Root returns Root object by feed and seq numebr. It gets the Root obejct from
+// DB, thus the Root can only be full. This method returns holded Root obejct
+// and it can't be removed from database. You have to unhold it later using
+// Unhold or UnholdRoot method
+func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
+
+	var holded bool
+
+	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+		var rs idxdb.Roots
+		if rs, err = feeds.Roots(pk); err != nil {
+			return
+		}
+		var ir *idxdb.Root
+		if ir, err = rs.Get(seq); err != nil {
+			return
+		}
+		var val []byte
+		if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
+			return
+		}
+		if r, err = decodeRoot(val); err != nil {
+			return
+		}
+
+		c.Hold(pk, r.Seq) // hold the Root
+		holded = true
+
+		r.Hash = ir.Hash
+		r.Sig = ir.Sig
+		r.IsFull = true
+
+		return
+	})
+	if err != nil {
+		if holded {
+			c.Unhold(pk, r.Seq)
+		}
+		r = nil
 	}
 	return
 }

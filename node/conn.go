@@ -483,7 +483,7 @@ func (c *Conn) handlePing(ping *msg.Ping) {
 }
 
 func (c *Conn) sendLastFull(pk cipher.PubKey) {
-	if r, err := c.s.so.LastFull(pk); err == nil {
+	if r, err := c.s.so.LastRoot(pk); err == nil {
 		c.Send(c.s.src.Root(r))
 	}
 }

@@ -151,8 +151,11 @@ func (p *Pack) Save() (err error) {
 	//   2.1) get the V/A of already existeing obejcts
 	//   2.2) save new obejcts indexing them
 	// 3) keep all saved objects to decrement them on failure
-	var seqDec uint64 = p.r.Seq             // base
-	var saved = make(map[cipher.SHA256]int) // decr. on fail
+	var (
+		seqDec uint64 = p.r.Seq                     // base
+		saved         = make(map[cipher.SHA256]int) // decr. on fail
+		holded bool                                 // new root
+	)
 
 	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
 
@@ -220,10 +223,23 @@ func (p *Pack) Save() (err error) {
 		// save registry in CXDS
 		saved[cipher.SHA256(p.r.Reg)]++
 		_, err = p.c.db.CXDS().Set(cipher.SHA256(p.r.Reg), p.reg.Encode())
+		if err != nil {
+			return
+		}
+
+		// we are inside transaction and we should hold new Root from here
+		// to prevent some situations
+
+		p.c.Hold(p.r.Pub, p.r.Seq)
+		holded = true
 		return
 	})
+
 	if err != nil {
-		// sec saved
+
+		// failure
+
+		// decrement all saved objects
 		for hash, c := range saved {
 			for i := 0; i < c; i++ {
 				if _, dece := p.c.DB().CXDS().Dec(hash); dece != nil {
@@ -232,12 +248,55 @@ func (p *Pack) Save() (err error) {
 				}
 			}
 		}
-	} else {
-		if p.flags&freshRoot == 0 {
-			p.c.Hold(p.r.Pub, p.r.Seq)  // hold this Root
-			p.c.Unhold(p.r.Pub, seqDec) // unhold previous
+
+		// unhold the new Root
+		if holded {
+			p.c.Unhold(p.r.Pub, p.r.Seq)
 		}
-		p.unsaved = make(map[cipher.SHA256][]byte) // clear
+
+		// if the holded is true then p.r.Seq is seq of new Root
+		// and seqDec contains seq of previous Root. Since, the
+		// Close method Unholds Root by p.r.Seq, then we have to
+		// prevent this and unhold the Root manually
+
+		p.unhold.Do(func() {}) // prevent unholding on close
+
+		// we have to unhold previous Root only
+		// it the freshRoot flag is not set
+		if p.flags&freshRoot == 0 {
+			p.c.Unhold(p.r.Pub, seqDec)
+		}
+
+	} else {
+
+		// success
+
+		// we have to unhold previous Root if
+		// the new one based on another Root
+
+		if p.flags&freshRoot != 0 {
+
+			// this Root is not based on anything, it's fresh, created
+			// from scratch, but next root will be based on this new
+			// Root, and this new Root is holded, the Close method unholds
+			// it, but we need to unset the freshRoot flag
+
+			p.unsetFlag(freshRoot)
+
+		} else {
+
+			// this Root is based on another one, we need to unhold previous
+			// Root object; this new Root alredy holded inside transaction
+
+			p.c.Unhold(p.r.Pub, seqDec)
+
+		}
+
+		// all obejcts has been saved and we can clear
+		// cache to reduce memory pressure
+
+		p.unsaved = make(map[cipher.SHA256][]byte)
+
 	}
 
 	st := time.Now().Sub(tp)
@@ -248,6 +307,7 @@ func (p *Pack) Save() (err error) {
 	} else {
 		p.c.Debugf(PackSavePin, "%s error saving after %v", p.r.Short(), st)
 	}
+
 	return
 }
 
