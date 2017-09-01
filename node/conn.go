@@ -145,9 +145,11 @@ func (c *Conn) Send(m msg.Msg) error {
 func (c *Conn) SendRoot(r *skyobject.Root) (_ error) {
 	c.s.Debugf(FillPin, "[%s] SendRoot %s", c.Address(), r.Short())
 
+	c.s.so.Hold(r.Pub, r.Seq)
 	select {
 	case c.sendRoot <- r:
 	case <-c.gc.Closed():
+		c.s.so.Unhold(r.Pub, r.Seq)
 		return ErrConnClsoed
 	}
 	return
@@ -405,6 +407,18 @@ func (c *Conn) unholdSent() {
 	}
 }
 
+func (c *Conn) drainSendRoot() {
+	for {
+		select {
+		case r := <-c.sendRoot:
+			c.s.so.Unhold(r.Pub, r.Seq)
+		default:
+			return
+		}
+
+	}
+}
+
 func (c *Conn) handle() {
 	c.s.Debugf(ConnPin, "[%s] start handling", c.gc.Address())
 	defer c.s.Debugf(ConnPin, "[%s] stop handling", c.gc.Address())
@@ -420,6 +434,7 @@ func (c *Conn) handle() {
 	}
 
 	defer c.s.delConnFromWantedObjects(c)
+	defer c.drainSendRoot() // unhold roots in the sendRoot channel
 
 	c.s.addConn(c)
 	defer c.s.delConn(c)
@@ -450,21 +465,31 @@ func (c *Conn) handle() {
 
 		// root obejcts
 		case r = <-sendRoot:
+			println("SEND ROOT: ", r.Pub.Hex()[:7], r.Seq)
 			if sent, ok := c.subs[r.Pub]; ok {
+				println("SR (1)")
 				if sc := sent.current; sc == nil {
+					println("SR (2)")
 					sent.current = r
 					c.Send(c.s.src.Root(r))
 				} else if r.Seq <= sc.Seq {
+					println("SR (3)", r.Seq, sc.Seq)
+					c.s.so.Unhold(r.Pub, r.Seq)
 					continue // drop older or the same
 				} else if sn := sent.next; sn == nil {
+					println("SR (4)")
 					sent.next = r // keep next
 				} else if r.Seq <= sn.Seq {
+					println("SR (5)")
+					c.s.so.Unhold(r.Pub, r.Seq)
 					continue // drop older or the same
 				} else {
+					println("SR (6)")
 					sent.next = r // replace next with newer
 				}
+			} else {
+				c.s.so.Unhold(r.Pub, r.Seq) // drop it otherwise
 			}
-			// drop it otherwise
 
 		// events
 		case evt = <-events:
@@ -523,6 +548,8 @@ func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
 		c.s.Printf("[ERR] [%s] can't drop Root %s related obejcts: %v",
 			c.Address(), r.Short(), err)
 	}
+
+	c.Send(c.s.src.RootDone(r.Pub, r.Seq)) // notify peer
 }
 
 func (c *Conn) dropRoot(r *skyobject.Root, err error, incrs []cipher.SHA256) {
@@ -580,8 +607,14 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 	}
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
-		orf(c, fr.Root)
+		c.s.so.Hold(fr.Root.Pub, fr.Root.Seq) // hold for the callback
+		go func() {
+			defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq) // unhold
+			orf(c, fr.Root)
+		}()
 	}
+
+	c.Send(c.s.src.RootDone(fr.Root.Pub, fr.Root.Seq)) // notify peer
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {

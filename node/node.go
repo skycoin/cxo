@@ -489,9 +489,34 @@ func (s *Node) RPCAddress() (address string) {
 	return
 }
 
-// Publish given Root (send to feed)
+// Publish given Root (send to feed). Given Root
+// must be holded and not chagned during this call
+// (holded during this call only)
 func (s *Node) Publish(r *skyobject.Root) {
-	s.broadcastRoot(r, nil)
+
+	// make sterile copy first
+
+	root := new(skyobject.Root)
+
+	root.Reg = r.Reg
+	root.Pub = r.Pub
+	root.Seq = r.Seq
+	root.Time = r.Time
+	root.Sig = r.Sig
+	root.Hash = r.Hash
+	root.Prev = r.Prev
+	root.IsFull = r.IsFull
+
+	root.Refs = make([]skyobject.Dynamic, 0, len(r.Refs))
+
+	for _, dr := range r.Refs {
+		root.Refs = append(root.Refs, skyobject.Dynamic{
+			SchemaRef: dr.SchemaRef,
+			Object:    dr.Object,
+		})
+	}
+
+	s.broadcastRoot(root, nil)
 }
 
 // Connect to peer. Use callback to handle the Conn

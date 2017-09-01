@@ -119,7 +119,8 @@ type Config struct {
 	// callbacks
 	//
 
-	// connections create/close
+	// connections create/close, this callbacks
+	// perform in own goroutines
 
 	OnCreateConnection func(c *Conn)
 	OnCloseConnection  func(c *Conn)
@@ -130,11 +131,15 @@ type Config struct {
 	// subscribe to feed of this (local) node. This callback
 	// never called if subscription rejected by any reason.
 	// If this callback returns a non-nil error the subscription
-	// willl be rejected, even if it's ok
+	// willl be rejected, even if it's ok. This callback should
+	// not block, because it performs inside message handling
+	// goroutine and long freeze breaks connection
 	OnSubscribeRemote func(c *Conn, feed cipher.PubKey) (reject error)
 	// OnUnsubscribeRemote called while a remote peer wants
 	// to unsubscribe from feed of this (local) node. This
-	// callback never called if remote peer is not susbcribed
+	// callback never called if remote peer is not susbcribed.
+	// This callback should not block, because it performs inside
+	// message handling goroutine and long freeze breaks connection
 	OnUnsubscribeRemote func(c *Conn, feed cipher.PubKey)
 
 	// root objects
@@ -142,16 +147,25 @@ type Config struct {
 	// OnRootReceived is callback that called
 	// when Client receive new Root object.
 	// The callback never called for rejected
-	// Roots (including "already exists")
+	// Roots (including "already exists"). This callback
+	// performs in own goroutine. You can't use
+	// Root of this callback anywhere because it
+	// is not saved and filled yet. This callback doesn't
+	// called if received a Roto already exists
 	OnRootReceived func(c *Conn, root *skyobject.Root)
 	// OnRootFilled is callback that called when
-	// Client finishes filling received Root object
+	// Client finishes filling received Root object.
+	// This callback performs in own goroutine. The
+	// Root is full and holded during this callabck.
+	// You can use it anywhere
 	OnRootFilled func(c *Conn, root *skyobject.Root)
 	// OnFillingBreaks occurs when a filling Root
 	// can't be filled up because connection breaks.
 	// The Root will be removed after this callback
 	// with all related obejcts. The Root is not full
-	// and can't be used in skyobject methods
+	// and can't be used in skyobject methods.This
+	// callback should not block because it permorms
+	// in handling goroutine
 	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
 }
 

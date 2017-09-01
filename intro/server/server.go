@@ -56,6 +56,8 @@ func main() {
 	c.Listen = Host
 	c.RemoteClose = RemoteClose
 
+	c.PingInterval = 0 // suppress ping logs
+
 	c.DBPath = "./server.db"
 
 	// suppress gnet logs

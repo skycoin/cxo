@@ -14,6 +14,7 @@ const (
 	PackSavePin       log.Pin = 1 << iota // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
 	FillVerbosePin                        // show filling debug logs
+	FillPin                               // show filling time
 
 	VerbosePin // to many logs to show
 )

@@ -235,7 +235,9 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 // Close the Container. The
 // closing doesn't close DB
 func (c *Container) Close() error {
-	c.Debug(VerbosePin, "Close")
+	c.Debug(VerbosePin, "Close()")
+
+	c.Print("[CONTAINER CLOSING] holded:", c.holded)
 
 	// TODO (kostyarin): cleaning up
 	return nil

@@ -324,7 +324,10 @@ func (p *Pack) init() (err error) {
 	return
 }
 
-// Root of the Pack
+// Root of the Pack. It returns underlying Root obejct
+// that changes with cahnges in Pack. Fields of the Root
+// are actual after every successful Save (or Unpack) and
+// before first chagnes
 func (p *Pack) Root() *Root { return p.r }
 
 // Registry of the Pack

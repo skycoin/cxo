@@ -100,6 +100,8 @@ func (f *Filler) full() {
 	// can be unsubscribed from the feed and we should
 	// return proper error
 	f.bus.FullQ <- FullRoot{f.r, f.incrs}
+	f.c.Debugf(FillPin, "%s filled after %v, %d obejcts", f.r.Short(),
+		time.Now().Sub(f.tp), len(f.incrs))
 }
 
 func (f *Filler) fill() {
