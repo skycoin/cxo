@@ -112,6 +112,7 @@ func (f *Filler) fill() {
 	if _, err = f.c.db.CXDS().Set(f.r.Hash, f.r.Encode()); err != nil {
 		f.Terminate(err)
 	}
+	f.incrs = append(f.incrs, f.r.Hash) // saved
 
 	if f.r.Reg == (RegistryRef{}) {
 		f.Terminate(ErrEmptyRegsitryRef)

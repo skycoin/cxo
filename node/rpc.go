@@ -190,11 +190,10 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 
 // A RootInfo used by RPC
 type RootInfo struct {
-	Time   time.Time
-	Seq    uint64
-	Hash   cipher.SHA256
-	Prev   cipher.SHA256
-	IsFull bool
+	Time time.Time
+	Seq  uint64
+	Hash cipher.SHA256
+	Prev cipher.SHA256
 
 	CreateTime time.Time
 	AccessTime time.Time
@@ -220,18 +219,19 @@ func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
 		}
 		return rs.Ascend(func(ir *idxdb.Root) (err error) {
 			var ri RootInfo
-			ri.IsFull = ir.IsFull
 			ri.Hash = ir.Hash
 			ri.Seq = ir.Seq
 
 			ri.CreateTime = time.Unix(0, ir.CreateTime)
 			ri.AccessTime = time.Unix(0, ir.AccessTime)
-			ri.RefsCount = ir.RefsCount
 
 			var val []byte
-			if val, _, err = r.ns.DB().CXDS().Get(ir.Hash); err != nil {
+			var rc uint32
+			if val, rc, err = r.ns.DB().CXDS().Get(ir.Hash); err != nil {
 				return
 			}
+
+			ri.RefsCount = rc
 
 			var r *skyobject.Root
 			if r, err = decodeRoot(val); err != nil {
@@ -262,7 +262,7 @@ type SelectRoot struct {
 func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 	var root *skyobject.Root
 	if sel.LastFull == true {
-		root, err = r.ns.so.LastFull(sel.Pub)
+		root, err = r.ns.so.LastRoot(sel.Pub)
 	} else {
 		root, err = r.ns.so.Root(sel.Pub, sel.Seq)
 	}

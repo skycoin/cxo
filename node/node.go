@@ -419,17 +419,16 @@ func (n *Node) HasFeed(pk cipher.PubKey) (ok bool) {
 	return
 }
 
-func (s *Node) sendToAllOfFeedExcept(pk cipher.PubKey, m msg.Msg, e *Conn) {
+// send Root to subscribers
+func (s *Node) broadcastRoot(r *skyobject.Root, e *Conn) {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
 
-	raw := msg.Encode(m)
-
-	for c := range s.feeds[pk] {
+	for c := range s.feeds[r.Pub] {
 		if c == e {
 			continue // except
 		}
-		c.SendRaw(raw)
+		c.SendRoot(r)
 	}
 }
 
@@ -470,7 +469,7 @@ func (s *Node) onDisconnect(gc *gnet.Conn) {
 
 func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {
 	if c, ok := gc.Value().(*Conn); ok {
-		c.events <- resubscribeEvent{}
+		c.enqueueEvent(resubscribeEvent{})
 	}
 	return
 }
@@ -492,7 +491,7 @@ func (s *Node) RPCAddress() (address string) {
 
 // Publish given Root (send to feed)
 func (s *Node) Publish(r *skyobject.Root) {
-	s.sendToAllOfFeedExcept(r.Pub, s.src.Root(r), nil)
+	s.broadcastRoot(r, nil)
 }
 
 // Connect to peer. Use callback to handle the Conn
@@ -556,15 +555,13 @@ func (n *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
 	for _, c := range n.conns {
 
 		done := make(chan struct{})
-		closed := c.gc.Closed()
 
 		select {
 		case c.events <- &unsubscribeFromDeletedFeedEvent{pk, done}:
-		case <-closed:
-			close(done)
+		case <-c.gc.Closed():
 		}
 
-		dones = append(dones, delFeedConnsReply{done, closed})
+		dones = append(dones, delFeedConnsReply{done, c.done})
 	}
 	return
 }
@@ -588,15 +585,14 @@ func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
 	for _, dfcr := range dones {
 		select {
 		case <-dfcr.done:
-		case <-dfcr.closed:
+		case <-dfcr.closed: // connection's done
 		}
 	}
 
 	// now, we can remove the feed if there
 	// are not holded Root objects
-	if err = n.so.DelFeed(pk); err != nil {
-		return
-	}
+	err = n.so.DelFeed(pk)
+	return
 }
 
 /*

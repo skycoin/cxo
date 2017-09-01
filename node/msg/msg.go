@@ -183,6 +183,7 @@ func (*NonPublicServer) MsgType() MsgType { return NonPublicServerType }
 // Feed filed of the message
 type Root struct {
 	Feed  cipher.PubKey
+	Seq   uint64     // for node internals
 	Value []byte     // encoded Root in person
 	Sig   cipher.Sig // signature
 }

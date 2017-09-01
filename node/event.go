@@ -25,7 +25,7 @@ func (s *subscribeEvent) Handle(c *Conn) {
 }
 
 func (c *Conn) subscribeEvent(pk cipher.PubKey, err chan error) {
-	c.events <- &subscribeEvent{pk, err}
+	c.enqueueEvent(&subscribeEvent{pk, err})
 }
 
 type unsubscribeEvent struct {
@@ -38,7 +38,7 @@ func (u *unsubscribeEvent) Handle(c *Conn) {
 }
 
 func (c *Conn) unsubscribeEvent(pk cipher.PubKey) {
-	c.events <- &unsubscribeEvent{pk}
+	c.enqueueEvent(&unsubscribeEvent{pk})
 }
 
 type unsubscribeFromDeletedFeedEvent struct {
@@ -68,7 +68,7 @@ func (s *listOfFeedsEvent) Handle(c *Conn) {
 }
 
 func (c *Conn) listOfFeedsEvent(rspn chan msg.Msg, err chan error) {
-	c.events <- &listOfFeedsEvent{rspn, err}
+	c.enqueueEvent(&listOfFeedsEvent{rspn, err})
 }
 
 type resubscribeEvent struct{}

@@ -134,6 +134,7 @@ func (s *Src) NonPublicServer(rls *RequestListOfFeeds) (nps *NonPublicServer) {
 func (s *Src) Root(r *skyobject.Root) (root *Root) {
 	root = new(Root)
 	root.Feed = r.Pub
+	root.Seq = r.Seq
 	root.Value = r.Encode()
 	root.Sig = r.Sig
 	return
