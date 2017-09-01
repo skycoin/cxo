@@ -11,6 +11,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/skyobject"
 )
@@ -179,6 +180,23 @@ func Test_roots(t *testing.T) {
 		n.Publish(pack.Root())
 		h1 := pack.Root().Hash
 		t1 := time.Unix(0, pack.Root().Time)
+		var c1 time.Time
+		err = cnt.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+			var rs idxdb.Roots
+			if rs, err = feeds.Roots(pk); err != nil {
+				return
+			}
+			var ir *idxdb.Root
+			if ir, err = rs.Get(0); err != nil {
+				return
+			}
+			c1 = time.Unix(0, ir.CreateTime)
+			return
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
 		// 2
 		if err = pack.Save(); err != nil {
 			t.Error(err)
@@ -187,6 +205,23 @@ func Test_roots(t *testing.T) {
 		n.Publish(pack.Root())
 		h2 := pack.Root().Hash
 		t2 := time.Unix(0, pack.Root().Time)
+		var c2 time.Time
+		err = cnt.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+			var rs idxdb.Roots
+			if rs, err = feeds.Roots(pk); err != nil {
+				return
+			}
+			var ir *idxdb.Root
+			if ir, err = rs.Get(1); err != nil {
+				return
+			}
+			c2 = time.Unix(0, ir.CreateTime)
+			return
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
 
 		err = roots(cl, []string{
 			"roots",
@@ -198,25 +233,38 @@ func Test_roots(t *testing.T) {
 		}
 
 		const format = `  - %s
-      time: %s
-      seq: 0
-      fill: true
+      time:        %v
+      seq:         0
+      prev:        (blank)
+      created at:  %v
+      last access: %v
+      refs count:  1
   - %s
-      time: %s
-      seq: 1
-      fill: true
+      time:        %v
+      seq:         1
+      prev:        %s
+      created at:  %v
+      last access: %v
+      refs count:  1
 `
 
 		// for windows
 		out := strings.Replace(testOut.String(), "\r\n", "\n", -1)
 		want := fmt.Sprintf(format,
 			h1.Hex(),
-			t1.String(),
+			t1.Format(time.ANSIC),
+			c1.Format(time.ANSIC),
+			c1.Format(time.ANSIC),
 			h2.Hex(),
-			t2.String())
+			t2.Format(time.ANSIC),
+			h1.Hex()[:7],
+			c2.Format(time.ANSIC),
+			c2.Format(time.ANSIC))
 
 		if out != want {
 			t.Error("wrong output")
+			t.Log("want:\n", want)
+			t.Log("got:\n", out)
 		}
 
 	})

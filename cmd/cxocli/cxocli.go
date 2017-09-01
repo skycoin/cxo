@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/peterh/liner"
 
@@ -517,9 +518,20 @@ func roots(rpc *node.RPCClient, ss []string) (err error) {
 	}
 	for _, ri := range ris {
 		fmt.Fprintln(out, "  -", ri.Hash.Hex())
-		fmt.Fprintln(out, "      time:", ri.Time)
-		fmt.Fprintln(out, "      seq:", ri.Seq)
-		fmt.Fprintln(out, "      fill:", ri.IsFull)
+		fmt.Fprintln(out, "      time:       ", ri.Time.Format(time.ANSIC))
+		fmt.Fprintln(out, "      seq:        ", ri.Seq)
+		var prev string
+		if ri.Prev == (cipher.SHA256{}) {
+			prev = "(blank)"
+		} else {
+			prev = ri.Prev.Hex()[:7]
+		}
+		fmt.Fprintln(out, "      prev:       ", prev)
+		fmt.Fprintln(out, "      created at: ",
+			ri.CreateTime.Format(time.ANSIC))
+		fmt.Fprintln(out, "      last access:",
+			ri.AccessTime.Format(time.ANSIC))
+		fmt.Fprintln(out, "      refs count: ", ri.RefsCount)
 	}
 	return
 }
