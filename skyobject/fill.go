@@ -22,7 +22,7 @@ var (
 // TODO (kostyarin): announce
 //
 
-// internal
+// A WCXO is internal
 type WCXO struct {
 	Key  cipher.SHA256 // hash of wanted CX object
 	GotQ chan []byte   // cahnnel to sent requested CX object
@@ -30,14 +30,14 @@ type WCXO struct {
 	Announce []cipher.SHA256 // announce get
 }
 
-// internal
+// A FillingBus is internal
 type FillingBus struct {
 	WantQ chan WCXO
-	FullQ chan *Root
+	FullQ chan FullRoot
 	DropQ chan DropRootError
 }
 
-// internal
+// A Filler is internal
 type Filler struct {
 
 	// references from host
@@ -51,7 +51,7 @@ type Filler struct {
 	r   *Root     // filling Root
 	reg *Registry // registry of the Root
 
-	saved []cipher.SHA256 // decrement on fail
+	incrs []cipher.SHA256 // decrement on fail
 
 	gotq chan []byte // reply
 
@@ -61,6 +61,7 @@ type Filler struct {
 	closeo sync.Once
 }
 
+// NewFiller creates new filler instance
 func (c *Container) NewFiller(r *Root, bus FillingBus) (fl *Filler) {
 
 	c.Debugln(FillVerbosePin, "NewFiller", r.Short())
@@ -82,6 +83,7 @@ func (c *Container) NewFiller(r *Root, bus FillingBus) (fl *Filler) {
 	return
 }
 
+// Root retursn underlying filling Root obejct
 func (f *Filler) Root() *Root {
 	return f.r
 }
@@ -89,7 +91,7 @@ func (f *Filler) Root() *Root {
 func (f *Filler) drop(err error) {
 	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
 
-	f.bus.DropQ <- DropRootError{f.r, f.saved, err}
+	f.bus.DropQ <- DropRootError{f.r, f.incrs, err}
 }
 
 func (f *Filler) full() {
@@ -97,7 +99,7 @@ func (f *Filler) full() {
 	// don't save: delegate it for node, because the node
 	// can be unsubscribed from the feed and we should
 	// return proper error
-	f.bus.FullQ <- f.r
+	f.bus.FullQ <- FullRoot{f.r, f.incrs}
 }
 
 func (f *Filler) fill() {
@@ -155,7 +157,7 @@ func (f *Filler) request(key cipher.SHA256,
 	}
 	select {
 	case val = <-f.gotq:
-		f.saved = append(f.saved, key)
+		f.incrs = append(f.incrs, key)
 		ok = true
 	case <-f.closeq:
 	}
@@ -165,9 +167,11 @@ func (f *Filler) request(key cipher.SHA256,
 func (f *Filler) get(key cipher.SHA256,
 	announce ...cipher.SHA256) (val []byte, ok bool) {
 
+	// we should get and increment refs count because it's filling
+
 	var err error
-	if val, _, err = f.c.DB().CXDS().Get(key); val != nil {
-		return val, true
+	if val, _, err = f.c.DB().CXDS().GetInc(key); val != nil {
+		return val, true // found
 	}
 	if err != cxds.ErrNotFound {
 		f.Terminate(err) // database error
@@ -176,6 +180,7 @@ func (f *Filler) get(key cipher.SHA256,
 	return f.request(key, announce...)
 }
 
+// Terminate filling by given reason
 func (f *Filler) Terminate(err error) {
 	f.closeo.Do(func() {
 		f.drop(err)
@@ -434,20 +439,25 @@ func (f *Filler) fillDataDynamic(val []byte) (err error) {
 
 }
 
-// StartTime retursn time while the Filler starts
+// StartTime returns time while the Filler starts
 func (f *Filler) StartTime() time.Time {
 	return f.tp
 }
 
-// A DropRootError represents error
-// of dropping a Root
+// A DropRootError is internal
 type DropRootError struct {
-	Root  *Root
-	Saved []cipher.SHA256
-	Err   error
+	Root  *Root           // the Root in person
+	Incrs []cipher.SHA256 // obejcts to decrement
+	Err   error           // reason
 }
 
 // Error implements error interface
 func (d *DropRootError) Error() string {
 	return fmt.Sprintf("drop Root %s:", d.Root.Short(), d.Err)
+}
+
+// A FullRoot is internal
+type FullRoot struct {
+	Root  *Root           // the Root in person
+	Incrs []cipher.SHA256 // objects to decrement
 }
