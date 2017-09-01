@@ -106,6 +106,13 @@ func (f *Filler) fill() {
 
 	f.c.Debugln(FillVerbosePin, "(*Filler).fill", f.r.Short())
 
+	var err error
+
+	// first of all we should save the Root itself
+	if _, err = f.c.db.CXDS().Set(f.r.Hash, f.r.Encode()); err != nil {
+		f.Terminate(err)
+	}
+
 	if f.r.Reg == (RegistryRef{}) {
 		f.Terminate(ErrEmptyRegsitryRef)
 		return
@@ -113,25 +120,16 @@ func (f *Filler) fill() {
 
 	var val []byte
 	var ok bool
-	var err error
-	if f.reg, err = f.c.Registry(f.r.Reg); err != nil {
 
-		// TODO (kostyarin): the cxds.ErrNotFound should be replaced with
-		//                   data.ErrNotFoundCXDS to make anyone use
-		//                   his own implementation of the CXDS
+	// registry
 
-		if err == cxds.ErrNotFound {
-			if val, ok = f.request(cipher.SHA256(f.r.Reg)); !ok {
-				return // drop
-			}
-			if f.reg, err = DecodeRegistry(val); err != nil {
-				f.Terminate(err)
-				return
-			}
-		} else {
-			f.Terminate(err)
-			return
-		}
+	if val, ok = f.get(cipher.SHA256(f.r.Reg)); !ok {
+		return // drop
+	}
+
+	if f.reg, err = DecodeRegistry(val); err != nil {
+		f.Terminate(err)
+		return
 	}
 
 	for _, dr := range f.r.Refs {

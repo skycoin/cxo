@@ -471,9 +471,9 @@ func (c *Conn) dropRoot(r *skyobject.Root, err error, incrs []cipher.SHA256) {
 }
 
 func (c *Conn) rootFilled(fr skyobject.FullRoot) {
-	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), fr.r.Short())
+	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), fr.Root.Short())
 
-	c.delFillingRoot(fr.r)
+	c.delFillingRoot(fr.Root)
 
 	// we have to be sure that this connection
 	// is subscribed to feed of this Root
@@ -486,15 +486,23 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 			ofb(c, r, ErrUnsubscribed)
 		}
 
-		//
+		c.dropRootRelated(fr.Root, fr.Incrs)
 
 		return // drop the Root
 	}
 
-	// TODO (kostyarin): add the Root to database
+	// (1) hold Root
+	// (2) defered unhold
+	// (3) add it to index DB
+	// (4) perform callback
+
+	c.s.so.Hold(fr.Root.Pub, fr.Root.Seq)
+	defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq)
+
+	//
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
-		orf(c, r)
+		orf(c, fr.Root)
 	}
 }
 
