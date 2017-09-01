@@ -7,6 +7,8 @@ import (
 	"github.com/boltdb/bolt"
 
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/data"
 )
 
 var (
@@ -17,7 +19,7 @@ type driveDB struct {
 	b *bolt.DB
 }
 
-func NewDriveIdxDB(fileName string) (idx IdxDB, err error) {
+func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 
 	var b *bolt.DB
 	b, err = bolt.Open(fileName, 0644, &bolt.Options{
@@ -40,7 +42,7 @@ func NewDriveIdxDB(fileName string) (idx IdxDB, err error) {
 	return
 }
 
-func (d *driveDB) Tx(txFunc func(feeds Feeds) (err error)) (err error) {
+func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	return d.b.Update(func(tx *bolt.Tx) (err error) {
 		return txFunc(&driveFeeds{tx.Bucket(feedsBucket)})
 	})
@@ -65,18 +67,18 @@ func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 	} else if f.Stats().KeyN == 0 {
 		return d.bk.DeleteBucket(pk[:]) // empty
 	}
-	return ErrFeedIsNotEmpty // can't remove non-empty feed
+	return data.ErrFeedIsNotEmpty // can't remove non-empty feed
 }
 
-func (d *driveFeeds) Iterate(iterateFeedsFunc IterateFeedsFunc) (err error) {
+func (d *driveFeeds) Iterate(iterateFunc data.IterateFeedsFunc) (err error) {
 	var pk cipher.PubKey
 	c := d.bk.Cursor()
 	// we have to Seek(next) instead of using Next
 	// because we allows mutations during the iteration
 	for k, _ := c.First(); k != nil; k, _ = c.Seek(pk[:]) {
 		copy(pk[:], k)
-		if err = iterateFeedsFunc(pk); err != nil {
-			if err == ErrStopIteration {
+		if err = iterateFunc(pk); err != nil {
+			if err == data.ErrStopIteration {
 				err = nil
 			}
 			return
@@ -102,10 +104,10 @@ func (d *driveFeeds) Has(pk cipher.PubKey) bool {
 	return d.bk.Bucket(pk[:]) != nil
 }
 
-func (d *driveFeeds) Roots(pk cipher.PubKey) (rs Roots, err error) {
+func (d *driveFeeds) Roots(pk cipher.PubKey) (rs data.Roots, err error) {
 	bk := d.bk.Bucket(pk[:])
 	if bk == nil {
-		return nil, ErrNoSuchFeed
+		return nil, data.ErrNoSuchFeed
 	}
 	return &driveRoots{bk}, nil
 }
@@ -114,11 +116,11 @@ type driveRoots struct {
 	bk *bolt.Bucket
 }
 
-func (d *driveRoots) Ascend(iterateRootsFunc IterateRootsFunc) (err error) {
+func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var seq uint64
-	var r *Root = new(Root)
-	var sb []byte = make([]byte, 8)
+	var r = new(data.Root)
+	var sb = make([]byte, 8)
 
 	c := d.bk.Cursor()
 
@@ -130,8 +132,8 @@ func (d *driveRoots) Ascend(iterateRootsFunc IterateRootsFunc) (err error) {
 			panic(err)
 		}
 
-		if err = iterateRootsFunc(r); err != nil {
-			if err == ErrStopIteration {
+		if err = iterateFunc(r); err != nil {
+			if err == data.ErrStopIteration {
 				err = nil
 			}
 			return
@@ -144,9 +146,9 @@ func (d *driveRoots) Ascend(iterateRootsFunc IterateRootsFunc) (err error) {
 	return
 }
 
-func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
+func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
-	var r *Root = new(Root)
+	var r = new(data.Root)
 
 	c := d.bk.Cursor()
 
@@ -156,8 +158,8 @@ func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 			panic(err)
 		}
 
-		if err = iterateRootsFunc(r); err != nil {
-			if err == ErrStopIteration {
+		if err = iterateFunc(r); err != nil {
+			if err == data.ErrStopIteration {
 				err = nil
 			}
 			return
@@ -169,7 +171,7 @@ func (d *driveRoots) Descend(iterateRootsFunc IterateRootsFunc) (err error) {
 	return
 }
 
-func (d *driveRoots) Set(r *Root) (err error) {
+func (d *driveRoots) Set(r *data.Root) (err error) {
 
 	if err = r.Validate(); err != nil {
 		return
@@ -187,11 +189,15 @@ func (d *driveRoots) Set(r *Root) (err error) {
 	}
 
 	// found
-	nr := new(Root)
+	nr := new(data.Root)
 
 	if err = nr.Decode(val); err != nil {
 		panic(err)
 	}
+
+	r.AccessTime = nr.AccessTime
+	r.CreateTime = nr.CreateTime
+
 	nr.UpdateAccessTime()
 	return d.bk.Put(seqb, nr.Encode())
 }
@@ -200,14 +206,14 @@ func (d *driveRoots) Del(seq uint64) (err error) {
 	return d.bk.Delete(utob(seq))
 }
 
-func (d *driveRoots) Get(seq uint64) (r *Root, err error) {
+func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 	seqb := utob(seq)
 	val := d.bk.Get(seqb)
 	if len(val) == 0 {
-		err = ErrNotFound
+		err = data.ErrNotFound
 		return
 	}
-	r = new(Root)
+	r = new(data.Root)
 	if err := r.Decode(val); err != nil {
 		panic(err)
 	}
