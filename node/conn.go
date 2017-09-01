@@ -444,7 +444,14 @@ func (c *Conn) handle() {
 
 }
 
-func (c *Conn) dropRoot(r *skyobject.Root, err error, saved []cipher.SHA256) {
+func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256) {
+	if err = c.s.db.CXDS().MultiDec(incrs); err != nil {
+		c.s.Printf("[ERR] [%s] can't drop Root %s related obejcts: %v",
+			c.Address(), r.Short(), err)
+	}
+}
+
+func (c *Conn) dropRoot(r *skyobject.Root, err error, incrs []cipher.SHA256) {
 
 	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(), r.Short(), err)
 
@@ -454,23 +461,33 @@ func (c *Conn) dropRoot(r *skyobject.Root, err error, saved []cipher.SHA256) {
 		ofb(c, r, err)
 	}
 
-	// TODO: remove the Root and decrement all saved objects
+	// the Root is not saved in database but some realted obejcts
+	// have been saved and we have to decrement them all
 
-	//
+	// actually the Root is saved, but it's not saved in index
+
+	c.dropRootRelated(r, incrs)
 
 }
 
-func (c *Conn) rootFilled(r *skyobject.Root) {
-	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), r.Short())
+func (c *Conn) rootFilled(fr skyobject.FullRoot) {
+	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), fr.r.Short())
 
-	c.delFillingRoot(r)
+	c.delFillingRoot(fr.r)
 
 	// we have to be sure that this connection
 	// is subscribed to feed of this Root
 	if _, ok := c.subs[r.Pub]; !ok {
-		// TODO (kostyarin): drop the Root and remove all related
-		//                   saved obejcts, because we are not
-		//                   subscribed to the feed anymore
+
+		// drop the Root and remove all related saved obejcts,
+		// because we are not subscribed to the feed anymore
+
+		if ofb := c.s.conf.OnFillingBreaks; ofb != nil {
+			ofb(c, r, ErrUnsubscribed)
+		}
+
+		//
+
 		return // drop the Root
 	}
 
