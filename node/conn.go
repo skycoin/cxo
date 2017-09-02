@@ -6,7 +6,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
@@ -585,12 +585,12 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 	c.s.so.Hold(fr.Root.Pub, fr.Root.Seq)
 	defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq)
 
-	err := c.s.db.IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
+	err := c.s.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var rs data.Roots
 		if rs, err = feeds.Roots(fr.Root.Pub); err != nil {
 			return
 		}
-		return rs.Set(&idxdb.Root{
+		return rs.Set(&data.Root{
 			Seq:  fr.Root.Seq,
 			Prev: fr.Root.Prev,
 			Hash: fr.Root.Hash,

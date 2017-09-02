@@ -10,7 +10,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data/cxds" // TODO: cxds.ErrNOtFound
+	"github.com/skycoin/cxo/data"
 )
 
 // some of Root dropping reasons
@@ -174,7 +174,7 @@ func (f *Filler) get(key cipher.SHA256,
 	if val, _, err = f.c.DB().CXDS().GetInc(key); val != nil {
 		return val, true // found
 	}
-	if err != cxds.ErrNotFound {
+	if err != data.ErrNotFound {
 		f.Terminate(err) // database error
 		return           // nil, false
 	}

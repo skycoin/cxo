@@ -12,6 +12,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
@@ -37,12 +38,10 @@ const (
 	PublicServer    bool          = false           // default
 
 	// default tree is
-	//   server: ~/.skycoin/cxo/bolt.db
+	//   server: ~/.skycoin/cxo/{cxds.db, idx.db}
 
 	skycoinDataDir = ".skycoin"
 	cxoSubDir      = "cxo"
-
-	dbFilePrefix = "cxodb"
 )
 
 // log pins
@@ -105,11 +104,17 @@ type Config struct {
 	// Zero timeout means infinity. Negative timeout causes panic
 	ResponseTimeout time.Duration
 
-	// InMemoryDB uses database in memory
+	// InMemoryDB uses database in memory.
+	// See also DB field
 	InMemoryDB bool
-	// DBPath is path to database file
+	// DBPath is path to database file.
+	// See also DB field
 	DBPath string
 	// DataDir is directory with data files
+	// this directory contains default DB
+	// and if it's not blank string, then
+	// node creates the diretory if it does
+	// not exist
 	DataDir string
 
 	// PublicServer never keeps secret feeds it share
@@ -167,6 +172,15 @@ type Config struct {
 	// callback should not block because it permorms
 	// in handling goroutine
 	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
+
+	// database
+
+	// DB is database you can provide to use instead of
+	// default. If this argument is nil (default) then
+	// default DB will be created. Otherwise this
+	// DB will be used. But node closes this DB on
+	// close anyway
+	DB *data.DB
 }
 
 // NewConfig returns Config
@@ -183,7 +197,7 @@ func NewConfig() (sc Config) {
 	sc.PingInterval = PingInterval
 	sc.InMemoryDB = InMemoryDB
 	sc.DataDir = dataDir()
-	sc.DBPath = filepath.Join(sc.DataDir, dbFilePrefix)
+	sc.DBPath = ""
 	sc.ResponseTimeout = ResponseTimeout
 	sc.PublicServer = PublicServer
 	sc.Config.OnDial = OnDialFilter

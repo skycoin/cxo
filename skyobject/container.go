@@ -7,7 +7,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/node/log"
 )
 
@@ -254,7 +253,7 @@ func (c *Container) Close() error {
 func (c *Container) AddFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "AddFeed", pk.Hex()[:7])
 
-	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) error {
+	return c.DB().IdxDB().Tx(func(feeds data.Feeds) error {
 		return feeds.Add(pk)
 	})
 }
@@ -267,13 +266,13 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 func (c *Container) DelFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
 
-	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+	return c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
 		if false == feeds.Has(pk) {
 			return // nothing to delete
 		}
 
-		var rs idxdb.Roots
+		var rs data.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
@@ -286,7 +285,7 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 		// (and decrement refs count of all related obejcts)
 		// checking out holded Roots
 
-		err = rs.Ascend(func(ir *idxdb.Root) (err error) {
+		err = rs.Ascend(func(ir *data.Root) (err error) {
 			if err = c.CanRemove(pk, ir.Seq); err != nil {
 				return
 			}

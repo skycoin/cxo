@@ -6,7 +6,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 )
 
 // A Root represents root object of a feed
@@ -84,8 +84,8 @@ func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 	r.Hash = hash
 	r.Sig = sig
 
-	err = c.db.IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
+	err = c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var rs data.Roots
 		if rs, err = feeds.Roots(r.Pub); err != nil {
 			return
 		}
@@ -111,12 +111,12 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 
 	var holded bool
 
-	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
+	err = c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var rs data.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
-		return rs.Descend(func(ir *idxdb.Root) (err error) {
+		return rs.Descend(func(ir *data.Root) (err error) {
 			var val []byte
 			if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
 				return
@@ -132,7 +132,7 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 			r.Sig = ir.Sig
 			r.IsFull = true
 
-			return idxdb.ErrStopIteration // break
+			return data.ErrStopIteration // break
 		})
 	})
 	if err != nil {
@@ -143,7 +143,7 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 	} else if r == nil {
 		// this occurs if feed is empty and the Descend function
 		// above doesn't call given function, returning nil
-		err = idxdb.ErrNotFound
+		err = data.ErrNotFound
 	}
 	return
 }
@@ -156,12 +156,12 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 
 	var holded bool
 
-	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
+	err = c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var rs data.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
-		var ir *idxdb.Root
+		var ir *data.Root
 		if ir, err = rs.Get(seq); err != nil {
 			return
 		}

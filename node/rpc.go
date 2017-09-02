@@ -9,7 +9,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject"
 )
 
@@ -212,12 +212,12 @@ func decodeRoot(val []byte) (r *skyobject.Root, err error) {
 // It returns (by RPC) list sorted from old roots to new
 func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
 	ris := make([]RootInfo, 0)
-	err = r.ns.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
+	err = r.ns.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var rs data.Roots
 		if rs, err = feeds.Roots(feed); err != nil {
 			return
 		}
-		return rs.Ascend(func(ir *idxdb.Root) (err error) {
+		return rs.Ascend(func(ir *data.Root) (err error) {
 			var ri RootInfo
 			ri.Hash = ir.Hash
 			ri.Seq = ir.Seq

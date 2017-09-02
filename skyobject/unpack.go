@@ -10,7 +10,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 )
 
 // common packing and unpacking errors
@@ -157,20 +157,20 @@ func (p *Pack) Save() (err error) {
 		holded bool                                 // new root
 	)
 
-	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+	err = p.c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
-		var rs idxdb.Roots
+		var rs data.Roots
 		if rs, err = feeds.Roots(p.r.Pub); err != nil {
 			return
 		}
 
 		// get seq + 1 of last saved
 		var called bool
-		err = rs.Descend(func(ir *idxdb.Root) (err error) {
+		err = rs.Descend(func(ir *data.Root) (err error) {
 			p.r.Seq = ir.Seq + 1 // next seq
 			p.r.Prev = ir.Hash   // previous
 			called = true
-			return idxdb.ErrStopIteration
+			return data.ErrStopIteration
 		})
 		if err != nil {
 			return
@@ -201,7 +201,7 @@ func (p *Pack) Save() (err error) {
 		p.r.Hash = cipher.SumSHA256(val)
 		p.r.Sig = cipher.SignHash(p.r.Hash, p.sk)
 
-		var ir *idxdb.Root = new(idxdb.Root)
+		var ir *data.Root = new(data.Root)
 
 		// set up the ir
 		ir.Seq = p.r.Seq

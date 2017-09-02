@@ -8,14 +8,14 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 )
 
 var ErrEmptyRootHash = errors.New("empty hash of Root")
 
-// decrementAll references of given *idxdb.Root
+// decrementAll references of given *data.Root
 // (do it before deleting the Root)
-func (c *Container) decrementAll(ir *idxdb.Root) (err error) {
+func (c *Container) decrementAll(ir *data.Root) (err error) {
 	// ----
 	// (0) get encoded Root by hash from CXDS
 	// (1) decode the root turning it *skyobejct.Root

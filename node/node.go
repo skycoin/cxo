@@ -2,12 +2,14 @@ package node
 
 import (
 	"errors"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/cxds"
 	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/skyobject"
 
@@ -85,20 +87,41 @@ type Node struct {
 //
 func NewNode(sc Config) (s *Node, err error) {
 
+	// data dir
+
+	if sc.DataDir != "" {
+		if err = initDataDir(sc.DataDir); err != nil {
+			return
+		}
+	}
+
 	// database
 
 	var db *data.DB
-	if sc.InMemoryDB {
-		db = data.NewMemoryDB()
+
+	if sc.DB != nil {
+		db = sc.DB
+	} else if sc.InMemoryDB {
+		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
 	} else {
-		if sc.DataDir != "" {
-			if err = initDataDir(sc.DataDir); err != nil {
-				return
-			}
+		var cxPath, idxPath string
+		if sc.DBPath == "" {
+			cxPath = filepath.Join(sc.DataDir, "cxds.db")
+			idxPath = filepath.Join(sc.DataDir, "idx.db")
+		} else {
+			cxPath = sc.DBPath + ".cxds"
+			cxPath = sc.DBPath + ".idx"
 		}
-		if db, err = data.NewDriveDB(sc.DBPath); err != nil {
+		var cx data.CXDS
+		var idx data.IdxDB
+		if cx, err = cxds.NewDriveCXDS(cxPath); err != nil {
 			return
 		}
+		if idx, err = idxdb.NewDriveIdxDB(idxPath); err != nil {
+			cx.Close()
+			return
+		}
+		db = data.NewDB(cx, idx)
 	}
 
 	// container
@@ -121,14 +144,15 @@ func NewNode(sc Config) (s *Node, err error) {
 	s.wos = make(map[cipher.SHA256]map[*Conn]struct{})
 
 	// fill up feeds from database
-	err = s.db.IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+	err = s.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 		return feeds.Iterate(func(pk cipher.PubKey) (err error) {
 			s.feeds[pk] = make(map[*Conn]struct{})
 			return
 		})
 	})
 	if err != nil {
-		s = nil // GC
+		db.Close() // close DB
+		s = nil    // GC
 		return
 	}
 
@@ -165,6 +189,7 @@ func NewNode(sc Config) (s *Node, err error) {
 	}
 
 	if s.pool, err = gnet.NewPool(sc.Config); err != nil {
+		db.Close() // close DB
 		s = nil
 		return
 	}

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/cxds"
+	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/node/log"
 )
 
@@ -46,6 +48,10 @@ func getConf() *Config {
 	return conf
 }
 
+func memoryDB() *data.DB {
+	return data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
+}
+
 func getCont() *Container {
-	return NewContainer(data.NewMemoryDB(), getConf())
+	return NewContainer(memoryDB(), getConf())
 }
