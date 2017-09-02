@@ -59,7 +59,8 @@ func main() {
 
 	c.PingInterval = 0 // suppress ping logs
 
-	c.DBPath = "./client.db"
+	c.DataDir = ""      // don't create ~/.skycoin/cxo
+	c.InMemoryDB = true // use DB in memory
 
 	// suppress gnet logs
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
