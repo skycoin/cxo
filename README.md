@@ -45,7 +45,7 @@ type User struct {
 }
 ```
 
-The Ref is SHA256 reference of encoded value. Thus, we are using uint32 instead
+The Ref is SHA256 hash of encoded value. Thus, we are using uint32 instead
 of int. Because the int can be int32 or int64 and not acceptable for
 encoding and decoding. E.g. the `User` will point to some encoded `Bio`.
 

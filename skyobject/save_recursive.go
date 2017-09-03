@@ -23,7 +23,8 @@ func (p *saveRecursive) inc(key cipher.SHA256) (err error) {
 func (p *saveRecursive) save(key cipher.SHA256) (err error) {
 	val, ok := p.p.unsaved[key]
 	if !ok {
-		panic("missing cached value")
+		return
+		panic("missing cached value: " + key.Hex())
 	}
 	if _, err = p.p.c.db.CXDS().Set(key, val); err != nil {
 		return
@@ -66,7 +67,7 @@ func (p *saveRecursive) saveRecursive(obj reflect.Value) (err error) {
 //
 func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 
-	p.p.c.Debugf(VerbosePin, "saveRecursiveDynamic %s", obj)
+	p.p.c.Debugf(VerbosePin, "saveRecursiveDynamic %v", obj)
 
 	dr := obj.Interface().(Dynamic)
 	defer obj.Set(reflect.ValueOf(dr))

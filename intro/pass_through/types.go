@@ -1,12 +1,12 @@
-package intro
+package passThrough
 
 import (
 	sky "github.com/skycoin/cxo/skyobject"
 )
 
 type Content struct {
-	Thread sky.Refs `skyobject:"schema=intro.Vote"`
-	Post   sky.Refs `skyobject:"schema=intro.Vote"`
+	Thread sky.Refs `skyobject:"schema=pt.Vote"`
+	Post   sky.Refs `skyobject:"schema=pt.Vote"`
 }
 
 type Vote struct {

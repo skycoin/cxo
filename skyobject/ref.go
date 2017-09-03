@@ -164,6 +164,7 @@ func (r *Ref) SetHash(hash cipher.SHA256) {
 func (r *Ref) SetValue(obj interface{}) (err error) {
 
 	if obj == nil {
+		println("(1)")
 		r.Clear()
 		return
 	}
@@ -194,7 +195,6 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 	}
 
 	r.rn.value = obj // keep
-
 	if key, val := r.rn.pack.dsave(obj); key != r.Hash {
 		r.Hash = key
 		r.ch = true

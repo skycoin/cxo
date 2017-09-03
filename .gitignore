@@ -42,6 +42,11 @@ cover.html
 cmd/cxocli/cxocli
 cmd/cxod/cxod
 
+intro/pass_through/server/server
+intro/pass_through/pipe/pipe
+intro/pass_through/client/client
+intro/cxtweet/cxtweet
+
 # tests directory
 
 node/test/
@@ -50,13 +55,8 @@ node/test/
 
 *.go.ignore
 
+*.db
 *.db.cxds
-*.db.index
+*.db.idx
 
-intro/server/server
-intro/server/server.db
-intro/pipe/pipe
-intro/pipe/pipe.db
-intro/client/client
-intro/client/client.db
 

@@ -34,6 +34,7 @@ var (
 	// feeds because it is not public
 	ErrNonPublicPeer = errors.New(
 		"request list of feeds from non-public peer")
+	// ErrConnClsoed occurs if coonection closed but an action requested
 	ErrConnClsoed = errors.New("connection closed")
 )
 

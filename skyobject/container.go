@@ -236,7 +236,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 func (c *Container) Close() error {
 	c.Debug(VerbosePin, "Close()")
 
-	c.Print("[CONTAINER CLOSING] holded:", c.holded)
+	c.Print("[CONTAINER CLOSING TEMPORARY LOG REMOVE ME LATER FROM HERE] holded:", c.holded)
 
 	// TODO (kostyarin): cleaning up
 	return nil

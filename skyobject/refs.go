@@ -504,7 +504,9 @@ func (r *Refs) reduceIfNeed() (err error) {
 type IterateRefsFunc func(i int, ref *RefsElem) (err error)
 
 // Ascend iterates over Refs ascending order. See also
-// docs for IterateRefsFunc
+// docs for IterateRefsFunc. It's safe to delete an element
+// of the Refs inside the Ascend, but it's unsafe to
+// append somethign to the Refs while the Append ecxecutes
 func (r *Refs) Ascend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {
@@ -569,7 +571,9 @@ func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
 }
 
 // Descend iterates over Refs descending order. See also
-// docs for IterateRefsFunc
+// docs for IterateRefsFunc. It's safe to delete an element
+// of the Refs inside the Ascend, but it's unsafe to
+// append somethign to the Refs while the Append ecxecutes
 func (r *Refs) Descend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {

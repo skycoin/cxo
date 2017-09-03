@@ -18,7 +18,7 @@ type subscribeEvent struct {
 }
 
 func (s *subscribeEvent) Handle(c *Conn) {
-	sub := c.s.src.Subscribe(s.pk)
+	sub := c.s.src.Subscribe(s.pk) // msg
 	if _, err := c.sendRequest(sub.ID, sub, s.err, nil); err != nil {
 		s.err <- err
 	}
@@ -74,14 +74,17 @@ func (c *Conn) listOfFeedsEvent(rspn chan msg.Msg, err chan error) {
 type resubscribeEvent struct{}
 
 func (resubscribeEvent) Handle(c *Conn) {
-	// TODO (kostyarin): resubscribe
-	//
-	// connection is not created inside the onDial
-	// callback and we have a risk to overfill
-	// SendQueue and terminate the conn this way
-	//
-	// so, we can only wait for some message to
-	// resubscribe
+	var subs = make([]cipher.PubKey, 0, len(c.subs))
+	for pk := range c.subs {
+		subs = append(subs, pk)
+	}
+	go func() {
+		for _, pk := range subs {
+			if err := c.Subscribe(pk); err != nil {
+				c.s.Println("[WRN] can't resubscribe:", err)
+			}
+		}
+	}()
 }
 
 type sendPingEvent struct {

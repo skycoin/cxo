@@ -15,7 +15,7 @@ import (
 	"github.com/skycoin/cxo/node/log"
 	sky "github.com/skycoin/cxo/skyobject"
 
-	"github.com/skycoin/cxo/intro"
+	passThrough "github.com/skycoin/cxo/intro/pass_through"
 )
 
 // defaults
@@ -46,8 +46,8 @@ func main() {
 	}()
 
 	reg := sky.NewRegistry(func(r *sky.Reg) {
-		r.Register("intro.Vote", intro.Vote{})
-		r.Register("intro.Content", intro.Content{})
+		r.Register("pt.Vote", passThrough.Vote{})
+		r.Register("pt.Content", passThrough.Content{})
 	})
 
 	var c = node.NewConfig()
@@ -133,7 +133,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 	}
 	defer pack.Close()
 
-	content := new(intro.Content)
+	content := new(passThrough.Content)
 
 	// create Root (and initialize the "content" var)
 	pack.Append(content)
@@ -155,8 +155,8 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 
 		// new random votes
 
-		content.Post.Append(&intro.Vote{i%3 != 0, uint32(i)})
-		content.Thread.Append(&intro.Vote{i%2 == 0, uint32(i)})
+		content.Post.Append(&passThrough.Vote{i%3 != 0, uint32(i)})
+		content.Thread.Append(&passThrough.Vote{i%2 == 0, uint32(i)})
 
 		// replace Content with new one
 		if err := pack.SetRefByIndex(0, content); err != nil {

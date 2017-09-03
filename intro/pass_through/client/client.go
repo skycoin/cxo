@@ -13,7 +13,7 @@ import (
 	"github.com/skycoin/cxo/node/log"
 	sky "github.com/skycoin/cxo/skyobject"
 
-	"github.com/skycoin/cxo/intro"
+	passThrough "github.com/skycoin/cxo/intro/pass_through"
 )
 
 // defaults
@@ -47,8 +47,8 @@ func main() {
 	}()
 
 	reg := sky.NewRegistry(func(r *sky.Reg) {
-		r.Register("intro.Vote", intro.Vote{})
-		r.Register("intro.Content", intro.Content{})
+		r.Register("pt.Vote", passThrough.Vote{})
+		r.Register("pt.Content", passThrough.Content{})
 	})
 
 	var c = node.NewConfig()

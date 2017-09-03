@@ -52,6 +52,7 @@ const (
 	RootPin
 	FillPin
 	WaitPin
+	HandlePin
 )
 
 func dataDir() string {
