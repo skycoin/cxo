@@ -294,7 +294,7 @@ func showHelp() {
   roots <public key>
     print brief information about all root objects of given feed
   tree <pub key> [seq]
-    print root by public key and seq number, if the seq omited then
+    print root by public key and seq number, if the seq omitted then
     last full root printed
   terminate
     terminate server if allowed

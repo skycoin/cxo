@@ -41,7 +41,7 @@ func (s SchemaRef) IsBlank() bool {
 }
 
 // A Types represents mapping from registered names
-// of a Regsitry to reflect.Type and inversed way
+// of a Registry to reflect.Type and inversed way
 type Types struct {
 	Direct  map[string]reflect.Type // registered name -> refelect.Type
 	Inverse map[reflect.Type]string // refelct.Type -> registered name

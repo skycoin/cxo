@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/node"
 )
 
@@ -36,6 +38,7 @@ func main() {
 	c.RPCAddress = RPC
 	c.Listen = Host
 	c.RemoteClose = RemoteClose
+	c.OnSubscribeRemote = acceptAllSubscriptions
 
 	c.FromFlags()
 	flag.Parse()
@@ -57,4 +60,12 @@ func main() {
 
 	waitInterrupt(s.Quiting())
 
+}
+
+// accept all incoming subscriptions
+func acceptAllSubscriptions(c *node.Conn, pk cipher.PubKey) (_ error) {
+	if err := c.Node().AddFeed(pk); err != nil {
+		log.Print("DB failure:", err) // DB failure
+	}
+	return
 }

@@ -103,7 +103,7 @@ func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
 	}
 	if gc := r.ns.Pool().Connection(cf.Address); gc != nil {
 		if c, ok := gc.Value().(*Conn); ok {
-			c.Unsubscrube(cf.Feed)
+			c.Unsubscribe(cf.Feed)
 			return
 		}
 	}

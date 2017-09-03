@@ -55,7 +55,7 @@ type TestSmallStruct struct {
 }
 
 type TestStruct struct {
-	// embeded
+	// embedded
 
 	TestInt8
 	TestInt16
@@ -97,7 +97,7 @@ type TestStruct struct {
 	Refs `skyobject:"schema=test.TestNumberStruct"`
 	Dynamic
 
-	// not embeded fields
+	// not embedded fields
 
 	FieldTestInt8  TestInt8
 	FieldTestInt16 TestInt16
@@ -510,7 +510,7 @@ func TestSchema_Size(t *testing.T) {
 		Refs:    Refs{},
 		Dynamic: Dynamic{},
 
-		// not embeded fields
+		// not embedded fields
 
 		FieldTestInt8:  72,
 		FieldTestInt16: 73,

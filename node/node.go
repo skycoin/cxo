@@ -78,11 +78,11 @@ type Node struct {
 // configurations. The functions creates database and
 // Container of skyobject instances internally. Use
 // Config.Skyobject to provide appropriate configuration
-// for skyobject.Container such as skyobject.Regsitry,
+// for skyobject.Container such as skyobject.Registry,
 // etc. For example
 //
 //     conf := NewConfig()
-//     conf.Skyobject.Regsitry = skyobject.NewRegistry(blah)
+//     conf.Skyobject.Registry = skyobject.NewRegistry(blah)
 //
 //     node, err := NewNode(conf)
 //
@@ -366,7 +366,7 @@ func (s *Node) Connections() (cs []*Conn) {
 	return
 }
 
-// Connections by address. Itreturns nil if conenction not
+// Connections by address. Itreturns nil if connection not
 // found or not established yet
 func (s *Node) Connection(address string) (c *Conn) {
 	if gc := s.pool.Connection(address); gc != nil {
@@ -490,7 +490,7 @@ func (s *Node) onConnect(gc *gnet.Conn) {
 }
 
 func (s *Node) onDisconnect(gc *gnet.Conn) {
-	s.Debugf(ConnPin, "[%s] close conenction %t", gc.Address(), gc.IsIncoming())
+	s.Debugf(ConnPin, "[%s] close connection %t", gc.Address(), gc.IsIncoming())
 }
 
 func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {
@@ -591,10 +591,10 @@ func (n *Node) delFeed(pk cipher.PubKey) (ok bool) {
 	return
 }
 
-// del feed from conenctions, every conenction must
+// del feed from connections, every connection must
 // reply when it done, because we have to know
 // the moment after which our DB doesn't contains
-// non-full Root object; thus, every conenctions
+// non-full Root object; thus, every connections
 // terminates fillers of the feed and removes non-full
 // root objects
 func (n *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
@@ -619,11 +619,11 @@ func (n *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
 
 type delFeedConnsReply struct {
 	done   <-chan struct{} // filler closed
-	closed <-chan struct{} // conenctions closed and done
+	closed <-chan struct{} // connections closed and done
 }
 
 // DelFed stops sharing given feed. It unsubscribes
-// from all conenctions
+// from all connections
 func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
 
 	if false == n.delFeed(pk) {

@@ -5,7 +5,7 @@ CXDS
 
 CXDS is CX data store. The package is stub and will be repalced with
 client library for CX data server. API of the package is close to goal
-and can be used wihtout caring about future.
+and can be used without caring about future.
 
 The CXDS based on [boltdb](github.com/boltdb/bolt) and
 [buntdb](github.com/tidwall/buntdb). E.g. it can be used as long time store

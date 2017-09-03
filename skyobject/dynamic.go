@@ -233,7 +233,7 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 }
 
 // Clear the Dynamic making it blank. It clears
-// reference to object and refernece to Schema too
+// reference to object and reference to Schema too
 func (d *Dynamic) Clear() (err error) {
 	if d.SchemaRef == (SchemaRef{}) && d.Object == (cipher.SHA256{}) {
 		return // already blank

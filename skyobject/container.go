@@ -77,7 +77,7 @@ func (c *Container) DB() *data.DB {
 }
 
 // CoreRegisty of the Container or nil if
-// the Container created without a Regsitry
+// the Container created without a Registry
 func (c *Container) CoreRegistry() *Registry {
 	c.Debugln(VerbosePin, "CoreRegistry", c.coreRegistry != nil)
 
@@ -209,7 +209,7 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 
 }
 
-// NewRoot associated with core regsitry
+// NewRoot associated with core registry
 func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 	types *Types) (pack *Pack, err error) {
 
@@ -304,7 +304,7 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 }
 
 // DelRoot deletes Root of given feed with given seq number. If the Root
-// doesn't exsits, then thsi mehtod doesn't returns an error. Even if the feed
+// doesn't exsits, then this mehtod doesn't returns an error. Even if the feed
 // does not exist
 func (c *Container) DelRoot(pk cipher.PubKey, seq uint64) (err error) {
 	c.Debugln(VerbosePin, "DelRoot", pk.Hex()[:7])

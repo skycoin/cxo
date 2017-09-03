@@ -1,7 +1,6 @@
 package skyobject
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -11,11 +10,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
-)
-
-// some of Root dropping reasons
-var (
-	ErrEmptyRegsitryRef = errors.New("empty registry reference")
 )
 
 //
@@ -117,7 +111,7 @@ func (f *Filler) fill() {
 	f.incrs = append(f.incrs, f.r.Hash) // saved
 
 	if f.r.Reg == (RegistryRef{}) {
-		f.Terminate(ErrEmptyRegsitryRef)
+		f.Terminate(ErrEmptyRegistryRef)
 		return
 	}
 
@@ -241,7 +235,7 @@ func (f *Filler) fillData(sch Schema, val []byte) (err error) {
 		return f.fillDataStruct(sch, val)
 	}
 	return fmt.Errorf("schema is not reference, array, slice or struct but"+
-		"HasReferenes() retruns true: %s", sch)
+		"HasReferences() retruns true: %s", sch)
 }
 
 func (f *Filler) fillDataArray(sch Schema, val []byte) (err error) {

@@ -394,7 +394,7 @@ func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
 
 // SetByIndex repaces Root.Refs by index with given object.
 // Use nil to make the object blank. Type of the object must
-// be registered in related Regsitry. It panics, if type of
+// be registered in related Registry. It panics, if type of
 // the object is not registered
 func (p *Pack) SetRefByIndex(i int, obj interface{}) (err error) {
 	p.c.Debugf(VerbosePin, "(*Pack).SetRefByIndex %s %d %T", p.r.Short(), i,
@@ -408,7 +408,7 @@ func (p *Pack) SetRefByIndex(i int, obj interface{}) (err error) {
 }
 
 // Append given obejcts to Root.Refs. Types of the objects must
-// be registered in related Regsitry. It panics, if type of one
+// be registered in related Registry. It panics, if type of one
 // of the object is not registered
 func (p *Pack) Append(objs ...interface{}) {
 
@@ -581,7 +581,7 @@ func (p *Pack) Refs(objs ...interface{}) (r Refs) {
 	return
 }
 
-// SetFlag is experimantal. Handle with care
+// SetFlag is experimental. Handle with care
 func (p *Pack) SetFlag(flag Flag) {
 	p.setFlag(flag)
 }

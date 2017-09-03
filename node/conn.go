@@ -22,7 +22,7 @@ var (
 	ErrWrongResponse               = errors.New("wrong response")
 )
 
-// A Conn represents conenction of Node
+// A Conn represents connection of Node
 type Conn struct {
 	s *Node // back reference for logs
 
@@ -253,7 +253,7 @@ func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
 
 // Unsubscribe stops exchangin given feed with peer.
 // It's non-blocking call
-func (c *Conn) Unsubscrube(pk cipher.PubKey) {
+func (c *Conn) Unsubscribe(pk cipher.PubKey) {
 	c.unsubscribeEvent(pk)
 }
 

@@ -20,7 +20,7 @@ type CXDS interface {
 	// will be set to 1
 	Set(key cipher.SHA256, val []byte) (rc uint32, err error)
 	// Add value, calculating hash internally. E.g. it clculates
-	// hash and perfroms Set
+	// hash and performs Set
 	Add(val []byte) (key cipher.SHA256, rc uint32, err error)
 	// Inc increments references count
 	Inc(key cipher.SHA256) (rc uint32, err error)
