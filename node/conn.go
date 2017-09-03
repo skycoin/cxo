@@ -6,6 +6,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
@@ -30,7 +31,7 @@ type Conn struct {
 	// not threads safe fields
 
 	// subscriptions of the Conn to resusbcribe OnDial
-	subs map[cipher.PubKey]struct{}
+	subs map[cipher.PubKey]*sentRoot
 	rr   map[msg.ID]*waitResponse // request-response
 
 	events  chan event  // events of the Conn
@@ -38,17 +39,44 @@ type Conn struct {
 
 	pings map[msg.ID]chan struct{}
 
+	// send a holded Root to peer, the Root
+	// should be unholded after use
+	sendRoot chan *skyobject.Root
+
 	// filling
 
 	wantq    chan skyobject.WCXO             // request wanted CX object
 	requests map[cipher.SHA256][]chan []byte // wait reply
 
 	// must drain
-	full chan *skyobject.Root         // fill Root obejcts
+	full chan skyobject.FullRoot      // fill Root obejcts
 	drop chan skyobject.DropRootError // root reference with error (reason)
 
 	// filling Roots (hash of Root -> *Filler)
 	fillers map[cipher.SHA256]*skyobject.Filler
+
+	// done means that all finialization permormed
+	// and handling goroutine exists
+	done chan struct{}
+}
+
+type sentRoot struct {
+	// current Root object that
+	// remote node is filling
+	current *skyobject.Root
+	// next Root object that will be sent
+	// after the current one
+	next *skyobject.Root
+}
+
+// unhold current and next
+func (s *sentRoot) unhold(so *skyobject.Container) {
+	if sc := s.current; sc != nil {
+		so.Unhold(sc.Pub, sc.Seq)
+	}
+	if sn := s.next; sn != nil {
+		so.Unhold(sn.Pub, sn.Seq)
+	}
 }
 
 func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
@@ -60,17 +88,20 @@ func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
 
 	// TODO (kostyarin): make all the 128s and 8s below configurable
 
-	c.subs = make(map[cipher.PubKey]struct{})
+	c.subs = make(map[cipher.PubKey]*sentRoot)
 	c.rr = make(map[msg.ID]*waitResponse)
 	c.events = make(chan event, 128)
 	c.timeout = make(chan msg.ID, 128)
 	c.pings = make(map[msg.ID]chan struct{})
+	c.sendRoot = make(chan *skyobject.Root, 8)
 
 	c.wantq = make(chan skyobject.WCXO, 128)
 	c.requests = make(map[cipher.SHA256][]chan []byte)
-	c.full = make(chan *skyobject.Root, 8)         // saved
+	c.full = make(chan skyobject.FullRoot, 8)      // saved
 	c.drop = make(chan skyobject.DropRootError, 8) // need to drop
 	c.fillers = make(map[cipher.SHA256]*skyobject.Filler)
+
+	c.done = make(chan struct{})
 
 	gc.SetValue(c) // for resubscriptions
 
@@ -109,6 +140,21 @@ func (c *Conn) Send(m msg.Msg) error {
 	return c.SendRaw(msg.Encode(m))
 }
 
+// SendRoot obejct to peer. This can be ignored if
+// peer is now filling newer Root
+func (c *Conn) SendRoot(r *skyobject.Root) (_ error) {
+	c.s.Debugf(FillPin, "[%s] SendRoot %s", c.Address(), r.Short())
+
+	c.s.so.Hold(r.Pub, r.Seq)
+	select {
+	case c.sendRoot <- r:
+	case <-c.gc.Closed():
+		c.s.so.Unhold(r.Pub, r.Seq)
+		return ErrConnClsoed
+	}
+	return
+}
+
 // SendRaw encoded message to peer
 func (c *Conn) SendRaw(rm []byte) (err error) {
 
@@ -125,6 +171,13 @@ func (c *Conn) SendRaw(rm []byte) (err error) {
 	return
 }
 
+func (c *Conn) enqueueEvent(evt event) {
+	select {
+	case c.events <- evt:
+	case <-c.gc.Closed():
+	}
+}
+
 // SendPing to peer. It's impossible if
 // PingInterval of Config of related Node
 // is zero
@@ -132,7 +185,7 @@ func (c *Conn) SendPing() {
 	if c.s.conf.PingInterval <= 0 {
 		return
 	}
-	c.events <- &sendPingEvent{make(chan struct{})}
+	c.enqueueEvent(&sendPingEvent{make(chan struct{})})
 }
 
 type waitResponse struct {
@@ -341,10 +394,28 @@ func (c *Conn) terminateFillers() {
 		}
 		select {
 		case dre := <-c.drop:
-			c.dropRoot(dre.Root, dre.Err, dre.Saved)
+			c.dropRoot(dre.Root, dre.Err, dre.Incrs)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		}
+	}
+}
+
+func (c *Conn) unholdSent() {
+	for _, sent := range c.subs {
+		sent.unhold(c.s.so)
+	}
+}
+
+func (c *Conn) drainSendRoot() {
+	for {
+		select {
+		case r := <-c.sendRoot:
+			c.s.so.Unhold(r.Pub, r.Seq)
+		default:
+			return
+		}
+
 	}
 }
 
@@ -353,6 +424,7 @@ func (c *Conn) handle() {
 	defer c.s.Debugf(ConnPin, "[%s] stop handling", c.gc.Address())
 
 	defer c.s.await.Done()
+	defer close(c.done)
 
 	var err error
 
@@ -362,6 +434,7 @@ func (c *Conn) handle() {
 	}
 
 	defer c.s.delConnFromWantedObjects(c)
+	defer c.drainSendRoot() // unhold roots in the sendRoot channel
 
 	c.s.addConn(c)
 	defer c.s.delConn(c)
@@ -370,21 +443,47 @@ func (c *Conn) handle() {
 	defer c.onCloseCallback()
 
 	var (
-		closed  = c.gc.Closed()
-		receive = c.gc.ReceiveQueue()
-		events  = c.events
-		timeout = c.timeout
+		closed   = c.gc.Closed()
+		receive  = c.gc.ReceiveQueue()
+		events   = c.events
+		timeout  = c.timeout
+		sendRoot = c.sendRoot
 
 		raw []byte
 		m   msg.Msg
 		evt event
 		id  msg.ID
+		r   *skyobject.Root
 	)
 
 	defer c.terminateFillers()
 
+	defer c.unholdSent() // release sent Root obejcts
+
 	for {
 		select {
+
+		// root obejcts
+		case r = <-sendRoot:
+			if sent, ok := c.subs[r.Pub]; ok {
+				if sc := sent.current; sc == nil {
+					sent.current = r
+					c.Send(c.s.src.Root(r))
+				} else if r.Seq <= sc.Seq {
+					c.s.so.Unhold(r.Pub, r.Seq)
+					continue // drop older or the same
+				} else if sn := sent.next; sn == nil {
+					sent.next = r // keep next
+				} else if r.Seq <= sn.Seq {
+					c.s.so.Unhold(r.Pub, r.Seq)
+					continue // drop older or the same
+				} else {
+					c.s.so.Unhold(sn.Pub, sn.Seq)
+					sent.next = r // replace next with newer
+				}
+			} else {
+				c.s.so.Unhold(r.Pub, r.Seq) // drop it otherwise
+			}
 
 		// events
 		case evt = <-events:
@@ -412,7 +511,7 @@ func (c *Conn) handle() {
 
 		// filling
 		case dre := <-c.drop: // drop root
-			c.dropRoot(dre.Root, dre.Err, dre.Saved)
+			c.dropRoot(dre.Root, dre.Err, dre.Incrs)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		case wcxo := <-c.wantq:
@@ -427,30 +526,89 @@ func (c *Conn) handle() {
 
 }
 
-func (c *Conn) dropRoot(r *skyobject.Root, err error, saved []cipher.SHA256) {
+func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
+	reason error) {
+
+	if ofb := c.s.conf.OnFillingBreaks; ofb != nil {
+		ofb(c, r, reason)
+	}
+
+	// the Root is not saved in database but some realted obejcts
+	// have been saved and we have to decrement them all
+
+	// actually the Root is saved, but it's not saved in index
+
+	if err := c.s.db.CXDS().MultiDec(incrs); err != nil {
+		c.s.Printf("[ERR] [%s] can't drop Root %s related obejcts: %v",
+			c.Address(), r.Short(), err)
+	}
+
+	c.Send(c.s.src.RootDone(r.Pub, r.Seq)) // notify peer
+}
+
+func (c *Conn) dropRoot(r *skyobject.Root, err error, incrs []cipher.SHA256) {
 
 	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(), r.Short(), err)
 
 	c.delFillingRoot(r)
-
-	if ofb := c.s.conf.OnFillingBreaks; ofb != nil {
-		ofb(c, r, err)
-	}
-
-	// TODO: remove the Root and decrement all saved objects
-
-	//
+	c.dropRootRelated(r, incrs, err)
 
 }
 
-func (c *Conn) rootFilled(r *skyobject.Root) {
-	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), r.Short())
+func (c *Conn) rootFilled(fr skyobject.FullRoot) {
+	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), fr.Root.Short())
 
-	c.delFillingRoot(r)
+	c.delFillingRoot(fr.Root)
+
+	// we have to be sure that this connection
+	// is subscribed to feed of this Root
+	if _, ok := c.subs[fr.Root.Pub]; !ok {
+
+		// drop the Root and remove all related saved obejcts,
+		// because we are not subscribed to the feed anymore
+
+		c.dropRootRelated(fr.Root, fr.Incrs, ErrUnsubscribed)
+		return
+	}
+
+	// (1) hold Root
+	// (2) defered unhold
+	// (3) add it to index DB
+	// (4) perform callback
+
+	c.s.so.Hold(fr.Root.Pub, fr.Root.Seq)
+	defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq)
+
+	err := c.s.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var rs data.Roots
+		if rs, err = feeds.Roots(fr.Root.Pub); err != nil {
+			return
+		}
+		return rs.Set(&data.Root{
+			Seq:  fr.Root.Seq,
+			Prev: fr.Root.Prev,
+			Hash: fr.Root.Hash,
+			Sig:  fr.Root.Sig,
+		})
+	})
+
+	if err != nil {
+		// can't add this Roto to DB, so, let's drop it
+		c.s.Debugf(FillPin, "[ERR] [%s] can't save Root in IdxDB: %v",
+			c.Address(), err)
+		c.dropRootRelated(fr.Root, fr.Incrs, err)
+		return
+	}
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
-		orf(c, r)
+		c.s.so.Hold(fr.Root.Pub, fr.Root.Seq) // hold for the callback
+		go func() {
+			defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq) // unhold
+			orf(c, fr.Root)
+		}()
 	}
+
+	c.Send(c.s.src.RootDone(fr.Root.Pub, fr.Root.Seq)) // notify peer
 }
 
 func (c *Conn) handlePong(pong *msg.Pong) {
@@ -472,8 +630,9 @@ func (c *Conn) handlePing(ping *msg.Ping) {
 }
 
 func (c *Conn) sendLastFull(pk cipher.PubKey) {
-	if r, err := c.s.so.LastFull(pk); err == nil {
-		c.Send(c.s.src.Root(r))
+	if r, err := c.s.so.LastRoot(pk); err == nil {
+		c.SendRoot(r)
+		c.s.so.Unhold(pk, r.Seq) // LasRoot holds the Root
 	}
 }
 
@@ -494,19 +653,24 @@ func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
 		c.Send(c.s.src.RejectSubscription(subs))
 		return
 	}
-	c.subs[subs.Feed] = struct{}{} // add to internal list
+	if _, ok := c.subs[subs.Feed]; !ok {
+		c.subs[subs.Feed] = &sentRoot{} // add to internal list
+	}
 	c.Send(c.s.src.AcceptSubscription(subs))
 	c.sendLastFull(subs.Feed)
 }
 
 func (c *Conn) unsubscribe(pk cipher.PubKey) {
-	c.s.delConnFromFeed(c, pk)  // delete from Node feed->conns mapping
-	delete(c.subs, pk)          // delete from resubscriptions
+	c.s.delConnFromFeed(c, pk) // delete from Node feed->conns mapping
+	if sent, ok := c.subs[pk]; ok {
+		sent.unhold(c.s.so) // unhold sent and prepared to sending
+		delete(c.subs, pk)  // delete from resubscriptions
+	}
 	c.delFillingRootsOfFeed(pk) // stop filling
 }
 
 func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
-	c.s.Debugf(SubscrPin, "[%s] handleUnsubscribe: %s", c.gc.Address(),
+	c.s.Debugf(HandlePin, "[%s] handleUnsubscribe: %s", c.gc.Address(),
 		unsub.Feed.Hex()[:7])
 
 	if our := c.s.conf.OnUnsubscribeRemote; our != nil {
@@ -517,7 +681,7 @@ func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
 }
 
 func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
-	c.s.Debugf(SubscrPin, "[%s] handleAcceptSubscription: %s",
+	c.s.Debugf(HandlePin, "[%s] handleAcceptSubscription: %s",
 		c.gc.Address(), as.Feed.Hex()[:7])
 
 	if wr, ok := c.rr[as.ResponseFor]; ok {
@@ -535,7 +699,9 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 		if c.s.addConnToFeed(c, as.Feed) == false {
 			return // don't share the feed anymore
 		}
-		c.subs[as.Feed] = struct{}{} // add to internal list
+		if _, ok := c.subs[as.Feed]; !ok {
+			c.subs[as.Feed] = &sentRoot{} // add to internal list
+		}
 		c.sendLastFull(as.Feed)
 
 	} else {
@@ -545,7 +711,7 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 }
 
 func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
-	c.s.Debugf(SubscrPin, "[%s] handleRejectSubscription: %s",
+	c.s.Debugf(HandlePin, "[%s] handleRejectSubscription: %s",
 		c.gc.Address(), rs.Feed.Hex()[:7])
 
 	if wr, ok := c.rr[rs.ResponseFor]; ok {
@@ -566,7 +732,7 @@ func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
 }
 
 func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
-	c.s.Debugf(ConnPin, "[%s] handleRequestListOfFeeds", c.gc.Address())
+	c.s.Debugf(HandlePin, "[%s] handleRequestListOfFeeds", c.gc.Address())
 
 	if c.s.conf.PublicServer == false {
 		c.Send(c.s.src.NonPublicServer(rlof))
@@ -576,7 +742,7 @@ func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
 }
 
 func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
-	c.s.Debugf(ConnPin, "[%s] handleListOfFeeds", c.gc.Address())
+	c.s.Debugf(HandlePin, "[%s] handleListOfFeeds", c.gc.Address())
 
 	if wr, ok := c.rr[lof.ResponseFor]; ok {
 		if wr.ttm != nil {
@@ -594,7 +760,7 @@ func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
 }
 
 func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
-	c.s.Debugf(ConnPin, "[%s] handleNonPublicServer", c.gc.Address())
+	c.s.Debugf(HandlePin, "[%s] handleNonPublicServer", c.gc.Address())
 
 	if wr, ok := c.rr[nps.ResponseFor]; ok {
 		if wr.ttm != nil {
@@ -612,21 +778,25 @@ func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
 }
 
 func (c *Conn) handleRoot(rm *msg.Root) {
-	c.s.Debugf(FillPin, "[%s] handleRoot of %s", c.gc.Address(),
-		rm.Feed.Hex()[:7])
+	c.s.Debugf(HandlePin, "[%s] handleRoot {%s:%d}", c.gc.Address(),
+		rm.Feed.Hex()[:7], rm.Seq)
 
 	r, err := c.s.so.AddEncodedRoot(rm.Sig, rm.Value)
 	if err != nil {
+		c.Send(c.s.src.RootDone(rm.Feed, rm.Seq)) // done
 		c.s.Printf("[ERR] [%s] error adding received Root: %v", c.Address(),
 			err)
 		return
 	}
 
 	// send the Root forward for all
-	c.s.sendToAllOfFeedExcept(r.Pub, rm, c)
+	c.s.broadcastRoot(r, c)
 
 	if r.IsFull { // we already have the Root and it's full
-		return // don't call OnRootRecived and OnRootFilled callbacks
+		c.Send(c.s.src.RootDone(rm.Feed, rm.Seq)) // done
+
+		// don't call OnRootRecived and OnRootFilled callbacks
+		return
 	}
 
 	if orr := c.s.conf.OnRootReceived; orr != nil {
@@ -636,8 +806,38 @@ func (c *Conn) handleRoot(rm *msg.Root) {
 	c.fillRoot(r)
 }
 
+func (c *Conn) handleRootDone(rd *msg.RootDone) {
+	c.s.Debugf(HandlePin, "[%s] handleRootDone {%s:%d}", c.gc.Address(),
+		rd.Feed.Hex()[:7], rd.Seq)
+
+	sent, ok := c.subs[rd.Feed]
+	if !ok {
+		c.s.Debugf(FillPin,
+			"[%s] wrong RootDone message received (not subscribed)",
+			c.Address())
+		return
+	}
+
+	if sc := sent.current; sc.Seq == rd.Seq {
+		c.s.so.Unhold(sc.Pub, sc.Seq) // unhold
+		sent.current = nil            // clear
+		// if there is next
+		if sn := sent.next; sn != nil {
+			sent.current = sn                  // next turns current
+			sent.next = nil                    // next turns vacant
+			c.Send(c.s.src.Root(sent.current)) // send it
+		}
+		return
+	}
+
+	c.s.Debugf(FillPin, "[%s] wrong RootDone message received (unknown seq)",
+		c.Address())
+	return
+
+}
+
 func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
-	c.s.Debugf(FillPin, "[%s] handleRequestObject: %s", c.gc.Address(),
+	c.s.Debugf(HandlePin, "[%s] handleRequestObject: %s", c.gc.Address(),
 		ro.Key.Hex()[:7])
 
 	if val, _, _ := c.s.db.CXDS().Get(ro.Key); val != nil {
@@ -654,7 +854,7 @@ func (c *Conn) handleObject(o *msg.Object) {
 
 	key := cipher.SumSHA256(o.Value)
 
-	c.s.Debugf(FillPin, "[%s] handleObject: %s", c.gc.Address(),
+	c.s.Debugf(HandlePin, "[%s] handleObject: %s", c.gc.Address(),
 		key.Hex()[:7])
 
 	if rs, ok := c.requests[key]; ok {
@@ -689,7 +889,7 @@ func (c *Conn) handleObject(o *msg.Object) {
 
 func (c *Conn) handleMsg(m msg.Msg) (err error) {
 
-	c.s.Debugf(MsgPin, "[%s] handleMsg %T", c.gc.Address(), m)
+	c.s.Debugf(HandlePin, "[%s] handleMsg %T", c.gc.Address(), m)
 
 	switch tt := m.(type) {
 
@@ -725,6 +925,8 @@ func (c *Conn) handleMsg(m msg.Msg) (err error) {
 
 	case *msg.Root:
 		c.handleRoot(tt)
+	case *msg.RootDone:
+		c.handleRootDone(tt)
 
 	case *msg.RequestObject:
 		c.handleRequestObject(tt)

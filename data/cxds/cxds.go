@@ -13,7 +13,6 @@ import (
 
 // comon errors
 var (
-	ErrNotFound   = errors.New("not found in CXDS")
 	ErrEmptyValue = errors.New("empty value")
 )
 

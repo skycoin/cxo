@@ -12,6 +12,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
@@ -37,12 +38,10 @@ const (
 	PublicServer    bool          = false           // default
 
 	// default tree is
-	//   server: ~/.skycoin/cxo/bolt.db
+	//   server: ~/.skycoin/cxo/{cxds.db, idx.db}
 
 	skycoinDataDir = ".skycoin"
 	cxoSubDir      = "cxo"
-
-	dbFilePrefix = "cxodb"
 )
 
 // log pins
@@ -53,6 +52,7 @@ const (
 	RootPin
 	FillPin
 	WaitPin
+	HandlePin
 )
 
 func dataDir() string {
@@ -105,11 +105,17 @@ type Config struct {
 	// Zero timeout means infinity. Negative timeout causes panic
 	ResponseTimeout time.Duration
 
-	// InMemoryDB uses database in memory
+	// InMemoryDB uses database in memory.
+	// See also DB field
 	InMemoryDB bool
-	// DBPath is path to database file
+	// DBPath is path to database file.
+	// See also DB field
 	DBPath string
 	// DataDir is directory with data files
+	// this directory contains default DB
+	// and if it's not blank string, then
+	// node creates the diretory if it does
+	// not exist
 	DataDir string
 
 	// PublicServer never keeps secret feeds it share
@@ -119,7 +125,8 @@ type Config struct {
 	// callbacks
 	//
 
-	// connections create/close
+	// connections create/close, this callbacks
+	// perform in own goroutines
 
 	OnCreateConnection func(c *Conn)
 	OnCloseConnection  func(c *Conn)
@@ -130,11 +137,15 @@ type Config struct {
 	// subscribe to feed of this (local) node. This callback
 	// never called if subscription rejected by any reason.
 	// If this callback returns a non-nil error the subscription
-	// willl be rejected, even if it's ok
+	// willl be rejected, even if it's ok. This callback should
+	// not block, because it performs inside message handling
+	// goroutine and long freeze breaks connection
 	OnSubscribeRemote func(c *Conn, feed cipher.PubKey) (reject error)
 	// OnUnsubscribeRemote called while a remote peer wants
 	// to unsubscribe from feed of this (local) node. This
-	// callback never called if remote peer is not susbcribed
+	// callback never called if remote peer is not susbcribed.
+	// This callback should not block, because it performs inside
+	// message handling goroutine and long freeze breaks connection
 	OnUnsubscribeRemote func(c *Conn, feed cipher.PubKey)
 
 	// root objects
@@ -142,21 +153,35 @@ type Config struct {
 	// OnRootReceived is callback that called
 	// when Client receive new Root object.
 	// The callback never called for rejected
-	// Roots (including "already exists")
+	// Roots (including "already exists"). This callback
+	// performs in own goroutine. You can't use
+	// Root of this callback anywhere because it
+	// is not saved and filled yet. This callback doesn't
+	// called if received a Roto already exists
 	OnRootReceived func(c *Conn, root *skyobject.Root)
 	// OnRootFilled is callback that called when
-	// Client finishes filling received Root object
+	// Client finishes filling received Root object.
+	// This callback performs in own goroutine. The
+	// Root is full and holded during this callabck.
+	// You can use it anywhere
 	OnRootFilled func(c *Conn, root *skyobject.Root)
 	// OnFillingBreaks occurs when a filling Root
 	// can't be filled up because connection breaks.
-	// The Root can be removed or can not, depending
-	// DropNonFullRoots option. In many cases, connection
-	// will be recreated and the Root will be filled up.
-	// no reason to remove it. But. This callback also called
-	// if any other error occured, such as DB can't
-	// save received object, the Root it fills malformed
-	// and can't be filled, etc
+	// The Root will be removed after this callback
+	// with all related obejcts. The Root is not full
+	// and can't be used in skyobject methods.This
+	// callback should not block because it permorms
+	// in handling goroutine
 	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
+
+	// database
+
+	// DB is database you can provide to use instead of
+	// default. If this argument is nil (default) then
+	// default DB will be created. Otherwise this
+	// DB will be used. But node closes this DB on
+	// close anyway
+	DB *data.DB
 }
 
 // NewConfig returns Config
@@ -173,7 +198,7 @@ func NewConfig() (sc Config) {
 	sc.PingInterval = PingInterval
 	sc.InMemoryDB = InMemoryDB
 	sc.DataDir = dataDir()
-	sc.DBPath = filepath.Join(sc.DataDir, dbFilePrefix)
+	sc.DBPath = ""
 	sc.ResponseTimeout = ResponseTimeout
 	sc.PublicServer = PublicServer
 	sc.Config.OnDial = OnDialFilter

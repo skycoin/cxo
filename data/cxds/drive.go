@@ -6,21 +6,21 @@ import (
 	"github.com/boltdb/bolt"
 
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/data"
 )
 
 var objs = []byte("o") // obejcts bucket
 
-type DriveCXDS struct {
+type driveCXDS struct {
 	b *bolt.DB
 }
 
-// NewDriveCXDS opens existsing DB or creates
-// new by given file name. Underlying database
-// is boltdb (github.com/boltdb/bolt). E.g. the
-// DriveCXDS stores data on disk. The DriveCXDS
-// impelments CXDS interface of
-// github.com/skycoin/cxo/data package
-func NewDriveCXDS(fileName string) (ds *DriveCXDS, err error) {
+// NewDriveCXDS opens existsing CXDS-database
+// or creates new by given file name. Underlying
+// database is boltdb (github.com/boltdb/bolt).
+// E.g. this stores data on disk
+func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 	var b *bolt.DB
 	b, err = bolt.Open(fileName, 0644, &bolt.Options{
 		Timeout: time.Millisecond * 500,
@@ -36,15 +36,15 @@ func NewDriveCXDS(fileName string) (ds *DriveCXDS, err error) {
 		b.Close()
 		return
 	}
-	ds = &DriveCXDS{b}
+	ds = &driveCXDS{b}
 	return
 }
 
-func (d *DriveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
+func (d *driveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	err = d.b.View(func(tx *bolt.Tx) (_ error) {
 		got := tx.Bucket(objs).Get(key[:])
 		if len(got) == 0 {
-			return ErrNotFound // pass through
+			return data.ErrNotFound // pass through
 		}
 		rc = getRefsCount(got)
 		val = make([]byte, len(got)-4)
@@ -54,7 +54,25 @@ func (d *DriveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	return
 }
 
-func (d *DriveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
+func (d *driveCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
+	err error) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
+		got := tx.Bucket(objs).Get(key[:])
+		if len(got) == 0 {
+			return data.ErrNotFound // pass through
+		}
+
+		got = copy204(got) // this copying required
+
+		rc = incRefsCount(got)
+		val = got[4:]
+		return
+	})
+	return
+}
+
+func (d *driveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	if len(val) == 0 {
 		err = ErrEmptyValue
 		return
@@ -77,7 +95,7 @@ func (d *DriveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	return
 }
 
-func (d *DriveCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
+func (d *driveCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
 	if len(val) == 0 {
 		err = ErrEmptyValue
 		return
@@ -87,12 +105,12 @@ func (d *DriveCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
 	return
 }
 
-func (d *DriveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
+func (d *driveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
 		bk := tx.Bucket(objs)
 		got := bk.Get(key[:])
 		if len(got) == 0 {
-			return ErrNotFound
+			return data.ErrNotFound
 		}
 
 		// TODO (kostyarin): take a look the issue
@@ -105,12 +123,12 @@ func (d *DriveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 	return
 }
 
-func (d *DriveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
+func (d *driveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
 		bk := tx.Bucket(objs)
 		got := bk.Get(key[:])
 		if len(got) == 0 {
-			return ErrNotFound
+			return data.ErrNotFound
 		}
 
 		// TODO (kostyarin): take a look the issue
@@ -126,8 +144,30 @@ func (d *DriveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 	return
 }
 
+func (d *driveCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
+	err error) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
+		bk := tx.Bucket(objs)
+		got := bk.Get(key[:])
+		if len(got) == 0 {
+			return data.ErrNotFound
+		}
+
+		got = copy204(got) // copying requied
+		val = got[4:]
+
+		rc = decRefsCount(got)
+		if rc == 0 {
+			return bk.Delete(key[:])
+		}
+		return bk.Put(key[:], got)
+	})
+	return
+}
+
 // TODO (kostyarin): ordered get to speed up get, because of B+-tree index
-func (d *DriveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
+func (d *driveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
 	if len(keys) == 0 {
 		return
 	}
@@ -140,7 +180,7 @@ func (d *DriveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
 				copy(val, got[4:])
 				vals[i] = val
 			} else {
-				return ErrNotFound
+				return data.ErrNotFound
 			}
 		}
 		return
@@ -149,7 +189,7 @@ func (d *DriveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
 }
 
 // TODO (kostyarin): ordered add to speed up insert, because of B+-tree index
-func (d *DriveCXDS) MultiAdd(vals [][]byte) (err error) {
+func (d *driveCXDS) MultiAdd(vals [][]byte) (err error) {
 	if len(vals) == 0 {
 		return
 	}
@@ -184,7 +224,7 @@ func (d *DriveCXDS) MultiAdd(vals [][]byte) (err error) {
 }
 
 // TODO (kostyarin): ordered get to speed up get, because of B+-tree index
-func (d *DriveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
+func (d *driveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
 	if len(keys) == 0 {
 		return
 	}
@@ -202,7 +242,7 @@ func (d *DriveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
 					return
 				}
 			} else {
-				return ErrNotFound
+				return data.ErrNotFound
 			}
 		}
 		return
@@ -211,7 +251,7 @@ func (d *DriveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
 }
 
 // TODO (kostyarin): ordered add to speed up insert, because of B+-tree index
-func (d *DriveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
+func (d *driveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
 	if len(keys) == 0 {
 		return
 	}
@@ -234,7 +274,7 @@ func (d *DriveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
 					return
 				}
 			} else {
-				return ErrNotFound
+				return data.ErrNotFound
 			}
 		}
 		return
@@ -242,7 +282,30 @@ func (d *DriveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
 	return
 }
 
-func (d *DriveCXDS) Close() (err error) {
+func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
+	uint32) error) (err error) {
+
+	err = d.b.View(func(tx *bolt.Tx) (err error) {
+		var key cipher.SHA256
+
+		bk := tx.Bucket(objs)
+		c := bk.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			copy(key[:], k)
+			if err = iterateFunc(key, getRefsCount(v)); err != nil {
+				if err == data.ErrStopIteration {
+					err = nil
+				}
+				return
+			}
+		}
+		return
+	})
+	return
+}
+
+func (d *driveCXDS) Close() (err error) {
 	return d.b.Close()
 }
 

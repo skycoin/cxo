@@ -16,6 +16,7 @@ type Dynamic struct {
 
 	// internals
 	dn *drNode `enc:"-"` // drNode of this Dynamic
+	ch bool    `enc:"-"` // has been changed
 }
 
 func (d *Dynamic) isInitialized() bool {
@@ -34,6 +35,7 @@ func (d *Dynamic) SetSchemaRef(sr SchemaRef) {
 		return
 	}
 	d.SchemaRef = sr
+	d.ch = true
 	if d.dn != nil {
 		d.dn.sch = nil // clear
 	}
@@ -46,6 +48,7 @@ func (d *Dynamic) SetHash(hash cipher.SHA256) {
 		return
 	}
 	d.Object = hash
+	d.ch = true
 	if d.dn != nil {
 		d.dn.value = nil // clear
 	}
@@ -210,16 +213,20 @@ func (d *Dynamic) SetValue(obj interface{}) (err error) {
 	d.dn.value = obj // keep
 
 	if sr := sch.Reference(); sr != d.SchemaRef {
-		d.SchemaRef, d.dn.sch = sr, sch
+		d.SchemaRef = sr
+		d.dn.sch = sch
+		d.ch = true // changed
 	}
 
 	if obj == nil {
 		if d.Object != (cipher.SHA256{}) {
 			d.Object = cipher.SHA256{}
+			d.ch = true // changed
 		}
 	} else if key, val := d.dn.pack.dsave(obj); key != d.Object {
 		d.dn.pack.set(key, val) // save
 		d.Object = key
+		d.ch = true // changed
 	}
 
 	return
@@ -232,6 +239,7 @@ func (d *Dynamic) Clear() (err error) {
 		return // already blank
 	}
 	d.SchemaRef, d.Object = SchemaRef{}, cipher.SHA256{}
+	d.ch = true
 	if d.dn != nil {
 		d.dn.value = nil // clear value
 		d.dn.sch = nil   // clear schema
@@ -245,6 +253,7 @@ func (d *Dynamic) Clear() (err error) {
 func (d *Dynamic) Copy() (cp Dynamic) {
 	cp.SchemaRef = d.SchemaRef
 	cp.Object = d.Object
+	cp.ch = true
 	if d.dn != nil {
 		cp.dn = &drNode{
 			pack: d.dn.pack,
@@ -254,20 +263,19 @@ func (d *Dynamic) Copy() (cp Dynamic) {
 	return
 }
 
-func (d *Dynamic) commit() (err error) {
-
+func (d *Dynamic) Save() {
 	if d.dn == nil {
-		panic("commit not initialized Ref")
+		return
+	}
+	if d.dn.value == nil {
+		return
 	}
 
-	if obj := d.dn.value; obj == nil {
-		if d.Object != (cipher.SHA256{}) {
-			d.Object = cipher.SHA256{}
-		}
-	} else if key, val := d.dn.pack.dsave(obj); key != d.Object {
+	key, val := d.dn.pack.dsave(d.dn.value)
+	if key != d.Object {
 		d.dn.pack.set(key, val) // save
 		d.Object = key
+		d.ch = true
 	}
 
-	return
 }

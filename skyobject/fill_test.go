@@ -152,14 +152,14 @@ func Test_filling(t *testing.T) {
 
 	bus := FillingBus{
 		WantQ: make(chan WCXO, 128),
-		FullQ: make(chan *Root, 128),
+		FullQ: make(chan FullRoot, 128),
 		DropQ: make(chan DropRootError, 128),
 	}
 
 	fl := rc.NewFiller(rr, bus)
 
 	tc := time.After(time.Second)
-	var fr *Root
+	var fr FullRoot
 
 Loop:
 	for {
@@ -187,7 +187,7 @@ Loop:
 		}
 	}
 
-	t.Log(rc.Inspect(fr))
+	t.Log(rc.Inspect(fr.Root))
 
 	_ = fl
 

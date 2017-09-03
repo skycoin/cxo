@@ -3,6 +3,8 @@ package idxdb
 import (
 	"io/ioutil"
 	"os"
+
+	"github.com/skycoin/cxo/data"
 )
 
 type memoryDB struct {
@@ -14,7 +16,7 @@ type memoryDB struct {
 // The memeory-db is not implemened yet
 // and the function retusn on-drive-db that
 // uses temporary file that deleted on Close
-func NewMemeoryDB() (idx IdxDB) {
+func NewMemeoryDB() (idx data.IdxDB) {
 	fl, err := ioutil.TempFile("", "cxds")
 	if err != nil {
 		panic(err)

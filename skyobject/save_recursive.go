@@ -8,8 +8,29 @@ import (
 )
 
 type saveRecursive struct {
-	p     *Pack                      // related pack
-	saved map[cipher.SHA256]struct{} // saved obejct (to rollback on failure)
+	p     *Pack                 // related pack
+	saved map[cipher.SHA256]int // saved obejct (to rollback on failure)
+}
+
+func (p *saveRecursive) inc(key cipher.SHA256) (err error) {
+	if _, err = p.p.c.db.CXDS().Inc(key); err != nil {
+		return
+	}
+	p.saved[key]++
+	return
+}
+
+func (p *saveRecursive) save(key cipher.SHA256) (err error) {
+	val, ok := p.p.unsaved[key]
+	if !ok {
+		return
+		panic("missing cached value: " + key.Hex())
+	}
+	if _, err = p.p.c.db.CXDS().Set(key, val); err != nil {
+		return
+	}
+	p.saved[key]++
+	return
 }
 
 // setup references of a golang-value
@@ -46,36 +67,45 @@ func (p *saveRecursive) saveRecursive(obj reflect.Value) (err error) {
 //
 func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 
-	p.p.c.Debugf(VerbosePin, "saveRecursiveDynamic %s", obj)
+	p.p.c.Debugf(VerbosePin, "saveRecursiveDynamic %v", obj)
 
 	dr := obj.Interface().(Dynamic)
-	if !dr.IsValid() {
-		// detailed error
-		err = fmt.Errorf("invalid Dynamic reference %s", dr.Short())
-		return
+	defer obj.Set(reflect.ValueOf(dr))
+
+	if false == dr.IsValid() {
+		// TODO (kostyarin): detailed error
+		return fmt.Errorf("invalid Dynamic reference %s", dr.Short())
 	}
 
+	if dr.Object == (cipher.SHA256{}) {
+		dr.ch = false
+		return // blank object (nothing to save)
+	}
+
+	if dr.ch == false {
+		// if the dr has not been changed then
+		// we increment it and return, otherwise
+		// we have to go deepper to save or increment
+		// related (nested) obejcts
+		return p.inc(dr.Object)
+	}
+
+	dr.ch = false // set to saved
+
 	if dr.dn != nil && dr.dn.value != nil {
-		// check out the dr.dn.value
+		// value is fresh or has been changed, we have to go deepper
+		// to explore this value about references
 		err = p.saveRecursive(reflect.ValueOf(dr.dn.value))
 		if err != nil {
 			return
 		}
-		// save the value
-		key, val := p.p.dsave(dr.dn.value)
-		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
-			return
-		}
-		p.saved[key] = struct{}{}
-	} else if dr.Object != (cipher.SHA256{}) {
-		if _, err = p.p.c.DB().CXDS().Inc(dr.Object); err != nil {
-			return
-		}
-		p.saved[dr.Object] = struct{}{}
+		return p.save(dr.Object)
 	}
 
-	obj.Set(reflect.ValueOf(dr)) // set it back
-	return
+	// hash is not blank, so if the hash is not blank and value is nil
+	// then this hash represents alreay saved value and we need to
+	// increment refs count only
+	return p.inc(dr.Object)
 }
 
 //     sf  - field
@@ -86,28 +116,29 @@ func (p *saveRecursive) saveRecursiveRef(sf reflect.StructField,
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRef", sf)
 
 	ref := val.Interface().(Ref)
+	defer val.Set(reflect.ValueOf(ref))
+
+	if ref.Hash == (cipher.SHA256{}) {
+		ref.ch = false
+		return
+	}
+
+	if false == ref.ch {
+		return p.inc(ref.Hash)
+	}
+
+	ref.ch = false
 
 	if ref.rn != nil && ref.rn.value != nil {
-		// check out the dr.dn.value
 		err = p.saveRecursive(reflect.ValueOf(ref.rn.value))
 		if err != nil {
 			return
 		}
 		// save the value
-		key, val := p.p.dsave(ref.rn.value)
-		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
-			return
-		}
-		p.saved[key] = struct{}{}
-	} else if ref.Hash != (cipher.SHA256{}) {
-		if _, err = p.p.c.DB().CXDS().Inc(ref.Hash); err != nil {
-			return
-		}
-		p.saved[ref.Hash] = struct{}{}
+		return p.save(ref.Hash)
 	}
 
-	val.Set(reflect.ValueOf(ref)) // set it anyway
-	return
+	return p.inc(ref.Hash)
 }
 
 func (p *saveRecursive) saveRecursiveRefs(sf reflect.StructField,
@@ -119,16 +150,21 @@ func (p *saveRecursive) saveRecursiveRefs(sf reflect.StructField,
 	// I'll be damned, hell, hell, hell, hell is just a flowers
 
 	refs := val.Interface().(Refs)
+	defer val.Set(reflect.ValueOf(refs))
 
 	if refs.Hash == (cipher.SHA256{}) {
+		refs.ch = false
 		return
 	}
 
+	if false == refs.ch {
+		return p.inc(refs.Hash)
+	}
+
+	refs.ch = false
+
 	if refs.rn != nil {
-		// check out branches
-		if refs.length == 0 {
-			return // empty refs
-		}
+		// check out leafs/branches
 		if refs.depth == 0 {
 			for _, leaf := range refs.leafs {
 				if err = p.saveRecursiveRefsElem(leaf); err != nil {
@@ -144,26 +180,26 @@ func (p *saveRecursive) saveRecursiveRefs(sf reflect.StructField,
 		}
 
 		// save the refs
-		val := refs.encode(true, refs.depth)
-		key := cipher.SumSHA256(val)
-		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
-			return
-		}
-		p.saved[key] = struct{}{}
-	} else if refs.Hash != (cipher.SHA256{}) {
-		if _, err = p.p.c.DB().CXDS().Inc(refs.Hash); err != nil {
-			return
-		}
-		p.saved[refs.Hash] = struct{}{}
+		return p.save(refs.Hash)
 	}
 
-	val.Set(reflect.ValueOf(refs))
-	return
+	return p.inc(refs.Hash)
 }
 
 func (p *saveRecursive) saveRecursiveRefsNode(rn *Refs, depth int) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRefsNode", rn.Hash.Hex()[:7], depth)
+
+	if rn.Hash == (cipher.SHA256{}) {
+		rn.ch = false
+		return
+	}
+
+	if false == rn.ch {
+		return p.inc(rn.Hash)
+	}
+
+	rn.ch = false
 
 	if rn.isLoaded() {
 		if depth == 0 {
@@ -179,49 +215,35 @@ func (p *saveRecursive) saveRecursiveRefsNode(rn *Refs, depth int) (err error) {
 				}
 			}
 		}
-
-		val := rn.encode(false, depth)
-		key := cipher.SumSHA256(val)
-		rn.Hash = key
-		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
-			return
-		}
-		p.saved[key] = struct{}{}
-	} else if rn.Hash != (cipher.SHA256{}) {
-		if _, err = p.p.c.DB().CXDS().Inc(rn.Hash); err != nil {
-			return
-		}
-		p.saved[rn.Hash] = struct{}{}
+		return p.save(rn.Hash)
 	}
 
-	return
+	return p.inc(rn.Hash)
 }
 
 func (p *saveRecursive) saveRecursiveRefsElem(rn *RefsElem) (err error) {
 
 	p.p.c.Debugln(VerbosePin, "saveRecursiveRefsElem", rn.Hash.Hex()[:7])
 
+	if rn.Hash == (cipher.SHA256{}) {
+		rn.ch = false
+		return
+	}
+
+	if false == rn.ch {
+		return p.inc(rn.Hash)
+	}
+
+	rn.ch = false
+
 	if rn.value != nil {
-		// loaded
-		// check out the dr.dn.value
 		if err = p.saveRecursive(reflect.ValueOf(rn.value)); err != nil {
 			return
 		}
-		// save the value
-		key, val := p.p.dsave(rn.value)
-		rn.Hash = key
-		if _, err = p.p.c.DB().CXDS().Set(key, val); err != nil {
-			return
-		}
-		p.saved[key] = struct{}{}
-	} else if rn.Hash != (cipher.SHA256{}) {
-		if _, err = p.p.c.DB().CXDS().Inc(rn.Hash); err != nil {
-			return
-		}
-		p.saved[rn.Hash] = struct{}{}
+		return p.save(rn.Hash)
 	}
 
-	return
+	return p.inc(rn.Hash)
 }
 
 // an array or slice can contain references (we interest):

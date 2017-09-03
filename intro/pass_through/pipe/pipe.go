@@ -49,22 +49,25 @@ func main() {
 	c.Listen = Host
 	c.RemoteClose = RemoteClose
 
-	c.DBPath = "./pipe.db"
+	c.PingInterval = 0 // suppress ping logs
+
+	c.DataDir = ""      // don't create ~/.skycoin/cxo
+	c.InMemoryDB = true // use DB in memeory
 
 	// suppress gnet logs
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
 	// node logger
 	c.Log.Prefix = "[pipe] "
-	c.Log.Debug = true
-	c.Log.Pins = log.All // all
+	//c.Log.Debug = true
+	//c.Log.Pins = log.All // all
 
 	// no registry
 
 	// skyobject logger
 	c.Skyobject.Log.Prefix = "[pipe cxo]"
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = log.All // all
+	//c.Skyobject.Log.Debug = true
+	//c.Skyobject.Log.Pins = log.All // all
 
 	c.FromFlags()
 	flag.Parse()

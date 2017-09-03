@@ -19,6 +19,10 @@ type Ref struct {
 	Hash cipher.SHA256
 	// internals
 	rn *refNode `enc:"-"` // schema, value, pack
+
+	// true if the Hash field has been
+	// changed or fresh and non-blank
+	ch bool `enc:"-"`
 }
 
 func (r *Ref) isInitialized() bool {
@@ -124,6 +128,7 @@ func (r *Ref) SetHash(hash cipher.SHA256) {
 		return
 	}
 	r.Hash = hash
+	r.ch = true
 	if r.rn != nil {
 		r.rn.value = nil // clear related value
 	}
@@ -159,6 +164,7 @@ func (r *Ref) SetHash(hash cipher.SHA256) {
 func (r *Ref) SetValue(obj interface{}) (err error) {
 
 	if obj == nil {
+		println("(1)")
 		r.Clear()
 		return
 	}
@@ -189,41 +195,12 @@ func (r *Ref) SetValue(obj interface{}) (err error) {
 	}
 
 	r.rn.value = obj // keep
-
 	if key, val := r.rn.pack.dsave(obj); key != r.Hash {
 		r.Hash = key
+		r.ch = true
 		r.rn.pack.set(key, val) // save
-
-		// frozen
-		//
-		// if up := r.upper; up != nil {
-		// 	if err = up.unsave(); err != nil {
-		// 		return
-		// 	}
-		// }
 	}
 
-	return
-}
-
-// if the Ref has rn.value
-func (r *Ref) commit() (err error) {
-
-	if r.rn == nil {
-		panic("commit not initialized Ref")
-	}
-
-	if r.Hash == (cipher.SHA256{}) || r.rn.value == nil {
-		return // everything is ok
-	}
-
-	key, val := r.rn.pack.dsave(r.rn.value)
-	if key == r.Hash {
-		return
-	}
-
-	r.Hash = key
-	r.rn.pack.set(key, val) // save
 	return
 }
 
@@ -234,6 +211,7 @@ func (r *Ref) Clear() (err error) {
 		return // already clear
 	}
 	r.Hash = cipher.SHA256{}
+	r.ch = true
 	if r.rn != nil {
 		r.rn.value = nil
 	}
@@ -249,6 +227,7 @@ func (r *Ref) Clear() (err error) {
 // will not be a part of the Refs
 func (r *Ref) Copy() (cp Ref) {
 	cp.Hash = r.Hash
+	cp.ch = true // fresh object
 	if r.rn != nil {
 		cp.rn = &refNode{
 			sch:  r.rn.sch,
@@ -256,4 +235,20 @@ func (r *Ref) Copy() (cp Ref) {
 		}
 	}
 	return
+}
+
+func (r *Ref) Save() {
+	if r.rn == nil {
+		return
+	}
+	if r.rn.value == nil {
+		return
+	}
+
+	key, val := r.rn.pack.dsave(r.rn.value)
+	if r.Hash == key {
+		return // exactly the same
+	}
+	r.rn.pack.set(key, val)
+	r.ch = true
 }

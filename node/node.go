@@ -2,12 +2,14 @@ package node
 
 import (
 	"errors"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/data/cxds"
 	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/skyobject"
 
@@ -32,6 +34,7 @@ var (
 	// feeds because it is not public
 	ErrNonPublicPeer = errors.New(
 		"request list of feeds from non-public peer")
+	// ErrConnClsoed occurs if coonection closed but an action requested
 	ErrConnClsoed = errors.New("connection closed")
 )
 
@@ -85,20 +88,41 @@ type Node struct {
 //
 func NewNode(sc Config) (s *Node, err error) {
 
+	// data dir
+
+	if sc.DataDir != "" {
+		if err = initDataDir(sc.DataDir); err != nil {
+			return
+		}
+	}
+
 	// database
 
 	var db *data.DB
-	if sc.InMemoryDB {
-		db = data.NewMemoryDB()
+
+	if sc.DB != nil {
+		db = sc.DB
+	} else if sc.InMemoryDB {
+		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
 	} else {
-		if sc.DataDir != "" {
-			if err = initDataDir(sc.DataDir); err != nil {
-				return
-			}
+		var cxPath, idxPath string
+		if sc.DBPath == "" {
+			cxPath = filepath.Join(sc.DataDir, "cxds.db")
+			idxPath = filepath.Join(sc.DataDir, "idx.db")
+		} else {
+			cxPath = sc.DBPath + ".cxds"
+			cxPath = sc.DBPath + ".idx"
 		}
-		if db, err = data.NewDriveDB(sc.DBPath); err != nil {
+		var cx data.CXDS
+		var idx data.IdxDB
+		if cx, err = cxds.NewDriveCXDS(cxPath); err != nil {
 			return
 		}
+		if idx, err = idxdb.NewDriveIdxDB(idxPath); err != nil {
+			cx.Close()
+			return
+		}
+		db = data.NewDB(cx, idx)
 	}
 
 	// container
@@ -121,14 +145,15 @@ func NewNode(sc Config) (s *Node, err error) {
 	s.wos = make(map[cipher.SHA256]map[*Conn]struct{})
 
 	// fill up feeds from database
-	err = s.db.IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+	err = s.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 		return feeds.Iterate(func(pk cipher.PubKey) (err error) {
 			s.feeds[pk] = make(map[*Conn]struct{})
 			return
 		})
 	})
 	if err != nil {
-		s = nil // GC
+		db.Close() // close DB
+		s = nil    // GC
 		return
 	}
 
@@ -165,6 +190,7 @@ func NewNode(sc Config) (s *Node, err error) {
 	}
 
 	if s.pool, err = gnet.NewPool(sc.Config); err != nil {
+		db.Close() // close DB
 		s = nil
 		return
 	}
@@ -419,17 +445,16 @@ func (n *Node) HasFeed(pk cipher.PubKey) (ok bool) {
 	return
 }
 
-func (s *Node) sendToAllOfFeedExcept(pk cipher.PubKey, m msg.Msg, e *Conn) {
+// send Root to subscribers
+func (s *Node) broadcastRoot(r *skyobject.Root, e *Conn) {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
 
-	raw := msg.Encode(m)
-
-	for c := range s.feeds[pk] {
+	for c := range s.feeds[r.Pub] {
 		if c == e {
 			continue // except
 		}
-		c.SendRaw(raw)
+		c.SendRoot(r)
 	}
 }
 
@@ -470,7 +495,7 @@ func (s *Node) onDisconnect(gc *gnet.Conn) {
 
 func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {
 	if c, ok := gc.Value().(*Conn); ok {
-		c.events <- resubscribeEvent{}
+		c.enqueueEvent(resubscribeEvent{})
 	}
 	return
 }
@@ -490,9 +515,34 @@ func (s *Node) RPCAddress() (address string) {
 	return
 }
 
-// Publish given Root (send to feed)
+// Publish given Root (send to feed). Given Root
+// must be holded and not chagned during this call
+// (holded during this call only)
 func (s *Node) Publish(r *skyobject.Root) {
-	s.sendToAllOfFeedExcept(r.Pub, s.src.Root(r), nil)
+
+	// make sterile copy first
+
+	root := new(skyobject.Root)
+
+	root.Reg = r.Reg
+	root.Pub = r.Pub
+	root.Seq = r.Seq
+	root.Time = r.Time
+	root.Sig = r.Sig
+	root.Hash = r.Hash
+	root.Prev = r.Prev
+	root.IsFull = r.IsFull
+
+	root.Refs = make([]skyobject.Dynamic, 0, len(r.Refs))
+
+	for _, dr := range r.Refs {
+		root.Refs = append(root.Refs, skyobject.Dynamic{
+			SchemaRef: dr.SchemaRef,
+			Object:    dr.Object,
+		})
+	}
+
+	s.broadcastRoot(root, nil)
 }
 
 // Connect to peer. Use callback to handle the Conn
@@ -530,41 +580,69 @@ func (n *Node) AddFeed(pk cipher.PubKey) (err error) {
 	return
 }
 
-func (n *Node) delFeed(pk cipher.PubKey) (ok bool, err error) {
+// del feed from share-list
+func (n *Node) delFeed(pk cipher.PubKey) (ok bool) {
 	n.fmx.Lock()
 	defer n.fmx.Unlock()
 
 	if _, ok = n.feeds[pk]; ok {
 		delete(n.feeds, pk)
-		if err = n.so.DelFeed(pk); err != nil {
-			return
-		}
 	}
 	return
+}
+
+// del feed from conenctions, every conenction must
+// reply when it done, because we have to know
+// the moment after which our DB doesn't contains
+// non-full Root object; thus, every conenctions
+// terminates fillers of the feed and removes non-full
+// root objects
+func (n *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
+	n.cmx.RLock()
+	defer n.cmx.RUnlock()
+
+	dones = make([]delFeedConnsReply, 0, len(n.conns))
+
+	for _, c := range n.conns {
+
+		done := make(chan struct{})
+
+		select {
+		case c.events <- &unsubscribeFromDeletedFeedEvent{pk, done}:
+		case <-c.gc.Closed():
+		}
+
+		dones = append(dones, delFeedConnsReply{done, c.done})
+	}
+	return
+}
+
+type delFeedConnsReply struct {
+	done   <-chan struct{} // filler closed
+	closed <-chan struct{} // conenctions closed and done
 }
 
 // DelFed stops sharing given feed. It unsubscribes
 // from all conenctions
 func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
-	var ok bool
-	ok, err = n.delFeed(pk)
 
-	if !ok {
-		return // not deleted
+	if false == n.delFeed(pk) {
+		return // not deleted (we haven't the feed)
 	}
 
-	n.cmx.RLock()
-	defer n.cmx.RUnlock()
+	dones := n.delFeedConns(pk)
 
-	evt := &unsubscribeFromDeletedFeedEvent{pk}
-
-	for _, c := range n.conns {
+	// wait
+	for _, dfcr := range dones {
 		select {
-		case c.events <- evt:
-		case <-n.quit:
-			return
+		case <-dfcr.done:
+		case <-dfcr.closed: // connection's done
 		}
 	}
+
+	// now, we can remove the feed if there
+	// are not holded Root objects
+	err = n.so.DelFeed(pk)
 	return
 }
 

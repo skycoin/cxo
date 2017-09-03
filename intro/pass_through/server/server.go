@@ -15,7 +15,7 @@ import (
 	"github.com/skycoin/cxo/node/log"
 	sky "github.com/skycoin/cxo/skyobject"
 
-	"github.com/skycoin/cxo/intro"
+	passThrough "github.com/skycoin/cxo/intro/pass_through"
 )
 
 // defaults
@@ -46,8 +46,8 @@ func main() {
 	}()
 
 	reg := sky.NewRegistry(func(r *sky.Reg) {
-		r.Register("intro.Vote", intro.Vote{})
-		r.Register("intro.Content", intro.Content{})
+		r.Register("pt.Vote", passThrough.Vote{})
+		r.Register("pt.Content", passThrough.Content{})
 	})
 
 	var c = node.NewConfig()
@@ -56,19 +56,22 @@ func main() {
 	c.Listen = Host
 	c.RemoteClose = RemoteClose
 
-	c.DBPath = "./server.db"
+	c.PingInterval = 0 // suppress ping logs
+
+	c.DataDir = ""      // don't create ~/.skycoin/cxo
+	c.InMemoryDB = true // use DB in memeory
 
 	// suppress gnet logs
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
 	c.Log.Prefix = "[server] "
-	c.Log.Debug = true
-	c.Log.Pins = log.All // all
+	//c.Log.Debug = true
+	//c.Log.Pins = log.All // all
 
 	c.Skyobject.Registry = reg
 
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = sky.PackSavePin // all
+	//c.Skyobject.Log.Debug = true
+	//c.Skyobject.Log.Pins = sky.PackSavePin // all
 	c.Skyobject.Log.Prefix = "[server cxo] "
 
 	c.FromFlags()
@@ -130,7 +133,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 	}
 	defer pack.Close()
 
-	content := new(intro.Content)
+	content := new(passThrough.Content)
 
 	// create Root (and initialize the "content" var)
 	pack.Append(content)
@@ -152,8 +155,8 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 
 		// new random votes
 
-		content.Post.Append(&intro.Vote{i%3 != 0, uint32(i)})
-		content.Thread.Append(&intro.Vote{i%2 == 0, uint32(i)})
+		content.Post.Append(&passThrough.Vote{i%3 != 0, uint32(i)})
+		content.Thread.Append(&passThrough.Vote{i%2 == 0, uint32(i)})
 
 		// replace Content with new one
 		if err := pack.SetRefByIndex(0, content); err != nil {

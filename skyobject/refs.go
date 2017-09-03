@@ -34,6 +34,8 @@ type Refs struct {
 
 	upper *Refs     `enc:"-"` // upper node (nil for root)
 	rn    *refsNode `enc:"-"` // pack, schema, index
+
+	ch bool `enc:"-"` // true if the Refs has been changed or fresh
 }
 
 func (r *Refs) encode(root bool, depth int) (val []byte) {
@@ -131,11 +133,11 @@ func (r *Refs) String() string {
 //
 // So, if Hash is blank. Then nothing to load. In this case all (1), (2)
 // and (3) states are equal. If the Hash is not blank, then the node
-// has nested nodes (and non-zero length). Thus if lenght is zero, then
+// has nested nodes (and non-zero length). Thus, if lenght is zero, then
 // the Hash should be cleared
 //
-// If HashTableIndex, EntireTree or EntireMerkleTree flags set
-// the all nodes should be loaded to (3) state if possible
+// If HashTableIndex, EntireTree or EntireMerkleTree flags set,
+// then all nodes should be loaded to (3) state if possible
 
 func (r *Refs) isLoaded() bool {
 	if r.Hash == (cipher.SHA256{}) {
@@ -366,8 +368,8 @@ func (r *Refs) refByIndex(depth, i int) (ref *RefsElem, err error) {
 
 // RefByHash returns Ref by its hash. It returns first Ref.
 // The call is O(1) if HashTableIndex flag set. Otherwise
-// the call is O(n). It returns (nil, nil) if requested RefsElem
-// not found
+// the call is O(n). It returns ErrNotFound if requested
+// RefsElem has not been found
 func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 
 	if err = r.load(0); err != nil {
@@ -397,11 +399,14 @@ func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 	if err == ErrStopIteration {
 		err = nil
 	}
+	if err == nil && needle == nil {
+		err = ErrNotFound
+	}
 	return
 }
 
 // RefByHashWithIndex returns RefsElem by its hash and index of the
-// element. It returns (0, nil, nil) if the needle not found
+// element. It returns ErrNotFound if the needle has not been found
 func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 	err error) {
 
@@ -413,7 +418,7 @@ func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 		var ok bool
 		if needle, ok = r.rn.index[hash]; !ok {
 			err = ErrNotFound
-			return // 0, nil, nil
+			return // 0, nil, ErrNotFound
 		}
 		// walk up
 		if needle.upper == nil {
@@ -499,7 +504,9 @@ func (r *Refs) reduceIfNeed() (err error) {
 type IterateRefsFunc func(i int, ref *RefsElem) (err error)
 
 // Ascend iterates over Refs ascending order. See also
-// docs for IterateRefsFunc
+// docs for IterateRefsFunc. It's safe to delete an element
+// of the Refs inside the Ascend, but it's unsafe to
+// append somethign to the Refs while the Append ecxecutes
 func (r *Refs) Ascend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {
@@ -559,11 +566,14 @@ func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
 		i += subpass
 		pass += subpass
 	}
+
 	return
 }
 
 // Descend iterates over Refs descending order. See also
-// docs for IterateRefsFunc
+// docs for IterateRefsFunc. It's safe to delete an element
+// of the Refs inside the Ascend, but it's unsafe to
+// append somethign to the Refs while the Append ecxecutes
 func (r *Refs) Descend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {
@@ -801,24 +811,32 @@ func (r *Refs) save(depth int) {
 		// clear (don't save blank Refs)
 		r.depth = 0
 		r.leafs, r.branches = nil, nil
-		r.Hash = cipher.SHA256{}
+		if r.Hash != (cipher.SHA256{}) {
+			r.Hash, r.ch = cipher.SHA256{}, true // changed
+		}
 		return
 	}
 
 	if r.isRoot() {
 		// root Refs represented as encodedRefs
-		var er encodedRefs           // encode to save and get hash
-		er.Degree = uint32(r.degree) // keep in database
-		er.Depth = uint32(depth)     // keep in database
-		er.Length = uint32(nl)       // keep in database
-		er.Nested = nested           // actually, keep in database
-		r.Hash, _ = r.rn.pack.save(er)
+		var er encodedRefs            // encode to save and get hash
+		er.Degree = uint32(r.degree)  // keep in database
+		er.Depth = uint32(depth)      // keep in database
+		er.Length = uint32(nl)        // keep in database
+		er.Nested = nested            // actually, keep in database
+		hash, _ := r.rn.pack.save(er) // save into cache
+		if hash != r.Hash {
+			r.Hash, r.ch = hash, true
+		}
 	} else {
 		// non-root Refs represented as encodedRefsNode
 		var ern encodedRefsNode
-		ern.Nested = nested     // keep in database
-		ern.Length = uint32(nl) // keep in daabase
-		r.Hash, _ = r.rn.pack.save(ern)
+		ern.Nested = nested            // keep in database
+		ern.Length = uint32(nl)        // keep in daabase
+		hash, _ := r.rn.pack.save(ern) // save into cache
+		if hash != r.Hash {
+			r.Hash, r.ch = hash, true
+		}
 	}
 	return
 }
@@ -926,7 +944,8 @@ func (r *Refs) changeDepth(depth int) (err error) {
 		return
 	}
 
-	*r = nr // replace the r with nr
+	*r = nr     // replace the r with nr
+	r.ch = true // has been changed
 
 	// set proper upper
 	if r.depth == 0 {
@@ -978,7 +997,7 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 	var i int
 	for _, obj := range objs {
 		if obj == nil {
-			continue // delte from the objs
+			continue // delete from the objs
 		}
 
 		if os, obj, err = r.rn.pack.initialize(obj); err != nil {
@@ -1052,6 +1071,7 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 		ref.rn = r.rn                     //
 		ref.value = obj                   // keep initialized value
 		ref.Hash, _ = r.rn.pack.save(obj) // set Hash field, saving object
+		ref.ch = true                     // fresh non-blank
 
 		if ok, err = r.tryInsert(r.degree, r.depth, ref); err != nil {
 			return
@@ -1145,7 +1165,7 @@ func (r *Refs) AppendHashes(hashes ...cipher.SHA256) (err error) {
 
 // TODO (kostyarin): implement Slice(i, j int) (cut *Refs, err error)
 
-// Clear the Refs
+// Clear the Refs making them blank
 func (r *Refs) Clear() {
 	if r.isLoaded() {
 		// detach nested form the Refs for golang GC,
@@ -1165,6 +1185,7 @@ func (r *Refs) Clear() {
 		}
 	}
 	r.Hash = cipher.SHA256{}
+	r.ch = true
 	r.length = 0
 	r.depth = 0
 	if r.rn.pack.flags&HashTableIndex != 0 {
@@ -1239,14 +1260,6 @@ func pow(a, b int) (p int) {
 	return p
 }
 
-// don't need to commit the Refs
-func (r *Refs) commit() (_ error) {
-	if r.rn == nil {
-		panic("commit not initialized Refs")
-	}
-	return
-}
-
 // ------ ------ ------ ------ ------ ------ ------ ------ ------ ------ ------
 
 // print debug tree
@@ -1311,6 +1324,7 @@ type RefsElem struct {
 	value interface{} // golang-value of the RefsElem
 	rn    *refsNode   // related
 	upper *Refs       // upper node
+	ch    bool        // has been changed
 }
 
 // Short string
@@ -1330,20 +1344,38 @@ func (r *RefsElem) SetHash(hash cipher.SHA256) (err error) {
 	if hash == (cipher.SHA256{}) {
 		return r.Delete()
 	}
+
+	if r.rn != nil && r.rn.pack.flags&HashTableIndex != 0 {
+		delete(r.rn.index, r.Hash)
+		r.rn.index[hash] = r
+	}
+
 	r.value = nil // clear related value
 	r.Hash = hash
+	r.ch = true
 	return
 }
 
 // Delete the RefsElem from related Refs
 func (r *RefsElem) Delete() (err error) {
+	if r.Hash == (cipher.SHA256{}) {
+		return
+	}
+
+	if r.rn != nil && r.rn.pack.flags&HashTableIndex != 0 {
+		delete(r.rn.index, r.Hash)
+	}
+
 	r.Hash = (cipher.SHA256{})
-	r.value = nil
-	r.rn = nil // detach
+
 	if r.upper != nil {
 		err = r.upper.bubble()
 	}
+
+	r.value = nil
+	r.rn = nil // detach
 	r.upper = nil
+	r.ch = true // changed
 	return
 }
 
@@ -1429,7 +1461,16 @@ func (r *RefsElem) SetValue(obj interface{}) (err error) {
 	r.value = obj  // keep
 
 	if key, val := r.rn.pack.dsave(obj); key != r.Hash {
+
+		if r.rn.pack.flags&HashTableIndex != 0 {
+			if r.Hash != (cipher.SHA256{}) {
+				delete(r.rn.index, r.Hash)
+			}
+			r.rn.index[key] = r
+		}
+
 		r.Hash = key
+		r.ch = true
 		r.rn.pack.set(key, val) // save
 
 		if err = r.upper.bubble(); err != nil {
@@ -1440,16 +1481,25 @@ func (r *RefsElem) SetValue(obj interface{}) (err error) {
 	return
 }
 
-func (r *RefsElem) commit() (err error) {
+func (r *RefsElem) Save() (err error) {
 	if r.rn == nil || r.value == nil || r.upper == nil {
 		return // detached or not loaded
 	}
+
 	key, val := r.rn.pack.dsave(r.value) // don't save - get key-value pair
 	if key == r.Hash {
-		return
+		return // exactly the same
 	}
+
+	if r.rn.pack.flags&HashTableIndex != 0 {
+		if r.Hash != (cipher.SHA256{}) {
+			delete(r.rn.index, r.Hash)
+		}
+		r.rn.index[key] = r
+	}
+
 	r.rn.pack.set(key, val) // save
-	r.Hash = key
+	r.Hash, r.ch = key, false
 
 	err = r.upper.bubble() // bubble up
 	return

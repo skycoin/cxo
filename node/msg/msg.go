@@ -44,7 +44,8 @@ var (
 
 	// root, registry, data and requests
 
-	_ Msg = &Root{} // <- Root
+	_ Msg = &Root{}     // <- Root
+	_ Msg = &RootDone{} // ->
 
 	_ Msg = &RequestObject{} // <- RqO
 	_ Msg = &Object{}        // -> O
@@ -182,12 +183,30 @@ func (*NonPublicServer) MsgType() MsgType { return NonPublicServerType }
 // Feed filed of the message
 type Root struct {
 	Feed  cipher.PubKey
+	Seq   uint64     // for node internals
 	Value []byte     // encoded Root in person
 	Sig   cipher.Sig // signature
 }
 
 // MsgType implements Msg interface
 func (*Root) MsgType() MsgType { return RootType }
+
+// A RootDone is response for the Root.
+// A node that receivs a Root obejct requires
+// some tiem to fill or drop it. After that
+// it sends the RootDone back to notify
+// peer that this Root obejct no longer
+// needed. E.g. a node holds a Root before
+// sending, to prevent removing. And the
+// node have to know when peer fills this
+// root or drops it.
+type RootDone struct {
+	Feed cipher.PubKey // feed
+	Seq  uint64        // seq of the Root
+}
+
+// MsgType implements Msg interface
+func (*RootDone) MsgType() MsgType { return RootDoneType }
 
 // A RequestObject represents a Msg that request a data by hash
 type RequestObject struct {
@@ -231,8 +250,9 @@ const (
 	NonPublicServerType    // NonPublicServer     12
 
 	RootType          // Root           10
-	RequestObjectType // RequestObject  11
-	ObjectType        // Object         12
+	RootDoneType      // RootDone       11
+	RequestObjectType // RequestObject  12
+	ObjectType        // Object         13
 )
 
 // MsgType to string mapping
@@ -254,6 +274,7 @@ var msgTypeString = [...]string{
 	NonPublicServerType:    "NonPublicServer",
 
 	RootType:          "Root",
+	RootDoneType:      "RootDone",
 	RequestObjectType: "RequestObject",
 	ObjectType:        "Object",
 }
@@ -284,6 +305,7 @@ var forwardRegistry = [...]reflect.Type{
 	NonPublicServerType:    reflect.TypeOf(NonPublicServer{}),
 
 	RootType:          reflect.TypeOf(Root{}),
+	RootDoneType:      reflect.TypeOf(RootDone{}),
 	RequestObjectType: reflect.TypeOf(RequestObject{}),
 	ObjectType:        reflect.TypeOf(Object{}),
 }
@@ -307,9 +329,7 @@ func (e ErrInvalidMsgType) Error() string {
 // Encode given message to []byte prefixed by MsgType
 func Encode(msg Msg) (p []byte) {
 	p = append(
-		[]byte{
-			byte(msg.MsgType()),
-		},
+		[]byte{byte(msg.MsgType())},
 		encoder.Serialize(msg)...)
 	return
 }

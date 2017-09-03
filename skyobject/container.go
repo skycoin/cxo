@@ -3,13 +3,10 @@ package skyobject
 import (
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/data/idxdb"
 	"github.com/skycoin/cxo/node/log"
 )
 
@@ -36,8 +33,7 @@ type Container struct {
 
 	coreRegistry *Registry // core registry or nil
 
-	hmx  sync.Mutex
-	hold map[holdedRoot]int
+	rootsHolder // hold Roots
 }
 
 // NewContainer creates new Container instance by given DB
@@ -71,38 +67,8 @@ func NewContainer(db *data.DB, conf *Config) (c *Container) {
 		c.coreRegistry = conf.Registry
 	}
 
-	c.hold = make(map[holdedRoot]int)
-
+	c.rootsHolder.holded = make(map[holdedRoot]int)
 	return
-}
-
-type holdedRoot struct {
-	Pub cipher.PubKey
-	Seq uint64
-}
-
-func (c *Container) holdRoot(pk cipher.PubKey, seq uint64) {
-	c.hmx.Lock()
-	defer c.hmx.Unlock()
-
-	hr := holdedRoot{pk, seq}
-
-	c.hold[hr] = c.hold[hr] + 1
-}
-
-func (c *Container) unholdRoot(pk cipher.PubKey, seq uint64) {
-	c.hmx.Lock()
-	defer c.hmx.Unlock()
-
-	hr := holdedRoot{pk, seq}
-
-	if v, ok := c.hold[hr]; ok {
-		if v == 1 {
-			delete(c.hold, hr)
-		} else {
-			c.hold[hr] = c.hold[hr] - 1
-		}
-	}
 }
 
 // DB returns underlying *data.DB
@@ -131,50 +97,6 @@ func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
 	return
 }
 
-// Root of a feed by seq. The method can returns database error or
-// idxdb.ErrNotfound if requested Root has not been found
-func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
-	c.Debugln(VerbosePin, "Root", pk.Hex()[:7], seq)
-
-	// request index
-
-	var ir *idxdb.Root
-	err = c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		var rs idxdb.Roots
-		if rs, err = feeds.Roots(pk); err != nil {
-			return
-		}
-		ir, err = rs.Get(seq)
-		return
-	})
-	if err != nil {
-		return
-	}
-
-	// request CXDS
-
-	var val []byte
-	if val, _, err = c.DB().CXDS().Get(ir.Hash); err != nil {
-		return
-	}
-
-	// decode
-
-	r = new(Root)
-	if err = encoder.DeserializeRaw(val, r); err != nil {
-		return
-	}
-
-	// copy meta information
-
-	r.Sig = ir.Sig
-	r.Hash = ir.Hash
-	r.IsFull = ir.IsFull
-
-	return
-
-}
-
 // Unpack given Root obejct. Use flags by your needs
 //
 //     r, err := c.Root(pk, 500)
@@ -198,6 +120,10 @@ func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {
 // and publish changes. In any other cases it is not necessary and can be
 // passed like cipher.SecKey{}. If the sk is empty then ViewOnly flag
 // will be set
+//
+// The Unpack holds given Root object. Thus, you have to Close the
+// Pack after use. Feel free to close it many times. But keep in
+// mind that after closing Pack can't be used
 func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 	sk cipher.SecKey) (pack *Pack, err error) {
 
@@ -276,7 +202,7 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 	}
 
 	if flags&freshRoot == 0 {
-		c.holdRoot(r.Pub, r.Seq)
+		c.Hold(r.Pub, r.Seq)
 	}
 
 	return
@@ -308,7 +234,7 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 // Close the Container. The
 // closing doesn't close DB
 func (c *Container) Close() error {
-	c.Debug(VerbosePin, "Close")
+	c.Debug(VerbosePin, "Close()")
 
 	// TODO (kostyarin): cleaning up
 	return nil
@@ -325,33 +251,88 @@ func (c *Container) Close() error {
 func (c *Container) AddFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "AddFeed", pk.Hex()[:7])
 
-	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) error {
+	return c.DB().IdxDB().Tx(func(feeds data.Feeds) error {
 		return feeds.Add(pk)
 	})
 }
 
 // DelFeed deletes feed and all related Root obejcts and objects
-// relates to the Root obejcts. The method never returns
-// "not found" errors
+// relates to the Root obejcts (if this obejcts not used by some other feeds).
+// The method never returns "not found" errors. The method returns error
+// if there are holded Root obejcts of the feed. Close all Pack
+// instances that uses Root obejcts of the feed to release them
 func (c *Container) DelFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
 
-	return nil
+	return c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
-	// TODO (kostyarin): resolve
-
-	return c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-		if false == feeds.HasFeed(pk) {
+		if false == feeds.Has(pk) {
 			return // nothing to delete
 		}
-		var rs idxdb.Roots
+
+		var rs data.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
 			return
 		}
 
-		// TODO (kostyarin): check out holded Roots
-		_ = rs
+		if rs.Len() == 0 {
+			return feeds.Del(pk) // delete empty feed
+		}
+
+		// remove all Root objects first
+		// (and decrement refs count of all related obejcts)
+		// checking out holded Roots
+
+		err = rs.Ascend(func(ir *data.Root) (err error) {
+			if err = c.CanRemove(pk, ir.Seq); err != nil {
+				return
+			}
+
+			if err = c.decrementAll(ir); err != nil {
+				return
+			}
+
+			return rs.Del(ir.Seq) // delete the Root
+		})
+
+		if err != nil {
+			return
+		}
 
 		return feeds.Del(pk)
+	})
+}
+
+// DelRoot deletes Root of given feed with given seq number. If the Root
+// doesn't exsits, then thsi mehtod doesn't returns an error. Even if the feed
+// does not exist
+func (c *Container) DelRoot(pk cipher.PubKey, seq uint64) (err error) {
+	c.Debugln(VerbosePin, "DelRoot", pk.Hex()[:7])
+
+	return c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		if false == feeds.Has(pk) {
+			return // nothing to delete
+		}
+		var rs data.Roots
+		if rs, err = feeds.Roots(pk); err != nil {
+			return
+		}
+		if rs.Len() == 0 {
+			return feeds.Del(pk) // delete empty feed
+		}
+		var ir *data.Root
+		if ir, err = rs.Get(seq); err != nil {
+			if err == data.ErrNotFound {
+				err = nil
+			}
+			return
+		}
+		if err = c.CanRemove(pk, ir.Seq); err != nil {
+			return
+		}
+		if err = c.decrementAll(ir); err != nil {
+			return
+		}
+		return rs.Del(ir.Seq) // delete the Root
 	})
 }

@@ -4,12 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 )
 
 // common packing and unpacking errors
@@ -42,7 +43,11 @@ const (
 // The Pack also used to unpack a Root,
 // modify it and walk through. The Pack is
 // not thread safe. All objects of the
-// Pack are not thread safe
+// Pack are not thread safe. Underlying Root
+// obejct is changing. Fields of the Root
+// contains actual values after Save
+// method (if it's successful) and before
+// one other method of the Pack called
 type Pack struct {
 	c *Container // back reference
 
@@ -52,15 +57,24 @@ type Pack struct {
 	flags Flag   // packing flags
 	types *Types // types mapping
 
-	sk cipher.SecKey // secret key
+	unsaved map[cipher.SHA256][]byte
 
-	unsaved map[cipher.SHA256][]byte // cache
+	sk     cipher.SecKey // secret key
+	unhold sync.Once     // unhold once (for Close method)
 }
 
+// Close the Pack, unhold underlying Root
+// (if it's holded), release some resources
 func (p *Pack) Close() {
 	if p.flags&freshRoot == 0 {
-		p.c.unholdRoot(p.r.Pub, p.r.Seq)
+		p.unhold.Do(func() {
+			p.c.Unhold(p.r.Pub, p.r.Seq)
+		})
 	}
+	p.c = nil     // GC
+	p.r = nil     // GC
+	p.reg = nil   // GC
+	p.types = nil // GC
 }
 
 // don't save, just get k-v
@@ -114,12 +128,13 @@ func (p *Pack) del(key cipher.SHA256) {
 	delete(p.unsaved, key)
 }
 
-// Save all changes in DB returning packed updated Root.
-// Use the result to publish upates (node package related)
+// Save all changes in DB returning error if any.
+// If the Save returns an error then this Pack instance
+// turn invalid and can't be used anymore
 func (p *Pack) Save() (err error) {
 	p.c.Debugln(VerbosePin, "(*Pack).Save", p.r.Pub.Hex()[:7], p.r.Seq)
 
-	tp := time.Now() // time point
+	var tp = time.Now() // time point
 
 	if p.sk == (cipher.SecKey{}) {
 		err = fmt.Errorf("can't save Root of %s: empty secret key",
@@ -136,23 +151,26 @@ func (p *Pack) Save() (err error) {
 	//   2.1) get the V/A of already existeing obejcts
 	//   2.2) save new obejcts indexing them
 	// 3) keep all saved objects to decrement them on failure
-	var seqDec uint64 = p.r.Seq                  // base
-	var saved = make(map[cipher.SHA256]struct{}) // decr. on fail
+	var (
+		seqDec uint64 = p.r.Seq                     // base
+		saved         = make(map[cipher.SHA256]int) // decr. on fail
+		holded bool                                 // new root
+	)
 
-	err = p.c.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
+	err = p.c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
-		var rs idxdb.Roots
+		var rs data.Roots
 		if rs, err = feeds.Roots(p.r.Pub); err != nil {
 			return
 		}
 
 		// get seq + 1 of last saved
 		var called bool
-		err = rs.Descend(func(ir *idxdb.Root) (err error) {
+		err = rs.Descend(func(ir *data.Root) (err error) {
 			p.r.Seq = ir.Seq + 1 // next seq
 			p.r.Prev = ir.Hash   // previous
 			called = true
-			return idxdb.ErrStopIteration
+			return data.ErrStopIteration
 		})
 		if err != nil {
 			return
@@ -183,17 +201,16 @@ func (p *Pack) Save() (err error) {
 		p.r.Hash = cipher.SumSHA256(val)
 		p.r.Sig = cipher.SignHash(p.r.Hash, p.sk)
 
-		var ir *idxdb.Root = new(idxdb.Root)
+		var ir *data.Root = new(data.Root)
 
 		// set up the ir
 		ir.Seq = p.r.Seq
 		ir.Prev = p.r.Prev
 		ir.Hash = p.r.Hash
 		ir.Sig = p.r.Sig
-		ir.IsFull = true // going to be full
 
 		// save Root in CXDS
-		saved[p.r.Hash] = struct{}{}
+		saved[p.r.Hash]++
 		if _, err = p.c.db.CXDS().Set(p.r.Hash, val); err != nil {
 			return
 		}
@@ -204,31 +221,98 @@ func (p *Pack) Save() (err error) {
 		}
 
 		// save registry in CXDS
-		saved[cipher.SHA256(p.r.Reg)] = struct{}{}
+		saved[cipher.SHA256(p.r.Reg)]++
 		_, err = p.c.db.CXDS().Set(cipher.SHA256(p.r.Reg), p.reg.Encode())
+		if err != nil {
+			return
+		}
+
+		// we are inside transaction and we should hold new Root from here
+		// to prevent some situations
+
+		p.c.Hold(p.r.Pub, p.r.Seq)
+		holded = true
 		return
 	})
+
 	if err != nil {
-		// sec saved
-		for hash := range saved {
-			p.c.DB().CXDS().Dec(hash) // ignore error (TODO: log  the err)
+
+		// failure
+
+		// decrement all saved objects
+		for hash, c := range saved {
+			for i := 0; i < c; i++ {
+				if _, dece := p.c.DB().CXDS().Dec(hash); dece != nil {
+					p.c.Printf("[ERR] can't decrement %s: %v", hash.Hex()[:7],
+						dece)
+				}
+			}
 		}
-	} else {
+
+		// unhold the new Root
+		if holded {
+			p.c.Unhold(p.r.Pub, p.r.Seq)
+		}
+
+		// if the holded is true then p.r.Seq is seq of new Root
+		// and seqDec contains seq of previous Root. Since, the
+		// Close method Unholds Root by p.r.Seq, then we have to
+		// prevent this and unhold the Root manually
+
+		p.unhold.Do(func() {}) // prevent unholding on close
+
+		// we have to unhold previous Root only
+		// it the freshRoot flag is not set
 		if p.flags&freshRoot == 0 {
-			p.c.unholdRoot(p.r.Pub, seqDec)
-			p.c.holdRoot(p.r.Pub, p.r.Seq) // hold this Root
+			p.c.Unhold(p.r.Pub, seqDec)
 		}
-		p.unsaved = make(map[cipher.SHA256][]byte) // clear
+
+	} else {
+
+		// success
+
+		// we have to unhold previous Root if
+		// the new one based on another Root
+
+		if p.flags&freshRoot != 0 {
+
+			// this Root is not based on anything, it's fresh, created
+			// from scratch, but next root will be based on this new
+			// Root, and this new Root is holded, the Close method unholds
+			// it, but we need to unset the freshRoot flag
+
+			p.unsetFlag(freshRoot)
+
+		} else {
+
+			// this Root is based on another one, we need to unhold previous
+			// Root object; this new Root alredy holded inside transaction
+
+			p.c.Unhold(p.r.Pub, seqDec)
+
+		}
+
+		// all obejcts has been saved and we can clear
+		// cache to reduce memory pressure
+
+		p.unsaved = make(map[cipher.SHA256][]byte)
+
 	}
 
 	st := time.Now().Sub(tp)
 
-	p.c.Debugf(PackSavePin, "%s saved after %v", p.r.Short(), st)
+	if err == nil {
+		p.c.Debugf(PackSavePin, "%s saved after %v, %d objects saved",
+			p.r.Short(), st, len(saved))
+	} else {
+		p.c.Debugf(PackSavePin, "%s error saving after %v", p.r.Short(), st)
+	}
+
 	return
 }
 
-// Initialize the Pack. It creates Root WalkNode and
-// unpack entire tree if appropriate flag is set
+// Initialize the Pack. It unpacks entire tree
+// if appropriate flag is set
 func (p *Pack) init() (err error) {
 	// Do we need to unpack entire tree?
 	if p.flags&EntireTree != 0 {
@@ -240,7 +324,10 @@ func (p *Pack) init() (err error) {
 	return
 }
 
-// Root of the Pack
+// Root of the Pack. It returns underlying Root obejct
+// that changes with cahnges in Pack. Fields of the Root
+// are actual after every successful Save (or Unpack) and
+// before first chagnes
 func (p *Pack) Root() *Root { return p.r }
 
 // Registry of the Pack

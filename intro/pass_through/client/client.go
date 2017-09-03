@@ -13,7 +13,7 @@ import (
 	"github.com/skycoin/cxo/node/log"
 	sky "github.com/skycoin/cxo/skyobject"
 
-	"github.com/skycoin/cxo/intro"
+	passThrough "github.com/skycoin/cxo/intro/pass_through"
 )
 
 // defaults
@@ -47,8 +47,8 @@ func main() {
 	}()
 
 	reg := sky.NewRegistry(func(r *sky.Reg) {
-		r.Register("intro.Vote", intro.Vote{})
-		r.Register("intro.Content", intro.Content{})
+		r.Register("pt.Vote", passThrough.Vote{})
+		r.Register("pt.Content", passThrough.Content{})
 	})
 
 	var c = node.NewConfig()
@@ -57,19 +57,22 @@ func main() {
 	c.Listen = Host
 	c.RemoteClose = RemoteClose
 
-	c.DBPath = "./client.db"
+	c.PingInterval = 0 // suppress ping logs
+
+	c.DataDir = ""      // don't create ~/.skycoin/cxo
+	c.InMemoryDB = true // use DB in memory
 
 	// suppress gnet logs
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
-	c.Log.Debug = true
-	c.Log.Pins = log.All // all
+	//c.Log.Debug = true
+	//c.Log.Pins = log.All // all
 	c.Log.Prefix = "[client] "
 
 	c.Skyobject.Registry = reg // <-- registry
 
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = log.All // all
+	//c.Skyobject.Log.Debug = true
+	//c.Skyobject.Log.Pins = log.All // all
 	c.Skyobject.Log.Prefix = "[client cxo]"
 
 	c.FromFlags()
