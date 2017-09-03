@@ -300,7 +300,7 @@ func (r *Registry) SchemaByName(name string) (Schema, error) {
 	return r.schemaByName(name)
 }
 
-// Types returns Types of the Registry. If this regsitry creaded using
+// Types returns Types of the Registry. If this registry creaded using
 // DecodeRegistry (received from network) then result will not
 // be valid (empty maps). The Types used to pack/unpack CX objects
 // directly from and to golang values. You should not modify the

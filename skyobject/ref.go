@@ -55,7 +55,7 @@ func (r *Ref) Eq(x *Ref) bool {
 	return r.Hash == x.Hash
 }
 
-// Schema of the Referene. It returns nil
+// Schema of the Ref. It returns nil
 // if the Ref is not unpacked or has not a
 // Schema (the Ref is not a part of a struct)
 func (r *Ref) Schema() Schema {

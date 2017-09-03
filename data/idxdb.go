@@ -26,7 +26,7 @@ type Feeds interface {
 	// ErrStopIteration that turns nil. It's possible
 	// to mutate the IdxDB inside the Iterate
 	Iterate(IterateFeedsFunc) error
-	// Has retursn true if the IdxDB contians
+	// Has retursn true if the IdxDB contains
 	// feed with given public key
 	Has(cipher.PubKey) bool
 

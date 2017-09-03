@@ -193,7 +193,7 @@ func (*Root) MsgType() MsgType { return RootType }
 
 // A RootDone is response for the Root.
 // A node that receivs a Root obejct requires
-// some tiem to fill or drop it. After that
+// some time to fill or drop it. After that
 // it sends the RootDone back to notify
 // peer that this Root obejct no longer
 // needed. E.g. a node holds a Root before

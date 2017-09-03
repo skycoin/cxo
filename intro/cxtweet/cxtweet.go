@@ -89,7 +89,7 @@ func main() {
 	flag.StringVar(&flags.bind,
 		"b",
 		Bind,
-		"listening addres")
+		"listening address")
 	flag.BoolVar(&flags.colors,
 		"c",
 		Colors,
@@ -146,7 +146,7 @@ func main() {
 	nc.PublicServer = true // allow request list of feeds
 
 	nc.OnCreateConnection = func(c *node.Conn) {
-		fmt.Println("new conenction:", c.Address())
+		fmt.Println("new connection:", c.Address())
 	}
 
 	nc.OnCloseConnection = func(c *node.Conn) {
@@ -841,7 +841,7 @@ func help() {
 
     live [pk]
         show new tweet of given feed in real time,
-        wihtout arguments it shows all live feeds
+        without arguments it shows all live feeds
     hide <pk>
         don't show real-time tweets of given feed
 

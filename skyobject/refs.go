@@ -14,7 +14,7 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
-// A Refs represetns array of referencs.
+// A Refs represetns array of references.
 // The Refs contains RefsElem(s). To delete
 // an element use Delete method of the
 // RefsElem. It's impossible to reborn
@@ -133,7 +133,7 @@ func (r *Refs) String() string {
 //
 // So, if Hash is blank. Then nothing to load. In this case all (1), (2)
 // and (3) states are equal. If the Hash is not blank, then the node
-// has nested nodes (and non-zero length). Thus, if lenght is zero, then
+// has nested nodes (and non-zero length). Thus, if length is zero, then
 // the Hash should be cleared
 //
 // If HashTableIndex, EntireTree or EntireMerkleTree flags set,
@@ -219,7 +219,7 @@ func (r *Refs) load(depth int) (err error) {
 			return
 		}
 		r.depth = int(er.Depth)   // get depth from database
-		r.degree = int(er.Degree) // get degree from datbase
+		r.degree = int(er.Degree) // get degree from database
 		r.length = int(er.Length) // get length from database
 
 		depth = r.depth // it's root and we are using depth from database
@@ -506,7 +506,7 @@ type IterateRefsFunc func(i int, ref *RefsElem) (err error)
 // Ascend iterates over Refs ascending order. See also
 // docs for IterateRefsFunc. It's safe to delete an element
 // of the Refs inside the Ascend, but it's unsafe to
-// append somethign to the Refs while the Append ecxecutes
+// append something to the Refs while the Append ecxecutes
 func (r *Refs) Ascend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {
@@ -573,7 +573,7 @@ func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
 // Descend iterates over Refs descending order. See also
 // docs for IterateRefsFunc. It's safe to delete an element
 // of the Refs inside the Ascend, but it's unsafe to
-// append somethign to the Refs while the Append ecxecutes
+// append something to the Refs while the Append ecxecutes
 func (r *Refs) Descend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {
@@ -663,7 +663,7 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 	return
 }
 
-// free spece taht we can use to append new items;
+// free spece that we can use to append new items;
 // for example the tree can contain 1000 elements
 // and contains only 980, and the tree has 10
 // zero elements; and this zero-elements not on tail;
@@ -972,7 +972,7 @@ func (r *Refs) Schema() (sch Schema) {
 
 // Append obejcts to the Refs. Type of the objects must
 // be the same as type of the Refs. Nils will be skipped,
-// even if it's nil of some type or nil-interace{}
+// even if it's nil of some type or nil-interface{}
 func (r *Refs) Append(objs ...interface{}) (err error) {
 
 	if len(objs) == 0 {
@@ -1421,7 +1421,7 @@ func (r *RefsElem) Value() (obj interface{}, err error) {
 // element from related Refs
 func (r *RefsElem) SetValue(obj interface{}) (err error) {
 
-	// copy-pased from Ref.SetValue wiht little changes
+	// copy-pasted from Ref.SetValue with little changes
 	//
 	// TODO (kostyarin): DRY with Ref.SetValue
 

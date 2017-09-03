@@ -13,7 +13,7 @@ import (
 // common errors
 var (
 	ErrNotRequestMsg  = errors.New("not request msg")
-	ErrNotResponseMsg = errors.New("nto response msg")
+	ErrNotResponseMsg = errors.New("not response msg")
 )
 
 // ID represents uint64 random number

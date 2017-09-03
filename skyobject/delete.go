@@ -41,7 +41,7 @@ func (c *Container) decrementAll(ir *data.Root) (err error) {
 	}
 	r.Hash = ir.Hash
 	r.Sig = ir.Sig
-	r.IsFull = true // but it doesn't make sence
+	r.IsFull = true // but it doesn't make sense
 
 	// (2), (3), (4), (5)
 	err = c.decrement(r)
@@ -62,7 +62,7 @@ err = c.findRefs(r, func(key cipher.SHA256) (deepper bool, err error) {
 })
 */
 
-// find all references including regsitry and r.Hash
+// find all references including registry and r.Hash
 func (c *Container) decrement(r *Root) (err error) {
 
 	// root
@@ -81,7 +81,7 @@ func (c *Container) decrement(r *Root) (err error) {
 	// registry
 
 	if r.Reg == (RegistryRef{}) {
-		return ErrEmptyRegsitryRef
+		return ErrEmptyRegistryRef
 	}
 
 	var val []byte
@@ -168,7 +168,7 @@ func (d *decRecur) data(s Schema, val []byte) (err error) {
 	}
 
 	return fmt.Errorf("[CXO BUG] schema is not reference, array, slice or "+
-		"struct but (Schema).HasReferenes() retruns true: %s", s)
+		"struct but (Schema).HasReferences() retruns true: %s", s)
 }
 
 func (d *decRecur) dataArray(s Schema, val []byte) (err error) {
@@ -414,7 +414,7 @@ func (f *findRefs) data(s Schema, val []byte, fr findRefsFunc) (err error) {
 	}
 
 	return fmt.Errorf("[CXO BUG] schema is not reference, array, slice or "+
-		"struct but (Schema).HasReferenes() retruns true: %s", s)
+		"struct but (Schema).HasReferences() retruns true: %s", s)
 }
 
 func (f *findRefs) dataArray(s Schema, val []byte,
