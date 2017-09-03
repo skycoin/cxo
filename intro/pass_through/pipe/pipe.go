@@ -59,15 +59,15 @@ func main() {
 
 	// node logger
 	c.Log.Prefix = "[pipe] "
-	c.Log.Debug = true
-	c.Log.Pins = log.All // all
+	//c.Log.Debug = true
+	//c.Log.Pins = log.All // all
 
 	// no registry
 
 	// skyobject logger
 	c.Skyobject.Log.Prefix = "[pipe cxo]"
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = log.All // all
+	//c.Skyobject.Log.Debug = true
+	//c.Skyobject.Log.Pins = log.All // all
 
 	c.FromFlags()
 	flag.Parse()

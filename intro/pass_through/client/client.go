@@ -65,14 +65,14 @@ func main() {
 	// suppress gnet logs
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
-	c.Log.Debug = true
-	c.Log.Pins = log.All // all
+	//c.Log.Debug = true
+	//c.Log.Pins = log.All // all
 	c.Log.Prefix = "[client] "
 
 	c.Skyobject.Registry = reg // <-- registry
 
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = log.All // all
+	//c.Skyobject.Log.Debug = true
+	//c.Skyobject.Log.Pins = log.All // all
 	c.Skyobject.Log.Prefix = "[client cxo]"
 
 	c.FromFlags()

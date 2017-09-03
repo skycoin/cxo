@@ -65,13 +65,13 @@ func main() {
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
 	c.Log.Prefix = "[server] "
-	c.Log.Debug = true
-	c.Log.Pins = log.All // all
+	//c.Log.Debug = true
+	//c.Log.Pins = log.All // all
 
 	c.Skyobject.Registry = reg
 
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = sky.PackSavePin // all
+	//c.Skyobject.Log.Debug = true
+	//c.Skyobject.Log.Pins = sky.PackSavePin // all
 	c.Skyobject.Log.Prefix = "[server cxo] "
 
 	c.FromFlags()

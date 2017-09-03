@@ -11,7 +11,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/skyobject"
 )
@@ -181,12 +181,12 @@ func Test_roots(t *testing.T) {
 		h1 := pack.Root().Hash
 		t1 := time.Unix(0, pack.Root().Time)
 		var c1 time.Time
-		err = cnt.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-			var rs idxdb.Roots
+		err = cnt.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+			var rs data.Roots
 			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
-			var ir *idxdb.Root
+			var ir *data.Root
 			if ir, err = rs.Get(0); err != nil {
 				return
 			}
@@ -206,12 +206,12 @@ func Test_roots(t *testing.T) {
 		h2 := pack.Root().Hash
 		t2 := time.Unix(0, pack.Root().Time)
 		var c2 time.Time
-		err = cnt.DB().IdxDB().Tx(func(feeds idxdb.Feeds) (err error) {
-			var rs idxdb.Roots
+		err = cnt.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+			var rs data.Roots
 			if rs, err = feeds.Roots(pk); err != nil {
 				return
 			}
-			var ir *idxdb.Root
+			var ir *data.Root
 			if ir, err = rs.Get(1); err != nil {
 				return
 			}

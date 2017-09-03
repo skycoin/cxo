@@ -236,8 +236,6 @@ func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
 func (c *Container) Close() error {
 	c.Debug(VerbosePin, "Close()")
 
-	c.Print("[CONTAINER CLOSING TEMPORARY LOG REMOVE ME LATER FROM HERE] holded:", c.holded)
-
 	// TODO (kostyarin): cleaning up
 	return nil
 }
@@ -302,5 +300,39 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 		}
 
 		return feeds.Del(pk)
+	})
+}
+
+// DelRoot deletes Root of given feed with given seq number. If the Root
+// doesn't exsits, then thsi mehtod doesn't returns an error. Even if the feed
+// does not exist
+func (c *Container) DelRoot(pk cipher.PubKey, seq uint64) (err error) {
+	c.Debugln(VerbosePin, "DelRoot", pk.Hex()[:7])
+
+	return c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		if false == feeds.Has(pk) {
+			return // nothing to delete
+		}
+		var rs data.Roots
+		if rs, err = feeds.Roots(pk); err != nil {
+			return
+		}
+		if rs.Len() == 0 {
+			return feeds.Del(pk) // delete empty feed
+		}
+		var ir *data.Root
+		if ir, err = rs.Get(seq); err != nil {
+			if err == data.ErrNotFound {
+				err = nil
+			}
+			return
+		}
+		if err = c.CanRemove(pk, ir.Seq); err != nil {
+			return
+		}
+		if err = c.decrementAll(ir); err != nil {
+			return
+		}
+		return rs.Del(ir.Seq) // delete the Root
 	})
 }
