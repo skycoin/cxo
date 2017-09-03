@@ -11,80 +11,120 @@ CX Object System
 The CXO is objects system, goal of which is sharing any objects. The CXO
 is low level and designed to build application on top of it
 
-### How it wroks
+### Get Started and API Documentation
 
-So, there is an owner who want to publicate something. This man creates feed,
-and adds a Root (R1) obejct to this feed. The Root refers to another obejcts.
-It's tree of any objects. The tree is immutable and object are immutable too.
-But the owner can update the tree publishing new version of the Root (R2).
-This root is based on previous version. This R2 is replacement for the R1.
-Thus, if the owner publishes some `Root` and updates it R1->R2->R3->R4. Any
-node that receive this feed can ignore R1,R2 and R3, because they are outdated
-since R4 borns
+See [CXO wiki](https://github.com/skycoin/cxo/wiki/Get-Started) to get this information
 
-For example
-```go
-type User struct {
-    Name string
-    Age  uint32
-    Bio  skyobject.Ref `schema:"pkg.Bio"`
-}
+### API Documentation
 
-type Bio struct {
-    Height uint32
-    Weight uint32
-}
-```
+See [CXO wiki](https://github.com/skycoin/cxo/wiki) to get this information
 
-It's like
-```go
-type User struct {
-   Name string
-   Age  int
-   Bio  *Bio
-}
-```
+### Installation and Version
 
-The Ref is SHA256 hash of encoded value. Thus, we are using uint32 instead
-of int. Because the int can be int32 or int64 and not acceptable for
-encoding and decoding. E.g. the `User` will point to some encoded `Bio`.
+Use [dep](https://github.com/golang/dep) to use particular version of the
+CXO. The maser branch of the repository points to latest stable release.
+Actually, it points to alpha-release for now.
 
-And if this `Bio` has been changed, then the `User` have to be changed too.
-And the owner, who want to share this information, creates feed. Creates Root
-obejct. Attaches actual instance of `User` to the `Root`. Signs the `Root` and
-publishes it. And when the owner want to update this information, he publishes
-new version of this `Root`.
-
-Thus, the `Root` can point to many objects. But, updating one obejct, we
-updates only one branch of the objects tree. All other obejcts already
-replicated by peers.
-
-Trusting. The owner has secret key, and feed is public key based
-on the secret key. And every Root is signed by the owner. Thus, a node,
-receiving a Root, can verify singature and be sure that this Root comes from
-that owner. This way if we know a feed (public key) then we can trust all
-received data from its feed.
-
-### Version
-
-Use [dep](https://github.com/golang/dep) to use particular commit.
-
-To get mainline use
+To get the release use
 ```
 go get -u -t github.com/skycoin/cxo/...
 ```
-Test them all
+Test all packages
 ```
 go test -cover -race github.com/skycoin/cxo/...
 ```
 
-### Get started. How it works? Documentation
 
-See [CXO wiki](../../wiki) to get this information
-
-### Help and contacts
+### Development
 
 - [telegram group](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
+
+#### Modules
+
+- `cmd` - apps
+  - `cxocli` - CLI is admin RPC based tool to control any CXO-node
+  - `cxod` - an example CXO daemon that accepts all subscriptions
+- `data` - database interfaces, obejcts and errors
+  - `data/cxds` - CX data store is implementation of key-value store
+  - `data/idxdb` - implementation of index DB
+  - `data/tests` - tests for the `data` interfaces
+- `node` - TCP transport for CXO
+  - `node/gnet` - raw TCP transport
+  - `node/log` - logger
+  - `node/msg` - protocol messages
+- `skyobject` - CXO core: schemas, encoder/decode, etc
+
+And
+
+- `intro` - examples
+  - `intro/pass_through` - three nodes source->pipe->drain
+    [README.md](intro/pass_through)
+  - `intro/cxtweet` - CXO based command-line tweetter like app
+
+
+#### Formatting
+
+- All `.go` source files should be formatted with `gofmt`
+- It's recommended to limit you lines with 80 or at least 120 characters
+- Follow Golang naming convention: `CamelCase`, `Value()/SetValue()`,
+  `IsExist()`, etc
+
+
+### Dependencies
+
+Dependencies are managed with [dep](https://github.com/golang/dep).
+
+To install `dep`:
+
+```sh
+go get -u github.com/golang/dep
+```
+
+`dep` vendors all dependencies into the repo.
+
+If you change the dependencies, you should update them as needed with
+`dep ensure`.
+
+Use `dep help` for instructions on vendoring a specific version of a dependency,
+or updating them.
+
+After adding a new dependency (with `dep ensure`), run `dep prune` to remove any
+unnecessary subpackages from the dependency.
+
+When updating or initializing, `dep` will find the latest version of a
+dependency that will compile.
+
+Examples:
+
+Initialize all dependencies:
+
+```sh
+dep init
+dep prune
+```
+
+Update all dependencies:
+
+```sh
+dep ensure -update -v
+dep prune
+```
+
+Add a single dependency (latest version):
+
+```sh
+dep ensure github.com/foo/bar
+dep prune
+```
+
+Add a single dependency (more specific version), or downgrade an existing
+dependency:
+
+```sh
+dep ensure github.com/foo/bar@tag
+dep prune
+```
+
 
 ---
 
