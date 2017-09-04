@@ -99,19 +99,21 @@ func NewNode(sc Config) (s *Node, err error) {
 	// database
 
 	var db *data.DB
+	var cxPath, idxPath string
 
 	if sc.DB != nil {
+		cxPath, idxPath = "<used provided DB>", "<used provided DB>"
 		db = sc.DB
 	} else if sc.InMemoryDB {
+		cxPath, idxPath = "<in memory>", "<in memory>"
 		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
 	} else {
-		var cxPath, idxPath string
 		if sc.DBPath == "" {
 			cxPath = filepath.Join(sc.DataDir, "cxds.db")
 			idxPath = filepath.Join(sc.DataDir, "idx.db")
 		} else {
 			cxPath = sc.DBPath + ".cxds"
-			cxPath = sc.DBPath + ".idx"
+			idxPath = sc.DBPath + ".idx"
 		}
 		var cx data.CXDS
 		var idx data.IdxDB
@@ -202,14 +204,14 @@ func NewNode(sc Config) (s *Node, err error) {
 	s.quit = make(chan struct{})
 	s.done = make(chan struct{})
 
-	if err = s.start(); err != nil {
+	if err = s.start(cxPath, idxPath); err != nil {
 		s.Close()
 		s = nil
 	}
 	return
 }
 
-func (s *Node) start() (err error) {
+func (s *Node) start(cxPath, idxPath string) (err error) {
 	s.Debugf(log.All, `starting node:
     data dir:             %s
 
@@ -241,7 +243,8 @@ func (s *Node) start() (err error) {
     remote close:         %t
 
     in-memory DB:         %v
-    DB path:              %s
+    CXDS path:            %s
+    index DB path:        %s
 
     debug:                %#v
 `,
@@ -274,7 +277,8 @@ func (s *Node) start() (err error) {
 		s.conf.RemoteClose,
 
 		s.conf.InMemoryDB,
-		s.conf.DBPath,
+		cxPath,
+		idxPath,
 
 		s.conf.Log.Debug,
 	)

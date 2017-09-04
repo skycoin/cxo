@@ -55,7 +55,8 @@ const (
 	HandlePin
 )
 
-func dataDir() string {
+// DataDir retuns path to default data directory
+func DataDir() string {
 	usr, err := user.Current()
 	if err != nil {
 		panic(err) // fatal
@@ -109,13 +110,23 @@ type Config struct {
 	// See also DB field
 	InMemoryDB bool
 	// DBPath is path to database file.
-	// See also DB field
+	// Because DB consist of two files,
+	// the DBPath will be concated with
+	// extensions ".cxds" and ".idx".
+	// See also DB field. If it's
 	DBPath string
 	// DataDir is directory with data files
 	// this directory contains default DB
 	// and if it's not blank string, then
 	// node creates the diretory if it does
-	// not exist
+	// not exist. If the DBPath is blank
+	// then and database is not in memeory
+	// then the Node will use (or create and
+	// use) databases under the DataDir. Even
+	// if the DataDir is blank string (e.g.
+	// current work directory). They named
+	// "cxds.db" and "idx.db". See also
+	// DB field
 	DataDir string
 
 	// PublicServer never keeps secret feeds it share
@@ -197,7 +208,7 @@ func NewConfig() (sc Config) {
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
 	sc.InMemoryDB = InMemoryDB
-	sc.DataDir = dataDir()
+	sc.DataDir = DataDir()
 	sc.DBPath = ""
 	sc.ResponseTimeout = ResponseTimeout
 	sc.PublicServer = PublicServer
