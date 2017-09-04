@@ -472,23 +472,23 @@ func (n *Node) Container() *skyobject.Container {
 // yet. Use methods of this Pool to manipulate
 // connections: Dial, Connection, Connections,
 // Address, etc
-func (s *Node) Pool() *gnet.Pool {
-	return s.pool
+func (n *Node) Pool() *gnet.Pool {
+	return n.pool
 }
 
 // Feeds the server share
-func (s *Node) Feeds() (fs []cipher.PubKey) {
+func (n *Node) Feeds() (fs []cipher.PubKey) {
 
 	// locks: s.fmx RLock/RUnlock
 
-	s.fmx.RLock()
-	defer s.fmx.RUnlock()
+	n.fmx.RLock()
+	defer n.fmx.RUnlock()
 
-	if len(s.feeds) == 0 {
+	if len(n.feeds) == 0 {
 		return
 	}
-	fs = make([]cipher.PubKey, 0, len(s.feeds))
-	for f := range s.feeds {
+	fs = make([]cipher.PubKey, 0, len(n.feeds))
+	for f := range n.feeds {
 		fs = append(fs, f)
 	}
 	return
