@@ -295,7 +295,7 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 				Reconnect:                      true,
 				ReconnectWait:                  time.Second * 30,
 				FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
-				OnConnected:                    s.updateServiceDiscovery,
+				OnConnected:                    s.updateServiceDiscoveryCallback,
 			})
 		}
 		s.discovery = f
@@ -333,12 +333,16 @@ func (n *Node) addConn(c *Conn) {
 	n.conns = append(n.conns, c)
 }
 
-func (n *Node) updateServiceDiscovery(conn *factory.Connection) {
+func (n *Node) updateServiceDiscoveryCallback(conn *factory.Connection) {
 	feeds := n.Feeds()
 	services := make([]*factory.Service, len(feeds))
 	for i, feed := range feeds {
 		services[i] = &factory.Service{Key: feed}
 	}
+	n.updateServiceDiscovery(conn, feeds, services)
+}
+
+func (n *Node) updateServiceDiscovery(conn *factory.Connection, feeds []cipher.PubKey, services []*factory.Service) {
 	conn.FindServiceNodesByKeys(feeds)
 	if n.conf.PublicServer {
 		conn.UpdateServices(&factory.NodeServices{ServiceAddress: n.conf.Listen, Services: services})
@@ -629,9 +633,7 @@ func (n *Node) AddFeed(pk cipher.PubKey) (err error) {
 			return
 		}
 		n.feeds[pk] = make(map[*Conn]struct{})
-		if n.discovery != nil {
-			go n.discovery.ForEachConn(n.updateServiceDiscovery)
-		}
+		updateServiceDiscovery(n)
 	}
 	return
 }
@@ -643,11 +645,24 @@ func (n *Node) delFeed(pk cipher.PubKey) (ok bool) {
 
 	if _, ok = n.feeds[pk]; ok {
 		delete(n.feeds, pk)
-		if n.discovery != nil {
-			go n.discovery.ForEachConn(n.updateServiceDiscovery)
-		}
+		updateServiceDiscovery(n)
 	}
 	return
+}
+
+func updateServiceDiscovery(n *Node) {
+	if n.discovery != nil {
+		feeds := make([]cipher.PubKey, 0, len(n.feeds))
+		services := make([]*factory.Service, 0, len(feeds))
+
+		for pk := range n.feeds {
+			feeds = append(feeds, pk)
+			services = append(services, &factory.Service{Key: pk})
+		}
+		go n.discovery.ForEachConn(func(connection *factory.Connection) {
+			n.updateServiceDiscovery(connection, feeds, services)
+		})
+	}
 }
 
 // del feed from connections, every connection must
