@@ -49,6 +49,8 @@ func main() {
 	c.Listen = Host
 	c.RemoteClose = RemoteClose
 
+	c.DiscoveryAddresses = node.Addresses{":8000"}
+
 	c.PingInterval = 0 // suppress ping logs
 
 	c.DataDir = ""      // don't create ~/.skycoin/cxo
