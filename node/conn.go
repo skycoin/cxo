@@ -430,10 +430,10 @@ func (c *Conn) handle(hs chan<- error) {
 
 	if err = c.handshake(); err != nil {
 		if false == c.gc.IsIncoming() {
-			c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
-		} else {
 			hs <- err // send back to (*Node).Connect()
+			return
 		}
+		c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
 		return
 	}
 
