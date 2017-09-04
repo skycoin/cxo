@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/skycoin/net/skycoin-messenger/factory"
+
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
@@ -16,8 +18,6 @@ import (
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/node/msg"
-
-	"github.com/skycoin/net/skycoin-messenger/factory"
 )
 
 // common errors
@@ -44,19 +44,21 @@ var (
 // that includes RPC server if enabled
 // by configs
 type Node struct {
-	log.Logger                // logger of the server
-	src  msg.Src              // msg source
-	conf Config               // configuratios
-	db   *data.DB             // database
-	so   *skyobject.Container // skyobject
+	log.Logger                      // logger of the server
+	src        msg.Src              // msg source
+	conf       Config               // configuratios
+	db         *data.DB             // database
+	so         *skyobject.Container // skyobject
 
 	// feeds
-	fmx   sync.RWMutex
-	feeds map[cipher.PubKey]map[*Conn]struct{}
+	fmx    sync.RWMutex
+	feeds  map[cipher.PubKey]map[*Conn]struct{}
+	feedsl []cipher.PubKey // cow
 
 	// connections
-	cmx   sync.RWMutex
-	conns []*Conn
+	cmx    sync.RWMutex
+	conns  []*Conn
+	connsl []*Conn // cow
 
 	// waiting/wanted obejcts
 	wmx sync.Mutex
@@ -250,6 +252,8 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
     CXDS path:            %s
     index DB path:        %s
 
+    discovery:            %s
+
     debug:                %#v
 `,
 		s.conf.DataDir,
@@ -283,6 +287,8 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 		s.conf.InMemoryDB,
 		cxPath,
 		idxPath,
+
+		s.conf.DiscoveryAddresses.String(),
 
 		s.conf.Log.Debug,
 	)
@@ -326,30 +332,36 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 	return
 }
 
-func (n *Node) addConn(c *Conn) {
-	n.cmx.Lock()
-	defer n.cmx.Unlock()
+func (s *Node) addConn(c *Conn) {
+	s.cmx.Lock()
+	defer s.cmx.Unlock()
 
-	n.conns = append(n.conns, c)
+	s.conns = append(s.conns, c)
+	s.connsl = nil // clear cow copy
 }
 
-func (n *Node) updateServiceDiscoveryCallback(conn *factory.Connection) {
-	feeds := n.Feeds()
+func (s *Node) updateServiceDiscoveryCallback(conn *factory.Connection) {
+	feeds := s.Feeds()
 	services := make([]*factory.Service, len(feeds))
 	for i, feed := range feeds {
 		services[i] = &factory.Service{Key: feed}
 	}
-	n.updateServiceDiscovery(conn, feeds, services)
+	s.updateServiceDiscovery(conn, feeds, services)
 }
 
-func (n *Node) updateServiceDiscovery(conn *factory.Connection, feeds []cipher.PubKey, services []*factory.Service) {
+func (s *Node) updateServiceDiscovery(conn *factory.Connection,
+	feeds []cipher.PubKey, services []*factory.Service) {
+
 	conn.FindServiceNodesByKeys(feeds)
-	if n.conf.PublicServer {
-		conn.UpdateServices(&factory.NodeServices{ServiceAddress: n.conf.Listen, Services: services})
+	if s.conf.PublicServer {
+		conn.UpdateServices(&factory.NodeServices{
+			ServiceAddress: s.conf.Listen,
+			Services:       services,
+		})
 	}
 }
 
-func (n *Node) findServiceNodesCallback(resp *factory.QueryResp) {
+func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {
 	if len(resp.Result) < 1 {
 		return
 	}
@@ -359,24 +371,26 @@ func (n *Node) findServiceNodesCallback(resp *factory.QueryResp) {
 			continue
 		}
 		for _, addr := range v {
-			err = n.Connect(addr)
+			c, err := s.Connect(addr)
 			if err != nil {
 				continue
 			}
-			n.Connection(addr).Subscribe(key)
+			c.Subscribe(key)
 		}
 	}
 }
 
-func (n *Node) delConn(c *Conn) {
-	n.cmx.Lock()
-	defer n.cmx.Unlock()
+func (s *Node) delConn(c *Conn) {
+	s.cmx.Lock()
+	defer s.cmx.Unlock()
 
-	for i, x := range n.conns {
+	s.connsl = nil // clear cow copy
+
+	for i, x := range s.conns {
 		if x == c {
-			n.conns[i] = n.conns[len(n.conns)-1]
-			n.conns[len(n.conns)-1] = nil
-			n.conns = n.conns[:len(n.conns)-1]
+			s.conns[i] = s.conns[len(s.conns)-1]
+			s.conns[len(s.conns)-1] = nil
+			s.conns = s.conns[:len(s.conns)-1]
 			return
 		}
 	}
@@ -413,18 +427,23 @@ func (s *Node) delConnFromWantedObjects(c *Conn) {
 	}
 }
 
-// Connections of the Node
+// Connections of the Node. It returns shared
+// slice and you must not modify it
 func (s *Node) Connections() (cs []*Conn) {
 	s.cmx.RLock()
 	defer s.cmx.RUnlock()
 
-	cs = make([]*Conn, len(s.conns))
-	copy(cs, s.conns)
+	if s.connsl != nil {
+		return s.connsl
+	}
+
+	s.connsl = make([]*Conn, len(s.conns))
+	copy(s.connsl, s.conns)
 	return
 }
 
-// Connections by address. Itreturns nil if connection not
-// found or not established yet
+// Connections by address. It returns nil if
+// connection not found or not established yet
 func (s *Node) Connection(address string) (c *Conn) {
 	if gc := s.pool.Connection(address); gc != nil {
 		c, _ = gc.Value().(*Conn)
@@ -456,11 +475,11 @@ func (s *Node) Close() (err error) {
 }
 
 // DB of the Node
-func (n *Node) DB() *data.DB { return n.db }
+func (s *Node) DB() *data.DB { return s.db }
 
 // Container of the Node
-func (n *Node) Container() *skyobject.Container {
-	return n.so
+func (s *Node) Container() *skyobject.Container {
+	return s.so
 }
 
 //
@@ -472,33 +491,34 @@ func (n *Node) Container() *skyobject.Container {
 // yet. Use methods of this Pool to manipulate
 // connections: Dial, Connection, Connections,
 // Address, etc
-func (n *Node) Pool() *gnet.Pool {
-	return n.pool
+func (s *Node) Pool() *gnet.Pool {
+	return s.pool
 }
 
-// Feeds the server share
-func (n *Node) Feeds() (fs []cipher.PubKey) {
+// Feeds the server share. It returns shared
+// slice and you must not modify it
+func (s *Node) Feeds() []cipher.PubKey {
 
 	// locks: s.fmx RLock/RUnlock
 
-	n.fmx.RLock()
-	defer n.fmx.RUnlock()
+	s.fmx.RLock()
+	defer s.fmx.RUnlock()
 
-	if len(n.feeds) == 0 {
-		return
+	if len(s.feedsl) != 0 {
+		return s.feedsl
 	}
-	fs = make([]cipher.PubKey, 0, len(n.feeds))
-	for f := range n.feeds {
-		fs = append(fs, f)
+	s.feedsl = make([]cipher.PubKey, 0, len(s.feeds))
+	for f := range s.feeds {
+		s.feedsl = append(s.feedsl, f)
 	}
-	return
+	return s.feedsl
 }
 
 // HasFeed or has not
-func (n *Node) HasFeed(pk cipher.PubKey) (ok bool) {
-	n.fmx.RLock()
-	defer n.fmx.RUnlock()
-	_, ok = n.feeds[pk]
+func (s *Node) HasFeed(pk cipher.PubKey) (ok bool) {
+	s.fmx.RLock()
+	defer s.fmx.RUnlock()
+	_, ok = s.feeds[pk]
 	return
 }
 
@@ -540,10 +560,16 @@ func (s *Node) delConnFromFeed(c *Conn, pk cipher.PubKey) (deleted bool) {
 func (s *Node) onConnect(gc *gnet.Conn) {
 	s.Debugf(ConnPin, "[%s] new connection %t", gc.Address(), gc.IsIncoming())
 
-	c := s.newConn(gc)
+	if gc.IsIncoming() {
 
-	s.await.Add(1)
-	go c.handle()
+		c := s.newConn(gc)
+
+		s.await.Add(1)
+		go c.handle(nil)
+
+	}
+
+	// all outgoing connections processed by s.Connect()
 }
 
 func (s *Node) onDisconnect(gc *gnet.Conn) {
@@ -603,8 +629,21 @@ func (s *Node) Publish(r *skyobject.Root) {
 }
 
 // Connect to peer. Use callback to handle the Conn
-func (n *Node) Connect(address string) (err error) {
-	_, err = n.pool.Dial(address)
+func (s *Node) Connect(address string) (c *Conn, err error) {
+
+	var gc *gnet.Conn
+	if gc, err = s.pool.Dial(address); err != nil {
+		return
+	}
+
+	hs := make(chan error)
+
+	c = s.newConn(gc)
+
+	s.await.Add(1)
+	go c.handle(nil)
+
+	err = <-hs
 	return
 }
 
@@ -614,38 +653,40 @@ func (n *Node) Connect(address string) (err error) {
 // the feed with peers. Use following code to
 // subscribe al connections to the feed
 //
-//     if err := n.AddFeed(pk); err != nil {
+//     if err := s.AddFeed(pk); err != nil {
 //         // database failure
 //     }
-//     for _, c := range n.Connections() {
+//     for _, c := range s.Connections() {
 //         // blocking call
 //         if err := c.Subscribe(pk); err != nil {
 //             // handle the err
 //         }
 //     }
 //
-func (n *Node) AddFeed(pk cipher.PubKey) (err error) {
-	n.fmx.Lock()
-	defer n.fmx.Unlock()
+func (s *Node) AddFeed(pk cipher.PubKey) (err error) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
 
-	if _, ok := n.feeds[pk]; !ok {
-		if err = n.so.AddFeed(pk); err != nil {
+	if _, ok := s.feeds[pk]; !ok {
+		if err = s.so.AddFeed(pk); err != nil {
 			return
 		}
-		n.feeds[pk] = make(map[*Conn]struct{})
-		updateServiceDiscovery(n)
+		s.feeds[pk] = make(map[*Conn]struct{})
+		s.feedsl = nil // clear cow copy
+		updateServiceDiscovery(s)
 	}
 	return
 }
 
 // del feed from share-list
-func (n *Node) delFeed(pk cipher.PubKey) (ok bool) {
-	n.fmx.Lock()
-	defer n.fmx.Unlock()
+func (s *Node) delFeed(pk cipher.PubKey) (ok bool) {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
 
-	if _, ok = n.feeds[pk]; ok {
-		delete(n.feeds, pk)
-		updateServiceDiscovery(n)
+	if _, ok = s.feeds[pk]; ok {
+		delete(s.feeds, pk)
+		s.feedsl = nil // clear cow copy
+		updateServiceDiscovery(s)
 	}
 	return
 }
@@ -671,13 +712,13 @@ func updateServiceDiscovery(n *Node) {
 // non-full Root object; thus, every connections
 // terminates fillers of the feed and removes non-full
 // root objects
-func (n *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
-	n.cmx.RLock()
-	defer n.cmx.RUnlock()
+func (s *Node) delFeedConns(pk cipher.PubKey) (dones []delFeedConnsReply) {
+	s.cmx.RLock()
+	defer s.cmx.RUnlock()
 
-	dones = make([]delFeedConnsReply, 0, len(n.conns))
+	dones = make([]delFeedConnsReply, 0, len(s.conns))
 
-	for _, c := range n.conns {
+	for _, c := range s.conns {
 
 		done := make(chan struct{})
 
@@ -698,13 +739,13 @@ type delFeedConnsReply struct {
 
 // DelFed stops sharing given feed. It unsubscribes
 // from all connections
-func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
+func (s *Node) DelFeed(pk cipher.PubKey) (err error) {
 
-	if false == n.delFeed(pk) {
+	if false == s.delFeed(pk) {
 		return // not deleted (we haven't the feed)
 	}
 
-	dones := n.delFeedConns(pk)
+	dones := s.delFeedConns(pk)
 
 	// wait
 	for _, dfcr := range dones {
@@ -716,7 +757,7 @@ func (n *Node) DelFeed(pk cipher.PubKey) (err error) {
 
 	// now, we can remove the feed if there
 	// are not holded Root objects
-	err = n.so.DelFeed(pk)
+	err = s.so.DelFeed(pk)
 	return
 }
 

@@ -2,6 +2,7 @@ package node
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -11,8 +12,6 @@ import (
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"fmt"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/gnet"
@@ -148,7 +147,7 @@ type Config struct {
 	// PublicServer never keeps secret feeds it share
 	PublicServer bool
 
-	// ServiceDiscovery Addresses
+	// ServiceDiscovery addresses
 	DiscoveryAddresses addresses
 
 	//

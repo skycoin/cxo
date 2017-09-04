@@ -419,7 +419,7 @@ func (c *Conn) drainSendRoot() {
 	}
 }
 
-func (c *Conn) handle() {
+func (c *Conn) handle(hs chan<- error) {
 	c.s.Debugf(ConnPin, "[%s] start handling", c.gc.Address())
 	defer c.s.Debugf(ConnPin, "[%s] stop handling", c.gc.Address())
 
@@ -429,8 +429,16 @@ func (c *Conn) handle() {
 	var err error
 
 	if err = c.handshake(); err != nil {
-		c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
+		if c.gc.IsIncoming() {
+			c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
+		} else {
+			hs <- err // send back to (*Node).Connect()
+		}
 		return
+	}
+
+	if false == c.gc.IsIncoming() {
+		hs <- nil // success!
 	}
 
 	defer c.s.delConnFromWantedObjects(c)
