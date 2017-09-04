@@ -641,7 +641,7 @@ func (s *Node) Connect(address string) (c *Conn, err error) {
 	c = s.newConn(gc)
 
 	s.await.Add(1)
-	go c.handle(nil)
+	go c.handle(hs)
 
 	err = <-hs
 	return
