@@ -16,6 +16,7 @@ import (
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/node/msg"
+
 	"github.com/skycoin/net/skycoin-messenger/factory"
 )
 
