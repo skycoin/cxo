@@ -72,17 +72,18 @@ func initDataDir(dir string) error {
 	return os.MkdirAll(dir, 0700)
 }
 
-// Used for discovery addresses, implements flag.Value interface
-type addresses []string
+// Used for discovery addresses,
+// implements flag.Value interface
+type Addresses []string
 
 // String implements flag.Value interface
-func (addrs *addresses) String() string {
-	return fmt.Sprintf("%v", []string(*addrs))
+func (a *Addresses) String() string {
+	return fmt.Sprintf("%v", []string(*a))
 }
 
 // Set implements flag.Value interface
-func (addrs *addresses) Set(addr string) error {
-	*addrs = append(*addrs, addr)
+func (a *Addresses) Set(addr string) error {
+	*a = append(*a, addr)
 	return nil
 }
 
@@ -148,7 +149,7 @@ type Config struct {
 	PublicServer bool
 
 	// ServiceDiscovery addresses
-	DiscoveryAddresses addresses
+	DiscoveryAddresses Addresses
 
 	//
 	// callbacks
