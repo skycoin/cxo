@@ -55,7 +55,8 @@ const (
 	HandlePin
 )
 
-func dataDir() string {
+// DataDir retuns path to default data directory
+func DataDir() string {
 	usr, err := user.Current()
 	if err != nil {
 		panic(err) // fatal
@@ -207,7 +208,7 @@ func NewConfig() (sc Config) {
 	sc.RemoteClose = RemoteClose
 	sc.PingInterval = PingInterval
 	sc.InMemoryDB = InMemoryDB
-	sc.DataDir = dataDir()
+	sc.DataDir = DataDir()
 	sc.DBPath = ""
 	sc.ResponseTimeout = ResponseTimeout
 	sc.PublicServer = PublicServer
