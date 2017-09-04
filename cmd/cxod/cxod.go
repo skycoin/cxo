@@ -40,6 +40,9 @@ func main() {
 	c.RemoteClose = RemoteClose
 	c.OnSubscribeRemote = acceptAllSubscriptions
 
+	c.DataDir = ""
+	c.DBPath = "asd"
+
 	c.FromFlags()
 	flag.Parse()
 
