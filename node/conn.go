@@ -433,7 +433,7 @@ func (c *Conn) handle(hs chan<- error) {
 			hs <- err // send back to (*Node).Connect()
 			return
 		}
-		c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
+		c.s.Printf("[%s] handshake failed: %v", c.gc.Address(), err)
 		return
 	}
 
