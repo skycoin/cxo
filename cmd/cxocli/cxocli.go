@@ -223,11 +223,11 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 	}
 	switch strings.ToLower(ss[0]) {
 	case "add_feed":
-		err = add_feed(rpc, ss)
+		err = addFeed(rpc, ss)
 	case "subscribe_to":
 		err = subscribeTo(rpc, ss)
 	case "del_feed":
-		err = del_feed(rpc, ss)
+		err = delFeed(rpc, ss)
 	case "unsubscribe_from":
 		err = unsubscribeFrom(rpc, ss)
 	case "feeds":
@@ -320,7 +320,7 @@ func publicKeyArg(ss []string) (pub cipher.PubKey, err error) {
 	return
 }
 
-func add_feed(rpc *node.RPCClient, ss []string) (err error) {
+func addFeed(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	if pk, err = publicKeyArg(ss); err != nil {
 		return
@@ -360,7 +360,7 @@ func subscribeTo(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func del_feed(rpc *node.RPCClient, ss []string) (err error) {
+func delFeed(rpc *node.RPCClient, ss []string) (err error) {
 	var pk cipher.PubKey
 	if pk, err = publicKeyArg(ss); err != nil {
 		return

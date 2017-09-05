@@ -18,6 +18,8 @@ var (
 	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
 	ErrMissingInverseMapInTypes = errors.New("missing Inverse map in Types")
 	ErrEmptyRegistryRef         = errors.New("empty refsitry reference")
+	ErrNotFound                 = errors.New("not found")
+	ErrEmptyRootHash            = errors.New("empty hash of Root")
 )
 
 // A Container represents overlay for database
@@ -76,7 +78,7 @@ func (c *Container) DB() *data.DB {
 	return c.db
 }
 
-// CoreRegisty of the Container or nil if
+// CoreRegistry of the Container or nil if
 // the Container created without a Registry
 func (c *Container) CoreRegistry() *Registry {
 	c.Debugln(VerbosePin, "CoreRegistry", c.coreRegistry != nil)

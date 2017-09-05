@@ -369,8 +369,8 @@ type structSchema struct {
 	fields []Field
 }
 
-func (r *structSchema) HasReferences() (has bool) {
-	for _, fl := range r.fields {
+func (s *structSchema) HasReferences() (has bool) {
+	for _, fl := range s.fields {
 		has = has || fl.Schema().HasReferences()
 	}
 	return

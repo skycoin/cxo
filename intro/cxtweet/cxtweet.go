@@ -19,6 +19,7 @@ import (
 	cxo "github.com/skycoin/cxo/skyobject"
 )
 
+// defaults
 const (
 	Bind   string = "[::]:0"
 	Colors bool   = true
@@ -697,11 +698,11 @@ func printFeed(feed *Feed) {
 			return
 		}
 		err = feed.Tweets.Ascend(func(i int, el *cxo.RefsElem) error {
-			if tw, err := getTweet(el); err != nil {
+			tw, err := getTweet(el)
+			if err != nil {
 				return err
-			} else {
-				printTweet(usr, tw)
 			}
+			printTweet(usr, tw)
 			return nil
 		})
 		if err != nil {
@@ -723,11 +724,11 @@ func showFeed(args []string) error {
 		}
 		defer pack.Close() // close to unhold underlying root
 	}
-	if feed, err := getFeed(pack); err != nil {
+	feed, err := getFeed(pack)
+	if err != nil {
 		return err
-	} else {
-		printFeed(feed)
 	}
+	printFeed(feed)
 	return nil
 }
 
@@ -766,7 +767,8 @@ func connect(args []string) (err error) {
 	if err = argsRange(args, 1, 1); err != nil {
 		return
 	}
-	return s.Connect(args[0])
+	_, err = s.Connect(args[0])
+	return
 }
 
 func disconnect(args []string) (err error) {
@@ -781,17 +783,17 @@ func disconnect(args []string) (err error) {
 
 func subscribe(args []string) error {
 	for _, x := range args {
-		if pk, err := cipher.PubKeyFromHex(x); err != nil {
+		pk, err := cipher.PubKeyFromHex(x)
+		if err != nil {
 			return err
-		} else {
-			if err = s.AddFeed(pk); err != nil {
-				return err
-			}
-			for _, c := range s.Connections() {
-				if err := c.Subscribe(pk); err != nil {
-					fmt.Println(au.Red("[ERR]"), "can't subscribe to",
-						c.Address()+":", err)
-				}
+		}
+		if err = s.AddFeed(pk); err != nil {
+			return err
+		}
+		for _, c := range s.Connections() {
+			if err := c.Subscribe(pk); err != nil {
+				fmt.Println(au.Red("[ERR]"), "can't subscribe to",
+					c.Address()+":", err)
 			}
 		}
 	}
@@ -800,11 +802,11 @@ func subscribe(args []string) error {
 
 func unsubscribe(args []string) error {
 	for _, x := range args {
-		if pk, err := cipher.PubKeyFromHex(x); err != nil {
+		pk, err := cipher.PubKeyFromHex(x)
+		if err != nil {
 			return err
-		} else {
-			return s.DelFeed(pk)
 		}
+		return s.DelFeed(pk)
 	}
 	return nil
 }

@@ -263,6 +263,9 @@ func (d *Dynamic) Copy() (cp Dynamic) {
 	return
 }
 
+// Save updates hash using underlying value.
+// The vaue can be changd from outside, this
+// method encodes it and updates hash
 func (d *Dynamic) Save() {
 	if d.dn == nil {
 		return

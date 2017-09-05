@@ -8,6 +8,7 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
+// FeedsAdd is test case for Feeds.Add
 func FeedsAdd(t *testing.T, idx data.IdxDB) {
 	pk, _ := cipher.GenerateKeyPair()
 
@@ -47,6 +48,7 @@ func FeedsAdd(t *testing.T, idx data.IdxDB) {
 
 }
 
+// FeedsDel is test case for Feeds.Del
 func FeedsDel(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
@@ -100,6 +102,7 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 	})
 }
 
+// FeedsIterate is test case for Feeds.Iterate
 func FeedsIterate(t *testing.T, idx data.IdxDB) {
 
 	t.Run("no feeds", func(t *testing.T) {
@@ -234,6 +237,7 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 
 }
 
+// FeedsHas is test case for Feeds.Has
 func FeedsHas(t *testing.T, idx data.IdxDB) {
 
 	pk, _ := cipher.GenerateKeyPair()
@@ -268,6 +272,7 @@ func FeedsHas(t *testing.T, idx data.IdxDB) {
 
 }
 
+// FeedsRoots is test case for Feeds.Roots
 func FeedsRoots(t *testing.T, idx data.IdxDB) {
 
 	pk, _ := cipher.GenerateKeyPair()

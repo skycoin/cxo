@@ -1,7 +1,6 @@
 package skyobject
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 
@@ -10,8 +9,6 @@ import (
 
 	"github.com/skycoin/cxo/data"
 )
-
-var ErrEmptyRootHash = errors.New("empty hash of Root")
 
 // decrementAll references of given *data.Root
 // (do it before deleting the Root)
@@ -201,7 +198,7 @@ func (d *decRecur) dataStruct(s Schema, val []byte) (err error) {
 		if shift > len(val) {
 			return fmt.Errorf("unexpected end of encoded struct <%s>, "+
 				"field number: %d, field name: %q, schema of field: %s",
-				i, fl.Name(), fl.Schema())
+				s.String(), i, fl.Name(), fl.Schema())
 		}
 		if z, err = fl.Schema().Size(val[shift:]); err != nil {
 			return

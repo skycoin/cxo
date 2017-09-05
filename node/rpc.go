@@ -77,7 +77,9 @@ func (r *RPC) DelFeed(pk cipher.PubKey, _ *struct{}) error {
 	return r.ns.DelFeed(pk)
 }
 
-// internal/RPC
+// ConnFeed used by RPC to subscribe or
+// unsubscribe a connection to/from
+// a feed
 type ConnFeed struct {
 	Address string // remote address
 	Feed    cipher.PubKey
@@ -177,7 +179,7 @@ func (r *RPC) Connect(address string, _ *struct{}) (err error) {
 // Disconnect from a remote peer
 func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
 	if c := r.ns.pool.Connection(address); c != nil {
-		err = c.Close()
+		return c.Close()
 	}
 	return errors.New("no such connection: " + address)
 }
@@ -252,6 +254,8 @@ func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
 	return
 }
 
+// A SelectRoot used by RPC to
+// select Root object
 type SelectRoot struct {
 	Pub      cipher.PubKey
 	Seq      uint64

@@ -56,7 +56,7 @@ const (
 	HandlePin
 )
 
-// DataDir retuns path to default data directory
+// DataDir returns path to default data directory
 func DataDir() string {
 	usr, err := user.Current()
 	if err != nil {
@@ -72,8 +72,7 @@ func initDataDir(dir string) error {
 	return os.MkdirAll(dir, 0700)
 }
 
-// Used for discovery addresses,
-// implements flag.Value interface
+// Addresses are discovery addresses
 type Addresses []string
 
 // String implements flag.Value interface

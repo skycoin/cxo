@@ -57,7 +57,7 @@ var (
 
 // A Msg is common interface for CXO messages
 type Msg interface {
-	MsgType() MsgType // type of the message to encode
+	Type() Type // type of the message to encode
 }
 
 // A Ping is service message and used
@@ -66,8 +66,8 @@ type Ping struct {
 	ID ID
 }
 
-// MsgType implements Msg interface
-func (*Ping) MsgType() MsgType { return PingType }
+// Type implements Msg interface
+func (*Ping) Type() Type { return PingType }
 
 // Pong is service message and used
 // by client to reply for PingMsg
@@ -75,8 +75,8 @@ type Pong struct {
 	ResponseFor ID
 }
 
-// MsgType implements Msg interface
-func (*Pong) MsgType() MsgType { return PongType }
+// Type implements Msg interface
+func (*Pong) Type() Type { return PongType }
 
 // A Hello is handhake initiator message
 type Hello struct {
@@ -85,8 +85,8 @@ type Hello struct {
 	Address  cipher.Address // reserved for future
 }
 
-// MsgType implements Msg interface
-func (*Hello) MsgType() MsgType { return HelloType }
+// Type implements Msg interface
+func (*Hello) Type() Type { return HelloType }
 
 // An Accept is response for the Hello
 // if handhake has been accepted
@@ -95,8 +95,8 @@ type Accept struct {
 	Address     cipher.Address // reserved for future
 }
 
-// MsgType implements Msg interface
-func (*Accept) MsgType() MsgType { return AcceptType }
+// Type implements Msg interface
+func (*Accept) Type() Type { return AcceptType }
 
 // A Reject is response for the Hello
 // if subsctioption has not been accepted
@@ -106,8 +106,8 @@ type Reject struct {
 	Err         string         // reason
 }
 
-// MsgType implements Msg interface
-func (*Reject) MsgType() MsgType { return RejectType }
+// Type implements Msg interface
+func (*Reject) Type() Type { return RejectType }
 
 // A Subscribe ...
 type Subscribe struct {
@@ -115,8 +115,8 @@ type Subscribe struct {
 	Feed cipher.PubKey
 }
 
-// MsgType implements Msg interface
-func (*Subscribe) MsgType() MsgType { return SubscribeType }
+// Type implements Msg interface
+func (*Subscribe) Type() Type { return SubscribeType }
 
 // An Unsubscribe ...
 type Unsubscribe struct {
@@ -124,8 +124,8 @@ type Unsubscribe struct {
 	Feed cipher.PubKey
 }
 
-// MsgType implements Msg interface
-func (*Unsubscribe) MsgType() MsgType { return UnsubscribeType }
+// Type implements Msg interface
+func (*Unsubscribe) Type() Type { return UnsubscribeType }
 
 // An AcceptSubscription ...
 type AcceptSubscription struct {
@@ -133,8 +133,8 @@ type AcceptSubscription struct {
 	Feed        cipher.PubKey
 }
 
-// MsgType implements Msg interface
-func (*AcceptSubscription) MsgType() MsgType {
+// Type implements Msg interface
+func (*AcceptSubscription) Type() Type {
 	return AcceptSubscriptionType
 }
 
@@ -144,8 +144,8 @@ type RejectSubscription struct {
 	Feed        cipher.PubKey
 }
 
-// MsgType implements Msg interface
-func (*RejectSubscription) MsgType() MsgType {
+// Type implements Msg interface
+func (*RejectSubscription) Type() Type {
 	return RejectSubscriptionType
 }
 
@@ -155,8 +155,8 @@ type RequestListOfFeeds struct {
 	ID ID
 }
 
-// MsgType implements Msg interface
-func (*RequestListOfFeeds) MsgType() MsgType {
+// Type implements Msg interface
+func (*RequestListOfFeeds) Type() Type {
 	return RequestListOfFeedsType
 }
 
@@ -166,8 +166,8 @@ type ListOfFeeds struct {
 	List        []cipher.PubKey
 }
 
-// MsgType implements Msg interface
-func (*ListOfFeeds) MsgType() MsgType { return ListOfFeedsType }
+// Type implements Msg interface
+func (*ListOfFeeds) Type() Type { return ListOfFeedsType }
 
 // A NonPublicServer is reply for ListOfFeed while requested
 // server is not public
@@ -175,8 +175,8 @@ type NonPublicServer struct {
 	ResponseFor ID
 }
 
-// MsgType implements Msg interface
-func (*NonPublicServer) MsgType() MsgType { return NonPublicServerType }
+// Type implements Msg interface
+func (*NonPublicServer) Type() Type { return NonPublicServerType }
 
 // A Root sent from one node to another one
 // to update root object of feed described in
@@ -188,8 +188,8 @@ type Root struct {
 	Sig   cipher.Sig // signature
 }
 
-// MsgType implements Msg interface
-func (*Root) MsgType() MsgType { return RootType }
+// Type implements Msg interface
+func (*Root) Type() Type { return RootType }
 
 // A RootDone is response for the Root.
 // A node that receivs a Root obejct requires
@@ -205,36 +205,36 @@ type RootDone struct {
 	Seq  uint64        // seq of the Root
 }
 
-// MsgType implements Msg interface
-func (*RootDone) MsgType() MsgType { return RootDoneType }
+// Type implements Msg interface
+func (*RootDone) Type() Type { return RootDoneType }
 
 // A RequestObject represents a Msg that request a data by hash
 type RequestObject struct {
 	Key cipher.SHA256
 }
 
-// MsgType implements Msg interface
-func (*RequestObject) MsgType() MsgType { return RequestObjectType }
+// Type implements Msg interface
+func (*RequestObject) Type() Type { return RequestObjectType }
 
 // An Object reperesents encoded obejct
 type Object struct {
 	Value []byte // encoded object in person
 }
 
-// MsgType implements Msg interface
-func (*Object) MsgType() MsgType { return ObjectType }
+// Type implements Msg interface
+func (*Object) Type() Type { return ObjectType }
 
 //
-// MsgType / Encode / Deocode / String()
+// Type / Encode / Deocode / String()
 //
 
-// A MsgType represent msg prefix
-type MsgType uint8
+// A Type represent msg prefix
+type Type uint8
 
-// MsgTypes
+// Types
 const (
-	PingType MsgType = 1 + iota // Ping 1
-	PongType                    // Pong 2
+	PingType Type = 1 + iota // Ping 1
+	PongType                 // Pong 2
 
 	HelloType  // Hello  3
 	AcceptType // Accept 4
@@ -255,7 +255,7 @@ const (
 	ObjectType        // Object         13
 )
 
-// MsgType to string mapping
+// Type to string mapping
 var msgTypeString = [...]string{
 	PingType: "Ping",
 	PongType: "Pong",
@@ -280,11 +280,11 @@ var msgTypeString = [...]string{
 }
 
 // String implements fmt.Stringer interface
-func (m MsgType) String() string {
+func (m Type) String() string {
 	if im := int(m); im > 0 && im < len(msgTypeString) {
 		return msgTypeString[im]
 	}
-	return fmt.Sprintf("MsgType<%d>", m)
+	return fmt.Sprintf("Type<%d>", m)
 }
 
 var forwardRegistry = [...]reflect.Type{
@@ -310,26 +310,26 @@ var forwardRegistry = [...]reflect.Type{
 	ObjectType:        reflect.TypeOf(Object{}),
 }
 
-// An ErrInvalidMsgType represents decoding error when
+// An ErrInvalidType represents decoding error when
 // incoming message is malformed and its type invalid
-type ErrInvalidMsgType struct {
-	msgType MsgType
+type ErrInvalidType struct {
+	msgType Type
 }
 
-// MsgType return MsgType which cuse the error
-func (e ErrInvalidMsgType) MsgType() MsgType {
+// Type return Type which cuse the error
+func (e ErrInvalidType) Type() Type {
 	return e.msgType
 }
 
 // Error implements builtin error interface
-func (e ErrInvalidMsgType) Error() string {
+func (e ErrInvalidType) Error() string {
 	return fmt.Sprint("invalid message type: ", e.msgType.String())
 }
 
-// Encode given message to []byte prefixed by MsgType
+// Encode given message to []byte prefixed by Type
 func Encode(msg Msg) (p []byte) {
 	p = append(
-		[]byte{byte(msg.MsgType())},
+		[]byte{byte(msg.Type())},
 		encoder.Serialize(msg)...)
 	return
 }
@@ -344,16 +344,16 @@ var (
 	ErrIncomplieDecoding = errors.New("incomplite decoding")
 )
 
-// Decode encoded MsgType-prefixed data to message.
-// It can returns encoding errors or ErrInvalidMsgType
+// Decode encoded Type-prefixed data to message.
+// It can returns encoding errors or ErrInvalidType
 func Decode(p []byte) (msg Msg, err error) {
 	if len(p) < 1 {
 		err = ErrEmptyMessage
 		return
 	}
-	mt := MsgType(p[0])
+	mt := Type(p[0])
 	if mt <= 0 || int(mt) >= len(forwardRegistry) {
-		err = ErrInvalidMsgType{mt}
+		err = ErrInvalidType{mt}
 		return
 	}
 	typ := forwardRegistry[mt]

@@ -16,6 +16,7 @@ const (
 	No     Pin    = 0       // no pins
 )
 
+// A Pin of a debug log
 type Pin uint
 
 // A Config represents configurationf for logger

@@ -82,7 +82,7 @@ func main() {
 
 	// show full root objects
 	c.OnRootFilled = func(c *node.Conn, r *sky.Root) {
-		fmt.Println("\n\n\n") // space
+		fmt.Print("\n\n\n\n") // space
 		fmt.Println("----")
 		fmt.Println(c.Node().Container().Inspect(r))
 		fmt.Println("----")

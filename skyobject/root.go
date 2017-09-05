@@ -33,6 +33,7 @@ type Root struct {
 	IsFull bool `enc:"-"`
 }
 
+// Encode the Root
 func (r *Root) Encode() []byte {
 	return encoder.Serialize(r)
 }
@@ -100,7 +101,7 @@ func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 	return
 }
 
-// Unhold a holded Root obejct
+// UnholdRoot holdeds given Root obejct
 func (c *Container) UnholdRoot(r *Root) { c.Unhold(r.Pub, r.Seq) }
 
 // LastRoot of given feed. It receive Root obejct from DB, thus the Root

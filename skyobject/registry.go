@@ -29,6 +29,10 @@ func newReg() *Reg {
 	}
 }
 
+// Register type of given value with given name. If
+// givne value is pointer, then it will be converted to
+// non-pointer inside. E.g. it registers non-pointer types
+// only
 func (r *Reg) Register(name string, val interface{}) {
 	if name == "" {
 		panic("empty name")
@@ -204,6 +208,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 
 }
 
+// A Registry represents types registry
 type Registry struct {
 	done bool // stop registration and use
 

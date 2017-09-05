@@ -24,7 +24,7 @@ func (p *saveRecursive) save(key cipher.SHA256) (err error) {
 	val, ok := p.p.unsaved[key]
 	if !ok {
 		return
-		panic("missing cached value: " + key.Hex())
+		// panic("missing cached value: " + key.Hex())
 	}
 	if _, err = p.p.c.db.CXDS().Set(key, val); err != nil {
 		return

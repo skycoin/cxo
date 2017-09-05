@@ -62,12 +62,9 @@ And
   - `intro/cxtweet` - CXO based command-line tweetter like app
 
 
-#### Formatting
+#### Formatting and Coding Style
 
-- All `.go` source files should be formatted with `gofmt`
-- It's recommended to limit you lines with 80 or at least 120 characters
-- Follow Golang naming convention: `CamelCase`, `Value()/SetValue()`,
-  `IsExist()`, etc
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 
 ### Dependencies

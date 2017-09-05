@@ -28,9 +28,10 @@ const (
 	// the Refs will be loaded partially depending needs. The EntireTree and
 	// HashTableIndex flags set this one
 	EntireMerkleTree
-	// HashTable - use hash-table index for Refs to speeds up RefByHash method
+	// HashTableIndex - use hash-table index for Refs to speeds
+	// up RefByHash method
 	HashTableIndex
-	// VieOnly don't allows modifications
+	// ViewOnly don't allows modifications
 	ViewOnly
 
 	// intrnal flags
@@ -137,7 +138,7 @@ func (p *Pack) Save() (err error) {
 	var tp = time.Now() // time point
 
 	if p.sk == (cipher.SecKey{}) {
-		err = fmt.Errorf("can't save Root of %s: empty secret key",
+		return fmt.Errorf("can't save Root of %s: empty secret key",
 			p.r.Pub.Hex()[:7])
 	}
 
@@ -152,9 +153,9 @@ func (p *Pack) Save() (err error) {
 	//   2.2) save new obejcts indexing them
 	// 3) keep all saved objects to decrement them on failure
 	var (
-		seqDec uint64 = p.r.Seq                     // base
-		saved         = make(map[cipher.SHA256]int) // decr. on fail
-		holded bool                                 // new root
+		seqDec = p.r.Seq                     // base
+		saved  = make(map[cipher.SHA256]int) // decr. on fail
+		holded bool                          // new root
 	)
 
 	err = p.c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
@@ -201,7 +202,7 @@ func (p *Pack) Save() (err error) {
 		p.r.Hash = cipher.SumSHA256(val)
 		p.r.Sig = cipher.SignHash(p.r.Hash, p.sk)
 
-		var ir *data.Root = new(data.Root)
+		var ir = new(data.Root)
 
 		// set up the ir
 		ir.Seq = p.r.Seq
@@ -392,7 +393,7 @@ func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
 	return
 }
 
-// SetByIndex repaces Root.Refs by index with given object.
+// SetRefByIndex repaces Root.Refs by index with given object.
 // Use nil to make the object blank. Type of the object must
 // be registered in related Registry. It panics, if type of
 // the object is not registered

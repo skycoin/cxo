@@ -19,6 +19,8 @@ type driveDB struct {
 	b *bolt.DB
 }
 
+// NewDriveIdxDB create data.IdxDB instance that
+// keeps its data on dirive
 func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 
 	var b *bolt.DB
@@ -42,12 +44,14 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 	return
 }
 
+// Tx perfroms ACID transaction
 func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	return d.b.Update(func(tx *bolt.Tx) (err error) {
 		return txFunc(&driveFeeds{tx.Bucket(feedsBucket)})
 	})
 }
 
+// CLose the DB
 func (d *driveDB) Close() (err error) {
 	return d.b.Close()
 }
@@ -56,11 +60,13 @@ type driveFeeds struct {
 	bk *bolt.Bucket
 }
 
+// Add feed or does nothing if its already exists
 func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 	_, err = d.bk.CreateBucketIfNotExists(pk[:])
 	return
 }
 
+// Del deltes feed if the feed is empty
 func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 	if f := d.bk.Bucket(pk[:]); f == nil {
 		return // not exists
@@ -70,6 +76,7 @@ func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 	return data.ErrFeedIsNotEmpty // can't remove non-empty feed
 }
 
+// Iterate over all feeds
 func (d *driveFeeds) Iterate(iterateFunc data.IterateFeedsFunc) (err error) {
 	var pk cipher.PubKey
 	c := d.bk.Cursor()
@@ -100,10 +107,12 @@ func incSlice(b []byte) {
 	}
 }
 
+// Has perfroms presence check
 func (d *driveFeeds) Has(pk cipher.PubKey) bool {
 	return d.bk.Bucket(pk[:]) != nil
 }
 
+// Roots returns bucket of Root obejct of given feed
 func (d *driveFeeds) Roots(pk cipher.PubKey) (rs data.Roots, err error) {
 	bk := d.bk.Bucket(pk[:])
 	if bk == nil {
@@ -116,6 +125,7 @@ type driveRoots struct {
 	bk *bolt.Bucket
 }
 
+// Ascend iternates over all Root obejcts ascending order
 func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var seq uint64
@@ -146,6 +156,7 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
+// Descend iternates over all Root obejcts descending order
 func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var r = new(data.Root)
@@ -171,6 +182,8 @@ func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
+// Set new Root obejct or does nothing if
+// the object already exists
 func (d *driveRoots) Set(r *data.Root) (err error) {
 
 	if err = r.Validate(); err != nil {
@@ -202,10 +215,12 @@ func (d *driveRoots) Set(r *data.Root) (err error) {
 	return d.bk.Put(seqb, nr.Encode())
 }
 
+// Del deletes Root obejct by seq
 func (d *driveRoots) Del(seq uint64) (err error) {
 	return d.bk.Delete(utob(seq))
 }
 
+// Get Root obejct by seq
 func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 	seqb := utob(seq)
 	val := d.bk.Get(seqb)
@@ -220,10 +235,12 @@ func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 	return
 }
 
+// Has performs precense check using seq
 func (d *driveRoots) Has(seq uint64) (yep bool) {
 	return len(d.bk.Get(utob(seq))) > 0
 }
 
+// Len returns amount of Root objects
 func (d *driveRoots) Len() int {
 	return d.bk.Stats().KeyN
 }

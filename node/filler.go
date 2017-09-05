@@ -1,14 +1,10 @@
 package node
 
 import (
-	"errors"
-
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/skyobject"
 )
-
-var ErrUnsubscribed = errors.New("unsubscribed")
 
 // unsubscribe
 func (c *Conn) delFillingRootsOfFeed(pk cipher.PubKey) {
@@ -32,9 +28,9 @@ func (c *Conn) addRequestedObjectToWaitingList(wcxo skyobject.WCXO) {
 func (c *Conn) fillRoot(r *skyobject.Root) {
 	if _, ok := c.fillers[r.Hash]; !ok {
 		c.fillers[r.Hash] = c.s.so.NewFiller(r, skyobject.FillingBus{
-			c.wantq,
-			c.full,
-			c.drop,
+			WantQ: c.wantq,
+			FullQ: c.full,
+			DropQ: c.drop,
 		})
 	}
 }

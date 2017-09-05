@@ -158,8 +158,14 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 
 		// new random votes
 
-		content.Post.Append(&passThrough.Vote{i%3 != 0, uint32(i)})
-		content.Thread.Append(&passThrough.Vote{i%2 == 0, uint32(i)})
+		content.Post.Append(&passThrough.Vote{
+			Up:    i%3 != 0,
+			Index: uint32(i),
+		})
+		content.Thread.Append(&passThrough.Vote{
+			Up:    i%2 == 0,
+			Index: uint32(i),
+		})
 
 		// replace Content with new one
 		if err := pack.SetRefByIndex(0, content); err != nil {

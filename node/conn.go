@@ -103,8 +103,6 @@ func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
 
 	c.done = make(chan struct{})
 
-	gc.SetValue(c) // for resubscriptions
-
 	return
 }
 
@@ -238,7 +236,9 @@ func (c *Conn) waitTimeout(id msg.ID, wr *waitResponse, rt time.Duration) {
 }
 
 // Subscribe starts exchanging given feed with peer.
-// It's blocking call. The Subscribe adds feed to related node
+// It's blocking call. The Subscribe adds feed to
+// related node, even if it returns error (and only
+// if given public key is valid)
 func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
 	if err = pk.Verify(); err != nil {
 		return
@@ -713,7 +713,7 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 		c.sendLastFull(as.Feed)
 
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg")
+		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg", c.Address())
 	}
 	delete(c.rr, as.ResponseFor)
 }
@@ -735,7 +735,7 @@ func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
 		}
 		delete(c.rr, rs.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected RejectSubscription msg")
+		c.s.Printf("[ERR] [%s] unexpected RejectSubscription msg", c.Address())
 	}
 }
 
@@ -763,7 +763,7 @@ func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
 		}
 		delete(c.rr, lof.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg")
+		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg", c.Address())
 	}
 }
 
@@ -781,7 +781,7 @@ func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
 		}
 		delete(c.rr, nps.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg")
+		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg", c.Address())
 	}
 }
 

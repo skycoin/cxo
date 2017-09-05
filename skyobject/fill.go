@@ -448,7 +448,7 @@ type DropRootError struct {
 
 // Error implements error interface
 func (d *DropRootError) Error() string {
-	return fmt.Sprintf("drop Root %s:", d.Root.Short(), d.Err)
+	return fmt.Sprintf("drop Root %s: %v", d.Root.Short(), d.Err)
 }
 
 // A FullRoot is internal

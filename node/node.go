@@ -38,6 +38,8 @@ var (
 		"request list of feeds from non-public peer")
 	// ErrConnClsoed occurs if coonection closed but an action requested
 	ErrConnClsoed = errors.New("connection closed")
+	// ErrUnsubscribed is a reason of dropping a filling Root
+	ErrUnsubscribed = errors.New("unsubscribed")
 )
 
 // A Node represents CXO P2P node
@@ -293,7 +295,6 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 		s.conf.Log.Debug,
 	)
 
-	// connect to service discovery
 	if len(s.conf.DiscoveryAddresses) > 0 {
 		f := factory.NewMessengerFactory()
 		for _, addr := range s.conf.DiscoveryAddresses {
@@ -301,7 +302,8 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 				Reconnect:                      true,
 				ReconnectWait:                  time.Second * 30,
 				FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
-				OnConnected:                    s.updateServiceDiscoveryCallback,
+				OnConnected: s.
+					updateServiceDiscoveryCallback,
 			})
 		}
 		s.discovery = f
@@ -335,6 +337,8 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 func (s *Node) addConn(c *Conn) {
 	s.cmx.Lock()
 	defer s.cmx.Unlock()
+
+	c.gc.SetValue(c) // for resubscriptions
 
 	s.conns = append(s.conns, c)
 	s.connsl = nil // clear cow copy
@@ -442,7 +446,7 @@ func (s *Node) Connections() (cs []*Conn) {
 	return
 }
 
-// Connections by address. It returns nil if
+// Connection by address. It returns nil if
 // connection not found or not established yet
 func (s *Node) Connection(address string) (c *Conn) {
 	if gc := s.pool.Connection(address); gc != nil {
@@ -737,7 +741,7 @@ type delFeedConnsReply struct {
 	closed <-chan struct{} // connections closed and done
 }
 
-// DelFed stops sharing given feed. It unsubscribes
+// DelFeed stops sharing given feed. It unsubscribes
 // from all connections
 func (s *Node) DelFeed(pk cipher.PubKey) (err error) {
 
