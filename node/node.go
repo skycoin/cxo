@@ -1,6 +1,7 @@
 package node
 
 import (
+	"encoding/hex"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -42,6 +43,8 @@ var (
 	ErrConnClsoed = errors.New("connection closed")
 	// ErrUnsubscribed is a reason of dropping a filling Root
 	ErrUnsubscribed = errors.New("unsubscribed")
+	// ErrInvalidPubKeyLength occurs durong decoding cipher.PubKey from hex
+	ErrInvalidPubKeyLength = errors.New("invalid PubKey length")
 )
 
 // A Node represents CXO P2P node
@@ -416,12 +419,27 @@ func (s *Node) updateServiceDiscovery(conn *factory.Connection,
 	}
 }
 
+// unfortunately, cipher.PubKeyFromHex panics in some
+// cases that is not acceptable
+func pubKeyFromHex(pks string) (pk cipher.PubKey, err error) {
+	var b []byte
+	if b, err = hex.DecodeString(pks); err != nil {
+		return
+	}
+	if len(b) != len(cipher.PubKey{}) {
+		err = ErrInvalidPubKeyLength
+		return
+	}
+	pk = cipher.NewPubKey(b)
+	return
+}
+
 func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {
 	if len(resp.Result) < 1 {
 		return
 	}
 	for k, v := range resp.Result {
-		key, err := cipher.PubKeyFromHex(k)
+		key, err := pubKeyFromHex(k)
 		if err != nil {
 			continue
 		}

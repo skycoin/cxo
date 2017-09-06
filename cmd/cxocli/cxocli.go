@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -33,33 +34,33 @@ var (
 	errTooManyArguments = errors.New("too many arguments")
 
 	commands = []string{
-		"add feed",
-		"del feed",
+		"add feed ",
+		"del feed ",
 
-		"subscribe",
-		"unsubscribe",
+		"subscribe ",
+		"unsubscribe ",
 
-		"connect",
-		"disconnect",
+		"connect ",
+		"disconnect ",
 
-		"connections",
-		"incoming connections",
-		"outgoing connections",
+		"connections ",
+		"incoming connections ",
+		"outgoing connections ",
 
-		"feeds",
+		"feeds ",
 
-		"roots",
-		"tree",
+		"roots ",
+		"tree ",
 
-		"info",
-		"listening address",
+		"info ",
+		"listening address ",
 
-		"stat",
+		"stat ",
 
-		"terminate",
+		"terminate ",
 
-		"quit",
-		"exit",
+		"quit ",
+		"exit ",
 	}
 )
 
@@ -233,11 +234,6 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 	}
 	switch strings.ToLower(ss[0]) {
 
-	case "add feed":
-		err = addFeed(rpc, ss)
-	case "del feed":
-		err = delFeed(rpc, ss)
-
 	case "subscribe":
 		err = subscribeTo(rpc, ss)
 	case "unsubscribe":
@@ -250,10 +246,6 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 
 	case "connections":
 		err = connections(rpc)
-	case "incoming_connections":
-		err = incomingConnections(rpc)
-	case "outgoing_connections":
-		err = outgoingConnections(rpc)
 
 	case "feeds":
 		err = feeds(rpc)
@@ -265,8 +257,6 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 
 	case "info":
 		err = info(rpc)
-	case "listening_address":
-		err = listeningAddress(rpc)
 
 	case "stat":
 		err = stat(rpc)
@@ -282,7 +272,30 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		fmt.Fprintln(out, "cya")
 
 	default:
-		err = errUnknowCommand
+
+		if len(ss) < 2 {
+			err = errUnknowCommand
+			break
+		}
+
+		switch ss[0] + " " + ss[1] {
+
+		case "add feed":
+			err = addFeed(rpc, ss)
+		case "del feed":
+			err = delFeed(rpc, ss)
+
+		case "incoming connections":
+			err = incomingConnections(rpc)
+		case "outgoing connections":
+			err = outgoingConnections(rpc)
+
+		case "listening address":
+			err = listeningAddress(rpc)
+
+		default:
+			err = errUnknowCommand
+		}
 
 	}
 	return
@@ -307,7 +320,11 @@ func showHelp() {
     disconnect from given address
 
   connections
-    list all connections
+    list all connections, in the list "-->" means that
+    this connection is incoming and "<--" means that this
+    connection is outgoing; (✓) means that conenction is
+    established, and (⌛) means that this connection is
+    establishing
   incoming connections
     list all incoming connections
   outgoing connections
@@ -346,13 +363,25 @@ func showHelp() {
 //                            cxo related commands                            //
 // ========================================================================== //
 
+func pubKeyFromHex(pks string) (pk cipher.PubKey, err error) {
+	var b []byte
+	if b, err = hex.DecodeString(pks); err != nil {
+		return
+	}
+	if len(b) != len(cipher.PubKey{}) {
+		err = errors.New("invalid PubKey length")
+	}
+	pk = cipher.NewPubKey(b)
+	return
+}
+
 // helper
 func publicKeyArg(ss []string) (pub cipher.PubKey, err error) {
 	var pubs string
 	if pubs, err = args(ss); err != nil {
 		return
 	}
-	pub, err = cipher.PubKeyFromHex(pubs)
+	pub, err = pubKeyFromHex(pubs)
 	return
 }
 
@@ -376,7 +405,7 @@ func addressFeedArgs(ss []string) (address string, pk cipher.PubKey,
 		err = errMisisngArgument
 	case 3:
 		address = ss[1]
-		pk, err = cipher.PubKeyFromHex(ss[2])
+		pk, err = pubKeyFromHex(ss[2])
 	default:
 		err = errTooManyArguments
 	}
@@ -602,12 +631,12 @@ func info(rpc *node.RPCClient) (err error) {
 	if info, err = rpc.Info(); err != nil {
 		return
 	}
-	fmt.Fprintln(out, "----")
-	fmt.Fprintf(out, "listening: %v\n", info.IsListening)
-	fmt.Fprintln(out, "address:  ", info.ListeningAddress)
-	fmt.Fprintln(out, "discovery:", info.Discovery)
-	fmt.Fprintf(out, "public:    %v\n", info.IsPublicServer)
-	fmt.Fprintln(out, "----")
+	fmt.Fprintln(out, "  ----")
+	fmt.Fprintf(out, "  listening: %v\n", info.IsListening)
+	fmt.Fprintln(out, "  address:  ", info.ListeningAddress)
+	fmt.Fprintln(out, "  discovery:", info.Discovery)
+	fmt.Fprintf(out, "  public:    %v\n", info.IsPublicServer)
+	fmt.Fprintln(out, "  ----")
 	return
 }
 
@@ -659,7 +688,7 @@ func tree(rpc *node.RPCClient, ss []string) (err error) {
 	default:
 		return errors.New("to many arguments: want <pub key> [seq]")
 	}
-	if pk, err = cipher.PubKeyFromHex(ss[1]); err != nil {
+	if pk, err = pubKeyFromHex(ss[1]); err != nil {
 		return
 	}
 	if lsatFull == false {
