@@ -114,20 +114,6 @@ func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 	return
 }
 
-/*
-type Stat struct {
-	Data data.Stat      // data.DB
-	CXO  skyobject.Stat // skyobject.Container
-	// TODO: node stat
-}
-
-// Stat of database
-func (r *RPC) Stat(_ struct{}, stat *Stat) (_ error) {
-	*stat = r.ns.Stat()
-	return
-}
-*/
-
 // A NodeConnection used by RPC and
 // represents brief information about
 // a connection
@@ -339,6 +325,48 @@ func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 		*tree = "<not found>"
 	}
 	*tree = r.ns.so.Inspect(root)
+	return
+}
+
+// A Stat represetns Node statistic
+type Stat struct {
+	CXO  skyobject.Stat // skyobject stat
+	Node struct {
+		FillAvg     time.Duration // avg filling time of filled roots
+		DropAvg     time.Duration // avg filling time of drpped roots
+		Connections int           // amount of connections
+		Feeds       int           // amount of feeds
+	} // node stat
+}
+
+func (s *Node) feesLen() int {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+
+	return len(s.feeds)
+}
+
+func (s *Node) connsLen() int {
+	s.fmx.Lock()
+	defer s.fmx.Unlock()
+
+	return len(s.conns)
+}
+
+// Stat of database
+func (r *RPC) Stat(_ struct{}, stat *Stat) (err error) {
+
+	var st Stat
+	if st.CXO, err = r.ns.so.Stat(); err != nil {
+		return
+	}
+
+	st.Node.Connections = r.ns.connsLen()
+	st.Node.Feeds = r.ns.feesLen()
+	st.Node.FillAvg = r.ns.fillavg.Value()
+	st.Node.DropAvg = r.ns.dropavg.Value()
+
+	*stat = st
 	return
 }
 

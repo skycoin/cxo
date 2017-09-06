@@ -124,13 +124,11 @@ func (r *RPCClient) Tree(pk cipher.PubKey, seq uint64,
 	return
 }
 
-/*
-// Stat returns database statistic
+// Stat returns statistic
 func (r *RPCClient) Stat() (stat Stat, err error) {
 	r.c.Call("cxo.Stat", struct{}{}, &stat)
 	return
 }
-*/
 
 // Terminate the node if allowed
 func (r *RPCClient) Terminate() (err error) {

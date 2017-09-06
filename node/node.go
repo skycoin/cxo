@@ -13,7 +13,9 @@ import (
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/data/cxds"
 	"github.com/skycoin/cxo/data/idxdb"
+
 	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/statutil"
 
 	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
@@ -75,6 +77,10 @@ type Node struct {
 
 	// discovery
 	discovery *factory.MessengerFactory
+
+	// stat
+	fillavg statutil.RollAvg // avg filling time of filled roots
+	dropavg statutil.RollAvg // avg filling time of dropped roots
 
 	// closing
 	quit  chan struct{}
@@ -154,7 +160,10 @@ func NewNode(sc Config) (s *Node, err error) {
 	// container
 
 	var so *skyobject.Container
-	so = skyobject.NewContainer(db, sc.Skyobject)
+	if so, err = skyobject.NewContainer(db, sc.Skyobject); err != nil {
+		db.Close()
+		return
+	}
 
 	// node instance
 
@@ -227,6 +236,10 @@ func NewNode(sc Config) (s *Node, err error) {
 
 	s.quit = make(chan struct{})
 	s.done = make(chan struct{})
+
+	// stat
+	s.fillavg = statutil.NewRollAvg(5) // TODO (kostyarin): make configurable
+	s.dropavg = statutil.NewRollAvg(5) // TODO (kostyarin): make configurable
 
 	if err = s.start(cxPath, idxPath); err != nil {
 		s.Close()

@@ -394,7 +394,7 @@ func (c *Conn) terminateFillers() {
 		}
 		select {
 		case dre := <-c.drop:
-			c.dropRoot(dre.Root, dre.Err, dre.Incrs)
+			c.dropRoot(dre)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		}
@@ -519,7 +519,7 @@ func (c *Conn) handle(hs chan<- error) {
 
 		// filling
 		case dre := <-c.drop: // drop root
-			c.dropRoot(dre.Root, dre.Err, dre.Incrs)
+			c.dropRoot(dre)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		case wcxo := <-c.wantq:
@@ -554,12 +554,15 @@ func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
 	c.Send(c.s.src.RootDone(r.Pub, r.Seq)) // notify peer
 }
 
-func (c *Conn) dropRoot(r *skyobject.Root, err error, incrs []cipher.SHA256) {
+func (c *Conn) dropRoot(dre skyobject.DropRootError) {
 
-	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(), r.Short(), err)
+	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(),
+		dre.Root.Short(), dre.Err)
 
-	c.delFillingRoot(r)
-	c.dropRootRelated(r, incrs, err)
+	c.s.dropavg.AddStartTime(dre.Tp) // stat
+
+	c.delFillingRoot(dre.Root)
+	c.dropRootRelated(dre.Root, dre.Incrs, dre.Err)
 
 }
 
@@ -575,6 +578,7 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 		// drop the Root and remove all related saved obejcts,
 		// because we are not subscribed to the feed anymore
 
+		c.s.dropavg.AddStartTime(fr.Tp) // stat
 		c.dropRootRelated(fr.Root, fr.Incrs, ErrUnsubscribed)
 		return
 	}
@@ -604,9 +608,12 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 		// can't add this Roto to DB, so, let's drop it
 		c.s.Debugf(FillPin, "[ERR] [%s] can't save Root in IdxDB: %v",
 			c.Address(), err)
+		c.s.dropavg.AddStartTime(fr.Tp) // stat
 		c.dropRootRelated(fr.Root, fr.Incrs, err)
 		return
 	}
+
+	c.s.fillavg.AddStartTime(fr.Tp) // stat
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		c.s.so.Hold(fr.Root.Pub, fr.Root.Seq) // hold for the callback

@@ -303,6 +303,7 @@ func (p *Pack) Save() (err error) {
 	st := time.Now().Sub(tp)
 
 	if err == nil {
+		p.c.packSave.Add(st) // add to statistic
 		p.c.Debugf(PackSavePin, "%s saved after %v, %d objects saved",
 			p.r.Short(), st, len(saved))
 	} else {

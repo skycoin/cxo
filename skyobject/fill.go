@@ -85,7 +85,7 @@ func (f *Filler) Root() *Root {
 func (f *Filler) drop(err error) {
 	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
 
-	f.bus.DropQ <- DropRootError{f.r, f.incrs, err}
+	f.bus.DropQ <- DropRootError{f.tp, f.r, f.incrs, err}
 }
 
 func (f *Filler) full() {
@@ -93,7 +93,7 @@ func (f *Filler) full() {
 	// don't save: delegate it for node, because the node
 	// can be unsubscribed from the feed and we should
 	// return proper error
-	f.bus.FullQ <- FullRoot{f.r, f.incrs}
+	f.bus.FullQ <- FullRoot{f.tp, f.r, f.incrs}
 	f.c.Debugf(FillPin, "%s filled after %v, %d obejcts", f.r.Short(),
 		time.Now().Sub(f.tp), len(f.incrs))
 }
@@ -441,6 +441,7 @@ func (f *Filler) StartTime() time.Time {
 
 // A DropRootError is internal
 type DropRootError struct {
+	Tp    time.Time       // start time
 	Root  *Root           // the Root in person
 	Incrs []cipher.SHA256 // obejcts to decrement
 	Err   error           // reason
@@ -453,6 +454,7 @@ func (d *DropRootError) Error() string {
 
 // A FullRoot is internal
 type FullRoot struct {
+	Tp    time.Time       // start time
 	Root  *Root           // the Root in person
 	Incrs []cipher.SHA256 // objects to decrement
 }
