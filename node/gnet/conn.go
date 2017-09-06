@@ -106,6 +106,7 @@ func (p *Pool) acceptConnection(c net.Conn) (cn *Conn, err error) {
 	cn.address = c.RemoteAddr().String()
 
 	p.conns[c.RemoteAddr().String()] = cn // save
+	p.connsl = nil                        // clear cow copy
 	cn.p = p
 
 	cn.incoming = true
@@ -137,6 +138,7 @@ func (p *Pool) createConnection(address string) (cn *Conn) {
 	cn = new(Conn)
 
 	p.conns[address] = cn // save
+	p.connsl = nil        // clear cow copy
 	cn.p = p
 
 	cn.address = address

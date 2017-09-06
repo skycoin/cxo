@@ -46,11 +46,14 @@ var (
 // that includes RPC server if enabled
 // by configs
 type Node struct {
-	log.Logger                      // logger of the server
-	src        msg.Src              // msg source
-	conf       Config               // configuratios
-	db         *data.DB             // database
-	so         *skyobject.Container // skyobject
+	log.Logger // logger of the server
+
+	src msg.Src // msg source
+
+	conf Config // configuratios
+
+	db *data.DB             // database
+	so *skyobject.Container // skyobject
 
 	// feeds
 	fmx    sync.RWMutex
@@ -70,6 +73,9 @@ type Node struct {
 	pool *gnet.Pool
 	rpc  *rpcServer // rpc server
 
+	// discovery
+	discovery *factory.MessengerFactory
+
 	// closing
 	quit  chan struct{}
 	quito sync.Once
@@ -78,8 +84,6 @@ type Node struct {
 	doneo sync.Once
 
 	await sync.WaitGroup
-
-	discovery *factory.MessengerFactory
 }
 
 // NewNode creates new Node instnace using given
@@ -93,6 +97,18 @@ type Node struct {
 //     conf.Skyobject.Registry = skyobject.NewRegistry(blah)
 //
 //     node, err := NewNode(conf)
+//
+// The recommended way to use NewConfig and chagning
+// result, instead of "empty config" with some fields:
+//
+//     // use this if you really know what you do
+//     s, err := node.NewNode(node.Config{Listen: "[::]:8878"})
+//
+//     // I'd recommend
+//     conf := node.NewConfig()
+//     conf.Listen = "[::]:8887"
+//
+//     s, err := node.NewNode(conf)
 //
 func NewNode(sc Config) (s *Node, err error) {
 
@@ -307,6 +323,11 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 			})
 		}
 		s.discovery = f
+		if s.conf.Log.Debug == true && s.conf.Log.Pins&DiscoveryPin != 0 {
+			f.SetLoggerLevel(factory.DebugLevel)
+		} else {
+			f.SetLoggerLevel(factory.ErrorLevel)
+		}
 	}
 
 	// start listener
@@ -342,6 +363,23 @@ func (s *Node) addConn(c *Conn) {
 
 	s.conns = append(s.conns, c)
 	s.connsl = nil // clear cow copy
+}
+
+func (s *Node) delConn(c *Conn) {
+	s.cmx.Lock()
+	defer s.cmx.Unlock()
+
+	s.connsl = nil // clear cow copy
+
+	for i, x := range s.conns {
+		if x == c {
+			s.conns[i] = s.conns[len(s.conns)-1]
+			s.conns[len(s.conns)-1] = nil
+			s.conns = s.conns[:len(s.conns)-1]
+			return
+		}
+	}
+
 }
 
 func (s *Node) updateServiceDiscoveryCallback(conn *factory.Connection) {
@@ -384,23 +422,6 @@ func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {
 	}
 }
 
-func (s *Node) delConn(c *Conn) {
-	s.cmx.Lock()
-	defer s.cmx.Unlock()
-
-	s.connsl = nil // clear cow copy
-
-	for i, x := range s.conns {
-		if x == c {
-			s.conns[i] = s.conns[len(s.conns)-1]
-			s.conns[len(s.conns)-1] = nil
-			s.conns = s.conns[:len(s.conns)-1]
-			return
-		}
-	}
-
-}
-
 func (s *Node) gotObject(key cipher.SHA256, obj *msg.Object) {
 	s.wmx.Lock()
 	defer s.wmx.Unlock()
@@ -433,7 +454,7 @@ func (s *Node) delConnFromWantedObjects(c *Conn) {
 
 // Connections of the Node. It returns shared
 // slice and you must not modify it
-func (s *Node) Connections() (cs []*Conn) {
+func (s *Node) Connections() []*Conn {
 	s.cmx.RLock()
 	defer s.cmx.RUnlock()
 
@@ -443,7 +464,8 @@ func (s *Node) Connections() (cs []*Conn) {
 
 	s.connsl = make([]*Conn, len(s.conns))
 	copy(s.connsl, s.conns)
-	return
+
+	return s.connsl
 }
 
 // Connection by address. It returns nil if
@@ -455,26 +477,40 @@ func (s *Node) Connection(address string) (c *Conn) {
 	return
 }
 
-// Close the Node
+// Close the Node. A Node can't be used after closing
 func (s *Node) Close() (err error) {
+
+	// release the s.Quiting() channel
 	s.quito.Do(func() {
 		close(s.quit)
 	})
-	err = s.pool.Close()
-	if s.conf.EnableRPC {
-		s.rpc.Close()
+
+	// close discovery
+	if s.discovery != nil {
+		s.discovery.Close() // TODO (kostyarin): error
 	}
+
+	// close listener and all connections
+	err = s.pool.Close()
+
+	// close RPC server
+	if s.conf.EnableRPC {
+		s.rpc.Close() // TODO (kostyarin): error
+	}
+
+	// wait all connections and other goroutines
 	s.await.Wait()
-	// we have to close boltdb once
+
+	// close Container
+	s.so.Close() // TODO (kostyarin): error
+
+	// close database after all
+	s.db.Close() // TODO (kostyarin): error
+
+	// release the s.Closed() cahnnel
 	s.doneo.Do(func() {
-		// close Container
-		s.so.Close()
-		// close database after all, otherwise, it panics
-		s.db.Close()
-		// close the Quiting channel
 		close(s.done)
 	})
-
 	return
 }
 
@@ -508,13 +544,15 @@ func (s *Node) Feeds() []cipher.PubKey {
 	s.fmx.RLock()
 	defer s.fmx.RUnlock()
 
-	if len(s.feedsl) != 0 {
+	if s.feedsl != nil {
 		return s.feedsl
 	}
+
 	s.feedsl = make([]cipher.PubKey, 0, len(s.feeds))
 	for f := range s.feeds {
 		s.feedsl = append(s.feedsl, f)
 	}
+
 	return s.feedsl
 }
 
@@ -588,13 +626,27 @@ func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {
 }
 
 // Quiting returns cahnnel that closed
-// when the Node closed
+// when the Node performs closing and
+// after that. This channel can be used to
+// stop Root objects handling and
+// publishing, because connections are closed
+// of closing. To determine the moment while
+// node closed use Closed() method
 func (s *Node) Quiting() <-chan struct{} {
-	return s.done // when quit done
+	return s.quit // when quit done
 }
 
-// RPCAddress returns address of RPC listener or an empty
-// stirng if disabled
+// Closed returns channel that closed when
+// the Node has been closed. This channel
+// can be used to close application or
+// remove the Node instance. If the channel
+// closed then all Node internals closed
+func (s *Node) Closed() <-chan struct{} {
+	return s.done
+}
+
+// RPCAddress returns address of RPC listener
+// or an empty stirng if disabled
 func (s *Node) RPCAddress() (address string) {
 	if s.rpc != nil {
 		address = s.rpc.Address()
@@ -632,7 +684,8 @@ func (s *Node) Publish(r *skyobject.Root) {
 	s.broadcastRoot(root, nil)
 }
 
-// Connect to peer. Use callback to handle the Conn
+// Connect to peer. This call blocks until conenction created
+// and established (after successful handshake).
 func (s *Node) Connect(address string) (c *Conn, err error) {
 
 	var gc *gnet.Conn

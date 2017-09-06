@@ -24,6 +24,18 @@ func NewRPCClient(address string) (rc *RPCClient, err error) {
 	return
 }
 
+// AddFeed to the Node. If given fed already exists, then this
+// method does nothing
+func (r *RPCClient) AddFeed(pk cipher.PubKey) error {
+	return r.c.Call("cxo.AddFeed", pk, &struct{}{})
+}
+
+// DelFeed from the Node. The method never
+// returns 'not found' error
+func (r *RPCClient) DelFeed(pk cipher.PubKey) error {
+	return r.c.Call("cxo.DelFeed", pk, &struct{}{})
+}
+
 // Subscribe to feed. If address is empty string, then it make
 // the node susbcribed to the feed. Otherwise, it subscribes
 // to feed of a peer
@@ -54,22 +66,14 @@ func (r *RPCClient) Feeds() (list []cipher.PubKey, err error) {
 	return
 }
 
-/*
-// Stat returns database statistic
-func (r *RPCClient) Stat() (stat Stat, err error) {
-	r.c.Call("cxo.Stat", struct{}{}, &stat)
-	return
-}
-*/
-
 // Connections return list of all connections
-func (r *RPCClient) Connections() (list []string, err error) {
+func (r *RPCClient) Connections() (list []NodeConnection, err error) {
 	err = r.c.Call("cxo.Connections", struct{}{}, &list)
 	return
 }
 
 // IncomingConnections returns list of all incoming connections
-func (r *RPCClient) IncomingConnections() (list []string, err error) {
+func (r *RPCClient) IncomingConnections() (list []NodeConnection, err error) {
 	err = r.c.Call("cxo.IncomingConnections", struct{}{}, &list)
 	return
 }
@@ -92,9 +96,16 @@ func (r *RPCClient) Disconnect(address string) (err error) {
 	return
 }
 
-// ListeningAddress of the node
+// ListeningAddress of the Node
 func (r *RPCClient) ListeningAddress() (address string, err error) {
 	err = r.c.Call("cxo.ListeningAddress", struct{}{}, &address)
+	return
+}
+
+// Info returns brief information about a Node
+func (r *RPCClient) Info() (info *NodeInfo, err error) {
+	info = new(NodeInfo)
+	err = r.c.Call("cxo.Info", struct{}{}, info)
 	return
 }
 
@@ -112,6 +123,14 @@ func (r *RPCClient) Tree(pk cipher.PubKey, seq uint64,
 	err = r.c.Call("cxo.Tree", SelectRoot{pk, seq, lastFull}, &tree)
 	return
 }
+
+/*
+// Stat returns database statistic
+func (r *RPCClient) Stat() (stat Stat, err error) {
+	r.c.Call("cxo.Stat", struct{}{}, &stat)
+	return
+}
+*/
 
 // Terminate the node if allowed
 func (r *RPCClient) Terminate() (err error) {

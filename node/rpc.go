@@ -90,10 +90,8 @@ func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
 	if cf.Address == "" {
 		return errors.New("missing address")
 	}
-	if gc := r.ns.Pool().Connection(cf.Address); gc != nil {
-		if c, ok := gc.Value().(*Conn); ok {
-			return c.Subscribe(cf.Feed)
-		}
+	if c := r.ns.Connection(cf.Address); c != nil {
+		return c.Subscribe(cf.Feed)
 	}
 	return errors.New("no such connection: " + cf.Address)
 }
@@ -103,11 +101,9 @@ func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
 	if cf.Address == "" {
 		return errors.New("missing address")
 	}
-	if gc := r.ns.Pool().Connection(cf.Address); gc != nil {
-		if c, ok := gc.Value().(*Conn); ok {
-			c.Unsubscribe(cf.Feed)
-			return
-		}
+	if c := r.ns.Connection(cf.Address); c != nil {
+		c.Unsubscribe(cf.Feed)
+		return
 	}
 	return errors.New("no such connection: " + cf.Address)
 }
@@ -132,47 +128,92 @@ func (r *RPC) Stat(_ struct{}, stat *Stat) (_ error) {
 }
 */
 
+// A NodeConnection used by RPC and
+// represents brief information about
+// a connection
+type NodeConnection struct {
+	Address    string
+	IsIncoming bool
+	IsPending  bool
+}
+
 // Connections of a node
-func (r *RPC) Connections(_ struct{}, list *[]string) (_ error) {
-	cs := r.ns.Connections()
-	if len(cs) == 0 {
+func (r *RPC) Connections(_ struct{}, list *[]NodeConnection) (_ error) {
+	gcs := r.ns.Pool().Connections()
+	if len(gcs) == 0 {
 		return
 	}
-	l := make([]string, 0, len(cs))
-	for _, c := range cs {
-		l = append(l, c.Address())
+
+	cs := make([]NodeConnection, 0, len(gcs))
+
+	for _, gc := range gcs {
+		cs = append(cs, NodeConnection{
+			Address:    gc.Address(),
+			IsIncoming: gc.IsIncoming(),
+			IsPending:  gc.Value() == nil,
+		})
 	}
-	*list = l
+
+	*list = cs
+
 	return
 }
 
 // IncomingConnections of a node
-func (r *RPC) IncomingConnections(_ struct{}, list *[]string) (_ error) {
-	var l []string
-	for _, c := range r.ns.Connections() {
-		if c.gc.IsIncoming() {
-			l = append(l, c.Address())
-		}
+func (r *RPC) IncomingConnections(_ struct{},
+	list *[]NodeConnection) (_ error) {
+
+	gcs := r.ns.Pool().Connections()
+	if len(gcs) == 0 {
+		return
 	}
-	*list = l
+
+	cs := make([]NodeConnection, 0, len(gcs))
+
+	for _, gc := range gcs {
+		if false == gc.IsIncoming() {
+			continue
+		}
+		cs = append(cs, NodeConnection{
+			Address:    gc.Address(),
+			IsIncoming: true,
+			IsPending:  gc.Value() == nil,
+		})
+	}
+
+	*list = cs
 	return
 }
 
 // OutgoingConnections of a node
-func (r *RPC) OutgoingConnections(_ struct{}, list *[]string) (_ error) {
-	var l []string
-	for _, c := range r.ns.Connections() {
-		if !c.gc.IsIncoming() {
-			l = append(l, c.Address())
-		}
+func (r *RPC) OutgoingConnections(_ struct{},
+	list *[]NodeConnection) (_ error) {
+
+	gcs := r.ns.Pool().Connections()
+	if len(gcs) == 0 {
+		return
 	}
-	*list = l
+
+	cs := make([]NodeConnection, 0, len(gcs))
+
+	for _, gc := range gcs {
+		if true == gc.IsIncoming() {
+			continue
+		}
+		cs = append(cs, NodeConnection{
+			Address:    gc.Address(),
+			IsIncoming: false,
+			IsPending:  gc.Value() == nil,
+		})
+	}
+
+	*list = cs
 	return
 }
 
-// Connect to a remote peer
+// Connect to a remote peer. The call blocks
 func (r *RPC) Connect(address string, _ *struct{}) (err error) {
-	_, err = r.ns.pool.Dial(address)
+	_, err = r.ns.Connect(address)
 	return
 }
 
@@ -190,16 +231,37 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	return
 }
 
+// A NodeInfo represents beif
+// information about a node,
+// excluding statistic
+type NodeInfo struct {
+	IsListening      bool      // is it listening
+	ListeningAddress string    // listening address
+	Discovery        Addresses // dicovery addresses
+	IsPublicServer   bool      // is it a public server
+}
+
+// Info is RPC method that returns brief information about the Node
+func (r *RPC) Info(_ struct{}, info *NodeInfo) (_ error) {
+	*info = NodeInfo{
+		IsListening:      r.ns.conf.EnableListener,
+		ListeningAddress: r.ns.pool.Address(),
+		Discovery:        r.ns.conf.DiscoveryAddresses,
+		IsPublicServer:   r.ns.conf.PublicServer,
+	}
+	return
+}
+
 // A RootInfo used by RPC
 type RootInfo struct {
-	Time time.Time
-	Seq  uint64
-	Hash cipher.SHA256
-	Prev cipher.SHA256
+	Time time.Time     // timestamp
+	Seq  uint64        // seq number
+	Hash cipher.SHA256 // Hash
+	Prev cipher.SHA256 // hash of previous or blank if seq is 0
 
-	CreateTime time.Time
-	AccessTime time.Time
-	RefsCount  uint32
+	CreateTime time.Time // db created at
+	AccessTime time.Time // db last access
+	RefsCount  uint32    // db refs count
 }
 
 func decodeRoot(val []byte) (r *skyobject.Root, err error) {
@@ -257,9 +319,9 @@ func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
 // A SelectRoot used by RPC to
 // select Root object
 type SelectRoot struct {
-	Pub      cipher.PubKey
-	Seq      uint64
-	LastFull bool // ignore the seq and print last full of the feed
+	Pub      cipher.PubKey // feed
+	Seq      uint64        // seq number
+	LastFull bool          // ignore the seq and print last full of the feed
 }
 
 // Tree prints objects tree of chosen root object (chosen by pk+seq)
@@ -280,7 +342,7 @@ func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 	return
 }
 
-// Terminate remote Node if allowed by it s configurations
+// Terminate remote Node if allowed by its configurations
 func (r *RPC) Terminate(_ struct{}, _ *struct{}) (err error) {
 	if !r.ns.conf.RemoteClose {
 		err = errors.New("not allowed")

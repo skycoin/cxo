@@ -57,7 +57,7 @@ func main() {
 	c.RemoteClose = RemoteClose
 
 	c.PublicServer = true // temp
-	c.DiscoveryAddresses = node.Addresses{":8000"}
+	c.DiscoveryAddresses = node.Addresses{"127.0.0.1:9090"}
 
 	c.PingInterval = 0 // suppress ping logs
 

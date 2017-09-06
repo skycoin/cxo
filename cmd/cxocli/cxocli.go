@@ -33,21 +33,31 @@ var (
 	errTooManyArguments = errors.New("too many arguments")
 
 	commands = []string{
-		"add_feed",
-		"subscribe_to",
-		"del_feed",
-		"unsubscribe_from",
-		"feeds",
-		"stat",
-		"connections",
-		"incoming_connections",
-		"outgoing_connections",
+		"add feed",
+		"del feed",
+
+		"subscribe",
+		"unsubscribe",
+
 		"connect",
 		"disconnect",
-		"listening_address",
+
+		"connections",
+		"incoming connections",
+		"outgoing connections",
+
+		"feeds",
+
 		"roots",
 		"tree",
+
+		"info",
+		"listening address",
+
+		"stat",
+
 		"terminate",
+
 		"quit",
 		"exit",
 	}
@@ -222,44 +232,58 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		return
 	}
 	switch strings.ToLower(ss[0]) {
-	case "add_feed":
+
+	case "add feed":
 		err = addFeed(rpc, ss)
-	case "subscribe_to":
-		err = subscribeTo(rpc, ss)
-	case "del_feed":
+	case "del feed":
 		err = delFeed(rpc, ss)
-	case "unsubscribe_from":
+
+	case "subscribe":
+		err = subscribeTo(rpc, ss)
+	case "unsubscribe":
 		err = unsubscribeFrom(rpc, ss)
-	case "feeds":
-		err = feeds(rpc)
-	case "stat":
-		err = stat(rpc)
+
+	case "connect":
+		err = connect(rpc, ss)
+	case "disconnect":
+		err = disconnect(rpc, ss)
+
 	case "connections":
 		err = connections(rpc)
 	case "incoming_connections":
 		err = incomingConnections(rpc)
 	case "outgoing_connections":
 		err = outgoingConnections(rpc)
-	case "connect":
-		err = connect(rpc, ss)
-	case "disconnect":
-		err = disconnect(rpc, ss)
-	case "listening_address":
-		err = listeningAddress(rpc)
+
+	case "feeds":
+		err = feeds(rpc)
+
 	case "roots":
 		err = roots(rpc, ss)
 	case "tree":
 		err = tree(rpc, ss)
+
+	case "info":
+		err = info(rpc)
+	case "listening_address":
+		err = listeningAddress(rpc)
+
+	case "stat":
+		err = stat(rpc)
+
 	case "terminate":
 		err = term(rpc)
-	// help and exit
+
 	case "help":
 		showHelp()
+
 	case "quit", "exit":
 		terminate = true
 		fmt.Fprintln(out, "cya")
+
 	default:
 		err = errUnknowCommand
+
 	}
 	return
 }
@@ -267,40 +291,52 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 func showHelp() {
 	fmt.Fprintln(out, `
 
-  add_feed <public key>
+  add feed <public key>
     start shareing feed
-  subscribe_to <address> <pub key>
-    subscribe to feed of a connected peer
-  del_feed <public key>
+  del feed <public key>
     stop sharing feed
-  unsubscribe_from <address> <public key>
-    unsubscribe_from feed of a connected peer
-  feeds
-    list feeds
-  stat
-    statistic
-  connections
-    list connections
-  incoming_connections
-    list incoming connections
-  outgoing_connections
-    list outgoing connections
+
+  subscribe <address> <pub key>
+    subscribe to feed of a connected peer
+  unsubscribe <address> <public key>
+    unsubscribe from feed of a connected peer
+
   connect <address>
-    connect to
+    connect to node with given address
   disconnect <address>
-    disconnect from
-  listening_address
-    print listening address
+    disconnect from given address
+
+  connections
+    list all connections
+  incoming connections
+    list all incoming connections
+  outgoing connections
+    list all outgoing connections
+
+  feeds
+    list all feeds
+
   roots <public key>
     print brief information about all root objects of given feed
   tree <pub key> [seq]
     print root by public key and seq number, if the seq omitted then
     last full root printed
+
+  info
+    get brief information about node
+  listening address
+    print listening address
+
+  stat
+    statistic
+
   terminate
     terminate server if allowed
+
   help
     show this help message
-  quit or exit
+
+  quit, exit
     leave the cli
 
 `)

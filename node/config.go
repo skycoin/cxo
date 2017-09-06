@@ -47,13 +47,13 @@ const (
 
 // log pins
 const (
-	MsgPin    log.Pin = 1 << iota // msgs
-	SubscrPin                     // subscriptions
-	ConnPin
-	RootPin
-	FillPin
-	WaitPin
-	HandlePin
+	MsgPin       log.Pin = 1 << iota // msgs
+	SubscrPin                        // subscriptions
+	ConnPin                          // connect/disconenct
+	RootPin                          // root receive etc
+	FillPin                          // fill/drop
+	HandlePin                        // handle a message
+	DiscoveryPin                     // discovery
 )
 
 // DataDir returns path to default data directory

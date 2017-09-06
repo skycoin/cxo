@@ -80,7 +80,7 @@ func (resubscribeEvent) Handle(c *Conn) {
 	}
 	go func() {
 		for _, pk := range subs {
-			if err := c.Subscribe(pk); err != nil {
+			if err := c.Subscribe(pk); err != nil && err != ErrConnClsoed {
 				c.s.Println("[WRN] can't resubscribe:", err)
 			}
 		}
