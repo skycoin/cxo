@@ -437,32 +437,90 @@ func feeds(rpc *node.RPCClient) (err error) {
 }
 
 func stat(rpc *node.RPCClient) (err error) {
-	return errors.New("method temporary removed")
-	/*
-		var stat node.Stat
-		if stat, err = rpc.Stat(); err != nil {
-			return
-		}
-		fmt.Fprintln(out, "  ----")
-		fmt.Fprintln(out, "  Objects:", stat.Data.Objects)
-		fmt.Fprintln(out, "  Space:  ", stat.Data.Space.String())
-		fmt.Fprintln(out, "  ----")
-		for pk, fs := range stat.Data.Feeds {
-			fmt.Fprintln(out, "  -", pk.Hex())
-			fmt.Fprintln(out, "    Root Objects: ", fs.Roots)
-			fmt.Fprintln(out, "    Space:        ", fs.Space.String())
-		}
-		fmt.Fprintln(out, "  ----")
-		fmt.Fprintln(out, "  Registries:    ", stat.CXO.Registries)
-		fmt.Fprintln(out, "  Save    (avg): ", stat.CXO.Save)
-		fmt.Fprintln(out, "  Cleanup (avg): ", stat.CXO.CleanUp)
-		fmt.Fprintln(out, "  ----")
+
+	// Objects ObjectsStat
+	// // Shared objects is part of the total objects
+	// // that used by many Root obejcts
+	// Shared ObjectsStat
+
+	// // Feeds contains detailed statistic per feed
+	// Feeds map[cipher.PubKey]FeedStat
+
+	// Save    time.Duration // average saving time
+	// CleanUp time.Duration // average cleaning time (not implemented yet)
+	// Stat    time.Duration // duration of the Stat collecting
+
+	var stat node.Stat
+	if stat, err = rpc.Stat(); err != nil {
 		return
-	*/
+	}
+
+	fmt.Fprintln(out, "  ----")
+	fmt.Fprintln(out, "  Connections:", stat.Node.Connections)
+	fmt.Fprintln(out, "  Feeds:      ", stat.Node.Feeds)
+	fmt.Fprintln(out, "  Filling avg:", stat.Node.FillAvg)
+	fmt.Fprintln(out, "  Drop avg:   ", stat.Node.DropAvg)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "  Save avg:    ", stat.CXO.Save)
+	fmt.Fprintln(out, "  Clean up avg:", stat.CXO.CleanUp)
+	fmt.Fprintln(out, "  Stat avg:    ", stat.CXO.Stat)
+	fmt.Fprintln(out, "  ----")
+
+	sap, svp := stat.CXO.Percents()
+
+	fmt.Fprintf(out, "  Total objects amount: %d (%.2f shared)\n",
+		stat.CXO.Objects.Amount, sap)
+	fmt.Fprintf(out, "  Total objects volume: %d (%.2f shared)\n",
+		stat.CXO.Objects.Volume, svp)
+
+	for pk, fs := range stat.CXO.Feeds {
+		fmt.Fprintln(out, "  -", pk.Hex())
+
+		sap, svp := fs.Percents()
+
+		fmt.Fprintf(out, "    total objects amount: %d (%.2f shared)\n",
+			fs.Objects.Amount, sap)
+		fmt.Fprintf(out, "    total objects volume: %d (%.2f shared)\n",
+			fs.Objects.Volume, svp)
+
+		for seq, rs := range fs.Roots {
+			fmt.Fprintln(out, "    -", seq)
+
+			sap, svp := rs.Percents()
+
+			fmt.Fprintf(out, "      total objects amount: %d (%.2f shared)\n",
+				rs.Objects.Amount, sap)
+			fmt.Fprintf(out, "      total objects volume: %d (%.2f shared)\n",
+				rs.Objects.Volume, svp)
+		}
+	}
+
+	fmt.Fprintln(out, "  ----")
+
+	return
+}
+
+func connDirString(in bool) string {
+	if in {
+		return "-->"
+	}
+	return "<--"
+}
+
+func connPendString(pend bool) string {
+	if pend {
+		return "(⌛)"
+	}
+	return "(✓)"
+}
+
+func nodeConnectionString(nc node.NodeConnection) string {
+	return fmt.Sprintf("%s %s %s", connDirString(nc.IsIncoming),
+		nc.Address, connPendString(nc.IsPending))
 }
 
 func connections(rpc *node.RPCClient) (err error) {
-	var list []string
+	var list []node.NodeConnection
 	if list, err = rpc.Connections(); err != nil {
 		return
 	}
@@ -471,13 +529,13 @@ func connections(rpc *node.RPCClient) (err error) {
 		return
 	}
 	for _, c := range list {
-		fmt.Fprintln(out, "  +", c)
+		fmt.Fprintln(out, " ", nodeConnectionString(c))
 	}
 	return
 }
 
 func incomingConnections(rpc *node.RPCClient) (err error) {
-	var list []string
+	var list []node.NodeConnection
 	if list, err = rpc.IncomingConnections(); err != nil {
 		return
 	}
@@ -486,13 +544,13 @@ func incomingConnections(rpc *node.RPCClient) (err error) {
 		return
 	}
 	for _, c := range list {
-		fmt.Fprintln(out, "  +", c)
+		fmt.Fprintf(out, "  %s %s\n", c.Address, connPendString(c.IsPending))
 	}
 	return
 }
 
 func outgoingConnections(rpc *node.RPCClient) (err error) {
-	var list []string
+	var list []node.NodeConnection
 	if list, err = rpc.OutgoingConnections(); err != nil {
 		return
 	}
@@ -501,7 +559,7 @@ func outgoingConnections(rpc *node.RPCClient) (err error) {
 		return
 	}
 	for _, c := range list {
-		fmt.Fprintln(out, "  +", c)
+		fmt.Fprintf(out, "  %s %s\n", c.Address, connPendString(c.IsPending))
 	}
 	return
 }
@@ -536,6 +594,20 @@ func listeningAddress(rpc *node.RPCClient) (err error) {
 		return
 	}
 	fmt.Fprintln(out, "  ", address)
+	return
+}
+
+func info(rpc *node.RPCClient) (err error) {
+	var info *node.NodeInfo
+	if info, err = rpc.Info(); err != nil {
+		return
+	}
+	fmt.Fprintln(out, "----")
+	fmt.Fprintf(out, "listening: %v\n", info.IsListening)
+	fmt.Fprintln(out, "address:  ", info.ListeningAddress)
+	fmt.Fprintln(out, "discovery:", info.Discovery)
+	fmt.Fprintf(out, "public:    %v\n", info.IsPublicServer)
+	fmt.Fprintln(out, "----")
 	return
 }
 

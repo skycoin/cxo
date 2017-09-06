@@ -79,7 +79,7 @@ func (r *RPCClient) IncomingConnections() (list []NodeConnection, err error) {
 }
 
 // OutgoingConnections returns list of all outgoing connections
-func (r *RPCClient) OutgoingConnections() (list []string, err error) {
+func (r *RPCClient) OutgoingConnections() (list []NodeConnection, err error) {
 	err = r.c.Call("cxo.OutgoingConnections", struct{}{}, &list)
 	return
 }

@@ -24,10 +24,26 @@ type Stat struct {
 	Stat    time.Duration // duration of the Stat collecting
 }
 
+// Percents returns percent of shared obejcts. Amount and Volume
+func (s *Stat) Percents() (sap, svp float64) {
+	return sharedPercent(&s.Shared, &s.Objects)
+}
+
 // An ObjectsStat represents objects DB statistic
 type ObjectsStat struct {
 	Volume data.Volume // size
 	Amount uint32      // amount
+}
+
+// percent of shard
+func sharedPercent(shd, objs *ObjectsStat) (sap, svp float64) {
+	if objs.Amount > 0 { // avoid NaN
+		sap = float64(shd.Amount) / float64(objs.Amount)
+	}
+	if objs.Volume > 0 { // avoid NaN
+		svp = float64(shd.Volume) / float64(objs.Volume)
+	}
+	return
 }
 
 // A FeedStat represetns detailed
@@ -44,6 +60,11 @@ type FeedStat struct {
 	Roots map[uint64]RootStat
 }
 
+// Percents returns percent of shared obejcts. Amount and Volume
+func (f *FeedStat) Percents() (sap, svp float64) {
+	return sharedPercent(&f.Shared, &f.Objects)
+}
+
 // A RootStat represents detailed statistic
 // of a Root object
 type RootStat struct {
@@ -53,6 +74,11 @@ type RootStat struct {
 	// It is amount of objects used by many
 	// Root objects of this feed
 	Shared ObjectsStat
+}
+
+// Percents returns percent of shared obejcts. Amount and Volume
+func (r *RootStat) Percents() (sap, svp float64) {
+	return sharedPercent(&r.Shared, &r.Objects)
 }
 
 type objStat struct {
