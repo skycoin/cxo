@@ -779,6 +779,7 @@ func (s *Node) delFeed(pk cipher.PubKey) (ok bool) {
 	return
 }
 
+// perform it under 'fmx' lock
 func updateServiceDiscovery(n *Node) {
 	if n.discovery != nil {
 		feeds := make([]cipher.PubKey, 0, len(n.feeds))
@@ -848,15 +849,6 @@ func (s *Node) DelFeed(pk cipher.PubKey) (err error) {
 	err = s.so.DelFeed(pk)
 	return
 }
-
-/*
-// Stat of underlying DB and Container
-func (s *Node) Stat() (st Stat) {
-	st.Data = s.DB().Stat()
-	st.CXO = s.Container().Stat()
-	return
-}
-*/
 
 func maxDuration(a, b time.Duration) time.Duration {
 	if a > b {

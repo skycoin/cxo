@@ -531,35 +531,35 @@ func stat(rpc *node.RPCClient) (err error) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "  Save avg:    ", stat.CXO.Save)
 	fmt.Fprintln(out, "  Clean up avg:", stat.CXO.CleanUp)
-	fmt.Fprintln(out, "  Stat avg:    ", stat.CXO.Stat)
+	fmt.Fprintln(out, "  Stat time:   ", stat.CXO.Stat)
 	fmt.Fprintln(out, "  ----")
 
 	sap, svp := stat.CXO.Percents()
 
-	fmt.Fprintf(out, "  Total objects amount: %d (%.2f shared)\n",
-		stat.CXO.Objects.Amount, sap)
-	fmt.Fprintf(out, "  Total objects volume: %d (%.2f shared)\n",
-		stat.CXO.Objects.Volume, svp)
+	fmt.Fprintf(out, "  Total objects amount: %d (%.2f%% shared)\n",
+		stat.CXO.Objects.Amount, sap*100.0)
+	fmt.Fprintf(out, "  Total objects volume: %s (%.2f%% shared)\n",
+		stat.CXO.Objects.Volume, svp*100.0)
 
 	for pk, fs := range stat.CXO.Feeds {
 		fmt.Fprintln(out, "  -", pk.Hex())
 
 		sap, svp := fs.Percents()
 
-		fmt.Fprintf(out, "    total objects amount: %d (%.2f shared)\n",
-			fs.Objects.Amount, sap)
-		fmt.Fprintf(out, "    total objects volume: %d (%.2f shared)\n",
-			fs.Objects.Volume, svp)
+		fmt.Fprintf(out, "    total objects amount: %d (%.2f%% shared)\n",
+			fs.Objects.Amount, sap*100.0)
+		fmt.Fprintf(out, "    total objects volume: %s (%.2f%% shared)\n",
+			fs.Objects.Volume, svp*100.0)
 
 		for seq, rs := range fs.Roots {
 			fmt.Fprintln(out, "    -", seq)
 
 			sap, svp := rs.Percents()
 
-			fmt.Fprintf(out, "      total objects amount: %d (%.2f shared)\n",
-				rs.Objects.Amount, sap)
-			fmt.Fprintf(out, "      total objects volume: %d (%.2f shared)\n",
-				rs.Objects.Volume, svp)
+			fmt.Fprintf(out, "      total objects amount: %d (%.2f%% shared)\n",
+				rs.Objects.Amount, sap*100.0)
+			fmt.Fprintf(out, "      total objects volume: %s (%.2f%% shared)\n",
+				rs.Objects.Volume, svp*100.0)
 		}
 	}
 

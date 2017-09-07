@@ -8,6 +8,12 @@ Exchange
 - `cb` - generates B-feed, and subscribed to A-feed
 - `server` - public server that subscribed to A- and B-feed
 
+```
+A-feed: 022241cd1857ec73b7741ccb5d5494743e1ef7075ec71d6eca59979fd6be58758c
+B-feed: 030c398e49cb77e83baa3110f99a105a33e5caf4e63c4ff55dbbaabbc98159e792
+```
+
+
 ### Explain
 
 TODO [skycoin messanger
