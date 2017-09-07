@@ -68,26 +68,21 @@ And every second the ca and cb appends some votes to own feed.
 ### Difference between the `ca` and `cb`
 
 ```diff
-$ git diff --no-index ../../intro/exchange/ca/ca.go ../../intro/exchange/cb/cb.go
-diff --git a/../../intro/exchange/ca/ca.go b/../../intro/exchange/cb/cb.go
-index 342819d..8c434f0 100644
---- a/../../intro/exchange/ca/ca.go
-+++ b/../../intro/exchange/cb/cb.go
-@@ -21,11 +21,11 @@ import (
+diff --git a/intro/exchange/ca/ca.go b/intro/exchange/cb/cb.go
+index 2c3fb08..361d8b4 100644
+--- a/intro/exchange/ca/ca.go
++++ b/intro/exchange/cb/cb.go
+@@ -21,8 +21,8 @@ import (
  
  // defaults
  const (
--       Host        string = "[::1]:8001" // default host address of the server
+-       Host        string = "[::1]:8001" // default host address of the node
 -       RPC         string = "[::1]:7001" // default RPC address
-+       Host        string = "[::1]:8002" // default host address of the server
++       Host        string = "[::1]:8002" // default host address of the node
 +       RPC         string = "[::1]:7002" // default RPC address
         RemoteClose bool   = false        // don't allow closing by RPC by default
  
--       Discovery string = "[::1]:8008" // discovery server
-+       Discovery string = "[::1]:8008"
- )
- 
- func waitInterrupt(quit <-chan struct{}) {
+        Discovery string = "[::1]:8008" // discovery server
 @@ -69,7 +69,7 @@ func main() {
         c.InMemoryDB = true // use DB in memeory
  

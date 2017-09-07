@@ -17,7 +17,7 @@ import (
 
 // defaults
 const (
-	Host        string = "[::1]:8000" // default host address of the server
+	Host        string = "[::1]:8000" // default host address of the node
 	RPC         string = "[::1]:7000" // default RPC address
 	RemoteClose bool   = false        // don't allow closing by RPC by default
 
