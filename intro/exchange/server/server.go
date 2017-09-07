@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 
@@ -60,12 +61,16 @@ func main() {
 
 	c.Log.Prefix = "[server] "
 	c.Log.Debug = true
-	c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin)
+	c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin |
+		node.ConnPin)
 
 	c.Skyobject.Log.Debug = true
 	c.Skyobject.Log.Pins = log.All &^ (cxo.VerbosePin | cxo.PackSavePin |
 		cxo.FillVerbosePin)
 	c.Skyobject.Log.Prefix = "[server cxo] "
+
+	// suppress gnet logger
+	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
 	c.FromFlags()
 	flag.Parse()
@@ -73,16 +78,6 @@ func main() {
 	// apk and bk is A-feed and B-feed
 	apk, _ := cipher.GenerateDeterministicKeyPair([]byte("A"))
 	bpk, _ := cipher.GenerateDeterministicKeyPair([]byte("B"))
-
-	// TORM (kostyarin)
-	// c.OnCreateConnection = func(c *node.Conn) {
-	// 	if c.Gnet().IsIncoming() {
-	// 		if err := c.Subscribe(pk); err != nil {
-	// 			fmt.Println("[ERR] can't subscribe:", err)
-	// 			c.Close()
-	// 		}
-	// 	}
-	// }
 
 	var s *node.Node
 	var err error

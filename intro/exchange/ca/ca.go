@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"sync"
@@ -70,7 +71,11 @@ func main() {
 	// node logger
 	c.Log.Prefix = "[ca] "
 	c.Log.Debug = true
-	c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin)
+	c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin |
+		node.ConnPin)
+
+	// suppress gnet logger
+	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
 
 	c.Skyobject.Registry = reg // <-- registry
 
@@ -166,7 +171,7 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 		case <-stop:
 			c.Print("[STOP]")
 			return
-		case <-time.After(90 * time.Second):
+		case <-time.After(5 * time.Second):
 		}
 
 		// new random votes

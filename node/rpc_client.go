@@ -96,6 +96,20 @@ func (r *RPCClient) Disconnect(address string) (err error) {
 	return
 }
 
+// Connectio returns list of feeds of given connection
+func (r *RPCClient) Connection(address string) (feeds []cipher.PubKey,
+	err error) {
+
+	err = r.c.Call("cxo.Connection", address, &feeds)
+	return
+}
+
+// Feed returns all connections of given feed
+func (r *RPCClient) Feed(pk cipher.PubKey) (addresses []string, err error) {
+	err = r.c.Call("cxo.Feed", pk, &addresses)
+	return
+}
+
 // ListeningAddress of the Node
 func (r *RPCClient) ListeningAddress() (address string, err error) {
 	err = r.c.Call("cxo.ListeningAddress", struct{}{}, &address)

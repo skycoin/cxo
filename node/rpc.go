@@ -211,6 +211,50 @@ func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
 	return errors.New("no such connection: " + address)
 }
 
+// Connection is RPC method that obtains, list
+// of feeds of connection by address
+func (r *RPC) Connection(address string, feeds *[]cipher.PubKey) (err error) {
+
+	if address == "" {
+		return errors.New("empty address")
+	}
+
+	c := r.ns.Connection(address)
+	if c == nil {
+		return errors.New("no such connection: " + address)
+	}
+
+	var list []cipher.PubKey
+
+	r.ns.fmx.Lock()
+	defer r.ns.fmx.Unlock()
+
+	for pk, cs := range r.ns.feeds {
+		if _, ok := cs[c]; ok {
+			list = append(list, pk)
+		}
+	}
+
+	*feeds = list
+	return
+}
+
+// Feed is RPC method that obtains, list
+// of connections that interest in given feed
+func (r *RPC) Feed(pk cipher.PubKey, conns *[]string) (err error) {
+	r.ns.fmx.Lock()
+	defer r.ns.fmx.Unlock()
+
+	var list []string
+
+	for cs := range r.ns.feeds[pk] {
+		list = append(list, cs.Address())
+	}
+
+	*conns = list
+	return
+}
+
 // ListeningAddress of Node
 func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	*address = r.ns.pool.Address()

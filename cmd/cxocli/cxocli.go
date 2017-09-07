@@ -47,6 +47,9 @@ var (
 		"incoming connections ",
 		"outgoing connections ",
 
+		"connection ",
+		"feed ",
+
 		"feeds ",
 
 		"roots ",
@@ -247,6 +250,11 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 	case "connections":
 		err = connections(rpc)
 
+	case "connection":
+		err = connection(rpc, ss)
+	case "feed":
+		err = feed(rpc, ss)
+
 	case "feeds":
 		err = feeds(rpc)
 
@@ -329,6 +337,11 @@ func showHelp() {
     list all incoming connections
   outgoing connections
     list all outgoing connections
+
+  connection <address>
+    list feeds of given connection
+  feed <public key>
+    list connections of given feed
 
   feeds
     list all feeds
@@ -465,19 +478,45 @@ func feeds(rpc *node.RPCClient) (err error) {
 	return
 }
 
+func connection(rpc *node.RPCClient, ss []string) (err error) {
+	var address string
+	if address, err = args(ss); err != nil {
+		return
+	}
+	var feeds []cipher.PubKey
+	if feeds, err = rpc.Connection(address); err != nil {
+		return
+	}
+	if len(feeds) == 0 {
+		fmt.Fprintln(out, "  no feeds")
+		return
+	}
+	for _, f := range feeds {
+		fmt.Fprintln(out, "  +", f.Hex())
+	}
+	return
+}
+
+func feed(rpc *node.RPCClient, ss []string) (err error) {
+	var pk cipher.PubKey
+	if pk, err = publicKeyArg(ss); err != nil {
+		return
+	}
+	var conns []string
+	if conns, err = rpc.Feed(pk); err != nil {
+		return
+	}
+	if len(conns) == 0 {
+		fmt.Fprintln(out, "  no connections")
+		return
+	}
+	for _, c := range conns {
+		fmt.Fprintln(out, "  +", c)
+	}
+	return
+}
+
 func stat(rpc *node.RPCClient) (err error) {
-
-	// Objects ObjectsStat
-	// // Shared objects is part of the total objects
-	// // that used by many Root obejcts
-	// Shared ObjectsStat
-
-	// // Feeds contains detailed statistic per feed
-	// Feeds map[cipher.PubKey]FeedStat
-
-	// Save    time.Duration // average saving time
-	// CleanUp time.Duration // average cleaning time (not implemented yet)
-	// Stat    time.Duration // duration of the Stat collecting
 
 	var stat node.Stat
 	if stat, err = rpc.Stat(); err != nil {
