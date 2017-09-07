@@ -58,9 +58,9 @@ go test -cover -race github.com/skycoin/cxo/...
 And
 
 - `intro` - examples
-  - `intro/pass_through` - three nodes source->pipe->drain
-    [README.md](intro/pass_through)
-  - `intro/cxtweet` - CXO based command-line tweetter like app
+  - `intro/exchange` - three nodes example (doesn't ready)
+    [README.md](intro/exchange)
+<!-- - `intro/cxtweet` - CXO based command-line tweetter like app -->
 
 
 #### Formatting and Coding Style
