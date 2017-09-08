@@ -154,15 +154,15 @@ func (c *Container) getFeedStat(roots data.Roots,
 
 	fs.Roots = make(map[uint64]RootStat)
 
+	// feed-already
+	falr := make(map[cipher.SHA256]struct{})
+
 	err = roots.Ascend(func(ir *data.Root) (err error) {
 		var rs RootStat
-		if rs, err = c.getRootStat(ir, objs); err != nil {
+		if rs, err = c.getRootStat(ir, objs, &fs, falr); err != nil {
 			return
 		}
-		fs.Objects.Amount += rs.Objects.Amount
-		fs.Objects.Volume += rs.Objects.Volume
-		fs.Shared.Amount += rs.Shared.Amount
-		fs.Shared.Volume += rs.Shared.Volume
+		fs.Roots[ir.Seq] = rs
 		return
 	})
 	if err != nil {
@@ -171,10 +171,18 @@ func (c *Container) getFeedStat(roots data.Roots,
 	return
 }
 
-func (c *Container) getRootStat(ir *data.Root,
-	objs map[cipher.SHA256]objStat) (rs RootStat, err error) {
+func (c *Container) getRootStat(ir *data.Root, objs map[cipher.SHA256]objStat,
+	fs *FeedStat, falr map[cipher.SHA256]struct{}) (rs RootStat, err error) {
+
+	already := make(map[cipher.SHA256]struct{})
 
 	err = c.findRefs(ir, func(key cipher.SHA256) (deepper bool, _ error) {
+
+		if _, ok := already[key]; ok {
+			return // don't go deepper
+		}
+
+		already[key] = struct{}{}
 
 		deepper = true
 
@@ -187,7 +195,22 @@ func (c *Container) getRootStat(ir *data.Root,
 			rs.Shared.Volume += o.vol
 		}
 
+		// add to FeedStat
+		if _, ok := falr[key]; ok {
+			return // already
+		}
+
+		falr[key] = struct{}{}
+
+		fs.Objects.Amount++
+		fs.Objects.Volume += o.vol
+		if o.rc > 1 {
+			fs.Shared.Amount++
+			fs.Shared.Volume += o.vol
+		}
+
 		return
 	})
+
 	return
 }
