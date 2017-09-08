@@ -49,7 +49,7 @@ const (
 const (
 	MsgPin       log.Pin = 1 << iota // msgs
 	SubscrPin                        // subscriptions
-	ConnPin                          // connect/disconenct
+	ConnPin                          // connect/disconnect
 	RootPin                          // root receive etc
 	FillPin                          // fill/drop
 	HandlePin                        // handle a message

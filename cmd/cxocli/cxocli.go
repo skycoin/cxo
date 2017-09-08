@@ -330,7 +330,7 @@ func showHelp() {
   connections
     list all connections, in the list "-->" means that
     this connection is incoming and "<--" means that this
-    connection is outgoing; (✓) means that conenction is
+    connection is outgoing; (✓) means that connection is
     established, and (⌛) means that this connection is
     establishing
   incoming connections
@@ -582,13 +582,13 @@ func connPendString(pend bool) string {
 	return "(✓)"
 }
 
-func nodeConnectionString(nc node.NodeConnection) string {
+func nodeConnectionString(nc node.ConnectionInfo) string {
 	return fmt.Sprintf("%s %s %s", connDirString(nc.IsIncoming),
 		nc.Address, connPendString(nc.IsPending))
 }
 
 func connections(rpc *node.RPCClient) (err error) {
-	var list []node.NodeConnection
+	var list []node.ConnectionInfo
 	if list, err = rpc.Connections(); err != nil {
 		return
 	}
@@ -603,7 +603,7 @@ func connections(rpc *node.RPCClient) (err error) {
 }
 
 func incomingConnections(rpc *node.RPCClient) (err error) {
-	var list []node.NodeConnection
+	var list []node.ConnectionInfo
 	if list, err = rpc.IncomingConnections(); err != nil {
 		return
 	}
@@ -618,7 +618,7 @@ func incomingConnections(rpc *node.RPCClient) (err error) {
 }
 
 func outgoingConnections(rpc *node.RPCClient) (err error) {
-	var list []node.NodeConnection
+	var list []node.ConnectionInfo
 	if list, err = rpc.OutgoingConnections(); err != nil {
 		return
 	}
@@ -666,7 +666,7 @@ func listeningAddress(rpc *node.RPCClient) (err error) {
 }
 
 func info(rpc *node.RPCClient) (err error) {
-	var info *node.NodeInfo
+	var info *node.Info
 	if info, err = rpc.Info(); err != nil {
 		return
 	}

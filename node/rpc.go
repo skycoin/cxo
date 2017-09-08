@@ -114,26 +114,26 @@ func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
 	return
 }
 
-// A NodeConnection used by RPC and
+// A ConnectionInfo used by RPC and
 // represents brief information about
 // a connection
-type NodeConnection struct {
+type ConnectionInfo struct {
 	Address    string
 	IsIncoming bool
 	IsPending  bool
 }
 
 // Connections of a node
-func (r *RPC) Connections(_ struct{}, list *[]NodeConnection) (_ error) {
+func (r *RPC) Connections(_ struct{}, list *[]ConnectionInfo) (_ error) {
 	gcs := r.ns.Pool().Connections()
 	if len(gcs) == 0 {
 		return
 	}
 
-	cs := make([]NodeConnection, 0, len(gcs))
+	cs := make([]ConnectionInfo, 0, len(gcs))
 
 	for _, gc := range gcs {
-		cs = append(cs, NodeConnection{
+		cs = append(cs, ConnectionInfo{
 			Address:    gc.Address(),
 			IsIncoming: gc.IsIncoming(),
 			IsPending:  gc.Value() == nil,
@@ -147,20 +147,20 @@ func (r *RPC) Connections(_ struct{}, list *[]NodeConnection) (_ error) {
 
 // IncomingConnections of a node
 func (r *RPC) IncomingConnections(_ struct{},
-	list *[]NodeConnection) (_ error) {
+	list *[]ConnectionInfo) (_ error) {
 
 	gcs := r.ns.Pool().Connections()
 	if len(gcs) == 0 {
 		return
 	}
 
-	cs := make([]NodeConnection, 0, len(gcs))
+	cs := make([]ConnectionInfo, 0, len(gcs))
 
 	for _, gc := range gcs {
 		if false == gc.IsIncoming() {
 			continue
 		}
-		cs = append(cs, NodeConnection{
+		cs = append(cs, ConnectionInfo{
 			Address:    gc.Address(),
 			IsIncoming: true,
 			IsPending:  gc.Value() == nil,
@@ -173,20 +173,20 @@ func (r *RPC) IncomingConnections(_ struct{},
 
 // OutgoingConnections of a node
 func (r *RPC) OutgoingConnections(_ struct{},
-	list *[]NodeConnection) (_ error) {
+	list *[]ConnectionInfo) (_ error) {
 
 	gcs := r.ns.Pool().Connections()
 	if len(gcs) == 0 {
 		return
 	}
 
-	cs := make([]NodeConnection, 0, len(gcs))
+	cs := make([]ConnectionInfo, 0, len(gcs))
 
 	for _, gc := range gcs {
 		if true == gc.IsIncoming() {
 			continue
 		}
-		cs = append(cs, NodeConnection{
+		cs = append(cs, ConnectionInfo{
 			Address:    gc.Address(),
 			IsIncoming: false,
 			IsPending:  gc.Value() == nil,
@@ -261,19 +261,19 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	return
 }
 
-// A NodeInfo represents beif
+// A Info represents beif
 // information about a node,
 // excluding statistic
-type NodeInfo struct {
+type Info struct {
 	IsListening      bool      // is it listening
 	ListeningAddress string    // listening address
-	Discovery        Addresses // dicovery addresses
+	Discovery        Addresses // discovery addresses
 	IsPublicServer   bool      // is it a public server
 }
 
 // Info is RPC method that returns brief information about the Node
-func (r *RPC) Info(_ struct{}, info *NodeInfo) (_ error) {
-	*info = NodeInfo{
+func (r *RPC) Info(_ struct{}, info *Info) (_ error) {
+	*info = Info{
 		IsListening:      r.ns.conf.EnableListener,
 		ListeningAddress: r.ns.pool.Address(),
 		Discovery:        r.ns.conf.DiscoveryAddresses,

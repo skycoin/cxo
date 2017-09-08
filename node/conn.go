@@ -55,6 +55,8 @@ type Conn struct {
 	// filling Roots (hash of Root -> *Filler)
 	fillers map[cipher.SHA256]*skyobject.Filler
 
+	// synchronisation internals
+
 	// done means that all finialization permormed
 	// and handling goroutine exists
 	done chan struct{}
@@ -430,7 +432,8 @@ func (c *Conn) handle(hs chan<- error) {
 
 	if err = c.handshake(); err != nil {
 		if false == c.gc.IsIncoming() {
-			hs <- err // send back to (*Node).Connect()
+			// send to (*Node).Connect() or to (*Node).ConnectOrGet()
+			hs <- err
 			return
 		}
 		c.s.Printf("[%s] handshake failed: %v", c.gc.Address(), err)
@@ -438,7 +441,7 @@ func (c *Conn) handle(hs chan<- error) {
 	}
 
 	if false == c.gc.IsIncoming() {
-		hs <- nil // success!
+		close(hs) // release the hs
 	}
 
 	defer c.s.delConnFromWantedObjects(c)
@@ -619,6 +622,7 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 		c.s.so.Hold(fr.Root.Pub, fr.Root.Seq) // hold for the callback
 		go func() {
 			defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq) // unhold
+			fr.Root.IsFull = true
 			orf(c, fr.Root)
 		}()
 	}

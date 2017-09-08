@@ -399,6 +399,8 @@ func (s *Node) delConn(c *Conn) {
 }
 
 func (s *Node) updateServiceDiscoveryCallback(conn *factory.Connection) {
+	s.Debugln(DiscoveryPin, "updateServiceDiscoveryCallback")
+
 	feeds := s.Feeds()
 	services := make([]*factory.Service, len(feeds))
 	for i, feed := range feeds {
@@ -409,6 +411,8 @@ func (s *Node) updateServiceDiscoveryCallback(conn *factory.Connection) {
 
 func (s *Node) updateServiceDiscovery(conn *factory.Connection,
 	feeds []cipher.PubKey, services []*factory.Service) {
+
+	s.Debugln(DiscoveryPin, "updateServiceDiscovery", feeds)
 
 	conn.FindServiceNodesByKeys(feeds)
 	if s.conf.PublicServer {
@@ -441,14 +445,21 @@ func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {
 	for k, v := range resp.Result {
 		key, err := pubKeyFromHex(k)
 		if err != nil {
+			s.Debugln(DiscoveryPin, "can't get public key:", err)
 			continue
 		}
 		for _, addr := range v {
-			c, err := s.Connect(addr)
+			println("[[[ HERE ]]]")
+			c, err := s.ConnectOrGet(addr)
 			if err != nil {
+				println("[[[ HERE ]]] (1)")
+				s.Debugf(DiscoveryPin, "can't ConnectOrGet %q: %v", addr, err)
 				continue
 			}
-			c.Subscribe(key)
+			if err = c.Subscribe(key); err != nil {
+				println("[[[ HERE ]]] (2)")
+				s.Debugln(DiscoveryPin, "can't Subscribe:", err)
+			}
 		}
 	}
 }
@@ -715,8 +726,11 @@ func (s *Node) Publish(r *skyobject.Root) {
 	s.broadcastRoot(root, nil)
 }
 
-// Connect to peer. This call blocks until conenction created
-// and established (after successful handshake).
+// Connect to peer. This call blocks until connection created
+// and established (after successful handshake). The method
+// returns error if connection already exists, connections
+// limit reached, given address malformed or handhsake can't
+// be performed for some reason
 func (s *Node) Connect(address string) (c *Conn, err error) {
 
 	var gc *gnet.Conn
@@ -724,6 +738,51 @@ func (s *Node) Connect(address string) (c *Conn, err error) {
 		return
 	}
 
+	return s.createConnection(gc)
+}
+
+// ConnectOrGet connects to peer or returns
+// connection if it already exist
+func (s *Node) ConnectOrGet(address string) (c *Conn, err error) {
+
+	var gc *gnet.Conn
+	var fresh bool
+	if gc, fresh, err = s.pool.DialOrGet(address); err != nil {
+		return
+	}
+
+	if true == fresh {
+		return s.createConnection(gc)
+	}
+
+	if cv := gc.Value(); cv != nil {
+		c = cv.(*Conn) // already have
+		return
+	}
+
+	// So, at this point the gc can be created by any other
+	// oroutine, but not established yet. Thus, we can't create a
+	// connection by it
+
+	// TODO (kostyarin): rid out of spinning
+
+	for {
+		select {
+		case <-gc.Closed():
+			err = ErrConnClsoed // TODO (kostyarin): recreate or not?
+			return
+		default:
+			if cv := gc.Value(); cv != nil {
+				c = cv.(*Conn) // got it
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+}
+
+func (s *Node) createConnection(gc *gnet.Conn) (c *Conn, err error) {
 	hs := make(chan error)
 
 	c = s.newConn(gc)

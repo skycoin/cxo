@@ -60,8 +60,8 @@ func main() {
 	c.InMemoryDB = true // use DB in memeory
 
 	c.Log.Prefix = "[server] "
-	c.Log.Debug = true
-	c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin |
+	c.Log.Debug = true // node.DiscoveryPin |
+	c.Log.Pins = log.All &^ (node.HandlePin | node.FillPin |
 		node.ConnPin)
 
 	c.Skyobject.Log.Debug = true

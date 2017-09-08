@@ -44,7 +44,7 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 	return
 }
 
-// Tx perfroms ACID transaction
+// Tx performs ACID-transaction
 func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	return d.b.Update(func(tx *bolt.Tx) (err error) {
 		return txFunc(&driveFeeds{tx.Bucket(feedsBucket)})
@@ -107,7 +107,7 @@ func incSlice(b []byte) {
 	}
 }
 
-// Has perfroms presence check
+// Has performs presence check
 func (d *driveFeeds) Has(pk cipher.PubKey) bool {
 	return d.bk.Bucket(pk[:]) != nil
 }

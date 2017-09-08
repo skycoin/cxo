@@ -67,19 +67,19 @@ func (r *RPCClient) Feeds() (list []cipher.PubKey, err error) {
 }
 
 // Connections return list of all connections
-func (r *RPCClient) Connections() (list []NodeConnection, err error) {
+func (r *RPCClient) Connections() (list []ConnectionInfo, err error) {
 	err = r.c.Call("cxo.Connections", struct{}{}, &list)
 	return
 }
 
 // IncomingConnections returns list of all incoming connections
-func (r *RPCClient) IncomingConnections() (list []NodeConnection, err error) {
+func (r *RPCClient) IncomingConnections() (list []ConnectionInfo, err error) {
 	err = r.c.Call("cxo.IncomingConnections", struct{}{}, &list)
 	return
 }
 
 // OutgoingConnections returns list of all outgoing connections
-func (r *RPCClient) OutgoingConnections() (list []NodeConnection, err error) {
+func (r *RPCClient) OutgoingConnections() (list []ConnectionInfo, err error) {
 	err = r.c.Call("cxo.OutgoingConnections", struct{}{}, &list)
 	return
 }
@@ -96,7 +96,7 @@ func (r *RPCClient) Disconnect(address string) (err error) {
 	return
 }
 
-// Connectio returns list of feeds of given connection
+// Connection returns list of feeds of given connection
 func (r *RPCClient) Connection(address string) (feeds []cipher.PubKey,
 	err error) {
 
@@ -117,8 +117,8 @@ func (r *RPCClient) ListeningAddress() (address string, err error) {
 }
 
 // Info returns brief information about a Node
-func (r *RPCClient) Info() (info *NodeInfo, err error) {
-	info = new(NodeInfo)
+func (r *RPCClient) Info() (info *Info, err error) {
+	info = new(Info)
 	err = r.c.Call("cxo.Info", struct{}{}, info)
 	return
 }

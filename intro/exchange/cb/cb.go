@@ -70,8 +70,8 @@ func main() {
 
 	// node logger
 	c.Log.Prefix = "[cb] "
-	c.Log.Debug = true
-	c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin |
+	c.Log.Debug = true // node.DiscoveryPin |
+	c.Log.Pins = log.All &^ (node.HandlePin | node.FillPin |
 		node.ConnPin)
 
 	// suppress gnet logger

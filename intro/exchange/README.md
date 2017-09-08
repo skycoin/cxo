@@ -16,7 +16,7 @@ B-feed: 030c398e49cb77e83baa3110f99a105a33e5caf4e63c4ff55dbbaabbc98159e792
 
 ### Explain
 
-TODO [skycoin messanger
+TODO [skycoin messenger
 server](https://github.com/skycoin/net/tree/master/skycoin-messenger/server)
 
 ### Run
@@ -31,7 +31,7 @@ go get -d github.com/skycoin/net/skycoin-messenger/server
 
 Four terminals required.
 
-Launch the skycoin messanger server using "[::1]:8008" address in first terminal
+Launch the skycoin messenger server using "[::1]:8008" address in first terminal
 ```
 go run $GOPATH/src/github.com/skycoin/net/skycoin-messenger/server/main.go \
     -address [::1]:8008

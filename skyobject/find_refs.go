@@ -178,7 +178,7 @@ func (f *findRefs) dataStruct(s Schema, val []byte,
 		if shift > len(val) {
 			return fmt.Errorf("unexpected end of encoded struct <%s>, "+
 				"field number: %d, field name: %q, schema of field: %s",
-				i, fl.Name(), fl.Schema())
+				s.String(), i, fl.Name(), fl.Schema())
 		}
 		if z, err = fl.Schema().Size(val[shift:]); err != nil {
 			return
