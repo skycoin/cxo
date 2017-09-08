@@ -11,8 +11,6 @@ import (
 
 	"github.com/skycoin/cxo/node"
 	"github.com/skycoin/cxo/node/log"
-
-	cxo "github.com/skycoin/cxo/skyobject"
 )
 
 // defaults
@@ -60,13 +58,7 @@ func main() {
 	c.InMemoryDB = true // use DB in memeory
 
 	c.Log.Prefix = "[server] "
-	c.Log.Debug = true // node.DiscoveryPin |
-	c.Log.Pins = log.All &^ (node.HandlePin | node.FillPin |
-		node.ConnPin)
 
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = log.All &^ (cxo.VerbosePin | cxo.PackSavePin |
-		cxo.FillVerbosePin)
 	c.Skyobject.Log.Prefix = "[server cxo] "
 
 	// suppress gnet logger

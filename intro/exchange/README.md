@@ -16,15 +16,18 @@ B-feed: 030c398e49cb77e83baa3110f99a105a33e5caf4e63c4ff55dbbaabbc98159e792
 
 ### Explain
 
-TODO [skycoin messenger
-server](https://github.com/skycoin/net/tree/master/skycoin-messenger/server)
+All node uses [skycoin messenger
+ server](https://github.com/skycoin/net/tree/master/skycoin-messenger/server),
+this way, `ca` and `cb` connect to `server`. And since, the `server` shares
+A-, and B-feed, nodes `ca` and `cb`  will receive opposite feed through the
+`server`.
 
 ### Run
 
 #### Prepare
 
 ```
-go get -d github.com/skycoin/net/skycoin-messenger/server
+go get -d -u github.com/skycoin/net/skycoin-messenger/server
 ```
 
 #### Start
@@ -68,10 +71,10 @@ And every second the ca and cb appends some votes to own feed.
 ### Difference between the `ca` and `cb`
 
 ```diff
-diff --git a/intro/exchange/ca/ca.go b/intro/exchange/cb/cb.go
-index 2c3fb08..361d8b4 100644
---- a/intro/exchange/ca/ca.go
-+++ b/intro/exchange/cb/cb.go
+diff --git a/ca/ca.go b/cb/cb.go
+index 4103868..a7ce535 100644
+--- a/ca/ca.go
++++ b/cb/cb.go
 @@ -21,8 +21,8 @@ import (
  
  // defaults
@@ -89,19 +92,19 @@ index 2c3fb08..361d8b4 100644
         // node logger
 -       c.Log.Prefix = "[ca] "
 +       c.Log.Prefix = "[cb] "
-        c.Log.Debug = true
-        c.Log.Pins = log.All &^ (node.DiscoveryPin | node.HandlePin | node.FillPin |
-                node.ConnPin)
-@@ -80,7 +80,7 @@ func main() {
+ 
+        // suppress gnet logger
+        c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
+@@ -77,7 +77,7 @@ func main() {
         c.Skyobject.Registry = reg // <-- registry
  
         // skyobject logger
 -       c.Skyobject.Log.Prefix = "[ca cxo]"
 +       c.Skyobject.Log.Prefix = "[cb cxo]"
-        c.Skyobject.Log.Debug = true
-        c.Skyobject.Log.Pins = log.All &^ (cxo.VerbosePin | cxo.PackSavePin |
-                cxo.FillVerbosePin)
-@@ -98,10 +98,10 @@ func main() {
+ 
+        // show full root objects
+        c.OnRootFilled = func(c *node.Conn, r *cxo.Root) {
+@@ -92,10 +92,10 @@ func main() {
         c.FromFlags()
         flag.Parse()
  
@@ -115,7 +118,7 @@ index 2c3fb08..361d8b4 100644
  
         var s *node.Node
         var err error
-@@ -130,7 +130,7 @@ func main() {
+@@ -124,7 +124,7 @@ func main() {
         stop := make(chan struct{})
  
         wg.Add(1)

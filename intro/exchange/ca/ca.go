@@ -70,9 +70,6 @@ func main() {
 
 	// node logger
 	c.Log.Prefix = "[ca] "
-	c.Log.Debug = true // node.DiscoveryPin |
-	c.Log.Pins = log.All &^ (node.HandlePin | node.FillPin |
-		node.ConnPin)
 
 	// suppress gnet logger
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
@@ -81,9 +78,6 @@ func main() {
 
 	// skyobject logger
 	c.Skyobject.Log.Prefix = "[ca cxo]"
-	c.Skyobject.Log.Debug = true
-	c.Skyobject.Log.Pins = log.All &^ (cxo.VerbosePin | cxo.PackSavePin |
-		cxo.FillVerbosePin)
 
 	// show full root objects
 	c.OnRootFilled = func(c *node.Conn, r *cxo.Root) {
@@ -169,6 +163,9 @@ func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
 	for i := 0; true; i++ {
 		select {
 		case <-stop:
+			c.Print("[STOP]")
+			return
+		case <-s.Quiting():
 			c.Print("[STOP]")
 			return
 		case <-time.After(5 * time.Second):

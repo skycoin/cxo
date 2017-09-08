@@ -449,15 +449,12 @@ func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {
 			continue
 		}
 		for _, addr := range v {
-			println("[[[ HERE ]]]")
 			c, err := s.ConnectOrGet(addr)
 			if err != nil {
-				println("[[[ HERE ]]] (1)")
 				s.Debugf(DiscoveryPin, "can't ConnectOrGet %q: %v", addr, err)
 				continue
 			}
 			if err = c.Subscribe(key); err != nil {
-				println("[[[ HERE ]]] (2)")
 				s.Debugln(DiscoveryPin, "can't Subscribe:", err)
 			}
 		}
@@ -764,7 +761,8 @@ func (s *Node) ConnectOrGet(address string) (c *Conn, err error) {
 	// oroutine, but not established yet. Thus, we can't create a
 	// connection by it
 
-	// TODO (kostyarin): rid out of spinning
+	// TODO (kostyarin): rid out of spinning; so, gnet chagnes required,
+	//                   like DialWithValue or something like this
 
 	for {
 		select {
