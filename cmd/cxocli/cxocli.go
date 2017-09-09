@@ -94,7 +94,6 @@ func main() {
 		// we have to handle panicing
 		if err := recover(); err != nil {
 			panic(err)
-			return
 		}
 		os.Exit(code)
 	}()
