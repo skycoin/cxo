@@ -214,7 +214,7 @@ func TestSchema_IsReference(t *testing.T) {
 			}
 			bn, err := r.SchemaByName(el.Name())
 			if err != nil {
-				t.Errorf("%s points to unregistered type", kindOf, fs)
+				t.Errorf("%s (%s) points to unregistered type", kindOf, fs)
 			}
 			if bn != el {
 				t.Error("unnecessary memory overhead")
@@ -381,7 +381,7 @@ func TestSchema_Name(t *testing.T) {
 			t.Fatal(err)
 		}
 		if sc.Name() != name {
-			t.Error("wrong Name(): want %q, got %q", name, sc.Name())
+			t.Errorf("wrong Name(): want %q, got %q", name, sc.Name())
 		}
 	}
 
@@ -424,7 +424,7 @@ func TestSchema_RawName(t *testing.T) {
 			t.Fatal(err)
 		}
 		if rn := string(sc.RawName()); rn != name {
-			t.Error("wrong Name(): want %q, got %q", name, rn)
+			t.Errorf("wrong Name(): want %q, got %q", name, rn)
 		}
 	}
 

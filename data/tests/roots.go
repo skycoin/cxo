@@ -42,6 +42,7 @@ func testAddRoot(t *testing.T, idx data.IdxDB, pk cipher.PubKey, r *data.Root) {
 	}
 }
 
+// RootsAscend is test case for Roots.Ascend
 func RootsAscend(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
@@ -206,6 +207,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 
 }
 
+// RootsDescend is test case for Roots.Descend
 func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
@@ -370,6 +372,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 }
 
+// RootsSet is test case for Roots.Set
 func RootsSet(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
@@ -435,6 +438,7 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 
 }
 
+// RootsDel is test case for Roots.Del
 func RootsDel(t *testing.T, idx data.IdxDB) {
 
 	/*	pk, sk := cipher.GenerateKeyPair()
@@ -445,6 +449,7 @@ func RootsDel(t *testing.T, idx data.IdxDB) {
 
 }
 
+// RootsGet is test case for Roots.Get
 func RootsGet(t *testing.T, idx data.IdxDB) {
 
 	pk, _ := cipher.GenerateKeyPair()
@@ -471,6 +476,7 @@ func RootsGet(t *testing.T, idx data.IdxDB) {
 
 }
 
+// RootsHas is test case for Roots.Has
 func RootsHas(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()

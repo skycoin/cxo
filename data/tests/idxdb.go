@@ -6,6 +6,7 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
+// IdxDBClose is test case for IdxDB.Close
 func IdxDBClose(t *testing.T, idx data.IdxDB) {
 	if err := idx.Close(); err != nil {
 		t.Error(err)

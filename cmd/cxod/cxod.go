@@ -58,7 +58,7 @@ func main() {
 
 	// waiting for SIGINT or termination using RPC
 
-	waitInterrupt(s.Quiting())
+	waitInterrupt(s.Closed())
 
 }
 

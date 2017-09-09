@@ -11,6 +11,8 @@ const (
 	Prefix       string = "[skyobject] " // default log prefix
 	MerkleDegree int    = 16             // default References' degree
 
+	RollAvgSamples int = 5 // rolling average samples
+
 	PackSavePin       log.Pin = 1 << iota // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
 	FillVerbosePin                        // show filling debug logs
@@ -32,6 +34,8 @@ type Config struct {
 
 	// Log configs
 	Log log.Config // logging
+
+	RollAvgSamples int // calculate rolling average for stat
 }
 
 // NewConfig returns pointer to Config with default values
@@ -47,6 +51,7 @@ func NewConfig() (conf *Config) {
 	conf.Log = log.NewConfig()
 	conf.Log.Prefix = Prefix
 	conf.Log.Pins = PackSavePin
+	conf.RollAvgSamples = RollAvgSamples
 	return
 }
 
@@ -55,6 +60,10 @@ func (c *Config) Validate() error {
 	if c.MerkleDegree <= 1 {
 		return fmt.Errorf("skyobject.Config.MerkleDegree too small: %d",
 			c.MerkleDegree)
+	}
+	if c.RollAvgSamples < 1 {
+		return fmt.Errorf("skyobject.Config.RollAvgSampels too small: %d",
+			c.RollAvgSamples)
 	}
 	return nil
 }

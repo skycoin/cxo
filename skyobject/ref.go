@@ -237,6 +237,9 @@ func (r *Ref) Copy() (cp Ref) {
 	return
 }
 
+// Save updates hash using underlying value.
+// The vaue can be changd from outside, this
+// method encodes it and updates hash
 func (r *Ref) Save() {
 	if r.rn == nil {
 		return

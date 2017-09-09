@@ -14,6 +14,7 @@ func testKeyValue(s string) (key cipher.SHA256, val []byte) {
 	return
 }
 
+// CXDSGet tests Get method of CXDS
 func CXDSGet(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
@@ -47,6 +48,7 @@ func CXDSGet(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSSet tests Set method of CXDS
 func CXDSSet(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
@@ -85,6 +87,7 @@ func CXDSSet(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSAdd tests Add method of CXDS
 func CXDSAdd(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
@@ -127,6 +130,7 @@ func CXDSAdd(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSInc tests Inc method of CXDS
 func CXDSInc(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
@@ -174,6 +178,7 @@ func CXDSInc(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSDec tests Dec method of CXDS
 func CXDSDec(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
@@ -244,6 +249,7 @@ func CXDSDec(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSMultiGet tests MultiGet method of CXDS
 func CXDSMultiGet(t *testing.T, ds data.CXDS) {
 
 	k1, v1 := testKeyValue("something")
@@ -301,6 +307,7 @@ func CXDSMultiGet(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSMultiAdd tests MultiAdd method of CXDS
 func CXDSMultiAdd(t *testing.T, ds data.CXDS) {
 
 	k1, v1 := testKeyValue("something")
@@ -345,6 +352,7 @@ func CXDSMultiAdd(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSMultiInc tests MultiInc method of CXDS
 func CXDSMultiInc(t *testing.T, ds data.CXDS) {
 
 	k1, v1 := testKeyValue("something")
@@ -423,6 +431,7 @@ func CXDSMultiInc(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSMultiDec tests MultiDec method of CXDS
 func CXDSMultiDec(t *testing.T, ds data.CXDS) {
 
 	k1, v1 := testKeyValue("something")
@@ -513,6 +522,7 @@ func CXDSMultiDec(t *testing.T, ds data.CXDS) {
 
 }
 
+// CXDSClose tests Close method of CXDS
 func CXDSClose(t *testing.T, ds data.CXDS) {
 	if err := ds.Close(); err != nil {
 		t.Error(err)

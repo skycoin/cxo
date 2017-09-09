@@ -55,6 +55,8 @@ type Conn struct {
 	// filling Roots (hash of Root -> *Filler)
 	fillers map[cipher.SHA256]*skyobject.Filler
 
+	// synchronisation internals
+
 	// done means that all finialization permormed
 	// and handling goroutine exists
 	done chan struct{}
@@ -102,8 +104,6 @@ func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
 	c.fillers = make(map[cipher.SHA256]*skyobject.Filler)
 
 	c.done = make(chan struct{})
-
-	gc.SetValue(c) // for resubscriptions
 
 	return
 }
@@ -238,7 +238,9 @@ func (c *Conn) waitTimeout(id msg.ID, wr *waitResponse, rt time.Duration) {
 }
 
 // Subscribe starts exchanging given feed with peer.
-// It's blocking call. The Subscribe adds feed to related node
+// It's blocking call. The Subscribe adds feed to
+// related node, even if it returns error (and only
+// if given public key is valid)
 func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
 	if err = pk.Verify(); err != nil {
 		return
@@ -394,7 +396,7 @@ func (c *Conn) terminateFillers() {
 		}
 		select {
 		case dre := <-c.drop:
-			c.dropRoot(dre.Root, dre.Err, dre.Incrs)
+			c.dropRoot(dre)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		}
@@ -419,7 +421,7 @@ func (c *Conn) drainSendRoot() {
 	}
 }
 
-func (c *Conn) handle() {
+func (c *Conn) handle(hs chan<- error) {
 	c.s.Debugf(ConnPin, "[%s] start handling", c.gc.Address())
 	defer c.s.Debugf(ConnPin, "[%s] stop handling", c.gc.Address())
 
@@ -429,8 +431,17 @@ func (c *Conn) handle() {
 	var err error
 
 	if err = c.handshake(); err != nil {
-		c.s.Printf("[%s] handshake failed:", c.gc.Address(), err)
+		if false == c.gc.IsIncoming() {
+			// send to (*Node).Connect() or to (*Node).ConnectOrGet()
+			hs <- err
+			return
+		}
+		c.s.Printf("[%s] handshake failed: %v", c.gc.Address(), err)
 		return
+	}
+
+	if false == c.gc.IsIncoming() {
+		close(hs) // release the hs
 	}
 
 	defer c.s.delConnFromWantedObjects(c)
@@ -511,7 +522,7 @@ func (c *Conn) handle() {
 
 		// filling
 		case dre := <-c.drop: // drop root
-			c.dropRoot(dre.Root, dre.Err, dre.Incrs)
+			c.dropRoot(dre)
 		case fr := <-c.full:
 			c.rootFilled(fr)
 		case wcxo := <-c.wantq:
@@ -546,12 +557,15 @@ func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
 	c.Send(c.s.src.RootDone(r.Pub, r.Seq)) // notify peer
 }
 
-func (c *Conn) dropRoot(r *skyobject.Root, err error, incrs []cipher.SHA256) {
+func (c *Conn) dropRoot(dre skyobject.DropRootError) {
 
-	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(), r.Short(), err)
+	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(),
+		dre.Root.Short(), dre.Err)
 
-	c.delFillingRoot(r)
-	c.dropRootRelated(r, incrs, err)
+	c.s.dropavg.AddStartTime(dre.Tp) // stat
+
+	c.delFillingRoot(dre.Root)
+	c.dropRootRelated(dre.Root, dre.Incrs, dre.Err)
 
 }
 
@@ -567,6 +581,7 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 		// drop the Root and remove all related saved obejcts,
 		// because we are not subscribed to the feed anymore
 
+		c.s.dropavg.AddStartTime(fr.Tp) // stat
 		c.dropRootRelated(fr.Root, fr.Incrs, ErrUnsubscribed)
 		return
 	}
@@ -596,14 +611,18 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 		// can't add this Roto to DB, so, let's drop it
 		c.s.Debugf(FillPin, "[ERR] [%s] can't save Root in IdxDB: %v",
 			c.Address(), err)
+		c.s.dropavg.AddStartTime(fr.Tp) // stat
 		c.dropRootRelated(fr.Root, fr.Incrs, err)
 		return
 	}
+
+	c.s.fillavg.AddStartTime(fr.Tp) // stat
 
 	if orf := c.s.conf.OnRootFilled; orf != nil {
 		c.s.so.Hold(fr.Root.Pub, fr.Root.Seq) // hold for the callback
 		go func() {
 			defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq) // unhold
+			fr.Root.IsFull = true
 			orf(c, fr.Root)
 		}()
 	}
@@ -705,7 +724,7 @@ func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
 		c.sendLastFull(as.Feed)
 
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg")
+		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg", c.Address())
 	}
 	delete(c.rr, as.ResponseFor)
 }
@@ -727,7 +746,7 @@ func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
 		}
 		delete(c.rr, rs.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected RejectSubscription msg")
+		c.s.Printf("[ERR] [%s] unexpected RejectSubscription msg", c.Address())
 	}
 }
 
@@ -755,7 +774,7 @@ func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
 		}
 		delete(c.rr, lof.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg")
+		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg", c.Address())
 	}
 }
 
@@ -773,7 +792,7 @@ func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
 		}
 		delete(c.rr, nps.ResponseFor)
 	} else {
-		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg")
+		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg", c.Address())
 	}
 }
 

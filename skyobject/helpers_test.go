@@ -52,6 +52,11 @@ func memoryDB() *data.DB {
 	return data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
 }
 
-func getCont() *Container {
-	return NewContainer(memoryDB(), getConf())
+func getCont() (c *Container) {
+	var err error
+	c, err = NewContainer(memoryDB(), getConf())
+	if err != nil {
+		panic(err)
+	}
+	return
 }

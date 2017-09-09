@@ -2,6 +2,7 @@ package node
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -46,16 +47,16 @@ const (
 
 // log pins
 const (
-	MsgPin    log.Pin = 1 << iota // msgs
-	SubscrPin                     // subscriptions
-	ConnPin
-	RootPin
-	FillPin
-	WaitPin
-	HandlePin
+	MsgPin       log.Pin = 1 << iota // msgs
+	SubscrPin                        // subscriptions
+	ConnPin                          // connect/disconnect
+	RootPin                          // root receive etc
+	FillPin                          // fill/drop
+	HandlePin                        // handle a message
+	DiscoveryPin                     // discovery
 )
 
-// DataDir retuns path to default data directory
+// DataDir returns path to default data directory
 func DataDir() string {
 	usr, err := user.Current()
 	if err != nil {
@@ -69,6 +70,20 @@ func DataDir() string {
 
 func initDataDir(dir string) error {
 	return os.MkdirAll(dir, 0700)
+}
+
+// Addresses are discovery addresses
+type Addresses []string
+
+// String implements flag.Value interface
+func (a *Addresses) String() string {
+	return fmt.Sprintf("%v", []string(*a))
+}
+
+// Set implements flag.Value interface
+func (a *Addresses) Set(addr string) error {
+	*a = append(*a, addr)
+	return nil
 }
 
 // A Config represnets configurations
@@ -131,6 +146,9 @@ type Config struct {
 
 	// PublicServer never keeps secret feeds it share
 	PublicServer bool
+
+	// ServiceDiscovery addresses
+	DiscoveryAddresses Addresses
 
 	//
 	// callbacks
@@ -271,6 +289,9 @@ func (s *Config) FromFlags() {
 		"public-server",
 		s.PublicServer,
 		"make the server public")
+	flag.Var(&s.DiscoveryAddresses,
+		"discovery-address",
+		"address of service discovery")
 
 	// TODO: skyobejct.Configs from flags
 

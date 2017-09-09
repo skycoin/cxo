@@ -40,6 +40,7 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 	return
 }
 
+// Get value by key
 func (d *driveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	err = d.b.View(func(tx *bolt.Tx) (_ error) {
 		got := tx.Bucket(objs).Get(key[:])
@@ -54,6 +55,7 @@ func (d *driveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	return
 }
 
+// GetInc is Get + Inc
 func (d *driveCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
 	err error) {
 
@@ -72,6 +74,7 @@ func (d *driveCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
 	return
 }
 
+// Set of Inc if exists
 func (d *driveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	if len(val) == 0 {
 		err = ErrEmptyValue
@@ -95,6 +98,7 @@ func (d *driveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	return
 }
 
+// Add is like Set, but it calculates key inside
 func (d *driveCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
 	if len(val) == 0 {
 		err = ErrEmptyValue
@@ -105,6 +109,7 @@ func (d *driveCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
 	return
 }
 
+// Inc increments references counter
 func (d *driveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
 		bk := tx.Bucket(objs)
@@ -123,6 +128,7 @@ func (d *driveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 	return
 }
 
+// Dec decrements referecnes counter and removes vlaue if it turns 0
 func (d *driveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
 		bk := tx.Bucket(objs)
@@ -144,6 +150,7 @@ func (d *driveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 	return
 }
 
+// DecGet is Get + Dec
 func (d *driveCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
 	err error) {
 
@@ -166,7 +173,7 @@ func (d *driveCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
 	return
 }
 
-// TODO (kostyarin): ordered get to speed up get, because of B+-tree index
+// MultiGet returns many values by list of keys
 func (d *driveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
 	if len(keys) == 0 {
 		return
@@ -188,7 +195,7 @@ func (d *driveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
 	return
 }
 
-// TODO (kostyarin): ordered add to speed up insert, because of B+-tree index
+// MultiAdd appends all given values like the Add
 func (d *driveCXDS) MultiAdd(vals [][]byte) (err error) {
 	if len(vals) == 0 {
 		return
@@ -223,7 +230,7 @@ func (d *driveCXDS) MultiAdd(vals [][]byte) (err error) {
 	return
 }
 
-// TODO (kostyarin): ordered get to speed up get, because of B+-tree index
+// MultiInc increments references counter for all values by given keys
 func (d *driveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
 	if len(keys) == 0 {
 		return
@@ -250,7 +257,7 @@ func (d *driveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
 	return
 }
 
-// TODO (kostyarin): ordered add to speed up insert, because of B+-tree index
+// MultiDec decrements all values by given keys
 func (d *driveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
 	if len(keys) == 0 {
 		return
@@ -282,6 +289,7 @@ func (d *driveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
 	return
 }
 
+// Iterate all keys
 func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 	uint32) error) (err error) {
 
@@ -305,6 +313,7 @@ func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 	return
 }
 
+// Close DB
 func (d *driveCXDS) Close() (err error) {
 	return d.b.Close()
 }

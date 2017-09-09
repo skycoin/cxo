@@ -6,7 +6,21 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
+
+	"github.com/skycoin/cxo/data"
 )
+
+func testGetByHash(t *testing.T, db data.CXDS, hash cipher.SHA256,
+	obj interface{}) {
+
+	val, _, _ := db.Get(hash)
+	if val == nil {
+		t.Fatal("nil val")
+	}
+	if err := encoder.DeserializeRaw(val, obj); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func Test_filling(t *testing.T) {
 
@@ -70,53 +84,30 @@ func Test_filling(t *testing.T) {
 
 	// group
 	dr := er.Refs[0]
-	val, _, _ := ec.db.CXDS().Get(dr.Object)
-	if val == nil {
-		t.Fatal("nil val")
-	}
 	gr := new(Group)
-	if err := encoder.DeserializeRaw(val, gr); err != nil {
-		t.Fatal(err)
-	}
+	testGetByHash(t, ec.db.CXDS(), dr.Object, gr)
 	if gr.Name != "the Group" {
 		t.Fatal("wrong name")
 	}
 
 	// leader
-	val, _, _ = ec.db.CXDS().Get(gr.Leader.Hash)
-	if val == nil {
-		t.Fatal("nil val")
-	}
 	leader := new(User)
-	if err := encoder.DeserializeRaw(val, leader); err != nil {
-		t.Fatal(err)
-	}
+	testGetByHash(t, ec.db.CXDS(), gr.Leader.Hash, leader)
 	if leader.Name != "Alice" {
 		t.Fatal("wrong name")
 	}
 
 	// curator
-	val, _, _ = ec.db.CXDS().Get(gr.Curator.Object)
-	if val == nil {
-		t.Fatal("nil val")
-	}
 	curator := new(Developer)
-	if err := encoder.DeserializeRaw(val, curator); err != nil {
-		t.Fatal(err)
-	}
+	testGetByHash(t, ec.db.CXDS(), gr.Curator.Object, curator)
 	if curator.Name != "kostyarin" {
 		t.Fatal("wrong name")
 	}
 
 	// refs
-	val, _, _ = ec.db.CXDS().Get(gr.Members.Hash)
-	if val == nil {
-		t.Fatal("nil val", gr.Members.Hash.Hex())
-	}
 	ers := new(encodedRefs)
-	if err := encoder.DeserializeRaw(val, ers); err != nil {
-		t.Fatal(err)
-	}
+	testGetByHash(t, ec.db.CXDS(), gr.Members.Hash, ers)
+
 	if ers.Degree != uint32(ec.conf.MerkleDegree) {
 		t.Fatal("wrong degree")
 	}

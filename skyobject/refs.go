@@ -10,10 +10,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-var (
-	ErrNotFound = errors.New("not found")
-)
-
 // A Refs represetns array of references.
 // The Refs contains RefsElem(s). To delete
 // an element use Delete method of the
@@ -366,10 +362,35 @@ func (r *Refs) refByIndex(depth, i int) (ref *RefsElem, err error) {
 	return
 }
 
-// RefByHash returns Ref by its hash. It returns first Ref.
-// The call is O(1) if HashTableIndex flag set. Otherwise
-// the call is O(n). It returns ErrNotFound if requested
-// RefsElem has not been found
+func (r *Refs) refByHashWihtoutHashTable(hash cipher.SHA256) (i int,
+	needle *RefsElem, err error) {
+
+	if r.length == 0 {
+		err = ErrNotFound
+		return // 0, nil, {not found}
+	}
+
+	_, err = r.descend(r.depth, r.length-1,
+		func(k int, el *RefsElem) (_ error) {
+			if el.Hash == hash {
+				needle, i = el, k
+				return ErrStopIteration
+			}
+			return
+		})
+	if err == ErrStopIteration {
+		err = nil
+	}
+	if err == nil && needle == nil {
+		err = ErrNotFound
+	}
+	return
+}
+
+// RefByHash returns Ref by its hash. If HashTableIndex flag
+// is set, and there are many values with the same hash,
+// then which value will be retuned is not defined. If the
+// flag is not set, then it returns last value
 func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 
 	if err = r.load(0); err != nil {
@@ -383,25 +404,7 @@ func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 		return
 	}
 
-	if r.length == 0 {
-		err = ErrNotFound
-		return // nil, 'not found'
-	}
-
-	_, err = r.descend(r.depth, r.length-1,
-		func(_ int, el *RefsElem) (_ error) {
-			if el.Hash == hash {
-				needle = el
-				return ErrStopIteration
-			}
-			return
-		})
-	if err == ErrStopIteration {
-		err = nil
-	}
-	if err == nil && needle == nil {
-		err = ErrNotFound
-	}
+	_, needle, err = r.refByHashWihtoutHashTable(hash)
 	return
 }
 
@@ -460,25 +463,7 @@ func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 		return
 	}
 
-	if r.length == 0 {
-		err = ErrNotFound
-		return // 0, nil, {not found}
-	}
-
-	_, err = r.descend(r.depth, r.length-1,
-		func(k int, el *RefsElem) (_ error) {
-			if el.Hash == hash {
-				needle, i = el, k
-				return ErrStopIteration
-			}
-			return
-		})
-	if err == ErrStopIteration {
-		err = nil
-	}
-	if err == nil && needle == nil {
-		err = ErrNotFound
-	}
+	i, needle, err = r.refByHashWihtoutHashTable(hash)
 	return
 }
 
@@ -869,7 +854,7 @@ func (r *Refs) updateHashLengthFieldsFromTail(depth int) (set bool, err error) {
 		return
 	}
 
-	var bset bool = true // set of branch (set to true to check first from tail)
+	var bset = true // set of branch (set to true to check first from tail)
 
 	for i := len(r.branches) - 1; i >= 0; i-- {
 		br := r.branches[i]
@@ -1087,7 +1072,7 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 	return
 }
 
-// AppendHash to the Refs. Type of the objects must
+// AppendHashes to the Refs. Type of the objects must
 // be the same as type of the Refs. It never checked
 // Blank hashes will be skipped
 func (r *Refs) AppendHashes(hashes ...cipher.SHA256) (err error) {
@@ -1297,7 +1282,9 @@ func (r *Refs) debugItems(forceLoad bool,
 
 	if depth == 0 {
 		for _, leaf := range r.leafs {
-			its = append(its, gotree.GTStructure{"*(ref) " + leaf.Short(), nil})
+			its = append(its, gotree.GTStructure{
+				Name: "*(ref) " + leaf.Short(),
+			})
 		}
 		return
 	}
@@ -1337,6 +1324,7 @@ func (r *RefsElem) String() string {
 	return r.Hash.Hex()
 }
 
+// SetHash replaces hash of the RefsElem with given one
 func (r *RefsElem) SetHash(hash cipher.SHA256) (err error) {
 	if r.Hash == hash {
 		return
@@ -1481,6 +1469,9 @@ func (r *RefsElem) SetValue(obj interface{}) (err error) {
 	return
 }
 
+// Save updates hash using underlying value.
+// The vaue can be changd from outside, this
+// method encodes it and updates hash
 func (r *RefsElem) Save() (err error) {
 	if r.rn == nil || r.value == nil || r.upper == nil {
 		return // detached or not loaded

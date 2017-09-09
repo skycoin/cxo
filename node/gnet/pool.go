@@ -27,8 +27,9 @@ type Pool struct {
 
 	log.Logger
 
-	cmx   sync.Mutex
-	conns map[string]*Conn
+	cmx    sync.Mutex
+	conns  map[string]*Conn
+	connsl []*Conn // cow copy
 
 	lmx sync.Mutex
 	l   net.Listener
@@ -207,6 +208,7 @@ func (p *Pool) delete(address string) {
 	defer p.cmx.Unlock()
 
 	delete(p.conns, address)
+	p.connsl = nil
 }
 
 // Dial to remote node. The call is non-blocking it returns
@@ -236,9 +238,46 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 		return
 	}
 
-	// TODO: check out TLS config to returns immmediately if
-	// the config is malformed
+	// TODO: check out TLS config to returns immmediately
+	//       if the config is malformed
 
+	cn = p.createConnection(address)
+	if ch := p.conf.OnCreateConnection; ch != nil {
+		ch(cn)
+	}
+	return
+}
+
+// DialOrGet dials to remote node or returns existing connection if
+// the connection already exists. The call is non-blocking it returns
+// error if address is malformed or connections limit reached by the Pool
+func (p *Pool) DialOrGet(address string) (cn *Conn, fresh bool, err error) {
+	if p.isClosed() {
+		err = ErrClosed
+		return
+	}
+
+	p.cmx.Lock()
+	defer p.cmx.Unlock()
+
+	// check
+	var got bool
+	if cn, got = p.conns[address]; got {
+		return
+	}
+	if !p.acquire() {
+		err = ErrConnectionsLimit
+		return
+	}
+
+	if _, err = net.ResolveTCPAddr("tcp", address); err != nil {
+		return
+	}
+
+	// TODO: check out TLS config to returns immmediately
+	//       if the config is malformed
+
+	fresh = true
 	cn = p.createConnection(address)
 	if ch := p.conf.OnCreateConnection; ch != nil {
 		ch(cn)
@@ -251,18 +290,24 @@ func (p *Pool) Dial(address string) (cn *Conn, err error) {
 // ========================================================================== //
 
 // Connections returns all connections
-func (p *Pool) Connections() (cs []*Conn) {
+func (p *Pool) Connections() []*Conn {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
 
+	if p.connsl != nil {
+		return p.connsl
+	}
+
 	if len(p.conns) == 0 {
-		return
+		return nil
 	}
-	cs = make([]*Conn, 0, len(p.conns))
+
+	p.connsl = make([]*Conn, 0, len(p.conns))
 	for _, c := range p.conns {
-		cs = append(cs, c)
+		p.connsl = append(p.connsl, c)
 	}
-	return
+
+	return p.connsl
 }
 
 // Connection returns a connection by address

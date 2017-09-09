@@ -11,6 +11,9 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// Inspect given root returning himan readale string
+// with tree that represents this Root with all
+// related obejcts
 func (c *Container) Inspect(r *Root) string {
 	ins := inspector{
 		c: c,
@@ -251,7 +254,7 @@ func (*inspector) String(sch Schema, val []byte) (it gotree.GTStructure) {
 }
 
 // slcie or array
-func (p *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
+func (i *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
 
 	el := sch.Elem()
 	if el == nil {
@@ -305,24 +308,24 @@ func (p *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
 
 	var m int
 	if s := fixedSize(el.Kind()); s < 0 {
-		for i := 0; i < ln; i++ {
+		for k := 0; k < ln; k++ {
 			if shift+s > len(val) {
-				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
+				err = unexpectedEndOfArraySliceError(sch, el, k, ln)
 				return
 			}
-			it.Items = append(it.Items, p.Data(el, val[shift:shift+s]))
+			it.Items = append(it.Items, i.Data(el, val[shift:shift+s]))
 			shift += s
 		}
 	} else {
-		for i := 0; i < ln; i++ {
+		for k := 0; k < ln; k++ {
 			if shift > len(val) {
-				err = unexpectedEndOfArraySliceError(sch, el, i, ln)
+				err = unexpectedEndOfArraySliceError(sch, el, k, ln)
 				return
 			}
 			if m, err = el.Size(val[shift:]); err != nil {
 				return
 			}
-			it.Items = append(it.Items, p.Data(el, val[shift:shift+m]))
+			it.Items = append(it.Items, i.Data(el, val[shift:shift+m]))
 			shift += m
 		}
 	}
@@ -347,7 +350,7 @@ func unexpectedEndOfArraySliceError(sch, el Schema, i, ln int) (err error) {
 	return
 }
 
-func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
+func (i *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 
 	var shift int
 	var s int
@@ -368,7 +371,7 @@ func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 			it.Name = "(err) " + err.Error()
 			return
 		}
-		fit := p.Data(f.Schema(), val[shift:shift+s])
+		fit := i.Data(f.Schema(), val[shift:shift+s])
 		fit.Name = f.Name() + ": " + fit.Name // field name
 		it.Items = append(it.Items, fit)
 		shift += s
@@ -376,14 +379,14 @@ func (p *inspector) Struct(sch Schema, val []byte) (it gotree.GTStructure) {
 	return
 }
 
-func (p *inspector) Ref(sch Schema, val []byte) (it gotree.GTStructure) {
+func (i *inspector) Ref(sch Schema, val []byte) (it gotree.GTStructure) {
 
 	var ref Ref
 	if err := encoder.DeserializeRaw(val, &ref); err != nil {
 		it.Name = "(err) " + err.Error()
 		return
 	}
-	return p.RefHash(sch, ref.Hash)
+	return i.RefHash(sch, ref.Hash)
 }
 
 func (i *inspector) RefHash(sch Schema,

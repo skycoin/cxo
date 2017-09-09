@@ -8,6 +8,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/log"
+	"github.com/skycoin/cxo/skyobject/statutil"
 )
 
 // common errors
@@ -18,6 +19,10 @@ var (
 	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
 	ErrMissingInverseMapInTypes = errors.New("missing Inverse map in Types")
 	ErrEmptyRegistryRef         = errors.New("empty refsitry reference")
+	ErrNotFound                 = errors.New("not found")
+	ErrEmptyRootHash            = errors.New("empty hash of Root")
+	ErrMissingDB                = errors.New(
+		"skyobejct.NewContainer: missing *data.DB")
 )
 
 // A Container represents overlay for database
@@ -34,6 +39,10 @@ type Container struct {
 	coreRegistry *Registry // core registry or nil
 
 	rootsHolder // hold Roots
+
+	// stat
+	packSave statutil.RollAvg
+	cleanUp  statutil.RollAvg // TODO (kostyarin): cleaning up
 }
 
 // NewContainer creates new Container instance by given DB
@@ -43,18 +52,19 @@ type Container struct {
 // then default configurations used (see NewConfig for details).
 // This function also panics if given configs contains invalid
 // values
-func NewContainer(db *data.DB, conf *Config) (c *Container) {
+func NewContainer(db *data.DB, conf *Config) (c *Container, err error) {
 
 	if db == nil {
-		panic("missing *data.DB")
+		err = ErrMissingDB
+		return
 	}
 
 	if conf == nil {
 		conf = NewConfig()
 	}
 
-	if err := conf.Validate(); err != nil {
-		panic(err)
+	if err = conf.Validate(); err != nil {
+		return
 	}
 
 	c = new(Container)
@@ -68,6 +78,9 @@ func NewContainer(db *data.DB, conf *Config) (c *Container) {
 	}
 
 	c.rootsHolder.holded = make(map[holdedRoot]int)
+
+	c.packSave = statutil.NewRollAvg(conf.RollAvgSamples)
+	c.cleanUp = statutil.NewRollAvg(conf.RollAvgSamples)
 	return
 }
 
@@ -76,7 +89,7 @@ func (c *Container) DB() *data.DB {
 	return c.db
 }
 
-// CoreRegisty of the Container or nil if
+// CoreRegistry of the Container or nil if
 // the Container created without a Registry
 func (c *Container) CoreRegistry() *Registry {
 	c.Debugln(VerbosePin, "CoreRegistry", c.coreRegistry != nil)
