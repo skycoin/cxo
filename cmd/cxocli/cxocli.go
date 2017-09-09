@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
+	cxo "github.com/skycoin/cxo/skyobject"
 )
 
 // defaults
@@ -32,6 +35,7 @@ var (
 	errUnknowCommand    = errors.New("unknown command")
 	errMisisngArgument  = errors.New("missing argument")
 	errTooManyArguments = errors.New("too many arguments")
+	errInvalidQuery     = errors.New("invalid query")
 
 	commands = []string{
 		"add feed ",
@@ -84,7 +88,16 @@ func main() {
 		code int
 	)
 
-	defer func() { os.Exit(code) }()
+	defer func() {
+		// so the os.Exit "recovers" silently
+		// that is not acceptable for developers,
+		// we have to handle panicing
+		if err := recover(); err != nil {
+			panic(err)
+			return
+		}
+		os.Exit(code)
+	}()
 
 	flag.StringVar(&address,
 		"a",
@@ -267,7 +280,7 @@ func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
 		err = info(rpc)
 
 	case "stat":
-		err = stat(rpc)
+		err = stat(rpc, ss)
 
 	case "terminate":
 		err = term(rpc)
@@ -357,8 +370,31 @@ func showHelp() {
   listening address
     print listening address
 
-  stat
-    statistic
+  stat [public key] [seq query]
+    show detailed statistic; optional public key shows statistic
+    of a feed (instead of all feeds), and optional seq query
+    shows statistic of range of root objects; the stat can be used
+    this ways:
+
+    stat
+      statistic of all, by default it shows statistic of every feed
+      and last root of every feed
+    stat full
+      statistic of all, output can be big
+    stat 022241cd1857ec73b7741ccb5d5494743e1ef7075ec71d6eca59979fd6be58758c
+      statistic of given feed
+
+    the "seq query" can be used if public key given, there are variants:
+      1    - statistic of given root (with seq = 1)
+      1..3 - statistic of root objects 1, 2 and 3
+      ..3  - statistic of all root obejcts before 3 (inclusive)
+      3..  - statistic of all root obejcts after 3 (inclusive)
+      -3   - statistic of latest 3 root obejcts
+      +3   - statistic of first 3 root obejcts
+
+    for example
+
+    stat 022241cd1857ec73b7741ccb5d5494743e1ef7075ec71d6eca59979fd6be58758c 1..3
 
   terminate
     terminate server if allowed
@@ -516,7 +552,7 @@ func feed(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func stat(rpc *node.RPCClient) (err error) {
+func stat(rpc *node.RPCClient, args []string) (err error) {
 
 	var stat node.Stat
 	if stat, err = rpc.Stat(); err != nil {
@@ -541,31 +577,254 @@ func stat(rpc *node.RPCClient) (err error) {
 	fmt.Fprintf(out, "  Total objects volume: %s (%.2f%% shared)\n",
 		stat.CXO.Objects.Volume, svp*100.0)
 
-	for pk, fs := range stat.CXO.Feeds {
-		fmt.Fprintln(out, "  -", pk.Hex())
+	if len(stat.CXO.Feeds) == 0 {
+		fmt.Fprintln(out, "  no feeds")
+		fmt.Fprintln(out, "  ----")
+		return // don't give a shit about arguments and anything else
+	}
 
-		sap, svp := fs.Percents()
+	// 1. no arguments    -> print every feed with lats root
+	// 2. 'full' argument -> print all
+	// 3. pk argument     -> print given feed
+	// 4. pk + query      -> print by the query
 
-		fmt.Fprintf(out, "    total objects amount: %d (%.2f%% shared)\n",
-			fs.Objects.Amount, sap*100.0)
-		fmt.Fprintf(out, "    total objects volume: %s (%.2f%% shared)\n",
-			fs.Objects.Volume, svp*100.0)
-
-		for seq, rs := range fs.Roots {
-			fmt.Fprintln(out, "    -", seq)
-
-			sap, svp := rs.Percents()
-
-			fmt.Fprintf(out, "      total objects amount: %d (%.2f%% shared)\n",
-				rs.Objects.Amount, sap*100.0)
-			fmt.Fprintf(out, "      total objects volume: %s (%.2f%% shared)\n",
-				rs.Objects.Volume, svp*100.0)
+	switch len(args) {
+	case 0, 1:
+		// no arguments
+		printDefaultFeedsStat(&stat.CXO)
+	case 2:
+		// one argument (full or pk)
+		if args[1] == "full" {
+			printFullFeedsStat(&stat.CXO)
+		} else {
+			var pk cipher.PubKey
+			if pk, err = pubKeyFromHex(args[1]); err != nil {
+				return
+			}
+			if fs, ok := stat.CXO.Feeds[pk]; ok {
+				printFullFeedStat(pk, &fs)
+				return
+			}
+			fmt.Fprintln(out, "  no such feed")
 		}
+	case 3:
+		// pk + query
+		var pk cipher.PubKey
+		if pk, err = pubKeyFromHex(args[1]); err != nil {
+			return
+		}
+		if fs, ok := stat.CXO.Feeds[pk]; ok {
+			err = printFeedStatQuery(pk, &fs, args[2])
+			return
+		}
+		fmt.Fprintln(out, "  no such feed")
+	default:
+		return errTooManyArguments
 	}
 
 	fmt.Fprintln(out, "  ----")
-
 	return
+}
+
+func printFirstRoots(query string, fs *cxo.FeedStat) (err error) {
+	var num uint64
+	if num, err = strconv.ParseUint(query, 10, 64); err != nil {
+		return
+	}
+	crs := sortRootStats(fs)
+	for i := uint64(0); i < num && i < uint64(len(fs.Roots)); i++ {
+		printRootStat(crs[i].seq, crs[i].stat)
+	}
+	return
+}
+
+func printLastRoots(query string, fs *cxo.FeedStat) (err error) {
+	var num uint64
+	if num, err = strconv.ParseUint(query, 10, 64); err != nil {
+		return
+	}
+	crs := sortRootStats(fs)
+	last := uint64(len(fs.Roots)) - 1
+	for i := last; i >= 0 && i > last-num; i-- {
+		printRootStat(crs[i].seq, crs[i].stat)
+	}
+	return
+}
+
+func printRootsBefore(query string, fs *cxo.FeedStat) (err error) {
+	var before uint64
+	if before, err = strconv.ParseUint(query, 10, 64); err != nil {
+		return
+	}
+	var printed bool
+	for _, cr := range sortRootStats(fs) {
+		if cr.seq > before {
+			break
+		}
+		printed = true
+		printRootStat(cr.seq, cr.stat)
+	}
+	if false == printed {
+		fmt.Fprintln(out, "      no such root objects")
+	}
+	return
+}
+
+func printRootsAfter(query string, fs *cxo.FeedStat) (err error) {
+	var after uint64
+	if after, err = strconv.ParseUint(query, 10, 64); err != nil {
+		return
+	}
+	var printed bool
+	for _, cr := range sortRootStats(fs) {
+		if cr.seq < after {
+			continue
+		}
+		printed = true
+		printRootStat(cr.seq, cr.stat)
+	}
+	if false == printed {
+		fmt.Fprintln(out, "      no such root objects")
+	}
+	return
+}
+
+func printRootsRange(query string, fs *cxo.FeedStat) (err error) {
+	switch {
+	case strings.HasPrefix(query, ".."):
+		// before (inclusive)
+		return printRootsBefore(strings.TrimPrefix(query, ".."), fs)
+	case strings.HasSuffix(query, ".."):
+		// after (inclusive)
+		return printRootsAfter(strings.TrimSuffix(query, ".."), fs)
+	default:
+		// n..m
+		ss := strings.Split(query, "..")
+		if len(ss) != 2 {
+			return errInvalidQuery
+		}
+		var after, before uint64
+		if after, err = strconv.ParseUint(ss[0], 10, 64); err != nil {
+			return
+		}
+		if before, err = strconv.ParseUint(ss[1], 10, 64); err != nil {
+			return
+		}
+		if before < after {
+			return errInvalidQuery
+		}
+		var printed bool
+		for _, cr := range sortRootStats(fs) {
+			if cr.seq < after {
+				continue
+			}
+			if cr.seq > before {
+				break
+			}
+			printed = true
+			printRootStat(cr.seq, cr.stat)
+		}
+		if false == printed {
+			fmt.Fprintln(out, "      no such root objects")
+		}
+	}
+	return
+}
+
+func printFeedStatQuery(pk cipher.PubKey, fs *cxo.FeedStat,
+	query string) (err error) {
+
+	// 1    - given root (with seq = 1)
+	// 1..3 - root objects 1, 2 and 3
+	// ..3  - all root obejcts before 3 (inclusive)
+	// 3..  - all root obejcts after 3 (inclusive)
+	// -3   - latest 3 root obejcts
+	// +3   - first 3 root obejcts
+
+	printFeedStatHead(pk, fs)
+	if len(fs.Roots) == 0 {
+		fmt.Fprintln(out, "      no root objects")
+		return
+	}
+
+	switch {
+	case strings.Contains(query, ".."):
+		// ..3
+		// 3..
+		// 1..3
+		err = printRootsRange(query, fs)
+	case strings.HasPrefix(query, "+"):
+		// +3
+		err = printFirstRoots(strings.TrimPrefix(query, "+"), fs)
+	case strings.HasPrefix(query, "-"):
+		// -3
+		err = printLastRoots(strings.TrimPrefix(query, "-"), fs)
+	default:
+		var seq uint64
+		if seq, err = strconv.ParseUint(query, 10, 64); err != nil {
+			return
+		}
+		if rs, ok := fs.Roots[seq]; ok {
+			printRootStat(seq, &rs)
+			return
+		}
+		fmt.Fprintln(out, "      no such root obejct")
+	}
+	return
+}
+
+func printFeedStatHead(pk cipher.PubKey, fs *cxo.FeedStat) {
+	fmt.Fprintln(out, "  -", pk.Hex())
+
+	sap, svp := fs.Percents()
+
+	fmt.Fprintf(out, "    total objects amount: %d (%.2f%% shared)\n",
+		fs.Objects.Amount, sap*100.0)
+	fmt.Fprintf(out, "    total objects volume: %s (%.2f%% shared)\n",
+		fs.Objects.Volume, svp*100.0)
+
+}
+
+func printRootStat(seq uint64, rs *cxo.RootStat) {
+	fmt.Fprintln(out, "    -", seq)
+
+	sap, svp := rs.Percents()
+
+	fmt.Fprintf(out, "      total objects amount: %d (%.2f%% shared)\n",
+		rs.Objects.Amount, sap*100.0)
+	fmt.Fprintf(out, "      total objects volume: %s (%.2f%% shared)\n",
+		rs.Objects.Volume, svp*100.0)
+}
+
+func printDefaultFeedsStat(stat *cxo.Stat) {
+	cfs := sortFeedStats(stat.Feeds)
+	for _, fs := range cfs {
+		printFeedStatHead(fs.pk, fs.stat)
+		if len(fs.stat.Roots) == 0 {
+			fmt.Fprintln(out, "      no root obejcts")
+			continue
+		}
+		seq, rs := getLastRootStat(fs.stat)
+		printRootStat(seq, rs)
+	}
+}
+
+func printFullFeedStat(pk cipher.PubKey, fs *cxo.FeedStat) {
+	printFeedStatHead(pk, fs)
+	if len(fs.Roots) == 0 {
+		fmt.Fprintln(out, "      no root obejcts")
+		return
+	}
+	for _, crs := range sortRootStats(fs) {
+		printRootStat(crs.seq, crs.stat)
+	}
+}
+
+func printFullFeedsStat(stat *cxo.Stat) {
+	cfs := sortFeedStats(stat.Feeds)
+	for _, fs := range cfs {
+		printFullFeedStat(fs.pk, fs.stat)
+	}
 }
 
 func connDirString(in bool) string {
@@ -753,3 +1012,65 @@ func term(rpc *node.RPCClient) (err error) {
 	fmt.Fprintln(out, "  terminated")
 	return
 }
+
+// --- sorting (feeds)
+
+func sortFeedStats(fss map[cipher.PubKey]cxo.FeedStat) (cfs cxoFeedStats) {
+	cfs = make(cxoFeedStats, 0, len(fss))
+	for pk, fs := range fss {
+		cfs = append(cfs, cxoFeedStat{
+			pk:   pk,
+			stat: &fs,
+		})
+	}
+	sort.Sort(cfs)
+	return
+}
+
+type cxoFeedStat struct {
+	pk   cipher.PubKey
+	stat *cxo.FeedStat
+}
+
+type cxoFeedStats []cxoFeedStat
+
+func (c cxoFeedStats) Len() int { return len(c) }
+func (c cxoFeedStats) Less(i, j int) bool {
+	return bytes.Compare(c[i].pk[:], c[j].pk[:]) < 0
+}
+func (c cxoFeedStats) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
+
+// --- sorting (roots)
+
+func getLastRootStat(fs *cxo.FeedStat) (last uint64, rs *cxo.RootStat) {
+	for seq, crs := range fs.Roots {
+		if seq > last || (seq == 0 && last == 0) {
+			rs = &crs
+			last = seq
+		}
+	}
+	return // or nil
+}
+
+func sortRootStats(fs *cxo.FeedStat) (rss cxoRootStats) {
+	rss = make(cxoRootStats, 0, len(fs.Roots))
+	for seq, rs := range fs.Roots {
+		rss = append(rss, cxoRootStat{
+			seq:  seq,
+			stat: &rs,
+		})
+	}
+	sort.Sort(rss)
+	return
+}
+
+type cxoRootStat struct {
+	seq  uint64
+	stat *cxo.RootStat
+}
+
+type cxoRootStats []cxoRootStat
+
+func (c cxoRootStats) Len() int           { return len(c) }
+func (c cxoRootStats) Less(i, j int) bool { return c[i].seq < c[j].seq }
+func (c cxoRootStats) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
