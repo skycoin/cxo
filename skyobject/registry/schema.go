@@ -1,17 +1,11 @@
-package skyobject
+package registry
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
-)
-
-var (
-	// ErrInvalidType occurs when you tries to register any unacceptable type
-	ErrInvalidType = errors.New("invalid type")
 )
 
 var (

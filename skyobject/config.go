@@ -18,7 +18,7 @@ const (
 	FillVerbosePin                        // show filling debug logs
 	FillPin                               // show filling time
 
-	VerbosePin // to many logs to show
+	VerbosePin // too many logs to show
 )
 
 // A Config represents oconfigurations

@@ -1,4 +1,4 @@
-package skyobject
+package registry
 
 import (
 	"reflect"
@@ -40,11 +40,4 @@ func (s SchemaRef) String() string {
 // IsBlank returns true if the SchemaRef is blank
 func (s SchemaRef) IsBlank() bool {
 	return s == (SchemaRef{})
-}
-
-// A Types represents mapping from registered names
-// of a Registry to reflect.Type and inversed way
-type Types struct {
-	Direct  map[string]reflect.Type // registered name -> refelect.Type
-	Inverse map[reflect.Type]string // refelct.Type -> registered name
 }

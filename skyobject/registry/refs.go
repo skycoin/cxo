@@ -1,4 +1,4 @@
-package skyobject
+package registry
 
 import (
 	"errors"
@@ -9,6 +9,485 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
+
+type Refs struct {
+	// Hash that represnts the Refs. If Refs is
+	// blank then this Hash is blank too
+	Hash cipher.SHA256
+
+	depth  int `enc:"-"` // depth - 1
+	degree int `enc:"-"` // degree
+
+	// hash -> node that keeps element
+	//         to find index. It points to
+	//         nils if the depth is 0
+	index map[cipher.SHA256]*refsNode `enc:"-"`
+
+	length int `enc:"-"` // length of Refs
+
+	leafs    []cipher.SHA256 `enc:"-"` //
+	branches []*refsNode     `enc:"-"` //
+
+	flags Flags `enc:"-"` // first use (load) flags
+
+	modified  bool `enc:"-"` // actual state
+	iterating bool `enc"-"`  // is iterating now
+}
+
+type refsNode struct {
+	hash cipher.SHA256 // hash of this node
+
+	length int // length of this subtree
+
+	leafs    []cipher.SHA256 //
+	branches []*refsNode     //
+
+	upper *refsNode // upper node
+	root  *Refs     // head (root)
+}
+
+func (r *Refs) initialize(pack Pack) (err error) {
+	if r.flags == 0 {
+		r.flags = pack.Flags() | flagIsSet
+	}
+	if r.Hash == (cipher.SHA256{}) {
+		return // blank Refs
+	}
+	if r.length == 0 {
+		err = r.load(pack)
+	}
+	return
+}
+
+// Len returns length of the Refs
+func (r *Refs) Len(pack Pack) (ln int, err error) {
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	ln = r.length
+	return
+}
+
+type encodedRefs struct {
+	Depth  uint32
+	Degree uint32
+	Length uint32
+	Hashes []cipher.SHA256
+}
+
+func (r *Refs) load(pack Pack) (err error) {
+
+	var er encodedRefs
+	if err = get(pack, r.Hash, &er); err != nil {
+		return
+	}
+
+	r.depth = int(er.Depth)
+	r.degree = int(er.Degree)
+
+	r.length = int(er.Length)
+
+	if r.length == 0 || r.degree < 2 {
+		return ErrInvalidEncodedRefs
+	}
+
+	if r.flags&HashTableIndex != 0 {
+		r.index = make(map[cipher.SHA256]*refsNode)
+	}
+
+	if r.depth == 0 {
+
+		r.leafs = er.Hashes
+
+		if r.flags&HashTableIndex != 0 {
+			for _, hash := range r.leafs {
+				r.index[hash] = nil
+			}
+		}
+
+	} else {
+
+		err = r.loadRootRefsNodes(pack, er.Hashes)
+
+	}
+
+	return
+}
+
+// 1. only 'hash' of refsNode has meaning
+// 2. refsNode loaded
+// 3. refsNode loaded with all subtrees
+
+type encodedRefsNode struct {
+	Length uint32
+	Hashes []cipher.SHA256
+}
+
+func (r *Refs) loadRootRefsNodes(pack Pack,
+	hashes []cipher.SHA256) (err error) {
+
+	var depth = r.depth // the depth is not 0
+	var rn *refsNode
+
+	r.branches = make([]*refsNode, 0, len(hashes))
+
+	for _, hash := range hashes {
+		if rn, err = r.loadRefsNodes(pack, depth-1, nil, hash); err != nil {
+			return
+		}
+		r.branches = append(r.branches, rn)
+	}
+
+	return
+}
+
+// load fucking recursive
+func (r *Refs) loadRefsNodes(pack Pack, depth int, upper *refsNode,
+	hash cipher.SHA256) (rn *refsNode, err error) {
+
+	var val []byte
+
+	rn = new(refsNode)
+
+	rn.hash = hash
+	rn.upper = upper
+	rn.root = r
+
+	if hash == (cipher.SHA256{}) {
+		return // empty branch of leaf
+	}
+
+	if r.flags&(EntireRefs|HashTableIndex) == 0 {
+		return // don't load deepper
+	}
+
+	// load deepper
+
+	var ern encodedRefsNode
+	if err = get(pack, hash, &ern); err != nil {
+		return
+	}
+
+	rn.length = int(ern.Length)
+
+	if depth == 0 {
+		rn.leafs = ern.Hashes
+
+		if r.flags&HashTableIndex != 0 {
+			for _, hash := range rn.leafs {
+				r.index[hash] = rn // parent node of the leafs
+			}
+		}
+
+	} else {
+
+		var sn *refsNode
+
+		rn.branches = make([]*refsNode, 0, len(ern.Hashes))
+
+		for _, hash := range ern.Hashes {
+			if sn, err = r.loadRefsNodes(pack, depth-1, rn, hash); err != nil {
+				return
+			}
+			rn.branches = append(rn.branches, sn)
+		}
+
+	}
+
+	return
+}
+
+// ValueByHash decodes value by given hash. If HashTableIndex
+// is set, then hash table used. If Refs contains many values
+// with the same hash then
+func (r *Refs) ValueByHash(pack Pack, hash cipher.SHA256,
+	obj interface{}) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if r.flags&HashTableIndex != 0 {
+		if _, ok := r.index[hash]; !ok {
+			return ErrNotFound
+		}
+		err = get(pack, hash, obj)
+		return
+	}
+
+	// TODO (kostyarin): iterate descending
+
+	// descend
+
+	return
+}
+
+// ValueByHashWithIndex decodes value by given hash and returns
+// index of the value
+func (r *Refs) ValueByHashWithIndex(pack Pack, hash cipher.SHA256,
+	obj interface{}) (i int, err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if r.flags&HashTableIndex != 0 {
+
+		var ok bool
+		var pn *refsNode // parent node
+
+		if pn, ok = r.index[hash]; !ok {
+			err = ErrNotFound
+			return
+		}
+
+		// deserialize
+
+		if err = get(pack, hash, obj); err != nil {
+			return
+		}
+
+		// find index
+
+		if pn == nil {
+			return r.indexInLeafs(hash, r.leafs)
+		}
+
+		r.indexOfLeaf(pn, hash)
+		return
+
+	}
+
+	// TODO (kostyarin): iterate descending
+
+	// descend
+
+	return
+}
+
+func (r *Refs) indexOfLeaf(rn *refsNode, hash cipher.SHA256) (i int,
+	err error) {
+
+	if i, err = r.indexInLeafs(hash, rn.leafs); err != nil {
+		return
+	}
+
+	down, up := rn, rn.upper
+
+	for ; up != nil; down, up = up, up.upper {
+		for _, br := range up.branches {
+			if br == down {
+				break
+			}
+			i += br.length
+		}
+	}
+
+	for _, br := range r.branches {
+		if br == down {
+			break
+		}
+		i += br.length
+	}
+
+	return
+}
+
+func (r *Refs) indexInLeafs(hash cipher.SHA256,
+	leafs []cipher.SHA256) (i int, err error) {
+
+	// it is member of Refs.leafs
+	for _, h := range r.leafs {
+		if h == (cipher.SHA256{}) {
+			continue // skip empty
+		}
+		if h == hash {
+			return // found
+		}
+		i++
+	}
+
+	err = ErrInvalidRefs // not found
+	return
+}
+
+func validateIndex(i int, length int) (err error) {
+	if i < 0 || i >= length {
+		err = ErrIndexOutOfRange
+	}
+	return
+}
+
+func (r *Refs) valueByIndex(pack Pack, i int, obj interface{}, depth int,
+	leafs []cipher.SHA256, branches []*refsNode) (hash cipher.SHA256,
+	err error) {
+
+	if depth == 0 {
+
+		for _, hash = range leafs {
+			if hash == (cipher.SHA256{}) {
+				continue
+			}
+			if i == 0 {
+				err = get(pack, hash, obj)
+				return
+			}
+			i--
+		}
+		err = ErrInvalidRefs
+		return
+
+	}
+
+	// else if depth > 0
+
+	for _, br := range branches {
+		if i > br.length {
+			i -= br.length
+			continue
+		}
+		return r.valueByIndex(pack, i, obj, depth-1, br.leafs, br.branches)
+	}
+
+	err = ErrInvalidRefs
+	return
+}
+
+// ValueByIndex returns value by index or ErrNotFound
+// or another error. It also returns hash of the value
+func (r *Refs) ValueByIndex(pack Pack, i int,
+	obj interface{}) (hash cipher.SHA256, err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateIndex(i, r.length); err != nil {
+		return
+	}
+
+	return r.valueByIndex(pack, i, obj, r.depth, r.leafs, r.branches)
+}
+
+func (r *Refs) delByIndex(pack Pack, i, depth int, leafs []cipher.SHA256,
+	branches []*refsNode) (err error) {
+
+	if depth == 0 {
+		var j int
+		for j, hash = range leafs {
+			if hash == (cipher.SHA256{}) {
+				continue
+			}
+			if i == j {
+				leafs[j] = cipher.SHA256{}
+
+				// TODO (kostyarin): go up and bubble changes
+
+				r.modified = true // mark as modified
+				return
+			}
+		}
+	}
+
+	// else if depth > 0
+
+	for _, br := range branches {
+		if i > br.length {
+			i -= br.length
+			continue
+		}
+		return r.delByIndex(pack, i, depth-1, br.leafs, br.branches)
+	}
+
+	return
+}
+
+// DelByIndex deletes value by given index
+func (r *Refs) DelByIndex(pack Pack, i int) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateIndex(i, r.length); err != nil {
+		return
+	}
+
+	return r.delByIndex(pack, i, r.depth, r.leafs, r.branches)
+}
+
+// for defer
+func (r *Refs) setIteratingToFalse() {
+	r.iterating = false
+}
+
+// Ascend iterates over all values ascending order until
+// first error or the end. Use ErrStopIteration to
+// break iteration. Any error is returned by given function
+// (except the ErrStopIteration) is returned by the Ascend()
+// method
+func (r *Refs) Ascend(pack Pack,
+	ascendFunc func(i int, hash cipher.SHA256) (err error)) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	r.iterating = true
+	defer r.setIteratingToFalse()
+
+	var i int // index
+
+	//
+
+	return
+}
+
+// Descend iterates over all values descending order until
+// first error or the end. Use ErrStopIteration to
+// break iteration. Any error is returned by given function
+// (except the ErrStopIteration) is returned by the Descend()
+// method
+func (r *Refs) Descend(pack Pack,
+	ascendFunc func(i int, hash cipher.SHA256) (err error)) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	r.iterating = true
+	defer r.setIteratingToFalse()
+
+	var i int // index
+
+	//
+
+	return
+}
+
+// Len(pack Pack) (ln int, err error)
+//
+// VaueByHash(pack Pack, hash cipher.SHA256, obj interface{}) (err error)
+// ValueByHashWithIndex(pack Pack, hash cipher.SHA256, obj interface{}) (i int, err error)
+// ValueByIndex(pack Pack, i int, obj interface{}) (hash cipher.SHA256, err error)
+// DelByIndex(pack Pack, i int) (err error)
+//
+// Ascend(pack Pack, func(i int, hash cipher.SHA256)) (err error)
+// Descend(pack Pack, func(i int, hash cipher.SHA256)) (err error)
+//
+// AscendValues(pack Pack, func(i int, hash cipher.SHA256, obj interface{})) (err error)
+// DescendValues(pack Pack, func(i int, hash cipher.SHA256, obj interface{})) (err error)
+//
+// Schema(pack Pack) (s Schema, err error)
+//
+// Append(obj ...interface{}) (err error)
+// AppendHashes(hash ...cipher.SHA256) (err error)
+//
+// Clear()
+// Rebuild() (err error)
+
+/*
 
 // A Refs represetns array of references.
 // The Refs contains RefsElem(s). To delete
@@ -28,8 +507,14 @@ type Refs struct {
 	branches []*Refs     `enc:"-"` // branches
 	leafs    []*RefsElem `enc:"-"` // leafs
 
-	upper *Refs     `enc:"-"` // upper node (nil for root)
-	rn    *refsNode `enc:"-"` // pack, schema, index
+	upper *Refs                       `enc:"-"` // upper node (nil for root)
+	index map[cipher.SHA256]*RefsElem `enc:"-"` // index (or reference)
+
+	// lock
+	// - don't rebuild the tree in some cases
+	// - don't allow Append, Ascend, Descend
+	//   methods in some cases
+	iterating bool `enc:"-"`
 
 	ch bool `enc:"-"` // true if the Refs has been changed or fresh
 }
@@ -81,22 +566,6 @@ func (r *Refs) encode(root bool, depth int) (val []byte) {
 		val = encoder.Serialize(&ern)
 	}
 	return
-}
-
-func (r *Refs) isInitialized() bool {
-	return r.rn != nil
-}
-
-type refsNode struct {
-	pack  *Pack                       // related Pack
-	sch   Schema                      // shema of the Refs
-	index map[cipher.SHA256]*RefsElem // index (or reference)
-
-	// lock
-	// - don't rebuild the tree in some cases
-	// - don't allow Append, Ascend, Descend
-	//   methods in some cases
-	iterating bool
 }
 
 // IsBlank returns true if the Refs is blank
@@ -1495,3 +1964,6 @@ func (r *RefsElem) Save() (err error) {
 	err = r.upper.bubble() // bubble up
 	return
 }
+
+
+*/

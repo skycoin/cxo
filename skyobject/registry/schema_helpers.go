@@ -1,21 +1,12 @@
-package skyobject
+package registry
 
 import (
-	"errors"
 	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// Value related errors
-var (
-	ErrInvalidSchemaOrData     = errors.New("invalid schema or data")
-	ErrNoSuchField             = errors.New("no such field")
-	ErrInvalidDynamicReference = errors.New("invalid dynamic reference")
-	ErrInvalidSchema           = errors.New("invalid schema")
-
-	refSize, refsSize, dynamicSize int
-)
+var refSize, refsSize, dynamicSize int
 
 func init() {
 	for _, x := range []struct {

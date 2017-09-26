@@ -1,4 +1,4 @@
-package skyobject
+package registry
 
 import (
 	"bytes"
