@@ -25,13 +25,18 @@ type Refs struct {
 
 	length int `enc:"-"` // length of Refs
 
-	leafs    []cipher.SHA256 `enc:"-"` //
-	branches []*refsNode     `enc:"-"` //
+	leafs    []refsElement `enc:"-"` //
+	branches []*refsNode   `enc:"-"` //
 
 	flags Flags `enc:"-"` // first use (load) flags
 
 	modified  bool `enc:"-"` // actual state
-	iterating bool `enc"-"`  // is iterating now
+	iterating int  `enc"-"`  // is iterating now
+}
+
+type refsElement struct {
+	Deleted bool          // deleted if true
+	Hash    cipher.SHA256 // hash (blank if nil)
 }
 
 type refsNode struct {
@@ -39,20 +44,27 @@ type refsNode struct {
 
 	length int // length of this subtree
 
-	leafs    []cipher.SHA256 //
-	branches []*refsNode     //
+	leafs    []refsElement //
+	branches []*refsNode   //
 
 	upper *refsNode // upper node
 	root  *Refs     // head (root)
 }
 
 func (r *Refs) initialize(pack Pack) (err error) {
-	if r.flags == 0 {
-		r.flags = pack.Flags() | flagIsSet
+
+	if r.iterating > 0 {
+		return // already initialized
 	}
+
+	if r.flags == 0 {
+		r.flags = pack.Flags() | flagIsSet // keep current flags
+	}
+
 	if r.Hash == (cipher.SHA256{}) {
 		return // blank Refs
 	}
+
 	if r.length == 0 {
 		err = r.load(pack)
 	}
@@ -70,10 +82,10 @@ func (r *Refs) Len(pack Pack) (ln int, err error) {
 }
 
 type encodedRefs struct {
-	Depth  uint32
-	Degree uint32
-	Length uint32
-	Hashes []cipher.SHA256
+	Depth    uint32
+	Degree   uint32
+	Length   uint32
+	Elements []refsElement
 }
 
 func (r *Refs) load(pack Pack) (err error) {
@@ -98,17 +110,19 @@ func (r *Refs) load(pack Pack) (err error) {
 
 	if r.depth == 0 {
 
-		r.leafs = er.Hashes
+		r.leafs = er.Elements
 
 		if r.flags&HashTableIndex != 0 {
-			for _, hash := range r.leafs {
-				r.index[hash] = nil
+			for _, el := range r.leafs {
+				if el.Deleted == false {
+					r.index[el.Hash] = nil
+				}
 			}
 		}
 
 	} else {
 
-		err = r.loadRootRefsNodes(pack, er.Hashes)
+		err = r.loadRootRefsNodes(pack, er.Elements)
 
 	}
 
@@ -120,23 +134,30 @@ func (r *Refs) load(pack Pack) (err error) {
 // 3. refsNode loaded with all subtrees
 
 type encodedRefsNode struct {
-	Length uint32
-	Hashes []cipher.SHA256
+	Length   uint32        // length of the node
+	Elements []refsElement // if empty then all are elements nils
 }
 
 func (r *Refs) loadRootRefsNodes(pack Pack,
-	hashes []cipher.SHA256) (err error) {
+	elements []refsElement) (err error) {
 
 	var depth = r.depth // the depth is not 0
 	var rn *refsNode
 
-	r.branches = make([]*refsNode, 0, len(hashes))
+	r.branches = make([]*refsNode, 0, len(elements))
 
-	for _, hash := range hashes {
-		if rn, err = r.loadRefsNodes(pack, depth-1, nil, hash); err != nil {
+	for _, el := range elements {
+
+		if el.Deleted == true {
+			continue // deleted
+		}
+
+		if rn, err = r.loadRefsNodes(pack, depth-1, nil, el.Hash); err != nil {
 			return
 		}
+
 		r.branches = append(r.branches, rn)
+
 	}
 
 	return
@@ -155,7 +176,7 @@ func (r *Refs) loadRefsNodes(pack Pack, depth int, upper *refsNode,
 	rn.root = r
 
 	if hash == (cipher.SHA256{}) {
-		return // empty branch of leaf
+		return // empty branch or leaf
 	}
 
 	if r.flags&(EntireRefs|HashTableIndex) == 0 {
@@ -172,11 +193,13 @@ func (r *Refs) loadRefsNodes(pack Pack, depth int, upper *refsNode,
 	rn.length = int(ern.Length)
 
 	if depth == 0 {
-		rn.leafs = ern.Hashes
+		rn.leafs = ern.Elements
 
 		if r.flags&HashTableIndex != 0 {
-			for _, hash := range rn.leafs {
-				r.index[hash] = rn // parent node of the leafs
+			for _, el := range rn.leafs {
+				if el.Deleted == false {
+					r.index[hash] = rn // parent node of the leafs
+				}
 			}
 		}
 
@@ -184,13 +207,22 @@ func (r *Refs) loadRefsNodes(pack Pack, depth int, upper *refsNode,
 
 		var sn *refsNode
 
-		rn.branches = make([]*refsNode, 0, len(ern.Hashes))
+		rn.branches = make([]*refsNode, 0, len(ern.Elements))
 
-		for _, hash := range ern.Hashes {
-			if sn, err = r.loadRefsNodes(pack, depth-1, rn, hash); err != nil {
+		for _, el := range ern.Elements {
+
+			if el.Deleted == true {
+				continue
+			}
+
+			//                        pack, depth, upper, hash
+			sn, err = r.loadRefsNodes(pack, depth-1, rn, el.Hash)
+			if err != nil {
 				return
 			}
+
 			rn.branches = append(rn.branches, sn)
+
 		}
 
 	}
@@ -198,35 +230,56 @@ func (r *Refs) loadRefsNodes(pack Pack, depth int, upper *refsNode,
 	return
 }
 
-// ValueByHash decodes value by given hash. If HashTableIndex
-// is set, then hash table used. If Refs contains many values
-// with the same hash then
-func (r *Refs) ValueByHash(pack Pack, hash cipher.SHA256,
-	obj interface{}) (err error) {
+// HasHash returns false if the Refs doesn't have given hash. It returns
+// true if contains, or first error. It never returns ErrNotFound
+func (r *Refs) HasHash(pack Pack, hash cipher.SHA256) (ok bool, err error) {
 
 	if err = r.initialize(pack); err != nil {
 		return
 	}
 
 	if r.flags&HashTableIndex != 0 {
-		if _, ok := r.index[hash]; !ok {
-			return ErrNotFound
-		}
-		err = get(pack, hash, obj)
+		_, ok = r.index[hash]
 		return
 	}
 
-	// TODO (kostyarin): iterate descending
+	// else
 
-	// descend
+	// TODO (kostyarin): iterate
 
 	return
 }
 
-// ValueByHashWithIndex decodes value by given hash and returns
-// index of the value
-func (r *Refs) ValueByHashWithIndex(pack Pack, hash cipher.SHA256,
-	obj interface{}) (i int, err error) {
+// ValueByHash decodes value by given hash. If HashTableIndex
+// is set, then hash table used. If given hash is blank then
+// the ValueByHash returns ErrNotFound if the Refs doesn't
+// contan blank elements. Or ErrRefsElementIsNil if contains.
+// If the HashTableIndex is set and the Refs contains many
+// elements with the same hash, then the ValueByHash use one
+// of this elements (undefined).
+func (r *Refs) ValueByHash(pack Pack, hash cipher.SHA256,
+	obj interface{}) (err error) {
+
+	// initilize() inside the HashHash
+
+	var ok bool
+	if ok, err = r.HasHash(pack, hash); err != nil {
+		return
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	if hash == (cipher.SHA256{}) {
+		return ErrRefsElementIsNil
+	}
+
+	err = get(pack, hash, obj)
+	return
+}
+
+// IndexByHash returns index of element by hash. It returns ErrNotfound
+// if the Refs doesn't have given hash
+func (r *Refs) IndexByHash(pack Pack, hash cipher.SHA256) (i int, err error) {
 
 	if err = r.initialize(pack); err != nil {
 		return
@@ -242,21 +295,12 @@ func (r *Refs) ValueByHashWithIndex(pack Pack, hash cipher.SHA256,
 			return
 		}
 
-		// deserialize
-
-		if err = get(pack, hash, obj); err != nil {
-			return
-		}
-
 		// find index
-
 		if pn == nil {
 			return r.indexInLeafs(hash, r.leafs)
 		}
 
-		r.indexOfLeaf(pn, hash)
-		return
-
+		return r.indexOfLeaf(pn, hash)
 	}
 
 	// TODO (kostyarin): iterate descending
@@ -295,20 +339,41 @@ func (r *Refs) indexOfLeaf(rn *refsNode, hash cipher.SHA256) (i int,
 }
 
 func (r *Refs) indexInLeafs(hash cipher.SHA256,
-	leafs []cipher.SHA256) (i int, err error) {
+	leafs []refsElement) (i int, err error) {
 
 	// it is member of Refs.leafs
-	for _, h := range r.leafs {
-		if h == (cipher.SHA256{}) {
-			continue // skip empty
+	for _, el := range r.leafs {
+		if el.Deleted == true {
+			continue // skip deleted
 		}
-		if h == hash {
+		if el.Hash == hash {
 			return // found
 		}
 		i++
 	}
 
 	err = ErrInvalidRefs // not found
+	return
+}
+
+// ValueByHashWithIndex decodes value by given hash and returns
+// index of the value. It returns actual index and ErrRefsElementIsNil
+// if given hash is blank but exists in the Refs
+func (r *Refs) ValueByHashWithIndex(pack Pack, hash cipher.SHA256,
+	obj interface{}) (i int, err error) {
+
+	// initialize() inside the IndxByHash
+
+	if i, err = r.IndexByHash(pack, hash); err != nil {
+		return
+	}
+
+	if hash == (cipher.SHA256{}) {
+		err = ErrRefsElementIsNil
+		return
+	}
+
+	err = get(pack, hash, obj)
 	return
 }
 
@@ -319,7 +384,7 @@ func validateIndex(i int, length int) (err error) {
 	return
 }
 
-func (r *Refs) valueByIndex(pack Pack, i int, obj interface{}, depth int,
+func (r *Refs) hashByIndex(pack Pack, i int, depth int,
 	leafs []cipher.SHA256, branches []*refsNode) (hash cipher.SHA256,
 	err error) {
 
@@ -330,8 +395,7 @@ func (r *Refs) valueByIndex(pack Pack, i int, obj interface{}, depth int,
 				continue
 			}
 			if i == 0 {
-				err = get(pack, hash, obj)
-				return
+				return // got it
 			}
 			i--
 		}
@@ -343,14 +407,32 @@ func (r *Refs) valueByIndex(pack Pack, i int, obj interface{}, depth int,
 	// else if depth > 0
 
 	for _, br := range branches {
+
+		// TODO (kostyarin): load the branch if it's not loaded yet
+
 		if i > br.length {
 			i -= br.length
 			continue
 		}
-		return r.valueByIndex(pack, i, obj, depth-1, br.leafs, br.branches)
+		return r.hashByIndex(pack, i, depth-1, br.leafs, br.branches)
 	}
 
 	err = ErrInvalidRefs
+	return
+}
+
+// HashByIndex returns hash by index
+func (r *Refs) HashByIndex(pack Pack, i int) (hash cipher.SHA256, err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateIndex(i, r.length); err != nil {
+		return
+	}
+
+	hash, err = r.hashByIndex(pack, i, r.depth, r.leafs, r.branches)
 	return
 }
 
@@ -359,6 +441,24 @@ func (r *Refs) valueByIndex(pack Pack, i int, obj interface{}, depth int,
 func (r *Refs) ValueByIndex(pack Pack, i int,
 	obj interface{}) (hash cipher.SHA256, err error) {
 
+	// initialize() inside the HashByIndex
+
+	if hash, err = r.HashByIndex(pack, i); err != nil {
+		return
+	}
+	if hash == (cipher.SHA256{}) {
+		err = ErrRefsElementIsNil
+		return
+	}
+	err = get(pack, hash, obj)
+	return
+}
+
+// SetHashByIndex replaces hash of element with given index with
+// given hash
+func (r *Refs) SetHashByIndex(pack Pack, i int,
+	hash cipher.SHA256) (err error) {
+
 	if err = r.initialize(pack); err != nil {
 		return
 	}
@@ -367,44 +467,108 @@ func (r *Refs) ValueByIndex(pack Pack, i int,
 		return
 	}
 
-	return r.valueByIndex(pack, i, obj, r.depth, r.leafs, r.branches)
+	return r.setHashByIndex(pack, i, hash, r.depth, r.leafs, r.branches)
 }
 
-func (r *Refs) delByIndex(pack Pack, i, depth int, leafs []cipher.SHA256,
-	branches []*refsNode) (err error) {
+func (r *Refs) setHashByIndex(pack Pack, i int, hash cipher.SHA256, depth int,
+	leafs []refsElement, branches []*refsNode) (err error) {
 
 	if depth == 0 {
-		var j int
-		for j, hash = range leafs {
-			if hash == (cipher.SHA256{}) {
-				continue
+		for k, el := range leafs {
+			if el.Deleted == true {
+				continue // skip deleted
 			}
-			if i == j {
-				leafs[j] = cipher.SHA256{}
-
-				// TODO (kostyarin): go up and bubble changes
-
-				r.modified = true // mark as modified
+			if i == 0 {
+				leafs[k].Hash = hash // set
 				return
 			}
+			i--
 		}
+		return ErrInvalidRefs // can't find
 	}
 
 	// else if depth > 0
 
 	for _, br := range branches {
+
+		// TODO (kostyarin): load br if it's not loaded yet
+
 		if i > br.length {
 			i -= br.length
 			continue
 		}
-		return r.delByIndex(pack, i, depth-1, br.leafs, br.branches)
+
+		return r.setHashByIndex(pack, i, hash, depth-1, br.leafs, br.branches)
 	}
 
-	return
+	return ErrInvalidRefs // can't find
 }
 
-// DelByIndex deletes value by given index
-func (r *Refs) DelByIndex(pack Pack, i int) (err error) {
+// SetValueByIndex saves given value calculating its hash and sets this
+// hash to given index. You must be sure that schema of given element is
+// schema of the Refs. Otherwise, Refs will be broken. Use nil-interface{}
+// to set blank hash
+func (r *Refs) SetValueByIndex(pack Pack, i int, obj interface{}) (err error) {
+
+	// initialize() inside the SetHashByIndex
+
+	var hash cipher.SHA256
+
+	if obj != nil {
+		if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
+			return
+		}
+	}
+
+	return r.SetHashByIndex(pack, i, hash)
+}
+
+func (r *Refs) cutElementByIndex(pack Pack, i, depth int, leafs []refsElement,
+	branches []*refsNode) (err error) {
+
+	if depth == 0 {
+		for k, el := range leafs {
+			if el.Deleted == true {
+				continue // skip deleted
+			}
+			if i == 0 {
+				// delete (cut)
+				leafs[k] = refsElement{
+					Deleted: true,
+					Hash:    cipher.SHA256{},
+				}
+				r.modified = true // mark as modified
+				return
+			}
+			i--
+		}
+		return ErrInvalidRefs // can't find
+	}
+
+	// else if depth > 0
+
+	for _, br := range branches {
+
+		// TODO (kostyarin): load br if it's not loaded yet
+
+		if i > br.length {
+			i -= br.length
+			continue
+		}
+
+		err = r.cutElementByIndex(pack, i, depth-1, br.leafs, br.branches)
+		if err != nil {
+			return
+		}
+		br.length-- // reduce length (has been deleted (cut))
+	}
+
+	return ErrInvalidRefs // can't find
+}
+
+// CutElementByIndex cuts single element from the Refs changing
+// the Refs
+func (r *Refs) CutElementByIndex(pack Pack, i int) (err error) {
 
 	if err = r.initialize(pack); err != nil {
 		return
@@ -414,12 +578,69 @@ func (r *Refs) DelByIndex(pack Pack, i int) (err error) {
 		return
 	}
 
-	return r.delByIndex(pack, i, r.depth, r.leafs, r.branches)
+	err = r.cutElementByIndex(pack, i, r.depth, r.leafs, r.branches)
+	if err != nil {
+		return
+	}
+	r.length-- // reduce length (has been deleted (cut))
+	return
+}
+
+// TODO (kostyarin): implement the CutSliceByIndices
+//
+// // CutSliceByIndices cuts slice from the 'from' to the 'to' arguments.
+// // Like a golang [a:b] but cut
+// func (r *Refs) CutSliceByIndices(pack Pack, from, to int) (err error) {
+//
+//	//
+//
+//	return
+// }
+
+func validateSliceIndices(i, j, length int) (err error) {
+	if i < 0 || j < 0 || i > length || j > length {
+		err = ErrIndexOutOfRange
+	} else if i > j {
+		err = ErrInvalidSliceIndex
+	}
+	return
+}
+
+// Slice returns new Refs that contains values of this Refs from
+// given i (inclusive) to given j (exclusive). If i and j are valid
+// and equal, then the Slcie return new empty Refs
+func (r *Refs) Slice(pack Pack, i, j int) (slice *Refs, err error) {
+
+	// https://play.golang.org/p/4tP7_MuCN9
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateSliceIndices(i, j, r.length); err != nil {
+		return
+	}
+
+	slice = new(Refs)
+
+	slice.degree = r.degree
+	if r.flags&HashTableIndex != 0 {
+		slice.index = make(map[cipher.SHA256]*refsNode)
+	}
+	slice.flags = r.flags
+
+	if i == j {
+		return // done
+	}
+
+	// TODO (kostyarin): ascend from i to j appending to the slice
+
+	return
 }
 
 // for defer
-func (r *Refs) setIteratingToFalse() {
-	r.iterating = false
+func (r *Refs) decrementIterating() {
+	r.iterating--
 }
 
 // Ascend iterates over all values ascending order until
@@ -434,12 +655,76 @@ func (r *Refs) Ascend(pack Pack,
 		return
 	}
 
-	r.iterating = true
-	defer r.setIteratingToFalse()
+	if r.length == 0 {
+		return // empty Refs
+	}
 
-	var i int // index
+	r.iterating++
+	defer r.decrementIterating()
 
-	//
+	_, err = r.ascend(pack, 0, ascendFunc, r.depth, r.leafs, r.branches)
+	if err == ErrStopIteration {
+		err = nil // clear the ErrStopIteration
+	}
+	return
+}
+
+func (r *Refs) ascend(pack Pack, i int,
+	ascendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	leafs []refsElement, branches []*refsNode) (pass int, err error) {
+
+	if depth == 0 {
+		return r.ascendLeafs(i, ascendFunc, leafs)
+	}
+
+	// else if depth > 0
+
+	return r.ascendBranches(pack, i, ascendFunc, depth, branches)
+}
+
+func (r *Refs) ascendLeafs(i int,
+	ascendFunc func(i int, hash cipher.SHA256) (err error),
+	leafs []refsElement) (pass int, err error) {
+
+	for _, el := range leafs {
+		if el.Deleted == true {
+			continue
+		}
+
+		if err = ascendFunc(i, el.Hash); err != nil {
+			return
+		}
+
+		i++
+		pass++
+	}
+
+	return
+}
+
+func (r *Refs) ascendBranches(pack Pack, i int,
+	ascendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	branches []*refsNode) (pass int, err error) {
+
+	var j int
+
+	for _, br := range branches {
+
+		// TODO (kostyarin): load the br if it's not loaded yet
+
+		if br.length == 0 {
+			continue // skip empty branches
+		}
+
+		j, err = r.ascend(pack, i, ascendFunc, depth-1, br.leafs, br.branches)
+		if err != nil {
+			return
+		}
+
+		i += j
+		pass += j
+
+	}
 
 	return
 }
@@ -450,18 +735,404 @@ func (r *Refs) Ascend(pack Pack,
 // (except the ErrStopIteration) is returned by the Descend()
 // method
 func (r *Refs) Descend(pack Pack,
+	descendFunc func(i int, hash cipher.SHA256) (err error)) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if r.length == 0 {
+		return // empty Refs
+	}
+
+	r.iterating++
+	defer r.decrementIterating()
+
+	_, err = r.descend(pack, r.length-1, descendFunc, r.depth, r.leafs,
+		r.branches)
+	if err == ErrStopIteration {
+		err = nil // clear the ErrStopIteration
+	}
+	return
+}
+
+func (r *Refs) descend(pack Pack, i int,
+	descendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	leafs []refsElement, branches []*refsNode) (pass int, err error) {
+
+	if depth == 0 {
+		return r.descendLeafs(i, descendFunc, leafs)
+	}
+
+	// else if depth > 0
+
+	return r.descendBranches(pack, i, descendFunc, depth, branches)
+}
+
+func (r *Refs) descendLeafs(i int,
+	descendFunc func(i int, hash cipher.SHA256) (err error),
+	leafs []refsElement) (pass int, err error) {
+
+	for k := len(leafs) - 1; k >= 0; k-- {
+
+		el := leafs[k]
+
+		if el.Deleted == true {
+			continue
+		}
+
+		if err = descendFunc(i, el.Hash); err != nil {
+			return
+		}
+
+		i--
+		pass++
+	}
+
+	return
+}
+
+func (r *Refs) descendBranches(pack Pack, i int,
+	descendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	branches []*refsNode) (pass int, err error) {
+
+	var j int
+
+	for k := len(branches) - 1; k >= 0; k-- {
+
+		br := branches[k]
+
+		// TODO (kostyarin): load the br if it's not loaded yet
+
+		if br.length == 0 {
+			continue // skip empty branches
+		}
+
+		j, err = r.descend(pack, i, descendFunc, depth-1, br.leafs, br.branches)
+		if err != nil {
+			return
+		}
+
+		i -= j
+		pass += j
+
+	}
+
+	return
+}
+
+// AscendFrom iterates over all values ascending order starting
+// from the 'from' element until first error or the end. Use
+// ErrStopIteration to break iteration. Any error is returned
+// by given function (except the ErrStopIteration) is returned
+// by the AscendFrom() method. If the 'from' argument exceeds
+// the Refs bounds, then call does nothing (e.g. no error returned)
+func (r *Refs) AscendFrom(pack Pack, from int,
 	ascendFunc func(i int, hash cipher.SHA256) (err error)) (err error) {
 
 	if err = r.initialize(pack); err != nil {
 		return
 	}
 
-	r.iterating = true
-	defer r.setIteratingToFalse()
+	if r.length == 0 || from >= r.length {
+		return // empty Refs or from is too big
+	}
 
-	var i int // index
+	r.iterating++
+	defer r.decrementIterating()
+
+	_, err = r.ascendFrom(pack, from, 0, ascendFunc, r.depth, r.leafs,
+		r.branches)
+	if err == ErrStopIteration {
+		err = nil // clear the ErrStopIteration
+	}
+	return
+}
+
+func (r *Refs) ascendFrom(pack Pack, from, i int,
+	ascendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	leafs []refsElement, branches []*refsNode) (pass int, err error) {
+
+	if depth == 0 {
+		return r.ascendFromLeafs(from, i, ascendFunc, leafs)
+	}
+
+	// else if depth > 0
+
+	return r.ascendFromBranches(pack, from, i, ascendFunc, depth, branches)
+}
+
+func (r *Refs) ascendFromLeafs(from, i int,
+	ascendFunc func(i int, hash cipher.SHA256) (err error),
+	leafs []refsElement) (pass int, err error) {
+
+	for _, el := range leafs {
+
+		if el.Deleted == true {
+			continue
+		}
+
+		if i >= from {
+			if err = ascendFunc(i, el.Hash); err != nil {
+				return
+			}
+		}
+
+		i++
+		pass++
+	}
+
+	return
+}
+
+func (r *Refs) ascendFromBranches(pack Pack, from, i int,
+	ascendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	branches []*refsNode) (pass int, err error) {
+
+	var j int
+
+	for _, br := range branches {
+
+		// TODO (kostyarin): load the br if it's not loaded yet
+
+		if br.length == 0 {
+			continue // skip empty branches
+		}
+
+		if from < i+br.length {
+
+			// just add length of the br
+			i += br.length
+			pass += br.length
+
+			continue
+		}
+
+		j, err = r.ascendFrom(pack, from, i, ascendFunc, depth-1, br.leafs,
+			br.branches)
+		if err != nil {
+			return
+		}
+
+		i += j
+		pass += j
+
+	}
+
+	return
+}
+
+// DescendFrom iterates over all values descending order starting
+// from the 'from' element until first error or the end. Use
+// ErrStopIteration to break iteration. Any error is returned
+// by given function (except the ErrStopIteration) is returned
+// by the DescendFrom() method
+func (r *Refs) DescendFrom(pack Pack, from int,
+	descendFunc func(i int, hash cipher.SHA256) (err error)) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if r.length == 0 || from >= r.length {
+		return // empty Refs or from is too big
+	}
+
+	r.iterating++
+	defer r.decrementIterating()
+
+	_, err = r.descendFrom(pack, from, r.length-1, descendFunc, r.depth,
+		r.leafs, r.branches)
+	if err == ErrStopIteration {
+		err = nil // clear the ErrStopIteration
+	}
+	return
+}
+
+func (r *Refs) descendFrom(pack Pack, from, i int,
+	descendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	leafs []refsElement, branches []*refsNode) (pass int, err error) {
+
+	if depth == 0 {
+		return r.descendFromLeafs(from, i, descendFunc, leafs)
+	}
+
+	// else if depth > 0
+
+	return r.descendFromBranches(pack, from, i, descendFunc, depth, branches)
+}
+
+func (r *Refs) descendFromLeafs(from, i int,
+	descendFunc func(i int, hash cipher.SHA256) (err error),
+	leafs []refsElement) (pass int, err error) {
+
+	for k := len(leafs) - 1; k >= 0; k-- {
+
+		el := leafs[k]
+
+		if el.Deleted == true {
+			continue
+		}
+
+		if i <= from {
+			if err = descendFunc(i, el.Hash); err != nil {
+				return
+			}
+		}
+
+		i--
+		pass++
+	}
+
+	return
+}
+
+func (r *Refs) descendFromBranches(pack Pack, from, i int,
+	descendFunc func(i int, hash cipher.SHA256) (err error), depth int,
+	branches []*refsNode) (pass int, err error) {
+
+	var j int
+
+	for k := len(branches) - 1; k >= 0; k-- {
+
+		br := branches[k]
+
+		// TODO (kostyarin): load the br if it's not loaded yet
+
+		if br.length == 0 {
+			continue // skip empty branches
+		}
+
+		if from > i-br.length {
+
+			// just subtract length of the br
+			i -= br.length
+			pass += br.length
+
+			continue
+		}
+
+		j, err = r.descendFrom(pack, from, i, descendFunc, depth-1, br.leafs,
+			br.branches)
+		if err != nil {
+			return
+		}
+
+		i -= j
+		pass += j
+
+	}
+
+	return
+}
+
+// Append given objects to the Refs. You must be sure that type of this
+// obejcts is type of this Refs. All nil-interfaces will be treated as
+// blank references (cipher.SHA256{})
+func (r *Refs) AppendValues(pack Pack, objs ...interface{}) (err error) {
+
+	if len(objs) == 0 {
+		return // nothing ot append
+	}
+
+	hashes := make([]cipher.SHA256, 0, len(objs))
+
+	var hash cipher.SHA256
+
+	for _, obj := range objs {
+		if obj == nil {
+			hashes == append(hashes, cipher.SHA256{}) // nil = blank
+			continue
+		}
+		if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
+			return
+		}
+		hashes = append(hashes, hash)
+	}
+
+	return r.AppendHashes(pack, hashes)
+}
+
+// AppendRefs appends another Refs to this one
+func (r *Refs) AppendRefs(pack Pack, refs *Refs) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = refs.initialize(pack); err != nil {
+		return
+	}
 
 	//
+
+	return
+}
+
+// AppendHashes appends given hashes to Refs. You must be sure that
+// type of this obejcts is type of this Refs. Degree of the Refs will
+// be increased if necessary
+func (r *Refs) AppendHashes(pack Pack, hash ...cipher.SHA256) (err error) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	//
+
+	return
+}
+
+// Clear the Refs making them blank
+func (r *Refs) Clear() (err error) {
+
+	// TODO (kostyarin): iterating
+
+	r.Hash = cipher.SHA256{}
+
+	r.depth = 0
+	r.degree = 0
+
+	r.index = nil
+
+	r.length = 0
+
+	r.leafs = nil
+	r.branches = nil
+
+	r.flags = 0
+
+	r.modified = false
+
+	return nil
+}
+
+// Rebuild the Refs if need. It's impossible to rebuild
+// while the Refs is iterating. In most cases you should
+// not call the Rebuild, beacuse it's called automatically
+// by Pack during saving. The Rebuild rebuilds the Refs tree
+// to choose best (compact and fast) depth removing deleted
+// elements (all deleted elements still present in the tree
+// after CutElementByIndex and CutSliceByIndex that not
+// implemented yet). Also, the Refs tree can grows horizontally
+// in some cases to speed up some operations. But after the
+// grow the tree is not to fast to access elements and should
+// be rebuilt. The Rebuild solves all this issues. If the Refs
+// tree has not been changed, then the Rebuild does nothing.
+// Also, the Rebuild can keep some dleted elements if if their
+// removal will not change depth of the Refs tree.
+//
+// Also, the depth is the height of the Refs tree, but root
+// of the tree is above all. Ha-ha
+func (r *Refs) Rebuild(pack Pack) (err error) {
+
+	if r.iterating > 0 {
+		return ErrRefsIsIterating // can't rebuild while the Refs is iterating
+	}
+
+	// (degree + 1) ^ depth == real length
+
+	// TODO (kostyarin): rebuild
 
 	return
 }
@@ -471,21 +1142,24 @@ func (r *Refs) Descend(pack Pack,
 // VaueByHash(pack Pack, hash cipher.SHA256, obj interface{}) (err error)
 // ValueByHashWithIndex(pack Pack, hash cipher.SHA256, obj interface{}) (i int, err error)
 // ValueByIndex(pack Pack, i int, obj interface{}) (hash cipher.SHA256, err error)
+//
 // DelByIndex(pack Pack, i int) (err error)
+// Cut(pack Pack, i, j int) (err error)
+//
+// Slice(pack Pack, i, j int) (err error)
 //
 // Ascend(pack Pack, func(i int, hash cipher.SHA256)) (err error)
 // Descend(pack Pack, func(i int, hash cipher.SHA256)) (err error)
 //
-// AscendValues(pack Pack, func(i int, hash cipher.SHA256, obj interface{})) (err error)
-// DescendValues(pack Pack, func(i int, hash cipher.SHA256, obj interface{})) (err error)
+// AscendFrom(pack Pack, from int, func(i int, hash cipher.SHA256)) (err error)
+// DescendFrom(pack Pack, from int, func(i int, hash cipher.SHA256)) (err error)
 //
-// Schema(pack Pack) (s Schema, err error)
-//
-// Append(obj ...interface{}) (err error)
-// AppendHashes(hash ...cipher.SHA256) (err error)
+// Append(pack Pack, obj ...interface{}) (err error)
+// AppendRefs(pack Pack, refs *Refs) (err error)
+// AppendHashes(pack Pack, hash ...cipher.SHA256) (err error)
 //
 // Clear()
-// Rebuild() (err error)
+// Rebuild(pack Pack) (err error)
 
 /*
 

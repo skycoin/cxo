@@ -22,6 +22,9 @@ var (
 	ErrInvalidEncodedRefs = errors.New("invalid encoded Refs")
 	ErrInvalidRefs        = errors.New("invalid Refs")
 	ErrIndexOutOfRange    = errors.New("index out of range")
+	ErrRefsIsIterating    = errors.New("Refs is iterating")
+	ErrRefsElementIsNil   = errors.New("Refs element is nil")
+	ErrInvalidSliceIndex  = errors.New("invalid slice index")
 
 	ErrNotFound      = errors.New("not found")
 	ErrStopIteration = errors.New("stop iteration")
