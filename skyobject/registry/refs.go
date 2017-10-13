@@ -142,6 +142,21 @@ func (r *Refs) initialize(pack Pack) (err error) {
 	return
 }
 
+// Init does nothing, but if the Refs are not
+// initialized, then the Init method initilizes
+// it saving curretn flags of given pack
+//
+// It's possible to use some other methods to
+// initialize the Refs (Len for example), but
+// some methods of the Refs may not initialze
+// it
+//
+// If the Refs is already initialized then
+// it will not be initialized anymore
+func (r *Refs) Init(pack Pack) (err error) {
+	return r.initialize(pack)
+}
+
 // Len returns length of the Refs
 func (r *Refs) Len(pack Pack) (ln int, err error) {
 	if err = r.initialize(pack); err != nil {
@@ -1442,8 +1457,6 @@ func (r *Refs) DescendFrom(pack Pack, from int,
 	return r.descendFrom(pack, from, descendFunc)
 }
 
-// --
-
 // AppendValues appends given objects to the Refs. You
 // must be sure that type of this obejcts is type of this
 // Refs. All nil-interfaces will be treated as blank
@@ -1472,25 +1485,34 @@ func (r *Refs) AppendValues(pack Pack, objs ...interface{}) (err error) {
 	return r.AppendHashes(pack, hashes)
 }
 
+func initializeRefs(pack Pack, rs ...*Refs) (err error) {
+	for _, r := range rs {
+		if err = r.initialize(pack); err != nil {
+			return
+		}
+	}
+	return
+}
+
 // AppendRefs appends another Refs to this one
 func (r *Refs) AppendRefs(pack Pack, refs *Refs) (err error) {
 
-	if err = r.initialize(pack); err != nil {
+	if err = initializeRefs(pack, r, refs); err != nil {
 		return
 	}
 
-	if err = refs.initialize(pack); err != nil {
-		return
-	}
-
-	//
+	// TODO (kostyarin): implement
 
 	return
 }
 
-// AppendHashes appends given hashes to Refs. You must be sure that
+// AppendHashes appends given hashes to the Refs. You must be sure that
 // type of the obejcts (the hashes refers to) is type of the Refs
-func (r *Refs) AppendHashes(pack Pack, hash ...cipher.SHA256) (err error) {
+func (r *Refs) AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error) {
+
+	if len(hashes) == 0 {
+		return // nothing to append
+	}
 
 	if err = r.initialize(pack); err != nil {
 		return
