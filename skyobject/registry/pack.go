@@ -12,8 +12,38 @@ type Flags int
 const (
 	flagIsSet Flags = 1 << iota // service
 
-	HashTableIndex // hash-table index for Refs
-	EntireRefs     // unpack entire Refs
+	// HashTableIndex is flag that enables hash-table index inside
+	// the Refs. The index speeds up accessing by hash. The index
+	// is not designed to be used with many elements with the same
+	// hash. Because, the big O of some internal operations that
+	// uses the index is O(m), where m is number of elements with
+	// the same index. Be careful, your Refs can have many elements
+	// with blank hash, that will be indexed as allways. Thus, the
+	// index can be used with one or few elements per hash for the
+	// Refs. The flag will be stored inised the Refs after first
+	// access. For example
+	//
+	//     pack.SetFlag(registry.HashTableIndex)
+	//     if _, err := someRefs.Len(pack); err != nil {
+	//         // something wrong
+	//     }
+	//
+	//     pack.UnsetFlag(registry.HashTableIndex)
+	//     if _, err := someOtherRefs.Len(pack); err != nil {
+	//         // something wrong
+	//     }
+	//
+	// After the Len() (or any other call), the someRefs stores
+	// flags of the pack inside. And you can unset the flag if
+	// you want. Thus, the someRefs uses has-table index, but
+	// the someOtherRefs does not
+	HashTableIndex
+	// EntireRefs is flag that forces the Refs to be unpacked
+	// entirely. By default (without the flag), the Refs uses
+	// lazy loading, where all branches loads only if it's
+	// necessary. The Refs stores this flag inside like the
+	// HashTableIndex flag (see above)
+	EntireRefs
 )
 
 // A Pack represents ...
