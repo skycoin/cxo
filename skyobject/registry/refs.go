@@ -1133,7 +1133,7 @@ func (r *Refs) ascendFrom(pack Pack, from int,
 //  - ascendFunc is given function
 //  - depth is current depth level (0 for leafs)
 //  - upper is upper *refsNode or nil if it's the Refs (required for loading)
-//  - leafs are lefas of current *refsNode or of the Refs
+//  - leafs are leafs of current *refsNode or of the Refs
 //  - branches are branches of current *refsNode or of the Refs
 //
 // reply:
@@ -1314,7 +1314,7 @@ func (r *Refs) descendFrom(pack Pack, from int,
 //  - descendFunc is given function
 //  - depth is current depth level (0 for leafs)
 //  - upper is upper *refsNode or nil if it's the Refs (required for loading)
-//  - leafs are lefas of current *refsNode or of the Refs
+//  - leafs are leafs of current *refsNode or of the Refs
 //  - branches are branches of current *refsNode or of the Refs
 //
 // reply:
@@ -1506,6 +1506,158 @@ func (r *Refs) AppendRefs(pack Pack, refs *Refs) (err error) {
 	return
 }
 
+// freeSpaceOnTail returns free space on tail of the Refs
+// we can fill with new elements; if we want to append
+// something to the Refs we can use the space without
+// unnecessary rebuiling (wihtout increasing depth)
+func (r *Refs) freeSpaceOnTail(pack Pack, depth int, upper *refsNode,
+	leafs []*refsElement, branches []*refsNode) (fst int, err error) {
+
+	// the Refs mut be initialized here
+
+	if depth == 0 {
+		// look the leafs
+		fst = r.freeSpaceOnTailInLeafs(leafs)
+		return
+	}
+
+	// else -> look the branches
+	return r.freeSpaceOnTailInBranches(pack, depth, upper, branches)
+}
+
+func (r *Refs) freeSpaceOnTailInLeafs(leafs []*refsElement) (fst int) {
+	// so, every leaf can contain one element, and
+	// max length of leafs is r.degree, but we
+	// should check deleted elements; e.g. we can't
+	// just degree - len(leafs)
+
+	fst = r.degree - len(leafs)
+
+	// iterate the leafs from end to find
+	// not deleted element
+
+	for k := len(leafs) - 1; k >= 0; k-- {
+		if leafs[k].Deleted == true {
+			fst++ // it's free
+			continue
+		}
+		break // no more free space in the leafs
+	}
+
+	return
+}
+
+func (r *Refs) freeSpaceOnTailInBranches(pack Pack, depth int, upper *refsNode,
+	branches []*refsNode) (fst int, err error) {
+
+	var bfst int // free space of a branch
+	var tem int  // free elements of totally empty branch
+
+	// every branch can keep (degree**depth+1) elements,
+	// but since the depth is (real depth - 1), and depth
+	// of a branch is depth - 1 (because the depth argument is
+	// depth of branch that keeps this this branches argument,
+	// and 'depth - 1' is depth of branches or leafs of elements
+	// of the branches argument), and the depth argument is
+	// greater then 0; thus the tem will be degree**depth
+
+	// and the tem is max elements of a branch,
+	// but if the branch has this number of free
+	// elements, then it is empty
+
+	tem = pow(r.degree, depth)
+
+	// check out fullness of the branches
+
+	// if length of the branches argument is not r.degree, then
+	// if contains free 'r.degree - len(branches)' branches
+	// length of which is 'r.degree**depth' (the tem)
+
+	if fst = r.degree - len(r.branches); fst > 0 {
+		fst *= tem // real value
+	}
+
+	// add all totally empty branches from end
+
+	for k := len(branches) - 1; k >= 0; k-- {
+
+		br := branches[k]
+
+		if err = r.loadRefsNodeIfNeed(pack, br, depth-1, upper); err != nil {
+			return
+		}
+
+		// totally empty branch contains degree**depth free elements;
+
+		// so, we are string from the end, and if free space
+		// of a branch is the tem, then we look next (previous)
+		// branch
+
+		if br.length == 0 {
+			fst += tem // yet another empty branch
+			continue
+		}
+
+		bfst, err = r.freeSpaceOnTail(pack, depth-1, br, br.leafs, br.branches)
+		if err != nil {
+			return // loading error
+		}
+
+		fst += bfst // add free places
+
+		if bfst == tem {
+			// the branch turns totally empty
+			continue // look next (previous)
+		}
+
+		break // enough
+	}
+
+	return
+}
+
+// a**b (power)
+func pow(a, b int) (p int) {
+	p = 1
+	for b > 0 {
+		if b&1 != 0 {
+			p *= a
+		}
+		b >>= 1
+		a *= a
+	}
+	return p
+}
+
+// dpethToFit returns depth (real depth - 1); the
+// Refs with this depth can fit the 'fit' elements
+//
+// arguments:
+// - degree is degree of the Refs
+// - start is strting depth (that don't fit)
+// - fit is number of elements to fit
+func depthToFit(degree, start, fit int) int {
+	// the start is 'real depth - 1', thus we add 2 instead of
+	// 1 (e.g. we add the elided 1 and one more 1)
+	for start += 2; pow(degree, start) < fit; start++ {
+	}
+	return start - 1 // found (-1 turs the start to be Refs.depth)
+}
+
+// increaseDepth to fit 'fit' elements
+func (r *Refs) increaseDepth(fit int) (err error) {
+	// since, max number of elements, that the Refs can fit,
+	// is pow(r.degree, r.depth+1), then required depth is
+	// the base r.degree logarithm of fit; but since we need
+	// interger number, we are using loop to find the number
+
+	depth := depthToFit(r.degree, r.depth, fit)
+
+	// now the depth is depth we need
+
+	//
+}
+
 // AppendHashes appends given hashes to the Refs. You must be sure that
 // type of the obejcts (the hashes refers to) is type of the Refs
 func (r *Refs) AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error) {
@@ -1518,7 +1670,26 @@ func (r *Refs) AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error) {
 		return
 	}
 
-	//
+	var fst int // free space on tail
+
+	fst, err = r.freeSpaceOnTail(pack, r.depth, nil, r.leafs, r.branches)
+	if err != nil {
+		return // loading error
+	}
+
+	if len(hashes) > fst {
+		// so, we have to rebuild the Refs tree increasing its depth
+		// to fit all elements including new
+
+		if err = r.increaseDepth(len(hashes) + r.length); err != nil {
+			return // loading error
+		}
+
+	}
+
+	// so, now we are sure that the Refs can fit new elements
+
+	// TODO (kostyarin): append
 
 	return
 }
