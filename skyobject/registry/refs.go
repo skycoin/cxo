@@ -42,13 +42,10 @@ type Refs struct {
 	depth  int `enc:"-"` // depth - 1
 	degree int `enc:"-"` // degree
 
-	// hash-table index
-	index map[cipher.SHA256][]*refsElement `enc:"-"`
-
 	length int `enc:"-"` // length of Refs
 
-	leafs    []*refsElement `enc:"-"` //
-	branches []*refsNode    `enc:"-"` //
+	refsIndex     `enc:"-"` // hash-table index
+	leafsBranches `enc:"-"` // leafs and branches
 
 	flags Flags `enc:"-"` // first use (load) flags
 
@@ -63,65 +60,6 @@ type Refs struct {
 	// iterate inside another iterator, modify tree insisde an iterator,
 	// etc
 	iterators []bool `enc:"-"`
-}
-
-// add element to the index
-func (r *Refs) addElementToIndex(hash cipher.SHA256, re *refsElement) {
-	r.index[hash] = append(r.index[hash], re)
-}
-
-// delete all elements from the index by given hash
-func (r *Refs) delFromIndex(hash cipher.SHA256) (res []*refsElement) {
-	res = r.index[hash]
-	delete(r.index, hash)
-	return
-}
-
-// delete a particular element from the index
-func (r *Refs) delElementFromIndex(hash cipher.SHA256, re *refsElement) {
-
-	res = r.index[hash]
-
-	for k, node := range res {
-		if node == rn {
-
-			copy(res[k:], res[k+1:]) // delete
-			res[len(res)-1] = nil    // from
-			res = res[:len(res)-1]   // the array
-
-			break
-		}
-	}
-
-	if len(res) == 0 {
-		delete(r.index, hash)
-		return
-	}
-
-	r.index[hash] = res
-}
-
-type refsElement struct {
-	Deleted bool          ``        // deleted if true
-	Hash    cipher.SHA256 ``        // hash (blank if nil)
-	upper   *refsNode     `enc:"-"` // upper node or nil if the node is the Refs
-}
-
-func (r *refsElement) makeDeleted() {
-	r.Deleted = true
-	r.Hash = cipher.SHA256{}
-}
-
-type refsNode struct {
-	hash cipher.SHA256 // hash of this node
-
-	length int // length of this subtree
-
-	leafs    []*refsElement //
-	branches []*refsNode    //
-
-	upper *refsNode // upper node
-	root  *Refs     // head (root)
 }
 
 func (r *Refs) initialize(pack Pack) (err error) {
@@ -208,7 +146,7 @@ type encodedRefs struct {
 	Depth    uint32
 	Degree   uint32
 	Length   uint32
-	Elements []refsElement
+	Elements []cipher.SHA256
 }
 
 func (r *Refs) load(pack Pack) (err error) {
@@ -228,143 +166,16 @@ func (r *Refs) load(pack Pack) (err error) {
 	}
 
 	if r.flags&HashTableIndex != 0 {
-		r.index = make(map[cipher.SHA256][]*refsElement) //
+		r.refsIndex = make(refsIndex)
 	}
 
-	if r.depth == 0 {
-
-		// r.length is len(er.Elements) without deleted elements
-		r.leafs = make([]*refsElement, 0, r.length)
-
-		for k := range er.Elements {
-			el := &er.Elements[k] // get pointer to use
-			if el.Deleted == true {
-				continue
-			}
-			r.leafs = append(r.leafs, el) // upper is nil (is the Refs)
-			if r.flags&HashTableIndex != 0 {
-				r.addElementToIndex(el.Hash, el) // add to index
-			}
-		}
-
-	} else {
-
-		err = r.loadRootRefsNodes(pack, er.Elements)
-
-	}
-
+	err = r.makeLeafsBranches(pack, &r.leafsBranches, er.Elements, r.depth, nil)
 	return
 }
 
 // 1. only 'hash' of refsNode has meaning
 // 2. refsNode loaded
 // 3. refsNode loaded with all subtrees
-
-type encodedRefsNode struct {
-	Length   uint32        // length of the node
-	Elements []refsElement // if empty then all are elements nils
-}
-
-func (r *Refs) loadRootRefsNodes(pack Pack,
-	elements []*refsElement) (err error) {
-
-	var depth = r.depth // the depth is not 0
-	var rn *refsNode
-
-	r.branches = make([]*refsNode, 0, len(elements))
-
-	for _, el := range elements {
-
-		if el.Deleted == true {
-			continue // deleted
-		}
-
-		// since, in this function, the depth is not 0, then
-		// el.Hash is hash of encodedRefsNode (e.g. refsNode)
-
-		if rn, err = r.loadRefsNodes(pack, depth-1, nil, el.Hash); err != nil {
-			return
-		}
-
-		r.branches = append(r.branches, rn)
-
-	}
-
-	return
-}
-
-// load fucking recursive
-func (r *Refs) loadRefsNodes(pack Pack, depth int, upper *refsNode,
-	hash cipher.SHA256) (rn *refsNode, err error) {
-
-	var val []byte
-
-	rn = new(refsNode)
-
-	rn.hash = hash
-	rn.upper = upper
-	rn.root = r
-
-	if hash == (cipher.SHA256{}) {
-		// TOTH (kostyarin): this should not happens
-		return // empty branch
-	}
-
-	if r.flags&(EntireRefs|HashTableIndex) == 0 {
-		return // don't load deepper
-	}
-
-	// load deepper
-
-	var ern encodedRefsNode
-	if err = get(pack, hash, &ern); err != nil {
-		return
-	}
-
-	rn.length = int(ern.Length)
-
-	if depth == 0 {
-
-		// rn.length is len(ern.Elements) without deleted elements
-		rn.leafs = make([]*refsElement, 0, rn.length)
-
-		for k := range ern.Elements {
-			el := &ern.Elements[k] // get pointer to use
-			if el.Deleted == true {
-				continue // skip deleted elements
-			}
-			el.upper = rn // set upper
-			if r.flags&HashTableIndex != 0 {
-				r.addElementToIndex(hash, el) // add to index if need
-			}
-		}
-
-	} else {
-
-		var sn *refsNode
-
-		rn.branches = make([]*refsNode, 0, len(ern.Elements))
-
-		for _, el := range ern.Elements {
-
-			if el.Deleted == true {
-				continue
-			}
-
-			//                        pack, depth, upper, hash
-			sn, err = r.loadRefsNodes(pack, depth-1, rn, el.Hash)
-			if err != nil {
-				return
-			}
-
-			rn.branches = append(rn.branches, sn)
-
-		}
-
-	}
-
-	return
-}
 
 // HasHash returns false if the Refs doesn't have given hash. It returns
 // true if contains, or first error. It never returns ErrNotFound
@@ -378,7 +189,7 @@ func (r *Refs) HasHash(pack Pack, hash cipher.SHA256) (ok bool, err error) {
 	}
 
 	if r.flags&HashTableIndex != 0 {
-		_, ok = r.index[hash]
+		_, ok = r.refsIndex[hash]
 		return
 	}
 
@@ -425,70 +236,10 @@ func (r *Refs) ValueByHash(pack Pack, hash cipher.SHA256,
 	return
 }
 
-// TOTH (kostyarin): dry or join IndexOfHash and IndicesByHash,
-//                   this TOTH can relate to TOTH of Refs.index
-
-// IndexOfHash returns index of element by hash. It returns ErrNotfound
-// if the Refs doesn't have given hash. If HashTableIndex flag is set then
-// and the Refs contains many elements with given hash, then which of them
-// will be returned, is undefined
-//
-// The big O of the call is O(1) if the Refs doesn't contain element(s)
-// with given hash, or O(depth) if there is at least one lement with
-// given hash. Where the depth is depth (height) of the Refs tree
-func (r *Refs) IndexOfHash(pack Pack, hash cipher.SHA256) (i int, err error) {
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	if r.flags&HashTableIndex != 0 {
-
-		var ok bool
-		var res []*refsElement // elements
-
-		if res, ok = r.index[hash]; !ok {
-			err = ErrNotFound
-			return
-		}
-
-		var re *refsElement
-
-		re = res[len(res)-1]
-
-		// find index
-		if re.upper == nil {
-			// re is part of the Refs.leafs
-			return r.indexInLeafs(re, r.leafs)
-		}
-
-		return r.indexOfLeaf(re)
-	}
-
-	// else -> iterate ascending
-
-	var found bool
-
-	err = r.Ascend(pack, func(index int, elHash cipher.SHA256) (err error) {
-		if elHash == hash {
-			found = true
-			i = index
-			return ErrStopIteration // break
-		}
-		return // continue
-	})
-
-	if err == nil && found == false {
-		err = ErrNotFound
-	}
-
-	return
-}
-
 func (r *Refs) indexOfLeaf(re *refsElement) (i int, err error) {
 
 	// re.upper is not nil
-	if i, err = r.indexInLeafs(re, re.upper.leafs); err != nil {
+	if i, err = re.upper.leafsBranches.indexOfLeaf(re); err != nil {
 		return
 	}
 
@@ -513,86 +264,61 @@ func (r *Refs) indexOfLeaf(re *refsElement) (i int, err error) {
 	return
 }
 
-func (r *Refs) indexInLeafs(re *refsElement, leafs []*refsElement) (i int,
-	err error) {
+func (r *Refs) indexOfHashByIndex(hash cipher.SHA256) (i int, err error) {
 
-	// it is member of Refs.leafs
-	for _, el := range leafs {
-		if el.Deleted == true {
-			continue // skip deleted
+	if res, ok := r.refsIndex[hash]; ok {
+		re := res[len(res)-1]
+		if re.upper == nil {
+			return r.leafsBranches.indexOfLeaf(re) // Refs.leafs
 		}
-		if el == re {
-			return // found
-		}
-		i++
+		return r.indexOfLeaf(re) // re->upper->etc
 	}
 
-	err = ErrInvalidRefs // not found
+	err = ErrNotFound
 	return
 }
 
-// IndicesByHash returns indices of all elements wiht given hash.
-// It returns ErrNotFound if the Refs doesn't contain such elements.
-// Order of the indices, the IndicesByHash returns, is undefined.
+// IndexOfHash returns index of element by hash. It returns ErrNotfound
+// if the Refs doesn't have given hash. If HashTableIndex flag is set then
+// and the Refs contains many elements with given hash, then which of them
+// will be returned, is undefined
 //
-// The big O of the call is O(m * depth), where m is number of
-// elements with given hash in the Refs if HashTableInex flag used
-// by the Refs. Otherwise, the big O is O(n), where n is real length
-// of the Refs
-func (r *Refs) IndicesByHash(pack Pack, hash cipher.SHA256) (is []int,
-	err error) {
+// The big O of the call is O(1) if the Refs doesn't contain element(s)
+// with given hash, or O(depth) if there is at least one lement with
+// given hash. Where the depth is depth (height) of the Refs tree
+func (r *Refs) IndexOfHash(pack Pack, hash cipher.SHA256) (i int, err error) {
 
 	if err = r.initialize(pack); err != nil {
 		return
 	}
 
 	if r.flags&HashTableIndex != 0 {
-
-		var ok bool
-		var res []*refsElement //
-
-		if res, ok = r.index[hash]; !ok {
-			err = ErrNotFound
-			return
-		}
-
-		var js []int
-		for _, re := range res {
-			// find index
-			if re.upper == nil {
-				js, err = r.indicesInLeafs(re, r.leafs)
-			} else {
-				js, err = r.indicesOfLeaf(re)
-			}
-			if err != nil {
-				return
-			}
-			is = append(is, js)
-		}
-
-		return
+		return r.indexOfHashByIndex(hash)
 	}
 
 	// else -> iterate ascending
 
+	var found bool
+
 	err = r.Ascend(pack, func(index int, elHash cipher.SHA256) (err error) {
 		if elHash == hash {
-			is = append(is, index)
+			found = true
+			i = index
+			return ErrStopIteration // break
 		}
 		return // continue
 	})
 
-	if err == nil && len(is) == 0 {
+	if err == nil && found == false {
 		err = ErrNotFound
 	}
 
 	return
 }
 
-func (r *Refs) indicesOfLeaf(re *refsElement) (is []int,
-	err error) {
+func (r *Refs) indicesOfLeaf(re *refsElement) (is []int, err error) {
 
-	if is, err = r.indicesInLeafs(re, re.upper.leafs); err != nil {
+	if is, err = re.upper.leafsBranches.indicesOfLeaf(re.Hash); err != nil {
 		return
 	}
 
@@ -621,24 +347,59 @@ func (r *Refs) indicesOfLeaf(re *refsElement) (is []int,
 	return
 }
 
-func (r *Refs) indicesInLeafs(re *refsElement, leafs []*refsElement) (is []int,
+// IndicesByHash returns indices of all elements wiht given hash.
+// It returns ErrNotFound if the Refs doesn't contain such elements.
+// Order of the indices, the IndicesByHash returns, is undefined.
+//
+// The big O of the call is O(m * depth), where m is number of
+// elements with given hash in the Refs if HashTableInex flag used
+// by the Refs. Otherwise, the big O is O(n), where n is real length
+// of the Refs
+func (r *Refs) IndicesByHash(pack Pack, hash cipher.SHA256) (is []int,
 	err error) {
 
-	// it is member of Refs.leafs
-	var i int
-	for _, el := range r.leafs {
-		if el.Deleted == true {
-			continue // skip deleted
-		}
-		// find by hash, not by element
-		if el == re {
-			is = append(is, i) // found
-		}
-		i++
+	if err = r.initialize(pack); err != nil {
+		return
 	}
 
-	if len(is) == 0 {
-		err = ErrInvalidRefs // not found, but must be
+	if r.flags&HashTableIndex != 0 {
+
+		var ok bool
+		var res []*refsElement //
+
+		if res, ok = r.refsIndex[hash]; !ok {
+			err = ErrNotFound
+			return
+		}
+
+		var js []int
+		for _, re := range res {
+			// find index
+			if re.upper == nil {
+				js, err = r.leafsBranches.indicesOfLeaf(re.Hash)
+			} else {
+				js, err = r.indicesOfLeaf(re)
+			}
+			if err != nil {
+				return
+			}
+			is = append(is, js)
+		}
+
+		return
+	}
+
+	// else -> iterate ascending
+
+	err = r.Ascend(pack, func(index int, elHash cipher.SHA256) (err error) {
+		if elHash == hash {
+			is = append(is, index)
+		}
+		return // continue
+	})
+
+	if err == nil && len(is) == 0 {
+		err = ErrNotFound
 	}
 
 	return
@@ -675,44 +436,26 @@ func validateIndex(i int, length int) (err error) {
 	return
 }
 
-func (r *Refs) loadRefsNodeIfNeed(pack *Pack, rn *refsNode, depth int,
-	upper *refsNode) (err error) {
-
-	if rn.hash != (cipher.SHA256{}) && rn.length == 0 {
-		var ln *refsNode // loaded
-		if ln, err = r.loadRefsNodes(pack, depth, upper, rn.hash); err != nil {
-			return
-		}
-		*rn = *ln // set
-	}
-
-	return
-}
-
 func (r *Refs) hashByIndex(pack Pack, i int, depth int, upper *refsNode,
-	leafs []*refsElement, branches []*refsNode) (hash cipher.SHA256,
-	err error) {
+	lb *leafsBranches) (hash cipher.SHA256, err error) {
 
 	if depth == 0 {
 
-		for _, el := range leafs {
-			if el.Deleted == true {
-				continue
-			}
+		for _, el := range lb.leafs {
 			if i == 0 {
 				hash = el.Hash
 				return // got it
 			}
 			i--
 		}
-		err = ErrInvalidRefs // can't find
+		err = ErrInvalidRefs // can't find (invalid state)
 		return
 
 	}
 
 	// else if depth > 0
 
-	for _, br := range branches {
+	for _, br := range lb.branches {
 
 		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
 			return // error loading
@@ -723,10 +466,10 @@ func (r *Refs) hashByIndex(pack Pack, i int, depth int, upper *refsNode,
 			continue
 		}
 
-		return r.hashByIndex(pack, i, depth-1, br, br.leafs, br.branches)
+		return r.hashByIndex(pack, i, depth-1, br, &br.leafsBranches)
 	}
 
-	err = ErrInvalidRefs
+	err = ErrInvalidRefs // can't find (invalid state)
 	return
 }
 
@@ -743,7 +486,7 @@ func (r *Refs) HashByIndex(pack Pack, i int) (hash cipher.SHA256, err error) {
 		return
 	}
 
-	hash, err = r.hashByIndex(pack, i, r.depth, nil, r.leafs, r.branches)
+	hash, err = r.hashByIndex(pack, i, r.depth, nil, &r.leafsBranches)
 	return
 }
 
@@ -767,6 +510,99 @@ func (r *Refs) ValueByIndex(pack Pack, i int,
 	return
 }
 
+// encode as is
+func (r *Refs) encode() []byte {
+	var er encodedRefs
+
+	er.Degree = uint32(r.degree)
+	er.Depth = uint32(r.depth)
+	er.Length = uint32(r.length)
+
+	if r.depth == 0 {
+		er.Elements = make([]cipher.SHA256, 0, len(r.leafs))
+		for _, el := range r.leafs {
+			er.Elements = append(er.Elements, el.Hash)
+		}
+	} else {
+		er.Elements = make([]cipher.SHA256, 0, len(r.branches))
+		for _, br := range r.branches {
+			er.Elements = append(er.Elements, br.hash)
+		}
+	}
+
+	return encoder.Serialize(er)
+}
+
+// update Refs.Hash only, without deep exploring
+func (r *Refs) updateRootHash(pack Pack) (err error) {
+
+	if r.length == 0 {
+		r.Hash = cipher.SHA256{}
+		return // it's enough
+	}
+
+	// so, r.length is not 0
+
+	val := r.encode()
+	hash := cipher.SumSHA256(val)
+
+	if hash == r.Hash {
+		return // already up to date
+	}
+
+	return pack.Set(hash, val) // save
+}
+
+// update only if the Refs is not lazy
+func (r *Refs) updateRootHashIfNeed(pack Pack) (err error) {
+	if r.flags&LazyUpdating != 0 {
+		return // let's be lazy
+	}
+	return r.updateRootHash()
+}
+
+func (r *Refs) setHashByIndex(pack Pack, i int, hash cipher.SHA256, depth int,
+	upper *refsNode, lb *leafsBranches) (err error) {
+
+	if depth == 0 {
+		for k, el := range lb.leafs {
+			if i == 0 {
+				if r.flags&HashTableIndex != 0 {
+					r.delElementFromIndex(el.Hash, el)
+					r.addElementToIndex(hash, el)
+				}
+				el.Hash = hash // set
+				return
+			}
+			i--
+		}
+		return ErrInvalidRefs // can't find
+	}
+
+	// else if depth > 0
+
+	for _, br := range lb.branches {
+
+		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
+			return // error loading
+		}
+
+		if i > br.length {
+			i -= br.length
+			continue
+		}
+
+		err = r.setHashByIndex(pack, i, hash, depth-1, br, &br.leafsBranches)
+		if err != nil {
+			return
+		}
+
+		return r.updateNodeHashIfNeed(pack, br, depth-1)
+	}
+
+	return ErrInvalidRefs // can't find
+}
+
 // SetHashByIndex replaces hash of element with given index with
 // given hash
 //
@@ -782,51 +618,12 @@ func (r *Refs) SetHashByIndex(pack Pack, i int,
 		return
 	}
 
-	return r.setHashByIndex(pack, i, hash, r.depth, nil, r.leafs, r.branches)
-}
-
-func (r *Refs) setHashByIndex(pack Pack, i int, hash cipher.SHA256, depth int,
-	upper *refsNode, leafs []*refsElement, branches []*refsNode) (err error) {
-
-	if depth == 0 {
-		for k, el := range leafs {
-			if el.Deleted == true {
-				continue // skip deleted
-			}
-			if i == 0 {
-
-				if r.flags&HashTableIndex != 0 {
-					r.delElementFromIndex(el.Hash, el)
-					r.addElementToIndex(hash, el)
-				}
-
-				el.Hash = hash // set
-
-				return
-			}
-			i--
-		}
-		return ErrInvalidRefs // can't find
+	err = r.setHashByIndex(pack, i, hash, r.depth, nil, &r.leafsBranches)
+	if err != nil {
+		return
 	}
 
-	// else if depth > 0
-
-	for _, br := range branches {
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
-			return // error loading
-		}
-
-		if i > br.length {
-			i -= br.length
-			continue
-		}
-
-		return r.setHashByIndex(pack, i, hash, depth-1, br, br.leafs,
-			br.branches)
-	}
-
-	return ErrInvalidRefs // can't find
+	return r.updateRootHashIfNeed(pack)
 }
 
 // SetValueByIndex saves given value calculating its hash and sets this
@@ -848,30 +645,13 @@ func (r *Refs) SetValueByIndex(pack Pack, i int, obj interface{}) (err error) {
 	return r.SetHashByIndex(pack, i, hash)
 }
 
-// The el must not be deleted. The method doesn't reduce
-// length of upper nodes
-func (r *Refs) deleteElement(el *refsElement) {
-	if r.flags&HashTableIndex != 0 {
-		r.delElementFromIndex(el.Hash, el)
-	}
-	el.makeDeleted()
-	r.modified = true // mark as modified
-	if len(r.iterators) > 0 {
-		// force iterators to find next index from root of the Refs
-		r.iterators[len(r.iterators)-1] = true
-	}
-}
-
 func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
-	leafs []*refsElement, branches []*refsNode) (err error) {
+	lb *leafsBranches) (err error) {
 
 	if depth == 0 {
-		for k, el := range leafs {
-			if el.Deleted == true {
-				continue // skip deleted
-			}
+		for k, el := range lb.leafs {
 			if i == 0 {
-				r.deleteElement(el)
+				r.deleteLeafByIndex(lb, i, el)
 				return
 			}
 			i--
@@ -881,7 +661,7 @@ func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
 
 	// else if depth > 0
 
-	for _, br := range branches {
+	for _, br := range lb.branches {
 
 		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
 			return
@@ -892,7 +672,7 @@ func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
 			continue
 		}
 
-		err = r.deleteByIndex(pack, i, depth-1, br, br.leafs, br.branches)
+		err = r.deleteByIndex(pack, i, depth-1, br, &br.leafsBranches)
 		if err != nil {
 			return
 		}
@@ -914,20 +694,42 @@ func (r *Refs) DeleteByIndex(pack Pack, i int) (err error) {
 		return
 	}
 
-	err = r.deleteByIndex(pack, i, r.depth, nil, r.leafs, r.branches)
+	err = r.deleteByIndex(pack, i, r.depth, nil, &r.leafsBranches)
 	if err != nil {
 		return
 	}
-	r.length-- // reduce length (has been deleted)
+	// reduce length (has been deleted)
+	if r.length--; r.length == 0 {
+		r.Hash == cipher.SHA256{} // reset Refs.Hash making it balnk
+	}
 	return
 }
 
-func (r *Refs) delElementBubbling(el *refsElement) {
-	for up := el.upper; up != nil; up = up.upper {
+// TODO
+func (r *Refs) delElementBubbling(el *refsElement) (err error) {
+
+	up := el.upper
+
+	if up == nil {
+		if err = r.leafsBranches.deleteLeaf(el); err != nil {
+			return
+		}
+		if r.length--; r.length == 0 {
+			r.Hash = cipher.SHA256{}
+		}
+		r.modified = true
+		return
+	}
+
+	for ; up != nil; up = up.upper {
 		up.length--
 	}
-	r.length--
-	r.deleteElement(el)
+
+	if r.length--; r.length == 0 {
+		r.Hash = cipher.SHA256{} // reset Refs.Hash making it blank
+	}
+	r.modified = true
+	return
 }
 
 // DeleteByHash deletes all elements by given hash, reducing length of the
@@ -1644,8 +1446,13 @@ func depthToFit(degree, start, fit int) int {
 	return start - 1 // found (-1 turs the start to be Refs.depth)
 }
 
-// increaseDepth to fit 'fit' elements
-func (r *Refs) increaseDepth(fit int) (err error) {
+// increaseDepth to fit 'fit' elements; the method replaces
+// this Refs with another that contains the same elements,
+// but has enough dpeth to fit the 'fit' elements;
+// hases and lengths of every node of the Refs including
+// the Refs structure are empty and should be filled after;
+// the Refs must to be initilized
+func (r *Refs) increaseDepth(pack Pack, fit int) (err error) {
 	// since, max number of elements, that the Refs can fit,
 	// is pow(r.degree, r.depth+1), then required depth is
 	// the base r.degree logarithm of fit; but since we need
@@ -1655,7 +1462,131 @@ func (r *Refs) increaseDepth(fit int) (err error) {
 
 	// now the depth is depth we need
 
-	//
+	var nr Refs // new Refs
+
+	nr.degree = r.degree
+	nr.depth = depth
+	nr.flags = r.flags
+
+	// copy iterators, because we can do that inside and IterateFunc
+	nr.iterators = r.iterators
+
+	if nr.flags&HashTableIndex != 0 {
+		nr.index = make(map[cipher.SHA256][]*refsElement)
+	}
+
+	// build new refs without hashes and length;
+	// the hashes and lengths will be filled later
+
+	// TOTH (kostyarin): may be there is a faster way?
+
+	err = r.Ascend(pack, func(_ int, hash cipher.SHA256) (err error) {
+		var ok bool
+		nr.leafs, nr.branches, ok = nr.appendIgnoringDeleted(pack, hash,
+			nr.depth, nil, nr.leafs, nr.branches)
+		if !ok {
+			panic("can't append to fresh Refs (increasing depth)")
+		}
+		return // continue
+	})
+
+	if err != nil {
+		return // keep the Refs untouched
+	}
+
+	// TODO (kostyarin): walk from tail setting length 'n' hash fileds
+
+	*r = rn // replace
+	return
+}
+
+// appendIgnoringDeleted append given hash to the Refs ignoring
+// deleted elements (e.g. the Refs must be freshly created, without
+// deleted elements). The method sets length and hash fields only for
+// full branches. E.g. after this call we have to walk from end to
+// set hsah and length firelds for non-full branches and for the
+// Refs itself; the appendIgnoringDeleted returns actual (new) values
+// of leafs and branches every time (even if some error occurs);
+// it returns true if givne hash has been appended successfully;
+// if it returns an error then the error is error of Pack.Add;
+// it returns false if given leafs+branches can't fit one more
+// hash
+func (r *Refs) appendIgnoringDeleted(pack Pack, hash cipher.SHA256, depth int,
+	upper *refsNode, leafs []*refsElement,
+	branches []*refsNode) (newLeafs []*refsElement, newBranches []*refsNode,
+	ok bool) {
+
+	newLeafs, newBranches = leafs, branches // return actual values allways
+
+	if depth == 0 {
+		newLeafs, ok = r.appendToLeafsIgnoringDeleted(pack, hash, upper,
+			leafs)
+		return
+	}
+
+	newBranches, ok = r.appendToBranchesIgnoringDeleted(pack, hash, depth,
+		upper, branches)
+	return
+}
+
+func (r *Refs) appendToLeafsIgnoringDeleted(pack Pack, hash cipher.SHA256,
+	upper *refsNode, leafs []*refsElement) (newLeafs []*refsElement, ok bool) {
+
+	newLeafs = leafs // return actual leafs every time
+
+	if len(leafs) == r.degree {
+		return // leafs, false, nil (can't append anymore)
+	}
+
+	re := &refsElement{
+		Hash:  hash, // Deleted: false,
+		upper: upper,
+	}
+
+	newLeafs = append(leafs, re)
+
+	if r.flags&HashTableIndex != 0 {
+		r.addElementToIndex(hash, re)
+	}
+
+	return
+}
+
+func (r *Refs) appendToBranchesIgnoringDeleted(pack Pack, hash cipher.SHA256,
+	depth int, upper *refsNode, branches []*refsNode) (newBranches []*refsNode,
+	ok bool) {
+
+	newBranches = branches // return actual branches every time
+
+	// first of all, we are trying to append
+	// to last branch, and then checks len-degree
+
+	if len(branches) > 0 {
+		br := branches[len(branches)-1]
+
+		br.branches, br.leafs, ok = r.appendIgnoringDeleted(pack, hash,
+			depth-1, br, br.leafs, br.branches)
+		if ok == true || err != nil {
+			return
+		}
+
+		// not ok and err == nil
+	}
+
+	if len(branches) == r.degree {
+		return // branches, false, nil (can't append anymore)
+	}
+
+	br := &refsNode{
+		upper: upper,
+		root:  r, // TODO (kostyarin): the field is never used
+	}
+
+	newBranches = append(branches, br)
+	br.branches, br.leafs, ok = r.appendIgnoringDeleted(pack, hash,
+		depth-1, br, br.leafs, br.branches)
+
+	return
 }
 
 // AppendHashes appends given hashes to the Refs. You must be sure that
@@ -1681,7 +1612,7 @@ func (r *Refs) AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error) {
 		// so, we have to rebuild the Refs tree increasing its depth
 		// to fit all elements including new
 
-		if err = r.increaseDepth(len(hashes) + r.length); err != nil {
+		if err = r.increaseDepth(pack, len(hashes)+r.length); err != nil {
 			return // loading error
 		}
 

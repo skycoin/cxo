@@ -44,6 +44,27 @@ const (
 	// necessary. The Refs stores this flag inside like the
 	// HashTableIndex flag (see above)
 	EntireRefs
+	// LazyUpdating flag turns the Refs to don't update every
+	// branch every changes. Every branch of the Refs has its
+	// own hash and length. And every changes in subtree
+	// bobble the chagnes up to the Refs (to the root of the
+	// Refs tree). The LazyUpdatingRefs turns of the updating
+	// and the updating performed inside Rebuild method of
+	// the Refs (e.g. the updating will be perfromed anyway
+	// even if a developer doesn't it explicitly).
+	// So, if you want Hash field of the Refs to be actual
+	// then you need to turn this flag off (just don't set it)
+	// or call the Rebuild method to get real value of the
+	// field
+	LazyUpdating
+
+	//  /\
+	// /||\
+	//  ||
+	// (developer note) it doesn't update hash field, because
+	// it requirs encoding and SHA256 calculating, but it updates
+	// length field
+
 )
 
 // A Pack represents ...
