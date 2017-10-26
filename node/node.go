@@ -39,8 +39,8 @@ var (
 	// feeds because it is not public
 	ErrNonPublicPeer = errors.New(
 		"request list of feeds from non-public peer")
-	// ErrConnClsoed occurs if coonection closed but an action requested
-	ErrConnClsoed = errors.New("connection closed")
+	// ErrConnClosed occurs if coonection closed but an action requested
+	ErrConnClosed = errors.New("connection closed")
 	// ErrUnsubscribed is a reason of dropping a filling Root
 	ErrUnsubscribed = errors.New("unsubscribed")
 	// ErrInvalidPubKeyLength occurs durong decoding cipher.PubKey from hex
@@ -471,7 +471,7 @@ func (s *Node) gotObject(key cipher.SHA256, obj *msg.Object) {
 	delete(s.wos, key)
 }
 
-func (s *Node) wantObejct(key cipher.SHA256, c *Conn) {
+func (s *Node) wantObject(key cipher.SHA256, c *Conn) {
 	s.wmx.Lock()
 	defer s.wmx.Unlock()
 
@@ -495,6 +495,19 @@ func (s *Node) delConnFromWantedObjects(c *Conn) {
 // It can be nil if this feature disabled by configs
 func (s *Node) Discovery() *factory.MessengerFactory {
 	return s.discovery
+}
+
+// ConnectToMessenger connects to a messenger server.
+func (s *Node) ConnectToMessenger(address string) (*factory.Connection, error) {
+	if s.discovery == nil {
+		return nil, errors.New("messenger factory not initialised")
+	}
+	return s.discovery.ConnectWithConfig(address, &factory.ConnConfig{
+		Reconnect: true,
+		ReconnectWait: time.Second * 30,
+		FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
+		OnConnected: s.updateServiceDiscoveryCallback,
+	})
 }
 
 // Connections of the Node. It returns shared
@@ -773,7 +786,7 @@ func (s *Node) ConnectOrGet(address string) (c *Conn, err error) {
 	for {
 		select {
 		case <-gc.Closed():
-			err = ErrConnClsoed // TODO (kostyarin): recreate or not?
+			err = ErrConnClosed // TODO (kostyarin): recreate or not?
 			return
 		default:
 			if cv := gc.Value(); cv != nil {

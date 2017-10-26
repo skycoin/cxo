@@ -150,7 +150,7 @@ func (c *Conn) SendRoot(r *skyobject.Root) (_ error) {
 	case c.sendRoot <- r:
 	case <-c.gc.Closed():
 		c.s.so.Unhold(r.Pub, r.Seq)
-		return ErrConnClsoed
+		return ErrConnClosed
 	}
 	return
 }
@@ -163,7 +163,7 @@ func (c *Conn) SendRaw(rm []byte) (err error) {
 	select {
 	case c.gc.SendQueue() <- rm:
 	case <-c.gc.Closed():
-		err = ErrConnClsoed
+		err = ErrConnClosed
 	default:
 		c.gc.Close()
 		err = ErrWriteQueueFull
@@ -321,7 +321,7 @@ func (c *Conn) acceptHandshake() (err error) {
 		return ErrTimeout
 
 	case <-c.gc.Closed():
-		return ErrConnClsoed
+		return ErrConnClosed
 	}
 }
 
@@ -367,7 +367,7 @@ func (c *Conn) performHandshake() (err error) {
 		return ErrTimeout
 
 	case <-c.gc.Closed():
-		return ErrConnClsoed
+		return ErrConnClosed
 	}
 
 }
@@ -866,7 +866,7 @@ func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
 
 	// add to list of requested obejcts, waiting for incoming objects
 	// to send it later
-	c.s.wantObejct(ro.Key, c)
+	c.s.wantObject(ro.Key, c)
 }
 
 func (c *Conn) handleObject(o *msg.Object) {

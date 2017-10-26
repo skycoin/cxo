@@ -37,6 +37,6 @@ func (c *Conn) fillRoot(r *skyobject.Root) {
 
 func (c *Conn) closeFillers() {
 	for _, fl := range c.fillers {
-		fl.Terminate(ErrConnClsoed)
+		fl.Terminate(ErrConnClosed)
 	}
 }
