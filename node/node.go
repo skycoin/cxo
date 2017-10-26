@@ -491,6 +491,12 @@ func (s *Node) delConnFromWantedObjects(c *Conn) {
 	}
 }
 
+// Discovery returns *factory.MessengerFactory of the Node.
+// It can be nil if this feature disabled by configs
+func (s *Node) Discovery() *factory.MessengerFactory {
+	return s.discovery
+}
+
 // Connections of the Node. It returns shared
 // slice and you must not modify it
 func (s *Node) Connections() []*Conn {
