@@ -89,7 +89,7 @@ func (r *Refs) initialize(pack Pack) (err error) {
 		r.refsIndex = make(refsIndex)
 	}
 
-	// r.refsNode.hash is already blank
+	r.refsNode.hash = r.Hash // Refs.Hash == Refs.refsNode.hash
 
 	return r.loadSubtree(pack, &r.refsNode, er.Elements, r.depth)
 }
@@ -268,11 +268,7 @@ func (r *Refs) ValueByHash(
 func (r *Refs) indexOfHashByHashTable(hash cipher.SHA256) (i int, err error) {
 
 	if res, ok := r.refsIndex[hash]; ok {
-		re := res[len(res)-1]
-		if re.upper == nil {
-			return r.leafsBranches.indexOfLeaf(re) // Refs.leafs
-		}
-		return r.indexOfLeaf(re) // re->upper->etc
+		return res[len(res)-1].indexInRefs()
 	}
 
 	err = ErrNotFound
@@ -287,6 +283,8 @@ func (r *Refs) indexOfHashByHashTable(hash cipher.SHA256) (i int, err error) {
 // The big O of the call is O(1) if the Refs doesn't contain element(s)
 // with given hash, or O(depth) if there is at least one lement with
 // given hash. Where the depth is depth (height) of the Refs tree
+//
+// But if HashTableIndex flag is not set, then the big O is O(n)
 func (r *Refs) IndexOfHash(
 	pack Pack, //          : pack to load
 	hash cipher.SHA256, // : hsah to find
@@ -323,64 +321,28 @@ func (r *Refs) IndexOfHash(
 	return
 }
 
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
+// indicesOfHashByHashTable finds indices of all elements by given hash
+func (r *Refs) indicesOfHashByHashTable(
+	hash cipher.SHA256, // : hash to find
+) (
+	is []int, //           : indices of elements
+	err error, //          : error if any
+) {
 
-func (r *Refs) indexOfLeaf(re *refsElement) (i int, err error) {
+	var i int
 
-	// re.upper is not nil
-	if i, err = re.upper.leafsBranches.indexOfLeaf(re); err != nil {
+	if res, ok := r.refsIndex[hash]; ok {
+		is = make([]int, 0, len(res))
+		for _, re := range res {
+			if i, err = re.indexInRefs(); err != nil {
+				return
+			}
+			is = append(is, i)
+		}
 		return
 	}
 
-	down, up := re.upper, re.upper.upper
-
-	for ; up != nil; down, up = up, up.upper {
-		for _, br := range up.branches {
-			if br == down {
-				break
-			}
-			i += br.length
-		}
-	}
-
-	for _, br := range r.branches {
-		if br == down {
-			break
-		}
-		i += br.length
-	}
-
-	return
-}
-
-func (r *Refs) indicesOfLeaf(re *refsElement) (is []int, err error) {
-
-	if is, err = re.upper.leafsBranches.indicesOfLeaf(re.Hash); err != nil {
-		return
-	}
-
-	down, up := re.upper, re.upper.upper
-
-	for ; up != nil; down, up = up, up.upper {
-		for _, br := range up.branches {
-			if br == down {
-				break
-			}
-			for k := range is {
-				is[k] += br.length
-			}
-		}
-	}
-
-	for _, br := range r.branches {
-		if br == down {
-			break
-		}
-		for k := range is {
-			is[k] += br.length
-		}
-	}
-
+	err = ErrNotFound
 	return
 }
 
@@ -392,38 +354,22 @@ func (r *Refs) indicesOfLeaf(re *refsElement) (is []int, err error) {
 // elements with given hash in the Refs if HashTableInex flag used
 // by the Refs. Otherwise, the big O is O(n), where n is real length
 // of the Refs
-func (r *Refs) IndicesByHash(pack Pack, hash cipher.SHA256) (is []int,
-	err error) {
+//
+// But if HashTableIndex flag is not set, then the big O is O(n)
+func (r *Refs) IndicesByHash(
+	pack Pack, //          : pack to load
+	hash cipher.SHA256, // : hash to find
+) (
+	is []int, //           : indices
+	err error, //          : error if any
+) {
 
 	if err = r.initialize(pack); err != nil {
 		return
 	}
 
 	if r.flags&HashTableIndex != 0 {
-
-		var ok bool
-		var res []*refsElement //
-
-		if res, ok = r.refsIndex[hash]; !ok {
-			err = ErrNotFound
-			return
-		}
-
-		var js []int
-		for _, re := range res {
-			// find index
-			if re.upper == nil {
-				js, err = r.leafsBranches.indicesOfLeaf(re.Hash)
-			} else {
-				js, err = r.indicesOfLeaf(re)
-			}
-			if err != nil {
-				return
-			}
-			is = append(is, js)
-		}
-
-		return
+		return r.indicesOfHashByHashTable(hash)
 	}
 
 	// else -> iterate ascending
@@ -448,8 +394,14 @@ func (r *Refs) IndicesByHash(pack Pack, hash cipher.SHA256) (is []int,
 // blank but exists in the Refs. The ValueOfHashWithIndex
 // method is usablility wrapper over the IndexOfHash with
 // related notes, the big O and limitations
-func (r *Refs) ValueOfHashWithIndex(pack Pack, hash cipher.SHA256,
-	obj interface{}) (i int, err error) {
+func (r *Refs) ValueOfHashWithIndex(
+	pack Pack, //          : pack to laod
+	hash cipher.SHA256, // : hash to find
+	obj interface{}, //    : pointer to object to decode
+) (
+	i int, //              : index of the element if found
+	err error, //          : error if any
+) {
 
 	// initialize() inside the IndexOfHash
 
@@ -458,11 +410,11 @@ func (r *Refs) ValueOfHashWithIndex(pack Pack, hash cipher.SHA256,
 	}
 
 	if hash == (cipher.SHA256{}) {
-		err = ErrRefsElementIsNil
+		err = ErrRefsElementIsNil // can't get and decode "nil"
 		return
 	}
 
-	err = get(pack, hash, obj)
+	err = get(pack, hash, obj) // get and decode
 	return
 }
 
@@ -473,47 +425,16 @@ func validateIndex(i int, length int) (err error) {
 	return
 }
 
-func (r *Refs) hashByIndex(pack Pack, i int, depth int, upper *refsNode,
-	lb *leafsBranches) (hash cipher.SHA256, err error) {
-
-	if depth == 0 {
-
-		for _, el := range lb.leafs {
-			if i == 0 {
-				hash = el.Hash
-				return // got it
-			}
-			i--
-		}
-		err = ErrInvalidRefs // can't find (invalid state)
-		return
-
-	}
-
-	// else if depth > 0
-
-	for _, br := range lb.branches {
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
-			return // error loading
-		}
-
-		if i > br.length {
-			i -= br.length
-			continue
-		}
-
-		return r.hashByIndex(pack, i, depth-1, br, &br.leafsBranches)
-	}
-
-	err = ErrInvalidRefs // can't find (invalid state)
-	return
-}
-
 // HashByIndex returns hash by index
 //
 // The big O of the call is O(depth)
-func (r *Refs) HashByIndex(pack Pack, i int) (hash cipher.SHA256, err error) {
+func (r *Refs) HashByIndex(
+	pack Pack, //          : pack to load
+	i int, //              : index to find
+) (
+	hash cipher.SHA256, // : hash of the element if found
+	err error, //          : error if any
+) {
 
 	if err = r.initialize(pack); err != nil {
 		return
@@ -523,29 +444,47 @@ func (r *Refs) HashByIndex(pack Pack, i int) (hash cipher.SHA256, err error) {
 		return
 	}
 
-	hash, err = r.hashByIndex(pack, i, r.depth, nil, &r.leafsBranches)
-	return
+	var el *refsElement
+
+	el, err = r.refsElementByIndex(pack, &r.refsNode, i, r.depth)
+	if err != nil {
+		return
+	}
+
+	return el.Hash, nil
 }
 
 // ValueByIndex returns value by index or ErrNotFound
 // or another error. It also returns hash of the value.
 // The ValueByIndex returns ErrRefsElementIsNil if element
 // has been found but represents nil (blank hash)
-func (r *Refs) ValueByIndex(pack Pack, i int,
-	obj interface{}) (hash cipher.SHA256, err error) {
+func (r *Refs) ValueByIndex(
+	pack Pack, //          : pack to load
+	i int, //              : index to find
+	obj interface{}, //    : pointer to obejct to decode
+) (
+	hash cipher.SHA256, // : hash of the element
+	err error, //          : error if any
+) {
 
 	// initialize() inside the HashByIndex
 
 	if hash, err = r.HashByIndex(pack, i); err != nil {
 		return
 	}
+
 	if hash == (cipher.SHA256{}) {
 		err = ErrRefsElementIsNil
 		return
 	}
+
 	err = get(pack, hash, obj)
 	return
 }
+
+//
+// encode
+//
 
 // encode as is
 func (r *Refs) encode() []byte {
@@ -556,19 +495,54 @@ func (r *Refs) encode() []byte {
 	er.Length = uint32(r.length)
 
 	if r.depth == 0 {
+
 		er.Elements = make([]cipher.SHA256, 0, len(r.leafs))
 		for _, el := range r.leafs {
 			er.Elements = append(er.Elements, el.Hash)
 		}
+
 	} else {
+
 		er.Elements = make([]cipher.SHA256, 0, len(r.branches))
 		for _, br := range r.branches {
 			er.Elements = append(er.Elements, br.hash)
 		}
+
 	}
 
 	return encoder.Serialize(er)
 }
+
+// SetHashByIndex replaces hash of element with given index with
+// given hash
+//
+// The big O of the call is O(depth)
+func (r *Refs) SetHashByIndex(
+	pack Pack, //          : pack to load
+	i int, //              : index to set
+	hash cipher.SHA256, // : new hash
+) (
+	err error, //          : error if any
+) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateIndex(i, r.length); err != nil {
+		return
+	}
+
+	var el *refsElement
+	el, err = r.refsElementByIndex(pack, &r.refsNode, i, r.depth)
+	if err != nil {
+		return
+	}
+
+	return r.setElementHash(pack, el, hash)
+}
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 // update Refs.Hash only, without deep exploring
 func (r *Refs) updateRootHash(pack Pack) (err error) {
@@ -623,81 +597,6 @@ func (r *Refs) setElementHash(el *refsElement,
 	r.mods |= (contentMod | originMod)
 
 	return
-}
-
-func (r *Refs) setHashByIndex(pack Pack, i int, hash cipher.SHA256, depth int,
-	upper *refsNode, lb *leafsBranches) (replaced bool, err error) {
-
-	if depth == 0 {
-		for k, el := range lb.leafs {
-			if i == 0 {
-				replaced = r.setElementHash(el, hash)
-				return
-			}
-			i--
-		}
-		return ErrInvalidRefs // can't find
-	}
-
-	// else if depth > 0
-
-	for _, br := range lb.branches {
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
-			return // error loading
-		}
-
-		if i > br.length {
-			i -= br.length
-			continue
-		}
-
-		replaced, err = r.setHashByIndex(pack, i, hash, depth-1, br,
-			&br.leafsBranches)
-
-		if err != nil {
-			return
-		}
-
-		if replaced == false {
-			return // nothing has been changed
-		}
-
-		return r.updateNodeHashIfNeed(pack, br, depth-1)
-	}
-
-	return ErrInvalidRefs // can't find
-}
-
-// SetHashByIndex replaces hash of element with given index with
-// given hash
-//
-// The big O of the call is O(depth)
-func (r *Refs) SetHashByIndex(pack Pack, i int,
-	hash cipher.SHA256) (err error) {
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	if err = validateIndex(i, r.length); err != nil {
-		return
-	}
-
-	var replaced bool
-	replaced, err = r.setHashByIndex(pack, i, hash, r.depth, nil,
-		&r.leafsBranches)
-
-	if err != nil {
-		r.broken = err // treat the err as breaking
-		return
-	}
-
-	if replaced == false {
-		return // nothing has been changed
-	}
-
-	return r.updateRootHashIfNeed(pack)
 }
 
 // SetValueByIndex saves given value calculating its hash and sets this

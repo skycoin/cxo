@@ -23,6 +23,7 @@ type leafsBranches struct {
 type refsNode struct {
 	hash   cipher.SHA256 // hash of this node
 	length int           // length of this subtree
+	mods   refsMod       // unsaved modifications
 
 	leafsBranches // leafs and branches
 
@@ -92,7 +93,7 @@ func (r *Refs) loadNode(
 
 	rn.length = int(ern.Length)
 
-	return r.loadSubtree(pack, rn, ern.Elements, depth-1) // go deepper
+	return r.loadSubtree(pack, rn, ern.Elements, depth) // depth is the same
 }
 
 // laod branch, setting hash and upper fields and loading
@@ -270,6 +271,136 @@ Upper:
 	}
 
 	return
+}
+
+//
+// find element by index
+//
+
+// refsElementByIndex finds *refsElemet by given index;
+func (r *Refs) refsElementByIndex(
+	pack Pack, //       : pack to load
+	rn *refsNode, //    : the node to find inside (should be loaded)
+	i int, //           : index of the needle
+	depth int, //       : depth of the rn
+) (
+	el *refsElement, // : element if found
+	err error, //       : error if any
+) {
+
+	// so, the rn is already loaded
+
+	if depth == 0 { // take a look at leafs
+
+		for j, el := range rn.leafs {
+			if j == i {
+				return el, nil // found
+			}
+		}
+
+		return nil, ErrInvalidRefs // can't find the element
+	}
+
+	// else, take a look at branches
+
+	var br *refsNode
+	for _, br = range rn.branches {
+
+		if err = r.loadNodeIfNeed(pack, br, depth-1); err != nil {
+			return
+		}
+
+		if i < br.length {
+			i -= br.length // subtract length of the skipped branch
+			continue       // and skip the branch
+		}
+
+		break // the branch that contains the needle has been found
+	}
+
+	return r.refsElementByIndex(pack, br, i, depth-1)
+}
+
+//
+// change hash of refsElement
+//
+
+// updateNodeHash updates hash of given node
+func (r *Refs) updateNodeHash(
+	pack Pack, //    : pack to save
+	rn *refsNode, // : the node to update hash
+	depth int, //    : depth of the node
+) (
+	err error, //    : saving error
+) {
+
+	// encode
+	val := rn.encode(depth)
+	// get hash
+	hash := cipher.SumSHA256(val)
+	// compare with previous one
+	if err = pack.Set(hash, val); err != nil {
+		return
+	}
+
+	rn.mods &^= contentMod // clear the flag if it has been set
+	return
+}
+
+// bubbleContentChanges change hashes of
+// all upper nodes if LazyUpdating flag
+// is not set
+func (r *Refs) bubbleContentChanges(
+	pack Pack, //       : pack to save
+	el *refsElement, // : element to start bubbling
+) (
+	err error, //       : error if any
+) {
+
+	var lazy = r.flags&LazyUpdating != 0
+	var depth int
+
+	for up := el.upper; up != nil; up = up.upper {
+		if lazy == true {
+			up.mods |= contentMod // modified but not saved
+		} else {
+			if err = r.updateNodeHash(pack, rn, depth); err != nil {
+				return // saving error
+			}
+		}
+		depth++ // the depth grows
+	}
+
+	r.Hash = r.refsNode.hash // set actual value of the Refs.Hash
+	r.mods |= originMod      // origin has been modified
+
+	return
+}
+
+// setElementHash replaces element hash
+func (r *Refs) setElementHash(
+	pack Pack, //          : pack to save
+	el *refsElement, //    : element to change
+	hash cipher.SHA256, // : new hash
+) (
+	err error, //          : error if any
+) {
+
+	if el.Hash == hash {
+		return // nothing to change
+	}
+
+	if r.flags&HashTableIndex != 0 {
+		r.delElementFromIndex(el)     // delete old
+		r.addElementToIndex(hash, el) // add new
+	}
+
+	el.Hash = hash
+
+	// so, length of the Refs is still the same
+	// but content has been changed
+
+	return r.bubbleContentChanges(pack, el)
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
