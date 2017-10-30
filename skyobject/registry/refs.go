@@ -44,14 +44,10 @@ type Refs struct {
 
 	length int `enc:"-"` // length of Refs
 
-	refsIndex     `enc:"-"` // hash-table index
-	leafsBranches `enc:"-"` // leafs and branches
+	refsIndex `enc:"-"` // hash-table index
+	refsNode  `enc:"-"` // leafs, branches, mods and length
 
 	flags Flags `enc:"-"` // first use (load) flags
-
-	// the modified is true if length of the Refs has been
-	// changed, and Rebuild may be required
-	modified bool `enc:"-"`
 
 	// stack of iterators, if element is true, then length of the Refs
 	// has been changed and the iterator have to find next element
@@ -64,20 +60,18 @@ type Refs struct {
 
 func (r *Refs) initialize(pack Pack) (err error) {
 
-	if r.flags != 0 {
+	if r.mods != 0 {
 		return // already initialized
 	}
 
-	r.flags = pack.Flags() | flagIsSet // keep current flags
+	r.mods = loadedMod     // mark as loaded
+	r.flags = pack.Flags() // keep current flags
 
 	if r.Hash == (cipher.SHA256{}) {
-		return // blank Refs
+		return // blank Refs, don't need to load
 	}
 
-	if r.length == 0 {
-		err = r.load(pack)
-	}
-	return
+	return r.load(pack)
 }
 
 // Init does nothing, but if the Refs are not
@@ -100,7 +94,6 @@ func (r *Refs) Len(pack Pack) (ln int, err error) {
 	if err = r.initialize(pack); err != nil {
 		return
 	}
-
 	ln = r.length
 	return
 }
@@ -139,7 +132,7 @@ func (r *Refs) Degree() (degree int, err error) {
 //     }
 //
 func (r *Refs) Flags() (flags Flags) {
-	return r.flags &^ flagIsSet
+	return r.flags
 }
 
 type encodedRefs struct {
@@ -147,6 +140,32 @@ type encodedRefs struct {
 	Degree   uint32
 	Length   uint32
 	Elements []cipher.SHA256
+}
+
+// Reset the Refs. If the Refs can't be loaded
+// or the Refs is broken, then it can't be used
+// anymore. To reload the Refs to make it useful
+// use this method. The Reset method doesn't reloads
+// the Refs, but allows reloading for other methods.
+// It's impossible to reset during an iteration.
+// The Reset resets flags of the Refs too
+func (r *Refs) Reset() (err error) {
+
+	if len(r.iterators) > 0 {
+		return ErrRefsIterating // can't reset during iterating
+	}
+
+	r.degree = 0 // clear
+	r.depth = 0  // clear
+
+	// the node
+	r.length = 0     // clear
+	r.leafs = nil    // free
+	r.branches = nil // free
+	r.mods = 0       // mark as not loaded
+
+	r.flags = 0 // clear flags
+	return
 }
 
 func (r *Refs) load(pack Pack) (err error) {
@@ -169,7 +188,10 @@ func (r *Refs) load(pack Pack) (err error) {
 		r.refsIndex = make(refsIndex)
 	}
 
-	err = r.makeLeafsBranches(pack, &r.leafsBranches, er.Elements, r.depth, nil)
+	r.refsNode.hash = r.Hash // TODO (kostyarin): to do or not to do?
+
+	// this error doesn't break the tree
+	err = r.loadNode(pack, &r.refsNode, er.Elements, r.depth)
 	return
 }
 
@@ -265,6 +287,7 @@ func (r *Refs) indexOfLeaf(re *refsElement) (i int, err error) {
 }
 
 func (r *Refs) indexOfHashByIndex(hash cipher.SHA256) (i int, err error) {
+	// can "break" the Refs
 
 	if res, ok := r.refsIndex[hash]; ok {
 		re := res[len(res)-1]
@@ -537,8 +560,12 @@ func (r *Refs) encode() []byte {
 func (r *Refs) updateRootHash(pack Pack) (err error) {
 
 	if r.length == 0 {
+		if r.Hash == (cipher.SHA256{}) {
+			return // already clear
+		}
 		r.Hash = cipher.SHA256{}
-		return // it's enough
+		r.mods |= (contentMod | originMod) // mark as modified
+		return                             // it's enough
 	}
 
 	// so, r.length is not 0
@@ -550,7 +577,8 @@ func (r *Refs) updateRootHash(pack Pack) (err error) {
 		return // already up to date
 	}
 
-	return pack.Set(hash, val) // save
+	r.mods |= (contentMod | originMod) // mark as modified
+	return pack.Set(hash, val)         // save
 }
 
 // update only if the Refs is not lazy
@@ -561,17 +589,35 @@ func (r *Refs) updateRootHashIfNeed(pack Pack) (err error) {
 	return r.updateRootHash()
 }
 
+// replace hash of the element for new one
+func (r *Refs) setElementHash(el *refsElement,
+	newHash cipher.SHA256) (replaced bool) {
+
+	if el.Hash == newHash {
+		return // just the same
+	}
+
+	if r.flags&HashTableIndex != 0 {
+		r.delElementFromIndex(el.Hash, el)
+		r.addElementToIndex(newHash, el)
+	}
+
+	el.Hash = newHash // set
+	replaced = true   // has been replaced
+
+	// has been modified, but length still the same
+	r.mods |= (contentMod | originMod)
+
+	return
+}
+
 func (r *Refs) setHashByIndex(pack Pack, i int, hash cipher.SHA256, depth int,
-	upper *refsNode, lb *leafsBranches) (err error) {
+	upper *refsNode, lb *leafsBranches) (replaced bool, err error) {
 
 	if depth == 0 {
 		for k, el := range lb.leafs {
 			if i == 0 {
-				if r.flags&HashTableIndex != 0 {
-					r.delElementFromIndex(el.Hash, el)
-					r.addElementToIndex(hash, el)
-				}
-				el.Hash = hash // set
+				replaced = r.setElementHash(el, hash)
 				return
 			}
 			i--
@@ -592,9 +638,15 @@ func (r *Refs) setHashByIndex(pack Pack, i int, hash cipher.SHA256, depth int,
 			continue
 		}
 
-		err = r.setHashByIndex(pack, i, hash, depth-1, br, &br.leafsBranches)
+		replaced, err = r.setHashByIndex(pack, i, hash, depth-1, br,
+			&br.leafsBranches)
+
 		if err != nil {
 			return
+		}
+
+		if replaced == false {
+			return // nothing has been changed
 		}
 
 		return r.updateNodeHashIfNeed(pack, br, depth-1)
@@ -618,9 +670,17 @@ func (r *Refs) SetHashByIndex(pack Pack, i int,
 		return
 	}
 
-	err = r.setHashByIndex(pack, i, hash, r.depth, nil, &r.leafsBranches)
+	var replaced bool
+	replaced, err = r.setHashByIndex(pack, i, hash, r.depth, nil,
+		&r.leafsBranches)
+
 	if err != nil {
+		r.broken = err // treat the err as breaking
 		return
+	}
+
+	if replaced == false {
+		return // nothing has been changed
 	}
 
 	return r.updateRootHashIfNeed(pack)
@@ -645,6 +705,36 @@ func (r *Refs) SetValueByIndex(pack Pack, i int, obj interface{}) (err error) {
 	return r.SetHashByIndex(pack, i, hash)
 }
 
+// decrNodeLength after deleting
+func (r *Refs) decrNodeLength(pack Pack, rn *refsNode, depth int) (blank bool,
+	err error) {
+
+	if rn.length--; rn.length == 0 {
+		rn.hash = cipher.SHA256{}        // clear hash
+		rn.leafs, rn.branches = nil, nil // free subtree
+		blank = true                     // mark as blank (removed)
+		return                           // that's all
+	}
+
+	// depends on LazyUpdating flag
+	err = r.updateNodeHashIfNeed(pack, rn, depth) // if need
+	return
+}
+
+// decrRootLength after deleting
+func (r *Refs) decrRootLength(pack Pack) error {
+
+	if r.length--; r.length == 0 {
+		r.Hash = cipher.SHA256{}          // clear the hash anyway
+		r.mods |= (lengthMod | originMod) // modified
+		r.leafs, r.branches = nil, nil    // free subtree
+		return                            // that's all
+	}
+
+	// depends on LazyUpdating flag
+	return r.updateRootHashIfNeed(pack) // if need
+}
+
 func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
 	lb *leafsBranches) (err error) {
 
@@ -661,7 +751,7 @@ func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
 
 	// else if depth > 0
 
-	for _, br := range lb.branches {
+	for k, br := range lb.branches {
 
 		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
 			return
@@ -672,11 +762,27 @@ func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
 			continue
 		}
 
+		// it's not the loop, we will here once per call maximum
+
 		err = r.deleteByIndex(pack, i, depth-1, br, &br.leafsBranches)
 		if err != nil {
 			return
 		}
-		br.length-- // reduce length (has been deleted)
+
+		// reduce length (has been deleted)
+
+		var blank bool
+		if blank, err = r.decrNodeLength(pack, br, depth-1); err != nil {
+			return // some error
+		}
+
+		if blank == true {
+			// so, if it's blank, then we have to remove the branch from
+			// the lb.branches
+			lb.deleteBranchByIndex(k)
+		}
+
+		return // that's all
 	}
 
 	return ErrInvalidRefs // can't find
@@ -698,38 +804,38 @@ func (r *Refs) DeleteByIndex(pack Pack, i int) (err error) {
 	if err != nil {
 		return
 	}
-	// reduce length (has been deleted)
-	if r.length--; r.length == 0 {
-		r.Hash == cipher.SHA256{} // reset Refs.Hash making it balnk
-	}
-	return
+
+	return r.decrRootLength(pack)
 }
 
 // TODO
-func (r *Refs) delElementBubbling(el *refsElement) (err error) {
+func (r *Refs) delElementBubbling(pack Pack, el *refsElement) (err error) {
 
-	up := el.upper
+	up := el.upper // *refsNode or nil (the Refs)
 
 	if up == nil {
 		if err = r.leafsBranches.deleteLeaf(el); err != nil {
 			return
 		}
-		if r.length--; r.length == 0 {
-			r.Hash = cipher.SHA256{}
-		}
-		r.modified = true
-		return
+		return r.decrRootLength(pack)
 	}
+
+	var di int // current depth
+	var blank bool
 
 	for ; up != nil; up = up.upper {
-		up.length--
+		if blank, err = r.decrNodeLength(pack, up, depth-di); err != nil {
+			return
+		}
+		if blank == true {
+			if err = up.leafsBranches.deleteBranch(up); err != nil {
+				return
+			}
+		}
+		di-- // decrement depth
 	}
 
-	if r.length--; r.length == 0 {
-		r.Hash = cipher.SHA256{} // reset Refs.Hash making it blank
-	}
-	r.modified = true
-	return
+	return r.decrRootLength(pack)
 }
 
 // DeleteByHash deletes all elements by given hash, reducing length of the

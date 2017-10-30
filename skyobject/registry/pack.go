@@ -10,8 +10,6 @@ type Flags int
 
 // common Flags
 const (
-	flagIsSet Flags = 1 << iota // service
-
 	// HashTableIndex is flag that enables hash-table index inside
 	// the Refs. The index speeds up accessing by hash. The index
 	// is not designed to be used with many elements with the same
@@ -37,7 +35,7 @@ const (
 	// flags of the pack inside. And you can unset the flag if
 	// you want. Thus, the someRefs uses has-table index, but
 	// the someOtherRefs does not
-	HashTableIndex
+	HashTableIndex Flags = 1 << iota
 	// EntireRefs is flag that forces the Refs to be unpacked
 	// entirely. By default (without the flag), the Refs uses
 	// lazy loading, where all branches loads only if it's

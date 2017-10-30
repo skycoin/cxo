@@ -135,12 +135,17 @@ func NewNode(sc Config) (s *Node, err error) {
 	var cxPath, idxPath string
 
 	if sc.DB != nil {
+
 		cxPath, idxPath = "<used provided DB>", "<used provided DB>"
 		db = sc.DB
-	} else if sc.InMemoryDB {
+
+	} else if sc.InMemoryDB == true {
+
 		cxPath, idxPath = "<in memory>", "<in memory>"
 		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
+
 	} else {
+
 		if sc.DBPath == "" {
 			cxPath = filepath.Join(sc.DataDir, "cxds.db")
 			idxPath = filepath.Join(sc.DataDir, "idx.db")
@@ -148,16 +153,21 @@ func NewNode(sc Config) (s *Node, err error) {
 			cxPath = sc.DBPath + ".cxds"
 			idxPath = sc.DBPath + ".idx"
 		}
+
 		var cx data.CXDS
 		var idx data.IdxDB
+
 		if cx, err = cxds.NewDriveCXDS(cxPath); err != nil {
 			return
 		}
+
 		if idx, err = idxdb.NewDriveIdxDB(idxPath); err != nil {
 			cx.Close()
 			return
 		}
+
 		db = data.NewDB(cx, idx)
+
 	}
 
 	// container
@@ -838,18 +848,20 @@ func (s *Node) delFeed(pk cipher.PubKey) (ok bool) {
 
 // perform it under 'fmx' lock
 func updateServiceDiscovery(n *Node) {
-	if n.discovery != nil {
-		feeds := make([]cipher.PubKey, 0, len(n.feeds))
-		services := make([]*factory.Service, 0, len(feeds))
-
-		for pk := range n.feeds {
-			feeds = append(feeds, pk)
-			services = append(services, &factory.Service{Key: pk})
-		}
-		go n.discovery.ForEachConn(func(connection *factory.Connection) {
-			n.updateServiceDiscovery(connection, feeds, services)
-		})
+	if n.discovery == nil {
+		return // it's turned off
 	}
+
+	feeds := make([]cipher.PubKey, 0, len(n.feeds))
+	services := make([]*factory.Service, 0, len(feeds))
+
+	for pk := range n.feeds {
+		feeds = append(feeds, pk)
+		services = append(services, &factory.Service{Key: pk})
+	}
+	go n.discovery.ForEachConn(func(connection *factory.Connection) {
+		n.updateServiceDiscovery(connection, feeds, services)
+	})
 }
 
 // del feed from connections, every connection must

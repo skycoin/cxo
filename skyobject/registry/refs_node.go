@@ -35,102 +35,133 @@ type encodedRefsNode struct {
 	Elements []cipher.SHA256 // if empty then all elements are nils
 }
 
-// from given []cipher.SHA256 create []*refsElement
-func (r *Refs) makeLeafs(elements []cipher.SHA256,
-	upper *refsNode) (leafs []*refsElement) {
+// create leafs by given elements
+func (r *Refs) loadLeafs(
+	rn *refsNode, // node that contains this leafs
+	elements []cipher.SHA256, // elemets
+) {
 
-	leafs = make([]*refsElement, 0, len(elements))
-
-	for _, hash := range elements {
-
-		re := &refsElement{
-			Hash:  hash,
-			upper: upper,
-		}
-
-		if r.flags&HashTableIndex != 0 {
-			r.addElementToIndex(hash, re)
-		}
-
-		leafs = append(leafs, re)
-
-	}
-
-	return
-}
-
-// the depth is current depth, e.g. depth-1 will be used for subnodes
-func (r *Refs) makeBranches(pack Pack, elements []cipher.SHA256, depth int,
-	upper *refsNode) (branches []*refsNode, err error) {
-
-	var sn *refsNode
-
-	branches = make([]*refsNode, 0, len(elements))
+	rn.leafs = make([]*refsElement, 0, len(elements))
 
 	for _, hash := range elements {
-		sn, err = r.loadRefsNode(pack, depth-1, upper, hash)
-		if err != nil {
-			return
-		}
-		branches = append(branches, sn)
+		rn.leafs = append(r.leafs, r.loadLeaf(hash, rn))
 	}
 
 	return
 }
 
-func (r *Refs) makeLeafsBranches(pack Pack, lb *leafsBranches,
-	elements []cipher.SHA256, depth int, upper *refsNode) (err error) {
+// create leaf by given hash, the name starts with
+// load by analogy of loadBranch
+func (r *Refs) loadLeaf(
+	hash cipher.SHA256, // : hash of the leaf
+	upper *refsNode, //    : upper node
+) (
+	re *refsElement, //    : the "loaded" leaf
+) {
 
-	if depth == 0 {
-		lb.leafs = r.makeLeafs(elements, upper)
-	} else {
-		lb.branches, err = r.makeBranches(pack, elements, depth, upper)
+	re = new(refsElement)
+
+	re.Hash = hash
+	re.upper = upper
+
+	if r.flags&HashTableIndex != 0 {
+		r.addElementToIndex(hash, re)
 	}
 
 	return
 }
 
-// load fucking recursive
-func (r *Refs) loadRefsNode(pack Pack, depth int, upper *refsNode,
-	hash cipher.SHA256) (rn *refsNode, err error) {
-
-	var val []byte
-
-	rn = new(refsNode)
-
-	rn.hash = hash
-	rn.upper = upper
+func (r *Refs) loadBranch(
+	pack Pack, //          : pack to get the elemet
+	hash cipher.SHA256, // : hash of the branch
+	depth int, //          : depth of the branch
+	upper *refsNode, //    : upper node
+) (
+	br *refsNode, //        : the loaded branch
+	err error, //           : error if any
+) {
 
 	if hash == (cipher.SHA256{}) {
-		err = ErrInvalidEncodedRefs
-		return // blank refs node
+		return nil, ErrInvalidRefs
 	}
 
-	if r.flags&(EntireRefs|HashTableIndex) == 0 {
-		return // don't load deepper
+	br = new(refsNode)
+
+	br.hash = hash
+	br.upper = upper
+
+	if r.flags&(HashTableIndex|EntireRefs) == 0 {
+		return // don't load deepper (lazy loading)
 	}
 
-	// load deepper
-
-	var ern encodedRefsNode
+	var ern encodedRefsNode // encoded branch
 	if err = get(pack, hash, &ern); err != nil {
-		return
+		return // Pack related error (get or decoding)
 	}
 
-	rn.length = int(ern.Length)
+	br.length = int(ern.Length)
 
-	err = r.makeLeafsBranches(pack, &rn.leafsBranches, ern.Elements, depth,
-		upper)
+	return r.loadSubtree(pack, br, ern.Elements, depth-1) // go deepper
+}
+
+// 'length' and 'upper' fields of the rn are already set;
+// the depth if not 0 (e.g. the elements point to refsNode)
+//
+// the loadBranches doesn't load entire tree if it's not
+// necessary; e.g. it depends on flags HashTableIndex and
+// EntireRefs
+func (r *Refs) loadBranches(
+	pack Pack, //                : pack to load
+	rn *refsNode, //             : the node
+	depth int, //                : depth of the branches (> 0)
+	elements []cipher.SHA256, // : elements of the branches
+) (
+	err error, //                : pack/decoding related error
+) {
+
+	rn.branches = make([]*refsNode, 0, len(elements))
+
+	var br *refsNode
+	for _, hash := range elements {
+		if br, err = r.loadBranch(pack, hash, depth, rn); err != nil {
+			return
+		}
+		rn.branches = append(rn.branches, br)
+	}
 
 	return
 }
+
+// 'length' and 'upper' fields of the rn are already set;
+// the loadSubtree doesn't load entire tree if it's not
+// necessary; e.g. the loading depends on falgs
+// HashTableIndex and EntireRefs
+func (r *Refs) loadSubtree(
+	pack Pack, //                : pack to load
+	rn *refsNode, //             : load subtree of this
+	elements []cipher.SHA256, // : elements to load
+	depth int, //                : depth of the rn (of the elements)
+) (
+	err error, //                : pack/decoding related error
+) {
+
+	if depth == 0 {
+		r.loadLeafs(rn, elements)
+		return // if the depth is 0, then the node contains leafs
+	}
+
+	// else if depth > 0, then the node contains branches
+	return r.loadBranches(pack, rn, depth, elements)
+}
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 func (r *Refs) loadRefsNodeIfNeed(pack *Pack, rn *refsNode, depth int,
 	upper *refsNode) (err error) {
 
 	if rn.hash != (cipher.SHA256{}) && rn.length == 0 {
 		var ln *refsNode // loaded
-		if ln, err = r.loadRefsNodes(pack, depth, upper, rn.hash); err != nil {
+		if ln, err = r.loadRefsNode(pack, depth, upper, rn.hash); err != nil {
 			return
 		}
 		*rn = *ln // set
@@ -196,10 +227,26 @@ func (l *leafsBranches) deleteLeafByIndex(k int) {
 	l.leafs = l.leafs[:len(l.leafs)-1]
 }
 
+func (l *leafsBranches) deleteBranchByIndex(k int) {
+	copy(l.branches[k:], l.branches[k+1:])      // move
+	l.branches[len(l.branches)-1] = nil         // free
+	l.branches = l.branches[:len(l.branches)-1] // reduce length
+}
+
 func (l *leafsBranches) deleteLeaf(el *refsElement) (err error) {
 	for k, lf := range l.leafs {
 		if lf == el {
 			l.deleteLeafByIndex(k)
+			return
+		}
+	}
+	return ErrInvalidRefs // can't find (invalid state)
+}
+
+func (l *leafsBranches) deleteBranch(br *refsNode) (err error) {
+	for k, rn := range l.branches {
+		if br == rn {
+			l.deleteBranchByIndex(k)
 			return
 		}
 	}
@@ -217,7 +264,7 @@ func (r *Refs) deleteLeafByIndex(lb *leafsBranches, k int, el *refsElement) {
 
 	lb.deleteLeafByIndex(k)
 
-	r.modified = true // mark as modified (length has been changed)
+	r.mods |= (lengthMod | originMod)
 
 	if len(r.iterators) > 0 {
 		// force iterators to find next index from root of the Refs

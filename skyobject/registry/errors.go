@@ -25,6 +25,8 @@ var (
 	ErrRefsIsIterating    = errors.New("Refs is iterating")
 	ErrRefsElementIsNil   = errors.New("Refs element is nil")
 	ErrInvalidSliceIndex  = errors.New("invalid slice index")
+	ErrInvalidRefsState   = errors.New("invalid state of the Refs")
+	ErrRefsIterating      = errors.New("Refs is iterating")
 
 	ErrNotFound      = errors.New("not found")
 	ErrStopIteration = errors.New("stop iteration")
