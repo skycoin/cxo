@@ -71,7 +71,27 @@ func (r *Refs) initialize(pack Pack) (err error) {
 		return // blank Refs, don't need to load
 	}
 
-	return r.load(pack)
+	var er encodedRefs
+	if err = get(pack, r.Hash, &er); err != nil {
+		return // get or decoding error
+	}
+
+	r.depth = int(er.Depth)
+	r.degree = int(er.Degree)
+
+	r.length = int(er.Length)
+
+	if r.length == 0 || r.degree < 2 {
+		return ErrInvalidEncodedRefs // invalid state
+	}
+
+	if r.flags&HashTableIndex != 0 {
+		r.refsIndex = make(refsIndex)
+	}
+
+	// r.refsNode.hash is already blank
+
+	return r.loadSubtree(pack, &r.refsNode, er.Elements, r.depth)
 }
 
 // Init does nothing, but if the Refs are not
@@ -135,6 +155,9 @@ func (r *Refs) Flags() (flags Flags) {
 	return r.flags
 }
 
+// an encodedRefs represents encoded Refs
+// that contains length, degree, depth and
+// hashes of nested elements
 type encodedRefs struct {
 	Depth    uint32
 	Degree   uint32
@@ -168,33 +191,6 @@ func (r *Refs) Reset() (err error) {
 	return
 }
 
-func (r *Refs) load(pack Pack) (err error) {
-
-	var er encodedRefs
-	if err = get(pack, r.Hash, &er); err != nil {
-		return
-	}
-
-	r.depth = int(er.Depth)
-	r.degree = int(er.Degree)
-
-	r.length = int(er.Length)
-
-	if r.length == 0 || r.degree < 2 {
-		return ErrInvalidEncodedRefs
-	}
-
-	if r.flags&HashTableIndex != 0 {
-		r.refsIndex = make(refsIndex)
-	}
-
-	r.refsNode.hash = r.Hash // TODO (kostyarin): to do or not to do?
-
-	// this error doesn't break the tree
-	err = r.loadNode(pack, &r.refsNode, er.Elements, r.depth)
-	return
-}
-
 // 1. only 'hash' of refsNode has meaning
 // 2. refsNode loaded
 // 3. refsNode loaded with all subtrees
@@ -204,7 +200,13 @@ func (r *Refs) load(pack Pack) (err error) {
 //
 // The big O of the call is O(1) if the HashTableIndex flag has been set.
 // Otherwise, the big O is O(n), where n is real length of the Refs
-func (r *Refs) HasHash(pack Pack, hash cipher.SHA256) (ok bool, err error) {
+func (r *Refs) HasHash(
+	pack Pack, //          : pack to load (if not loaded yet)
+	hash cipher.SHA256, // : hash to check out
+) (
+	ok bool, //            : true if has got
+	err error, //          : error if any
+) {
 
 	if err = r.initialize(pack); err != nil {
 		return
@@ -238,8 +240,13 @@ func (r *Refs) HasHash(pack Pack, hash cipher.SHA256) (ok bool, err error) {
 //
 // The big O of the call is the same as the big O of the
 // HasHash call
-func (r *Refs) ValueByHash(pack Pack, hash cipher.SHA256,
-	obj interface{}) (err error) {
+func (r *Refs) ValueByHash(
+	pack Pack, //          : pack to laod
+	hash cipher.SHA256, // : hash to get
+	obj interface{}, //    : pointer to object to decode
+) (
+	err error, //          : error if any
+) {
 
 	// initilize() inside the HashHash
 
@@ -257,6 +264,66 @@ func (r *Refs) ValueByHash(pack Pack, hash cipher.SHA256,
 	err = get(pack, hash, obj)
 	return
 }
+
+func (r *Refs) indexOfHashByHashTable(hash cipher.SHA256) (i int, err error) {
+
+	if res, ok := r.refsIndex[hash]; ok {
+		re := res[len(res)-1]
+		if re.upper == nil {
+			return r.leafsBranches.indexOfLeaf(re) // Refs.leafs
+		}
+		return r.indexOfLeaf(re) // re->upper->etc
+	}
+
+	err = ErrNotFound
+	return
+}
+
+// IndexOfHash returns index of element by hash. It returns ErrNotfound
+// if the Refs doesn't have given hash. If HashTableIndex flag is set then
+// and the Refs contains many elements with given hash, then which of them
+// will be returned, is undefined
+//
+// The big O of the call is O(1) if the Refs doesn't contain element(s)
+// with given hash, or O(depth) if there is at least one lement with
+// given hash. Where the depth is depth (height) of the Refs tree
+func (r *Refs) IndexOfHash(
+	pack Pack, //          : pack to load
+	hash cipher.SHA256, // : hsah to find
+) (
+	i int, //              : index of the element
+	err error, //          : error if any
+) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if r.flags&HashTableIndex != 0 {
+		return r.indexOfHashByHashTable(hash)
+	}
+
+	// else -> iterate ascending
+
+	var found bool
+
+	err = r.Ascend(pack, func(index int, elHash cipher.SHA256) (err error) {
+		if elHash == hash {
+			found = true
+			i = index
+			return ErrStopIteration // break
+		}
+		return // continue
+	})
+
+	if err == nil && found == false {
+		err = ErrNotFound
+	}
+
+	return
+}
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 func (r *Refs) indexOfLeaf(re *refsElement) (i int, err error) {
 
@@ -281,59 +348,6 @@ func (r *Refs) indexOfLeaf(re *refsElement) (i int, err error) {
 			break
 		}
 		i += br.length
-	}
-
-	return
-}
-
-func (r *Refs) indexOfHashByIndex(hash cipher.SHA256) (i int, err error) {
-	// can "break" the Refs
-
-	if res, ok := r.refsIndex[hash]; ok {
-		re := res[len(res)-1]
-		if re.upper == nil {
-			return r.leafsBranches.indexOfLeaf(re) // Refs.leafs
-		}
-		return r.indexOfLeaf(re) // re->upper->etc
-	}
-
-	err = ErrNotFound
-	return
-}
-
-// IndexOfHash returns index of element by hash. It returns ErrNotfound
-// if the Refs doesn't have given hash. If HashTableIndex flag is set then
-// and the Refs contains many elements with given hash, then which of them
-// will be returned, is undefined
-//
-// The big O of the call is O(1) if the Refs doesn't contain element(s)
-// with given hash, or O(depth) if there is at least one lement with
-// given hash. Where the depth is depth (height) of the Refs tree
-func (r *Refs) IndexOfHash(pack Pack, hash cipher.SHA256) (i int, err error) {
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	if r.flags&HashTableIndex != 0 {
-		return r.indexOfHashByIndex(hash)
-	}
-
-	// else -> iterate ascending
-
-	var found bool
-
-	err = r.Ascend(pack, func(index int, elHash cipher.SHA256) (err error) {
-		if elHash == hash {
-			found = true
-			i = index
-			return ErrStopIteration // break
-		}
-		return // continue
-	})
-
-	if err == nil && found == false {
-		err = ErrNotFound
 	}
 
 	return

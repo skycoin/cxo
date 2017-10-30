@@ -35,6 +35,10 @@ type encodedRefsNode struct {
 	Elements []cipher.SHA256 // if empty then all elements are nils
 }
 
+//
+// loading
+//
+
 // create leafs by given elements
 func (r *Refs) loadLeafs(
 	rn *refsNode, // node that contains this leafs
@@ -71,6 +75,29 @@ func (r *Refs) loadLeaf(
 	return
 }
 
+// loadNode that already contains hash and upper fields;
+// the method loads the node anyway (no flags affect it)
+func (r *Refs) loadNode(
+	pack Pack, //    : pack to get
+	rn *refsNode, // : the branch to load
+	depth int, //    : depth of the rn (> 0)
+) (
+	err error, //    : get, decoding or 'invalid refs' error
+) {
+
+	var ern encodedRefsNode // encoded branch
+	if err = get(pack, rn.hash, &ern); err != nil {
+		return // get or decoding error
+	}
+
+	rn.length = int(ern.Length)
+
+	return r.loadSubtree(pack, rn, ern.Elements, depth-1) // go deepper
+}
+
+// laod branch, setting hash and upper fields and loading
+// deeppre if HashTableIndex or (or and) EntireRefs flags
+// set
 func (r *Refs) loadBranch(
 	pack Pack, //          : pack to get the elemet
 	hash cipher.SHA256, // : hash of the branch
@@ -94,17 +121,10 @@ func (r *Refs) loadBranch(
 		return // don't load deepper (lazy loading)
 	}
 
-	var ern encodedRefsNode // encoded branch
-	if err = get(pack, hash, &ern); err != nil {
-		return // Pack related error (get or decoding)
-	}
-
-	br.length = int(ern.Length)
-
-	return r.loadSubtree(pack, br, ern.Elements, depth-1) // go deepper
+	return r.loadNode(pack, rn, depth) // load deepper
 }
 
-// 'length' and 'upper' fields of the rn are already set;
+// 'hash' and 'upper' fields of the rn are already set;
 // the depth if not 0 (e.g. the elements point to refsNode)
 //
 // the loadBranches doesn't load entire tree if it's not
@@ -132,7 +152,7 @@ func (r *Refs) loadBranches(
 	return
 }
 
-// 'length' and 'upper' fields of the rn are already set;
+// 'hash' and 'upper' fields of the rn are already set;
 // the loadSubtree doesn't load entire tree if it's not
 // necessary; e.g. the loading depends on falgs
 // HashTableIndex and EntireRefs
@@ -154,42 +174,105 @@ func (r *Refs) loadSubtree(
 	return r.loadBranches(pack, rn, depth, elements)
 }
 
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
+// load given node if it's not loaded yet;
+// e.g. if lazy loading used
+func (r *Refs) loadNodeIfNeed(
+	pack Pack, //    : pack to get
+	rn *refsNode, // : the branch to load
+	depth int, //    : depth of the rn (> 0)
+) (
+	err error, //    : get, decoding or 'invalid refs' error
+) {
 
-func (r *Refs) loadRefsNodeIfNeed(pack *Pack, rn *refsNode, depth int,
-	upper *refsNode) (err error) {
-
-	if rn.hash != (cipher.SHA256{}) && rn.length == 0 {
-		var ln *refsNode // loaded
-		if ln, err = r.loadRefsNode(pack, depth, upper, rn.hash); err != nil {
-			return
-		}
-		*rn = *ln // set
+	if rn.length > 0 {
+		return
 	}
 
-	return
+	return r.loadNode(pack, rn, depth)
 }
 
-// encode as is
+//
+// encoding
+//
+
+// encode a the refsNode as is
 func (r *refsNode) encode(depth int) []byte {
+
 	var ern encodedRefsNode
 
 	ern.Length = uint32(r.length)
 
 	if depth == 0 {
+
 		ern.Elements = make([]cipher.SHA256, 0, len(r.leafs))
 		for _, el := range r.leafs {
 			ern.Elements = append(ern.Elements, el.Hash)
 		}
+
 	} else {
+
 		ern.Elements = make([]cipher.SHA256, 0, len(r.branches))
 		for _, br := range r.branches {
 			ern.Elements = append(ern.Elements, br.hash)
 		}
+
 	}
 
 	return encoder.Serialize(ern)
 }
+
+//
+// index of element in Refs
+//
+
+// indexInRefs finds index of the leaf in Refs
+func (r *refsElement) indexInRefs() (i int, err error) {
+
+	if i, err = r.indexInUpper(); err != nil {
+		return // invalid state
+	}
+
+	// upper node (can not be nil, but can be &Refs.refsNode)
+	var j int
+	if j, err = r.upper.indexInRefs(); err != nil {
+		return
+	}
+
+	return i + j, nil
+}
+
+// index of the element in upper refsNode
+func (r *refsElement) indexInUpper() (i int, err error) {
+	var el *refsElement
+	for i, el = range r.upper.leafs {
+		if el == r {
+			return // found
+		}
+	}
+	return 0, ErrInvalidRefs // can't find element in upper leafs
+}
+
+// indexInRefs returns index of first element of the
+// node in Refs; e.g. a refsNode has not an index, but
+// it contains elements with indicies, and this mehtod
+// returns index of first element
+func (r *refsNode) indexInRefs() (i int, err error) {
+
+Upper:
+	for up, down := r.upper, r; up != nil; up, down = up.upper, up {
+		for _, br := range up.branches {
+			if br != down {
+				i += br.length
+			}
+			continue Upper
+		}
+		return 0, ErrInvalidRefs // can't find in upper.branches
+	}
+
+	return
+}
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 // without deep exploring
 func (r *refsNode) updateHash(pack Pack, depth int) (err error) {
