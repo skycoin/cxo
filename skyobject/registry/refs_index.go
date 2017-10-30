@@ -7,8 +7,8 @@ import (
 type refsIndex map[cipher.SHA256][]*refsNode
 
 // add element to the index
-func (r refsIndex) addElementToIndex(hash cipher.SHA256, re *refsElement) {
-	r[hash] = append(r[hash], re)
+func (r refsIndex) addElementToIndex(re *refsElement) {
+	r[hash] = append(r[re.Hash], re)
 }
 
 // delete all elements from the index by given hash
@@ -19,9 +19,9 @@ func (r refsIndex) delFromIndex(hash cipher.SHA256) (res []*refsElement) {
 }
 
 // delete a particular element from the index
-func (r refsIndex) delElementFromIndex(hash cipher.SHA256, re *refsElement) {
+func (r refsIndex) delElementFromIndex(re *refsElement) {
 
-	res = r[hash]
+	res = r[re.Hash]
 
 	for k, node := range res {
 		if node == rn {
@@ -35,9 +35,9 @@ func (r refsIndex) delElementFromIndex(hash cipher.SHA256, re *refsElement) {
 	}
 
 	if len(res) == 0 {
-		delete(r, hash)
+		delete(r, re.Hash)
 		return
 	}
 
-	r[hash] = res
+	r[re.Hash] = res
 }

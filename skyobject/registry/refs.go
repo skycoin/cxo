@@ -89,7 +89,7 @@ func (r *Refs) initialize(pack Pack) (err error) {
 		r.refsIndex = make(refsIndex)
 	}
 
-	r.refsNode.hash = r.Hash // Refs.Hash == Refs.refsNode.hash
+	// r.refsNode.hash is always blank
 
 	return r.loadSubtree(pack, &r.refsNode, er.Elements, r.depth)
 }
@@ -445,9 +445,7 @@ func (r *Refs) HashByIndex(
 	}
 
 	var el *refsElement
-
-	el, err = r.refsElementByIndex(pack, &r.refsNode, i, r.depth)
-	if err != nil {
+	if el, err = r.elementByIndex(pack, &r.refsNode, i, r.depth); err != nil {
 		return
 	}
 
@@ -513,6 +511,46 @@ func (r *Refs) encode() []byte {
 	return encoder.Serialize(er)
 }
 
+//
+// change element hash
+//
+
+// updateHashIfNeed if the need argument is true,
+// otherwise set Refs.mods contentMod flag and return
+func (r *Refs) updateHashIfNeed(pack Pack, need bool) (err error) {
+
+	if need == false {
+		r.mods |= contentMod // but not saved
+		return
+	}
+
+	return r.updateRootHash(pack)
+}
+
+// updateHash in all cases, it clears Refs.mods
+// contentMod flag and sets originMod flag
+func (r *Refs) updateHash(pack Pack) (err error) {
+
+	if r.length == 0 {
+		r.Hash = cipher.SHA256{} // blank hash is blank Refs
+		r.mods &^= contentMod    // clear the flag
+		r.mods |= originMod      // the Refs has been changed
+		return
+	}
+
+	val := r.encode()
+	hash := cipher.SumSHA256(val)
+
+	if err = pack.Set(hash, val); err != nil {
+		return // saving error
+	}
+
+	r.mods &^= contentMod // clear the flag if set
+	r.mods |= originMod   // origin has been modified
+
+	return
+}
+
 // SetHashByIndex replaces hash of element with given index with
 // given hash
 //
@@ -534,76 +572,24 @@ func (r *Refs) SetHashByIndex(
 	}
 
 	var el *refsElement
-	el, err = r.refsElementByIndex(pack, &r.refsNode, i, r.depth)
-	if err != nil {
+	if el, err = r.elementByIndex(pack, &r.refsNode, i, r.depth); err != nil {
 		return
 	}
 
 	return r.setElementHash(pack, el, hash)
 }
 
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-
-// update Refs.Hash only, without deep exploring
-func (r *Refs) updateRootHash(pack Pack) (err error) {
-
-	if r.length == 0 {
-		if r.Hash == (cipher.SHA256{}) {
-			return // already clear
-		}
-		r.Hash = cipher.SHA256{}
-		r.mods |= (contentMod | originMod) // mark as modified
-		return                             // it's enough
-	}
-
-	// so, r.length is not 0
-
-	val := r.encode()
-	hash := cipher.SumSHA256(val)
-
-	if hash == r.Hash {
-		return // already up to date
-	}
-
-	r.mods |= (contentMod | originMod) // mark as modified
-	return pack.Set(hash, val)         // save
-}
-
-// update only if the Refs is not lazy
-func (r *Refs) updateRootHashIfNeed(pack Pack) (err error) {
-	if r.flags&LazyUpdating != 0 {
-		return // let's be lazy
-	}
-	return r.updateRootHash()
-}
-
-// replace hash of the element for new one
-func (r *Refs) setElementHash(el *refsElement,
-	newHash cipher.SHA256) (replaced bool) {
-
-	if el.Hash == newHash {
-		return // just the same
-	}
-
-	if r.flags&HashTableIndex != 0 {
-		r.delElementFromIndex(el.Hash, el)
-		r.addElementToIndex(newHash, el)
-	}
-
-	el.Hash = newHash // set
-	replaced = true   // has been replaced
-
-	// has been modified, but length still the same
-	r.mods |= (contentMod | originMod)
-
-	return
-}
-
 // SetValueByIndex saves given value calculating its hash and sets this
 // hash to given index. You must be sure that schema of given element is
 // schema of the Refs. Otherwise, Refs will be broken. Use nil-interface{}
 // to set blank hash
-func (r *Refs) SetValueByIndex(pack Pack, i int, obj interface{}) (err error) {
+func (r *Refs) SetValueByIndex(
+	pack Pack, //       : pack so save
+	i int, //           : index to find
+	obj interface{}, // : object to save
+) (
+	err error, //       : error if any
+) {
 
 	// initialize() inside the SetHashByIndex
 
@@ -617,6 +603,53 @@ func (r *Refs) SetValueByIndex(pack Pack, i int, obj interface{}) (err error) {
 
 	return r.SetHashByIndex(pack, i, hash)
 }
+
+//
+// delete
+//
+
+// if a deleting performed inside iterators, then we should
+// notify them, that they have to find next index from Root,
+// because the Refs structure has been changed
+func (r *Refs) rewindIterators() {
+	if li := len(r.iterators); li > 0 {
+		r.iterators[li-1] = true // mark
+	}
+}
+
+// DeleteByIndex deletes single element from
+// the Refs changing the Refs. E.g. the method
+// removes element shifting elements after.
+//
+// The big O of the call is O(depth * 2)
+func (r *Refs) DeleteByIndex(
+	pack Pack, // : pack to save
+	i int, //     : index to delete
+) (
+	err error, // : error if any
+) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateIndex(i, r.length); err != nil {
+		return
+	}
+
+	if err = r.deleteElementByIndex(pack, &r.refsNode, i, r.depth); err != nil {
+		return // an error
+	}
+
+	if err = r.updateHashIfNeed(pack, r.flags&LazyUpdating == 0); err != nil {
+		return // an error
+	}
+
+	r.rewindIterators() // for iterators
+	return
+}
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 // decrNodeLength after deleting
 func (r *Refs) decrNodeLength(pack Pack, rn *refsNode, depth int) (blank bool,
@@ -699,26 +732,6 @@ func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
 	}
 
 	return ErrInvalidRefs // can't find
-}
-
-// DeleteByIndex deletes single element from the Refs changing
-// the Refs
-func (r *Refs) DeleteByIndex(pack Pack, i int) (err error) {
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	if err = validateIndex(i, r.length); err != nil {
-		return
-	}
-
-	err = r.deleteByIndex(pack, i, r.depth, nil, &r.leafsBranches)
-	if err != nil {
-		return
-	}
-
-	return r.decrRootLength(pack)
 }
 
 // TODO
@@ -1565,7 +1578,7 @@ func (r *Refs) appendToLeafsIgnoringDeleted(pack Pack, hash cipher.SHA256,
 	newLeafs = append(leafs, re)
 
 	if r.flags&HashTableIndex != 0 {
-		r.addElementToIndex(hash, re)
+		r.addElementToIndex(re)
 	}
 
 	return

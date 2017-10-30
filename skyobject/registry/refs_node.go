@@ -40,21 +40,6 @@ type encodedRefsNode struct {
 // loading
 //
 
-// create leafs by given elements
-func (r *Refs) loadLeafs(
-	rn *refsNode, // node that contains this leafs
-	elements []cipher.SHA256, // elemets
-) {
-
-	rn.leafs = make([]*refsElement, 0, len(elements))
-
-	for _, hash := range elements {
-		rn.leafs = append(r.leafs, r.loadLeaf(hash, rn))
-	}
-
-	return
-}
-
 // create leaf by given hash, the name starts with
 // load by analogy of loadBranch
 func (r *Refs) loadLeaf(
@@ -70,30 +55,25 @@ func (r *Refs) loadLeaf(
 	re.upper = upper
 
 	if r.flags&HashTableIndex != 0 {
-		r.addElementToIndex(hash, re)
+		r.addElementToIndex(re)
 	}
 
 	return
 }
 
-// loadNode that already contains hash and upper fields;
-// the method loads the node anyway (no flags affect it)
-func (r *Refs) loadNode(
-	pack Pack, //    : pack to get
-	rn *refsNode, // : the branch to load
-	depth int, //    : depth of the rn (> 0)
-) (
-	err error, //    : get, decoding or 'invalid refs' error
+// create leafs by given elements
+func (r *Refs) loadLeafs(
+	rn *refsNode, // node that contains this leafs
+	elements []cipher.SHA256, // elemets
 ) {
 
-	var ern encodedRefsNode // encoded branch
-	if err = get(pack, rn.hash, &ern); err != nil {
-		return // get or decoding error
+	rn.leafs = make([]*refsElement, 0, len(elements))
+
+	for _, hash := range elements {
+		rn.leafs = append(r.leafs, r.loadLeaf(hash, rn))
 	}
 
-	rn.length = int(ern.Length)
-
-	return r.loadSubtree(pack, rn, ern.Elements, depth) // depth is the same
+	return
 }
 
 // laod branch, setting hash and upper fields and loading
@@ -173,6 +153,26 @@ func (r *Refs) loadSubtree(
 
 	// else if depth > 0, then the node contains branches
 	return r.loadBranches(pack, rn, depth, elements)
+}
+
+// loadNode that already contains hash and upper fields;
+// the method loads the node anyway (no flags affect it)
+func (r *Refs) loadNode(
+	pack Pack, //    : pack to get
+	rn *refsNode, // : the branch to load
+	depth int, //    : depth of the rn (> 0)
+) (
+	err error, //    : get, decoding or 'invalid refs' error
+) {
+
+	var ern encodedRefsNode // encoded branch
+	if err = get(pack, rn.hash, &ern); err != nil {
+		return // get or decoding error
+	}
+
+	rn.length = int(ern.Length)
+
+	return r.loadSubtree(pack, rn, ern.Elements, depth) // depth is the same
 }
 
 // load given node if it's not loaded yet;
@@ -277,8 +277,8 @@ Upper:
 // find element by index
 //
 
-// refsElementByIndex finds *refsElemet by given index;
-func (r *Refs) refsElementByIndex(
+// elementByIndex finds *refsElemet by given index;
+func (r *Refs) elementByIndex(
 	pack Pack, //       : pack to load
 	rn *refsNode, //    : the node to find inside (should be loaded)
 	i int, //           : index of the needle
@@ -318,17 +318,17 @@ func (r *Refs) refsElementByIndex(
 		break // the branch that contains the needle has been found
 	}
 
-	return r.refsElementByIndex(pack, br, i, depth-1)
+	return r.elementByIndex(pack, br, i, depth-1)
 }
 
 //
 // change hash of refsElement
 //
 
-// updateNodeHash updates hash of given node
-func (r *Refs) updateNodeHash(
+// updateNodeHash updates hash of the node
+// and clears contentMod flag
+func (r *refsNode) updateHash(
 	pack Pack, //    : pack to save
-	rn *refsNode, // : the node to update hash
 	depth int, //    : depth of the node
 ) (
 	err error, //    : saving error
@@ -347,6 +347,23 @@ func (r *Refs) updateNodeHash(
 	return
 }
 
+//updateHashIfNeed updates hash by given condition
+func (r *refsNode) updateHashIfNeed(
+	pack Pack, // : pack to save
+	depth int, // : depth of the node
+	need bool, // : condition
+) (
+	err error, // : error if any
+) {
+
+	if need == false {
+		r.mods |= contentMod // modified, but not saved
+		return
+	}
+
+	return r.updateHash(pack, depth)
+}
+
 // bubbleContentChanges change hashes of
 // all upper nodes if LazyUpdating flag
 // is not set
@@ -357,24 +374,20 @@ func (r *Refs) bubbleContentChanges(
 	err error, //       : error if any
 ) {
 
-	var lazy = r.flags&LazyUpdating != 0
+	var need = r.flags&LazyUpdating == 0 // need != lazy
 	var depth int
 
-	for up := el.upper; up != nil; up = up.upper {
-		if lazy == true {
-			up.mods |= contentMod // modified but not saved
-		} else {
-			if err = r.updateNodeHash(pack, rn, depth); err != nil {
-				return // saving error
-			}
+	// up.upper == nil if the up is Refs.refsNode
+	for up := el.upper; up.upper != nil; up = up.upper {
+
+		if err = up.updateHashIfNeed(pack, depth, need); err != nil {
+			return // saving error
 		}
+
 		depth++ // the depth grows
 	}
 
-	r.Hash = r.refsNode.hash // set actual value of the Refs.Hash
-	r.mods |= originMod      // origin has been modified
-
-	return
+	return r.updateHashIfNeed(pack, need)
 }
 
 // setElementHash replaces element hash
@@ -391,8 +404,8 @@ func (r *Refs) setElementHash(
 	}
 
 	if r.flags&HashTableIndex != 0 {
-		r.delElementFromIndex(el)     // delete old
-		r.addElementToIndex(hash, el) // add new
+		r.delElementFromIndex(el) // delete old
+		r.addElementToIndex(el)   // add new
 	}
 
 	el.Hash = hash
@@ -403,35 +416,129 @@ func (r *Refs) setElementHash(
 	return r.bubbleContentChanges(pack, el)
 }
 
+//
+// delete
+//
+
+func (r *refsNode) deleteElementByIndex(i int) {
+	copy(r.leafs[i:], r.leafs[i+1:])
+	r.leafs[len(r.leafs)-1] = nil
+	r.leafs = r.leafs[:len(r.leafs)-1]
+}
+
+func (r *refsNode) deleteNodeByIndex(i int) {
+	copy(r.branches[i:], r.branches[i+1:])
+	r.branches[len(r.branches)-1] = nil
+	r.branches = r.branches[:len(r.branches)-1]
+}
+
+// deleteElementByIndex deletes *refsElemet by given index
+func (r *Refs) deleteElementByIndex(
+	pack Pack, //    : pack to load
+	rn *refsNode, // : the node to find inside (should be loaded)
+	i int, //        : index of the element
+	depth int, //    : depth of the rn
+) (
+	err error, //    : error if any
+) {
+
+	// so, the rn is already loaded
+
+	var j int // index in upper node
+
+	if depth == 0 { // take a look at leafs
+
+		var el *refsElement
+		for j, el = range rn.leafs {
+
+			if j == i { // found
+
+				if r.flags&HashTableIndex != 0 {
+					r.delElementFromIndex(el) // remove from hash-table index
+				}
+
+				rn.deleteElementByIndex(j) // remove from leafs
+				rn.length--                // decrement length
+
+				if rn.length == 0 {
+					return // don't update hash if the length is zero
+				}
+
+				if rn.upper == nil {
+					// don't update node hash, because the rn is Refs.refsNode;
+					// the Refs should be updated after
+					return
+				}
+
+				err = rn.updateHashIfNeed(pack, r.flags&LazyUpdating == 0)
+				return // deleted
+			}
+
+		}
+
+		return 0, ErrInvalidRefs // can't find the element
+	}
+
+	// else, take a look at branches
+
+	var br *refsNode
+	for j, br = range rn.branches {
+
+		if err = r.loadNodeIfNeed(pack, br, depth-1); err != nil {
+			return
+		}
+
+		if i < br.length {
+			i -= br.length // subtract length of the skipped branch
+			continue       // and skip the branch
+		}
+
+		break // the branch that contains the needle has been found
+	}
+
+	// keep j for now
+
+	if err = r.deleteElementByIndex(pack, br, i, depth-1); err != nil {
+		return // an error
+	}
+
+	if br.length == 0 {
+		rn.deleteNodeByIndex(j) // delete node, because it's empty
+	}
+
+	rn.length--
+
+	if rn.length == 0 {
+		return // don't update hash of the rn if its length is zeros
+	}
+
+	if rn.upper == nil {
+		// don't update hash if the upepr is nil, because the rn is
+		// Refs.refsNode that should be processed after
+		return
+	}
+
+	return rn.updateHashIfNeed(pack, depth, r.flags&LazyUpdating == 0)
+}
+
+// // deleteElement deletes given element from the Refs
+// func (r *Refs) deleteElement(
+// 	pack Pack, //       : pack to save
+// 	el *refsElement, // : element to delete
+// ) (
+// 	err error, //       : error if any
+// ) {
+
+// 	if r.flags&HashTableIndex != 0 {
+// 		r.delElementFromIndex(el)
+// 	}
+
+// 	// walk up
+
+// 	return
+// }
+
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-
-// without deep exploring
-func (r *refsNode) updateHash(pack Pack, depth int) (err error) {
-
-	if r.length == 0 {
-		r.hash = cipher.SHA256{}
-		return // it's enough
-	}
-
-	val := r.encode(depth)
-
-	if hash := cipher.SumSHA256(val); r.hash != hash {
-		err = pack.Set(hash, val)
-	}
-
-	return
-}
-
-func (r *Refs) updateNodeHashIfNeed(pack Pack, rn *refsNode,
-	depth int) (err error) {
-
-	if r.flags&LazyUpdating != 0 {
-		return // doesn't need
-	}
-
-	err = rn.updateHash(pack, depth)
-	return
-}
 
 // deleteLeafByIndex removes element from leafs of
 // the leafsBranches by index
@@ -473,7 +580,7 @@ func (l *leafsBranches) deleteBranch(br *refsNode) (err error) {
 func (r *Refs) deleteLeafByIndex(lb *leafsBranches, k int, el *refsElement) {
 
 	if r.flags&HashTableIndex != 0 {
-		r.delElementFromIndex(el.Hash, el)
+		r.delElementFromIndex(el)
 	}
 
 	lb.deleteLeafByIndex(k)
