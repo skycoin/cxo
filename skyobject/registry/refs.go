@@ -752,56 +752,6 @@ func (r *Refs) DeleteByHash(
 // 	return
 // }
 
-// validateSliceIndices validates [i:j]
-// indeces for the Refs with given length
-func validateSliceIndices(i, j, length int) (err error) {
-	if i < 0 || j < 0 || i > length || j > length {
-		err = ErrIndexOutOfRange
-	} else if i > j {
-		err = ErrInvalidSliceIndex
-	}
-	return
-}
-
-// pow is interger power (a**b)
-func pow(a, b int) (p int) {
-	p = 1
-	for b > 0 {
-		if b&1 != 0 {
-			p *= a
-		}
-		b >>= 1
-		a *= a
-	}
-	return p
-}
-
-// dpethToFit returns depth; the Refs with this depth
-// can fit the 'fit' elements
-//
-// since, max number of elements, that the Refs can fit,
-// is pow(r.degree, r.depth+1), then required depth is
-// the base r.degree logarithm of the fit; but since we
-// need interger number, we are using loop to find the
-// number
-//
-// so, both the start argumen and the reply of the function
-// are Refs.depth. E.g. Refs.depth = 'real depth'-1
-func depthToFit(
-	degree int, // : degree of the Refs
-	start int, //  : starting depth (that doesn't fit)
-	fit int, //    : number of elements to fit
-) (
-	depth int, //  : the needle
-) {
-
-	// the start is 'real depth - 1', thus we add 2 instead of
-	// 1 (e.g. we add the elided 1 and one more 1)
-	for start += 2; pow(degree, start) < fit; start++ {
-	}
-	return start - 1 // found (-1 turns the start to be Refs.depth)
-}
-
 // startIteration allows to track modifications
 // inside an iteration
 func (r *Refs) startIteration() {
@@ -1041,6 +991,87 @@ func (r *Refs) DescendFrom(
 	return r.descendFrom(pack, from, descendFunc)
 }
 
+// validateSliceIndices validates [i:j]
+// indeces for the Refs with given length
+func validateSliceIndices(i, j, length int) (err error) {
+	if i < 0 || j < 0 || i > length || j > length {
+		err = ErrIndexOutOfRange
+	} else if i > j {
+		err = ErrInvalidSliceIndex
+	}
+	return
+}
+
+// pow is interger power (a**b)
+func pow(a, b int) (p int) {
+	p = 1
+	for b > 0 {
+		if b&1 != 0 {
+			p *= a
+		}
+		b >>= 1
+		a *= a
+	}
+	return p
+}
+
+// dpethToFit returns depth; the Refs with this depth
+// can fit the 'fit' elements
+//
+// since, max number of elements, that the Refs can fit,
+// is pow(r.degree, r.depth+1), then required depth is
+// the base r.degree logarithm of the fit; but since we
+// need interger number, we are using loop to find the
+// number
+//
+// so, both the start argumen and the reply of the function
+// are Refs.depth. E.g. Refs.depth = 'real depth'-1
+func depthToFit(
+	degree int, // : degree of the Refs
+	start int, //  : starting depth (that doesn't fit)
+	fit int, //    : number of elements to fit
+) (
+	depth int, //  : the needle
+) {
+
+	// the start is 'real depth - 1', thus we add 2 instead of
+	// 1 (e.g. we add the elided 1 and one more 1)
+	for start += 2; pow(degree, start) < fit; start++ {
+	}
+	return start - 1 // found (-1 turns the start to be Refs.depth)
+}
+
+// appnedCreatingSliceFunc returns IterateFunc that creates slice
+// (the r) from elements of origin. Short words:
+//
+//     refs.AscendFrom(i, slice.appnedCreatingSliceFunc(j))
+//
+// where i and j are slice indices [i:j]
+func (r *Refs) appnedCreatingSliceFunc(j int) (iter IterateFunc) {
+
+	// in the IterateFunc we are tracking current node and
+	// depth of the current node to avoid unnecessary walking
+	// from root from every element
+
+	var cn = &r.refsNode // current node
+	var depth = r.depth  // depth of the cn
+
+	// we are using j, depth and the cn inside the IterateFunc below
+
+	iter = func(i int, hash cipher.SHA256) (err error) {
+		if i == j {
+			return ErrStopIteration // we are done
+		}
+
+		//
+
+		return // continue
+	}
+
+	return
+
+}
+
 // Slice returns new Refs that contains values of this Refs from
 // given i (inclusive) to given j (exclusive). If i and j are valid
 // and equal, then the Slcie return new empty Refs.
@@ -1076,6 +1107,7 @@ func (r *Refs) Slice(
 	}
 
 	var ln = j - i // length of the new slice
+
 	if ln == 0 {
 		return // done (new blank Refs has been created)
 	}
@@ -1084,11 +1116,21 @@ func (r *Refs) Slice(
 		r.depth = depthToFit(slice.degree, 0, ln) // depth > 0
 	}
 
-	// TODO (kostyarin): ascend appending
+	err = r.AscendFrom(pack, i, slice.appnedCreatingSliceFunc(j))
+	if err != nil {
+		slcie = nil // for GC
+		return      // error
+	}
+
+	// TODO (kostyarin): set length and hash fields
 
 	return
 }
 
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
+//
+//  THE CODE BELOW WAITS FOR THE REFACTORING
+//
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 // AppendValues appends given objects to the Refs. You

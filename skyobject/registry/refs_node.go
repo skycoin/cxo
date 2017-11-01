@@ -7,16 +7,8 @@ import (
 
 // an element of the Refs
 type refsElement struct {
-	Hash  cipher.SHA256 ``        // hash (blank if nil)
-	upper *refsNode     `enc:"-"` // upper node or nil if the node is the Refs
-}
-
-// leafs and branches,
-// actually it contains
-// leafs or branches
-type leafsBranches struct {
-	leafs    []*refsElement
-	branches []*refsNode
+	Hash  cipher.SHA256 // hash (blank if nil)
+	upper *refsNode     // upper node or nil if the node is the Refs
 }
 
 // a branch of the Refs
@@ -25,7 +17,8 @@ type refsNode struct {
 	length int           // length of this subtree
 	mods   refsMod       // unsaved modifications
 
-	leafsBranches // leafs and branches
+	leafs    []*refsElement // leafs (elements)
+	branches []*refsNode    // branhces (subtree)
 
 	upper *refsNode // upper node
 }
@@ -715,7 +708,7 @@ func (r *Refs) descendNodeLeafs(
 
 	for k := len(rn.leafs) - 1; k >= 0; k-- {
 
-		el := rn.leafs[k] // current element
+		var el = rn.leafs[k] // current element
 
 		if shift > i {
 			shift--
@@ -765,7 +758,7 @@ func (r *Refs) descendNodeBranches(
 
 	for k := len(rn.branches) - 1; k >= 0; k-- {
 
-		br := rn.branches[k] // curretn branch
+		var br = rn.branches[k] // current branch
 
 		if err = r.loadNodeIfNeed(pack, br, depth-1); err != nil {
 			return
@@ -795,6 +788,111 @@ func (r *Refs) descendNodeBranches(
 	}
 
 	return // done
+}
+
+//
+// append creating slice
+//
+
+// appendCreatingSliceNodeGoUp goes up and creates
+// lack nodes; see also appendCreatingSliceNode and
+// appendCreatingSliceFunc
+func (r *Refs) appendCreatingSliceNodeGoUp(
+	rn *refsNode, //       : current node (full)
+	depth int, //          : depth of the current node
+	hash cipher.SHA256, // : hash to append
+) (
+	cn *refsNode, //       : current node (can be another then the rn)
+	cdepth int, //         : current depth (depth of the cn)
+) {
+
+	// the rn is full, since we have to go up;
+	// thus we have to check upper node fullness
+	// and (1) add new branch or go up and repeat
+	// the step (1)
+
+	if rn.upper == nil {
+		// since, we have to add a new has to the slice (to the r),
+		// then the full rn (and the rn is full here) must have
+		// upper node to add another one go or upper; e.g. if
+		// the rn.upper is nil, then this case is invalid and
+		// this case should produce panicing
+		panic("invalid case")
+	}
+
+	cn, cdepth = rn.upper, depth+1 // go up
+
+	// since we are using r,upper, then the depth is > 0
+	// and the rn.upper contains branches
+	if len(cn.branches) == r.degree { // if it's full
+		return r.appendCreatingSliceNodeGoUp(cn, cdepth, hash) // go up
+	}
+
+	// otherwise we create new branhc and use it;
+	// fields hash and length are not set and mods
+	// like contnetMod are not set too
+
+	// e.g. one step down is here
+
+	var br = &refsNode{
+		upper: rn,
+	}
+
+	cn.branches = append(cn.branches, br)
+
+	return br, depth // e.g. br, and cdepth - 1
+}
+
+// appendCreatingSliceNode appends given hash to the Refs
+// that is new slice; the method doesn't set 'length'
+// and 'hash' fields for refsNode(s); the method returns
+// new current node with it depth to make caler able to
+// use them
+func (r *Refs) appendCreatingSliceNode(
+	rn *refsNode, //       : current node
+	depth int, //          : depth of the current node
+	hash cipher.SHA256, // : hash to append
+) (
+	cn *refsNode, //       : current node (can be another then the rn)
+	cdepth int, //         : current depth (depth of the cn)
+) {
+
+	if depth == 0 { // leafs
+
+		if len(rn.leafs) == r.degree { // full
+			return r.appendCreatingSliceNodeGoUp(rn, depth, hash) // go up
+		}
+
+		var el = &refsElement{
+			Hash:  hash,
+			upper: rn,
+		}
+
+		if r.flags&HashTableIndex != 0 {
+			r.addElementToIndex(el)
+		}
+
+		rn.leafs = append(rn.leafs, el)
+
+		return rn, depth // the same
+	}
+
+	// else if depth > 0 { branches }
+
+	// if the depth is not 1, then we should to add new branch and use it;
+	// fields length, hash and mods are still lempty;
+
+	// one more time, if we are here, then the rn has enouth place to
+	// fit new brnahc and the branch should be created and used;
+	// e.g. the step is 'go down', the step is opposite to the 'go up'
+
+	var br = &refsNode{
+		upper: rn,
+	}
+
+	rn.branches = append(rn.branches, br)
+
+	return r.appendCreatingSliceNode(br, depth-1, hash)
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
