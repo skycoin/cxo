@@ -937,6 +937,110 @@ func (r *Refs) AscendFrom(
 	return r.ascendFrom(pack, from, ascendFunc)
 }
 
+// descendFrom iterates elements descending
+// starting from element wiht given index
+func (r *Refs) descendFrom(
+	pack Pack, //               : pack to load
+	from int, //                : index to start from
+	descendFunc IterateFunc, // : the function
+) (
+	err error, //               : error if any
+) {
+
+	// the Refs are already initialized by Descend or DescendFrom methods
+
+	if err = validateIndex(from, r.length); err != nil {
+		return
+	}
+
+	if r.length == 0 {
+		return // empty Refs
+	}
+
+	r.startIteration()
+	defer r.stopIteration()
+
+	var rewind bool          // find next element from root of the Refs
+	var i = from             // i is next index to find
+	var shift = r.length - 1 // subtree ending index (shift from the end)
+
+	for {
+		// - pass is number of elements iterated (not skipped)
+		//        for current step
+		// - rewind means that we need to find next element from
+		//        root of the Refs, because the Refs has been
+		//        changed
+		// - err is loading error, malformed Refs error or
+		//        ErrStopIteration
+		pass, rewind, err = r.descendNode(pack, &r.refsNode, r.depth, shift, i,
+			descendFunc)
+
+		// so, we need to find next element from root of the Refs
+		if rewind == true {
+			i -= pass // shift the i to don't repeat elements
+			continue  // find next index from root of the Refs
+		}
+
+		// the loop is necesary for rewinding only
+		break
+	}
+
+	if err == ErrStopIteration {
+		err = nil // clear the ErrStopIteration
+	}
+
+	return
+
+}
+
+// Descend iterates over all values descending order until
+// first error or the end. Use ErrStopIteration to
+// break iteration. Any error is returned by given function
+// (except the ErrStopIteration) is returned by the Descend()
+// method
+//
+// The Descend allows to cahnge the Refs inside given
+// ascendFunc. It's possile to iterate inside the descendFunc
+// too
+func (r *Refs) Descend(
+	pack Pack, //               : pack to load
+	descendFunc IterateFunc, // : the function
+) (
+	err error, //               : error if any
+) {
+
+	// we have to initialize the Refs here to get actual length of
+	// the Refs to use it as argument to the descendFrom method
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	return r.descendFrom(pack, r.length-1, descendFunc)
+}
+
+// DescendFrom iterates over all values descending order starting
+// from the 'from' element until first error or the end. Use
+// ErrStopIteration to break iteration. Any error is returned
+// by given function (except the ErrStopIteration) is returned
+// by the DescendFrom() method
+func (r *Refs) DescendFrom(
+	pack Pack, //               : pack to load
+	from int, //                : index of element to start from
+	descendFunc IterateFunc, // : the function
+) (
+	err error, //               : error if any
+) {
+
+	// we have to initialize the Refs here to find its length
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	return r.descendFrom(pack, from, descendFunc)
+}
+
 // Slice returns new Refs that contains values of this Refs from
 // given i (inclusive) to given j (exclusive). If i and j are valid
 // and equal, then the Slcie return new empty Refs.
@@ -986,217 +1090,6 @@ func (r *Refs) Slice(
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-
-// Descend iterates over all values descending order until
-// first error or the end. Use ErrStopIteration to
-// break iteration. Any error is returned by given function
-// (except the ErrStopIteration) is returned by the Descend()
-// method
-//
-// The Descend allows to cahnge the Refs inside given
-// ascendFunc. It's possile to iterate inside the descendFunc
-// too
-func (r *Refs) Descend(pack Pack, descendFunc IterateFunc) (err error) {
-
-	// we have to initialize the Refs here to get actual length of
-	// the Refs to use it as argument to the descendFrom method
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	return r.descendFrom(pack, r.length-1, descendFunc)
-}
-
-func (r *Refs) descendFrom(pack Pack, from int,
-	descendFunc IterateFunc) (err error) {
-
-	// the Refs are already initialized by Descend or DescendFrom methods
-
-	if err = validateIndex(from, r.length); err != nil {
-		return
-	}
-
-	if r.length == 0 {
-		return // empty Refs
-	}
-
-	r.startIteration()
-	defer r.stopIteration()
-
-	var rewind bool       // find next element from root of the Refs
-	var i = from          // i is next index to find
-	var si = r.length - 1 // subtree strting index (from the end)
-
-	for {
-		// - pass is number of elements iterated (not skipped)
-		//        for current step
-		// - rewind means that we need to find next element from
-		//        root of the Refs, because the Refs has been
-		//        changed
-		// - err is loading error, malformed Refs error or
-		//        ErrStopIteration
-		pass, rewind, err = r.descend(pack, si, i, descendFunc, r.depth, nil,
-			r.leafs, r.branches)
-		// so, we need to find next element from root of the Refs
-		if rewind == true {
-			i -= pass // shift the i to don't repeat elements
-			continue  // find next index from root of the Refs
-		}
-		// the loop is necesary for rewinding only
-		break
-	}
-
-	if err == ErrStopIteration {
-		err = nil // clear the ErrStopIteration
-	}
-
-	return
-
-}
-
-// descend depending on depth and i (starting element), check
-// changes after every call of the descendFunc
-//
-// arguments:
-//  - pack is Pack instance
-//  - si is index from which the subtree starts from (from the end)
-//  - i is starting element
-//  - descendFunc is given function
-//  - depth is current depth level (0 for leafs)
-//  - upper is upper *refsNode or nil if it's the Refs (required for loading)
-//  - leafs are leafs of current *refsNode or of the Refs
-//  - branches are branches of current *refsNode or of the Refs
-//
-// reply:
-//  - pass is number of lements skipped or iterated
-//  - rewind is true if finding next index from root of the Refs is required
-//  - err is some error
-//
-func (r *Refs) descend(pack Pack, si, i int, descendFunc IterateFunc, depth int,
-	upper *refsNode, leafs []*refsElement, branches []*refsNode) (pass int,
-	rewind bool, err error) {
-
-	if depth == 0 {
-		return r.descendLeafs(si, i, descendFunc, leafs)
-	}
-
-	// else if depth > 0
-
-	return r.descendBranches(pack, si, i, descendFunc, depth, upper, branches)
-}
-
-func (r *Refs) descendLeafs(si, i int, descendFunc IterateFunc,
-	leafs []*refsElement) (pass int, rewind bool, err error) {
-
-	// so, the si is global index of last element of the leafs;
-	// we have to find i-th index to start iterating from it
-
-	// use the si as 'skip' counter, e.g. the si keeps
-	// current global index, since the si is local variabe we
-	// are free to decrement it
-
-	for k := len(leafs) - 1; k >= 0; k-- {
-		el := leafs[k]
-
-		if el.Deleted == true {
-			continue // deleted elements do not exist
-		}
-
-		// the i can't be greater then the si, only less or equal
-
-		if i < si {
-			si-- // skip current element finding i-th
-			continue
-		}
-
-		// here i == si
-
-		if err = descendFunc(i, el.Hash); err != nil {
-			return
-		}
-
-		// decrement all counters
-		i--    // current index
-		si--   // skip (not really skip)
-		pass++ // processed elements
-
-		// check out changes of the Refs
-		if rewind = r.isFindingIteratorsIndexFromRootRequired(); rewind {
-			// we need to find next element from root of the Refs,
-			// because the ascendFunc changes the Refs tree
-			return
-		}
-
-		// no changes required, continue
-	}
-
-	return
-}
-
-func (r *Refs) descendBranches(pack Pack, si, i int, descendFunc IterateFunc,
-	depth int, upper *refsNode, branches []*refsNode) (pass int, rewind bool,
-	err error) {
-
-	// we are using the si as 'skip' counter, the si will keep
-	// current global index; e.g. for every branch the si
-	// will keep its ending global index
-
-	var subpass int // pass for a subtree (for a branch)
-
-	for k := len(branches) - 1; k >= 0; k-- {
-		br := branches[k]
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
-			return // eror loading the branch
-		}
-
-		if br.length == 0 {
-			continue // skip empty branches
-		}
-
-		if i < si-br.length {
-			si -= br.length // skip this branch finding i-th element
-			continue
-		}
-
-		subpass, rewind, err = r.descend(pack, si, i, descendFunc, depth-1, br,
-			br.leafs, br.branches)
-
-		pass += subpass // process elements
-
-		if err != nil || rewind == true {
-			return // some error or changes
-		}
-
-		si -= subpass // e.g. si -= br.length
-		i -= subpass  // decrement current index
-
-		// these are local variables and decrementing has meaning only
-		// if we a going to descend next branch
-
-		// continue
-	}
-
-	return
-}
-
-// DescendFrom iterates over all values descending order starting
-// from the 'from' element until first error or the end. Use
-// ErrStopIteration to break iteration. Any error is returned
-// by given function (except the ErrStopIteration) is returned
-// by the DescendFrom() method
-func (r *Refs) DescendFrom(pack Pack, from int,
-	descendFunc IterateFunc) (err error) {
-
-	// we have to initialize the Refs here to find its length
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	return r.descendFrom(pack, from, descendFunc)
-}
 
 // AppendValues appends given objects to the Refs. You
 // must be sure that type of this obejcts is type of this

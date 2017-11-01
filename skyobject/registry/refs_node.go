@@ -667,4 +667,134 @@ func (r *Refs) ascendBranches(
 	return // done
 }
 
+//
+// descend
+//
+
+// descendNode depending on depth and i (starting element), check
+// changes after every call of the descendFunc
+func (r *Refs) descendNode(
+	pack Pack, //               : pack to load
+	rn *refsNode, //            : the node
+	depth int, //               : depth of the node
+	shift int, //               : shift of the node starting from the end
+	i int, //                   : absolute index of starting element (from)
+	descendFunc IterateFunc, // : the function
+) (
+	pass int, //                : processed elements
+	rewind bool, //             : have to find next element from root
+	err error, //               : error if any
+) {
+
+	if depth == 0 {
+		return r.descendNodeLeafs(rn, shift, i, descendFunc)
+	}
+
+	// else if depth > 0
+
+	return r.descendNodeBranches(pack, rn, depth, shift, i, descendFunc)
+}
+
+// descendNodeLeafs iterates over leafs of given node
+func (r *Refs) descendNodeLeafs(
+	rn *refsNode, //            : the node
+	shift int, //               : ending indexof the leafs of the node
+	i int, //                   : absolute index to start from
+	descendFunc IterateFunc, // : the function
+) (
+	pass int, //                : processd elements
+	rewind bool, //             : have to find next element from root
+	err error, //               : error if any
+) {
+
+	// so, the shift is absolute index of last element of the leafs;
+	// we have to find i-th index to start iterating from it
+
+	// so, since the shift is local variable
+	// we are free to decrement it
+
+	for k := len(rn.leafs) - 1; k >= 0; k-- {
+
+		el := rn.leafs[k] // current element
+
+		if shift > i {
+			shift--
+			continue // skip current element finding i-th
+		}
+
+		// here i == shift
+
+		if err = descendFunc(i, el.Hash); err != nil {
+			return
+		}
+
+		pass++ // processed elements
+
+		// check out changes of the Refs
+		if rewind = r.isFindingIteratorsIndexFromRootRequired(); rewind {
+			// we need to find next element from root of the Refs,
+			// because the descendFunc changes length of the Refs
+			return
+		}
+
+		i--     // current absolute index
+		shift-- // the shift (to pass the first condition in the very loop)
+
+		// no changes required, continue
+	}
+
+	return // done
+}
+
+// descendNodeBranches iterate over elements of the node
+// starting from the element with absoulute index i
+func (r *Refs) descendNodeBranches(
+	pack Pack, //               : pack to load
+	rn *refsNode, //            : the node
+	depth int, //               : depth of the node
+	shift int, //               : index of ending element of the node
+	i int, //                   : index of element to start from
+	descendFunc IterateFunc, // : the function
+) (
+	pass int, //                : processed elements
+	rewind bool, //             : have to find next element from root
+	err error, //               : error if any
+) {
+
+	var subpass int // pass for a subtree (for a branch)
+
+	for k := len(rn.branches) - 1; k >= 0; k-- {
+
+		br := rn.branches[k] // curretn branch
+
+		if err = r.loadNodeIfNeed(pack, br, depth-1); err != nil {
+			return
+		}
+
+		if shift-br.length > i {
+			shift -= br.length
+			continue // skip this branch to find i-th element
+		}
+
+		subpass, rewind, err = r.descendNode(pack, br, depth-1, shift, i,
+			descendFunc)
+
+		pass += subpass // process elements
+
+		if err != nil || rewind == true {
+			return // some error or changes
+		}
+
+		// these are local variables and decrementing has
+		// meaning only if we a going to descend next branch
+
+		shift -= subpass // e.g. shift -= br.length
+		i -= subpass     // decrement current absolute index
+
+		// continue
+	}
+
+	return // done
+}
+
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
