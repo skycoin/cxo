@@ -521,102 +521,150 @@ func (r *Refs) deleteElementByIndex(
 	return rn.updateHashIfNeed(pack, depth, r.flags&LazyUpdating == 0)
 }
 
-// // deleteElement deletes given element from the Refs
-// func (r *Refs) deleteElement(
-// 	pack Pack, //       : pack to save
-// 	el *refsElement, // : element to delete
-// ) (
-// 	err error, //       : error if any
-// ) {
+// deleteElement from the Refs if the Refs is loaded
+// and the element is found by hash-table
+func (r *Refs) deleteElement(
+	pack Pack, //       : pack to save
+	el *refsElement, // : element to delete
+) (
+	err error, //       : error if any
+) {
 
-// 	if r.flags&HashTableIndex != 0 {
-// 		r.delElementFromIndex(el)
-// 	}
+	r.delElementFromIndex(el)
 
-// 	// walk up
+	var up = el.upper
 
-// 	return
-// }
+	for i, el := range up.leafs {
+		if el == r {
+			up.deleteElementByIndex(i)
+			up.length--
+
+			//
+
+			return
+		}
+	}
+
+	return ErrInvalidRefs // can't find in upper leafs
+}
+
+//
+// ascend
+//
+
+// ascendNode depending on depth and i (starting element), check
+// changes after every call of the ascendFunc
+func (r *Refs) ascendNode(
+	pack Pack, //              : pack to load
+	rn *refsNode, //           : loaded node
+	depth int, //              : depth of the rn
+	shift int, //              : index from which the node starts
+	i int, //                  : starting index
+	ascendFunc IterateFunc, // : the function
+) (
+	pass int, //               : passed elements (not skipped)
+	rewind bool, //            : have to find next index from root
+	err error, //              : erro if any
+) {
+
+	if depth == 0 {
+		return r.ascendNodeLeafs(rn, shift, i, ascendFunc)
+	}
+
+	// else if depth > 0
+
+	return r.ascendNodeBranches(pack, rn, depth, shift, i, ascendFunc)
+}
+
+// ascendNodeLeafs iterates over lefas starting
+// from i-th element (the i is absolute index)
+func (r *Refs) ascendNodeLeafs(
+	rn *refsNode, //           : the node
+	shift int, //              : index from which the leafs start from
+	i int, //                  : index to start from (absolute index)
+	ascendFunc IterateFunc, // : the function
+) (
+	pass int, //               : number of processed elements
+	rewind bool, //            : have to find next element from root
+	err error, //              : error if any
+) {
+
+	// e.g. shift + j = absolute index
+	for j, el := range rn.leafs {
+
+		if shift+j < i {
+			continue // skip
+		}
+
+		// here i == shift + j
+
+		if err = ascendFunc(i, el.Hash); err != nil {
+			return
+		}
+
+		pass++ // one more element has been processed
+
+		// check out changes of the Refs
+		if rewind = r.isFindingIteratorsIndexFromRootRequired(); rewind {
+			// we need to find next element from root of the Refs,
+			// because the ascendFunc changes length of the Refs tree
+			return
+		}
+
+		i++ // increment current absolute index
+
+		// no changes required, continue
+	}
+
+	return
+}
+
+// ascendBranches iterate element of the ndoe
+func (r *Refs) ascendBranches(
+	pack Pack, //              : pack to load
+	rn *refsNode, //           : the node
+	depth int, //              : depth of the node
+	shift int, //              : index from which the branches start from
+	i int, //                  : starting element (absolute index)
+	ascendFunc IterateFunc, // : the function
+) (
+	pass int, //               : processed elements
+	rewind bool, //            : have to find next element from root
+	err error, //              : error if any
+) {
+
+	var subpass int // pass for a subtree (for a branch)
+
+	for _, br := range rn.branches {
+
+		if err = r.loadNodeIfNeed(pack, br, depth-1); err != nil {
+			return
+		}
+
+		if shift+br.length < i {
+			shift += br.length
+			continue // skip this branch finding i-th element
+		}
+
+		subpass, rewind, err = r.ascendNode(pack, br, depth-1, shift, i,
+			ascendFunc)
+
+		pass += subpass // process elements
+
+		if err != nil || rewind == true {
+			return // some error or changes
+		}
+
+		// these are local variables and incrementing has meaning only
+		// if we a going to ascend next branch
+
+		i += subpass     // increment absolute index of current element
+		shift += subpass // move the shift forward
+
+		// continue
+	}
+
+	return // done
+}
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-
-// deleteLeafByIndex removes element from leafs of
-// the leafsBranches by index
-func (l *leafsBranches) deleteLeafByIndex(k int) {
-	copy(l.leafs[k:], l.leafs[k+1:])
-	l.leafs[len(l.leafs)-1] = nil
-	l.leafs = l.leafs[:len(l.leafs)-1]
-}
-
-func (l *leafsBranches) deleteBranchByIndex(k int) {
-	copy(l.branches[k:], l.branches[k+1:])      // move
-	l.branches[len(l.branches)-1] = nil         // free
-	l.branches = l.branches[:len(l.branches)-1] // reduce length
-}
-
-func (l *leafsBranches) deleteLeaf(el *refsElement) (err error) {
-	for k, lf := range l.leafs {
-		if lf == el {
-			l.deleteLeafByIndex(k)
-			return
-		}
-	}
-	return ErrInvalidRefs // can't find (invalid state)
-}
-
-func (l *leafsBranches) deleteBranch(br *refsNode) (err error) {
-	for k, rn := range l.branches {
-		if br == rn {
-			l.deleteBranchByIndex(k)
-			return
-		}
-	}
-	return ErrInvalidRefs // can't find (invalid state)
-}
-
-// deleteLeafByIndex remove element from hash-table
-// index of the Refs and from given leafsBranches;
-// the index is index of the element in the leafsBranches
-func (r *Refs) deleteLeafByIndex(lb *leafsBranches, k int, el *refsElement) {
-
-	if r.flags&HashTableIndex != 0 {
-		r.delElementFromIndex(el)
-	}
-
-	lb.deleteLeafByIndex(k)
-
-	r.mods |= (lengthMod | originMod)
-
-	if len(r.iterators) > 0 {
-		// force iterators to find next index from root of the Refs
-		r.iterators[len(r.iterators)-1] = true
-	}
-}
-
-// index of given leaf or error
-func (l *leafsBranches) indexOfLeaf(re *refsElement) (i int, err error) {
-	var el *refsElement
-	for i, el = range l.leafs {
-		if el == re {
-			return // found
-		}
-	}
-	err = ErrInvalidRefs // not found (invalid state)
-	return
-}
-
-func (l *leafsBranches) indicesOfLeaf(hash cipher.SHA256) (is []int,
-	err error) {
-
-	for i, el := range l.leafs {
-		if el.Hash == hash {
-			is = append(is, i) // found, but let's look for another one
-		}
-	}
-
-	if len(is) == 0 {
-		err = ErrInvalidRefs // not found (invalid state)
-	}
-
-	return
-}

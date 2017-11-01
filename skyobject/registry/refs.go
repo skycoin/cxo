@@ -19,7 +19,7 @@ import (
 // changes of the Refs easy way. The goal is
 // reducing network pressure
 //
-// The Refs can has internal hash-table index if
+// The Refs can have internal hash-table index if
 // Pack that initailizes (used for first access
 // the Refs) has HashTableIndex flag. All falgs
 // related to the Refs stored inside the Refs
@@ -32,6 +32,16 @@ import (
 // of the tree are not loaded and loads by needs.
 // It's possible to load entire Refs providing
 // the EntireRefs flag
+//
+// There is a note about the degree. Since all
+// blank Refs are equal, then the degree can't
+// be kept if the Refs is blank. E.g. if you are
+// using non-default degree and want to keep the
+// degree for a while, then you have to handle
+// it yourself. It's because, all blank Refs are
+// not stored in DB and have blank hash. Since the
+// hash is blank, then the Refs can't store anything
+// in DB
 //
 // The Refs is not thread safe
 type Refs struct {
@@ -321,8 +331,8 @@ func (r *Refs) IndexOfHash(
 	return
 }
 
-// indicesOfHashByHashTable finds indices of all elements by given hash
-func (r *Refs) indicesOfHashByHashTable(
+// indicesOfHashUsingHashTable finds indices of all elements by given hash
+func (r *Refs) indicesOfHashUsingHashTable(
 	hash cipher.SHA256, // : hash to find
 ) (
 	is []int, //           : indices of elements
@@ -369,7 +379,7 @@ func (r *Refs) IndicesByHash(
 	}
 
 	if r.flags&HashTableIndex != 0 {
-		return r.indicesOfHashByHashTable(hash)
+		return r.indicesOfHashUsingHashTable(hash)
 	}
 
 	// else -> iterate ascending
@@ -556,7 +566,7 @@ func (r *Refs) updateHash(pack Pack) (err error) {
 //
 // The big O of the call is O(depth)
 func (r *Refs) SetHashByIndex(
-	pack Pack, //          : pack to load
+	pack Pack, //          : pack to load and save
 	i int, //              : index to set
 	hash cipher.SHA256, // : new hash
 ) (
@@ -584,7 +594,7 @@ func (r *Refs) SetHashByIndex(
 // schema of the Refs. Otherwise, Refs will be broken. Use nil-interface{}
 // to set blank hash
 func (r *Refs) SetValueByIndex(
-	pack Pack, //       : pack so save
+	pack Pack, //       : pack to load and save
 	i int, //           : index to find
 	obj interface{}, // : object to save
 ) (
@@ -623,7 +633,7 @@ func (r *Refs) rewindIterators() {
 //
 // The big O of the call is O(depth * 2)
 func (r *Refs) DeleteByIndex(
-	pack Pack, // : pack to save
+	pack Pack, // : pack to load and save
 	i int, //     : index to delete
 ) (
 	err error, // : error if any
@@ -649,119 +659,33 @@ func (r *Refs) DeleteByIndex(
 	return
 }
 
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
+// deleteByHashUsingHashTable deletes all elements with given
+// hash using hash-table index
+func (r *Refs) deleteByHashUsingHashTable(
+	pack Pack, //          : pack to save
+	hash cipher.SHA256, // : hash to delete
+) (
+	err error, //          : error if any
+) {
 
-// decrNodeLength after deleting
-func (r *Refs) decrNodeLength(pack Pack, rn *refsNode, depth int) (blank bool,
-	err error) {
-
-	if rn.length--; rn.length == 0 {
-		rn.hash = cipher.SHA256{}        // clear hash
-		rn.leafs, rn.branches = nil, nil // free subtree
-		blank = true                     // mark as blank (removed)
-		return                           // that's all
+	var ok bool
+	var els []*refsElement
+	if els, ok = r.refsIndex[hash]; !ok {
+		return // nothing to delete
 	}
 
-	// depends on LazyUpdating flag
-	err = r.updateNodeHashIfNeed(pack, rn, depth) // if need
+	for _, el := range els {
+		if err = r.deleteElement(el); err != nil {
+			return // errro
+		}
+	}
+
+	if err = r.updateHashIfNeed(pack, r.flags&LazyUpdating == 0); err != nil {
+		return // error
+	}
+
+	r.rewindIterators() // for iterators
 	return
-}
-
-// decrRootLength after deleting
-func (r *Refs) decrRootLength(pack Pack) error {
-
-	if r.length--; r.length == 0 {
-		r.Hash = cipher.SHA256{}          // clear the hash anyway
-		r.mods |= (lengthMod | originMod) // modified
-		r.leafs, r.branches = nil, nil    // free subtree
-		return                            // that's all
-	}
-
-	// depends on LazyUpdating flag
-	return r.updateRootHashIfNeed(pack) // if need
-}
-
-func (r *Refs) deleteByIndex(pack Pack, i, depth int, upper *refsElement,
-	lb *leafsBranches) (err error) {
-
-	if depth == 0 {
-		for k, el := range lb.leafs {
-			if i == 0 {
-				r.deleteLeafByIndex(lb, i, el)
-				return
-			}
-			i--
-		}
-		return ErrInvalidRefs // can't find
-	}
-
-	// else if depth > 0
-
-	for k, br := range lb.branches {
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
-			return
-		}
-
-		if i > br.length {
-			i -= br.length
-			continue
-		}
-
-		// it's not the loop, we will here once per call maximum
-
-		err = r.deleteByIndex(pack, i, depth-1, br, &br.leafsBranches)
-		if err != nil {
-			return
-		}
-
-		// reduce length (has been deleted)
-
-		var blank bool
-		if blank, err = r.decrNodeLength(pack, br, depth-1); err != nil {
-			return // some error
-		}
-
-		if blank == true {
-			// so, if it's blank, then we have to remove the branch from
-			// the lb.branches
-			lb.deleteBranchByIndex(k)
-		}
-
-		return // that's all
-	}
-
-	return ErrInvalidRefs // can't find
-}
-
-// TODO
-func (r *Refs) delElementBubbling(pack Pack, el *refsElement) (err error) {
-
-	up := el.upper // *refsNode or nil (the Refs)
-
-	if up == nil {
-		if err = r.leafsBranches.deleteLeaf(el); err != nil {
-			return
-		}
-		return r.decrRootLength(pack)
-	}
-
-	var di int // current depth
-	var blank bool
-
-	for ; up != nil; up = up.upper {
-		if blank, err = r.decrNodeLength(pack, up, depth-di); err != nil {
-			return
-		}
-		if blank == true {
-			if err = up.leafsBranches.deleteBranch(up); err != nil {
-				return
-			}
-		}
-		di-- // decrement depth
-	}
-
-	return r.decrRootLength(pack)
 }
 
 // DeleteByHash deletes all elements by given hash, reducing length of the
@@ -771,25 +695,19 @@ func (r *Refs) delElementBubbling(pack Pack, el *refsElement) (err error) {
 // The big O of the call is O(m * depth), where m is number of elements with
 // given hash, if HashTableIndex flag has been set. If the flag is not used
 // by the Refs, then the big O is O(n), where n is real length of the Refs
-func (r *Refs) DeleteByHash(pack Pack, hash cipher.SHA256) (err error) {
+func (r *Refs) DeleteByHash(
+	pack Pack, //          : pack to load and save
+	hash cipher.SHA256, // : hash of element to delete
+) (
+	err error, //          : error if any
+) {
 
 	if err = r.initialize(pack); err != nil {
 		return
 	}
 
 	if r.flags&HashTableIndex != 0 {
-		// using hash-table
-
-		res, ok := r.index[hash]
-		if !ok {
-			return ErrNotFound
-		}
-
-		for _, el := range res {
-			r.delElementBubbling(el)
-		}
-
-		return
+		return r.deleteByHashUsingHashTable(pack, hash)
 	}
 
 	// TODO (kostyarin): implement and use (a)descend+delete method
@@ -818,16 +736,24 @@ func (r *Refs) DeleteByHash(pack Pack, hash cipher.SHA256) (err error) {
 
 // TODO (kostyarin): implement the DeleteSliceByIndices
 //
-// // DeleteSliceByIndices deletes slice from the 'from' to the 'to'
+// // DeleteSliceByRange deletes slice from the 'from' to the 'to'
 // // arguments. The 'from' and 'to' arguments are like a golang [a:b].
 // // The method reduces length of the Refs
-// func (r *Refs) DeleteSliceByIndices(pack Pack, from, to int) (err error) {
+// func (r *Refs) DeleteSliceByRange(
+// 	pack Pack, // : pack to load and save
+// 	from int, //  : from this
+// 	to int, //    : to this
+// ) (
+// 	err error, // : error if any
+// ) {
 //
-//	//
+// 	//
 //
-//	return
+// 	return
 // }
 
+// validateSliceIndices validates [i:j]
+// indeces for the Refs with given length
 func validateSliceIndices(i, j, length int) (err error) {
 	if i < 0 || j < 0 || i > length || j > length {
 		err = ErrIndexOutOfRange
@@ -837,10 +763,194 @@ func validateSliceIndices(i, j, length int) (err error) {
 	return
 }
 
+// pow is interger power (a**b)
+func pow(a, b int) (p int) {
+	p = 1
+	for b > 0 {
+		if b&1 != 0 {
+			p *= a
+		}
+		b >>= 1
+		a *= a
+	}
+	return p
+}
+
+// dpethToFit returns depth; the Refs with this depth
+// can fit the 'fit' elements
+//
+// since, max number of elements, that the Refs can fit,
+// is pow(r.degree, r.depth+1), then required depth is
+// the base r.degree logarithm of the fit; but since we
+// need interger number, we are using loop to find the
+// number
+//
+// so, both the start argumen and the reply of the function
+// are Refs.depth. E.g. Refs.depth = 'real depth'-1
+func depthToFit(
+	degree int, // : degree of the Refs
+	start int, //  : starting depth (that doesn't fit)
+	fit int, //    : number of elements to fit
+) (
+	depth int, //  : the needle
+) {
+
+	// the start is 'real depth - 1', thus we add 2 instead of
+	// 1 (e.g. we add the elided 1 and one more 1)
+	for start += 2; pow(degree, start) < fit; start++ {
+	}
+	return start - 1 // found (-1 turns the start to be Refs.depth)
+}
+
+// startIteration allows to track modifications
+// inside an iteration
+func (r *Refs) startIteration() {
+	r.iterators = append(r.iterators, false)
+}
+
+// stopIteration pops some service information
+// pushed by the Refs.startIteration; the
+// stopIteration method should be called using
+// defer statement
+func (r *Refs) stopIteration() {
+	r.iterators = r.iterators[:len(r.iterators)-1]
+}
+
+// isFindingIteratorsIndexFromRootRequired used by an iterator
+// for every element after user-prvided function call; if the
+// Refs has been modified by the function, then this method
+// return true (only if length of the Refs has been changed);
+// the true forces an iterator to find next element from root;
+// see also Refs.rewindIterators method
+func (r *Refs) isFindingIteratorsIndexFromRootRequired() (yep bool) {
+	if r.iterators[len(r.iterators)-1] == true {
+		if len(r.iterators) > 1 {
+			r.iterators[len(r.iterators)-2] = true // pass to next
+		}
+		r.iterators[len(r.iterators)-1] = false // reset current
+		yep = true                              // rewind
+	}
+	return // nop
+}
+
+// An IterateFunc represents function for iterating over
+// the Refs ascending or desceidig order. It receives
+// index of element and hash of the element. Use
+// ErrStopIteration to break an iteration. The
+// ErrStopIteration will be hidden, but any other error
+// returned by this function will be returnd by iterator
+type IterateFunc func(i int, hash cipher.SHA256) (err error)
+
+// ascendFrom iterates elemnets of the Refs starting from
+// the element with given index
+func (r *Refs) ascendFrom(
+	pack Pack, //              : pack to load
+	from int, //               : start from here
+	ascendFunc IterateFunc, // : the function
+) (
+	err error, //              : errro if any
+) {
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = validateIndex(from, r.length); err != nil {
+		return
+	}
+
+	if r.length == 0 {
+		return // empty Refs
+	}
+
+	r.startIteration()
+	defer r.stopIteration()
+
+	var rewind bool  // find next element from root of the Refs
+	var i int = from // i is next index to find
+
+	for {
+
+		// - pass is number of elements iterated (not skipped)
+		//        for current step
+		// - rewind means that we need to find next element from
+		//        root of the Refs, because the Refs has been
+		//        changed
+		// - err is loading error, malformed Refs error or
+		//        ErrStopIteration
+		pass, rewind, err = r.ascendNode(pack, &r.refsNode, r.depth, 0, i,
+			ascendFunc)
+
+		// so, we need to find next element from root of the Refs
+		if rewind == true {
+			i += pass // shift the i to don't repeat elements
+			continue  // find next index from root of the Refs
+		}
+
+		// the loop is necesary for rewinding only
+		break
+
+		// if the rewind is true, then the err is nil;
+		// thus we can defer the err check
+	}
+
+	if err == ErrStopIteration {
+		err = nil // clear the ErrStopIteration
+	}
+
+	return
+}
+
+// Ascend iterates over all values ascending order until
+// first error or until the end. Use ErrStopIteration to
+// break the iteration. Any error is returned by given function
+// (except the ErrStopIteration) is returned by the Ascend()
+// method
+//
+// The Ascend allows to cahnge the Refs inside given
+// ascendFunc. Be careful, this way you can start an infinity
+// Ascend (for example, if the ascenFunc appends something to
+// the Refs every itteration). It's possile to iterate
+// inside the ascendFunc too
+func (r *Refs) Ascend(
+	pack Pack, //              : pack to load
+	ascendFunc IterateFunc, // : user-provided function
+) (
+	err error, //              : error if any
+) {
+	return r.ascendFrom(pack, 0, ascendFunc)
+}
+
+// AscendFrom iterates over all values ascending order starting
+// from the 'from' element until first error or the end. Use
+// ErrStopIteration to break iteration. Any error is returned
+// by given function (except the ErrStopIteration) is returned
+// by the AscendFrom() method
+func (r *Refs) AscendFrom(
+	pack Pack, //              : pack to load
+	from int, //               : starting index
+	ascendFunc IterateFunc, // : the function
+) (
+	err error, //              : error if any
+) {
+
+	return r.ascendFrom(pack, from, ascendFunc)
+}
+
 // Slice returns new Refs that contains values of this Refs from
 // given i (inclusive) to given j (exclusive). If i and j are valid
-// and equal, then the Slcie return new empty Refs
-func (r *Refs) Slice(pack Pack, i, j int) (slice *Refs, err error) {
+// and equal, then the Slcie return new empty Refs.
+// The slice will have the same flags and the same degree. The
+// method returns pointer to the Refs, don't forget dereference
+// the pointer to place the slice
+func (r *Refs) Slice(
+	pack Pack, //   : pack to load
+	i int, //       : start of the range (inclusive)
+	j int, //       : end of the range (exclusive)
+) (
+	slice *Refs, // : wanted slice
+	err error, //   : error if any
+) {
 
 	// https://play.golang.org/p/4tP7_MuCN9
 
@@ -855,220 +965,27 @@ func (r *Refs) Slice(pack Pack, i, j int) (slice *Refs, err error) {
 	slice = new(Refs)
 
 	slice.degree = r.degree
-	if r.flags&HashTableIndex != 0 {
-		slice.index = make(map[cipher.SHA256]*refsNode)
-	}
 	slice.flags = r.flags
 
-	if i == j {
-		return // done
+	if r.flags&HashTableIndex != 0 {
+		slice.index = make(refsIndex)
 	}
 
-	// TODO (kostyarin): ascend from i to j appending to the slice
+	var ln = j - i // length of the new slice
+	if ln == 0 {
+		return // done (new blank Refs has been created)
+	}
+
+	if ln > slice.degree {
+		r.depth = depthToFit(slice.degree, 0, ln) // depth > 0
+	}
+
+	// TODO (kostyarin): ascend appending
 
 	return
 }
 
-func (r *Refs) startIterating() {
-	r.iterating = append(r.iterating, false)
-}
-
-// for defer
-func (r *Refs) stopIterating() {
-	r.iterating = r.iterating[:len(r.iterating)-1]
-}
-
-// mus tbe called inside an iterator
-func (r *Refs) isFindingIteratorsIndexFromRootRequired() (yep bool) {
-	if r.iterators[len(r.iterators)-1] == true {
-		if len(r.iterators) > 1 {
-			r.iterators[len(r.iterators)-2] = true // pass to next
-		}
-		r.iterators[len(r.iterators)-1] = false // reset
-		yep = true
-	}
-	return
-}
-
-// An IterateFunc represents function for iterating over
-// the Refs ascending and desceidig order. It receives
-// index of element and hash of the element. Use
-// ErrStopIteration to break an iteration
-type IterateFunc func(i int, hash cipher.SHA256) (err error)
-
-// Ascend iterates over all values ascending order until
-// first error or the end. Use ErrStopIteration to break
-// iteration. Any error is returned by given function
-// (except the ErrStopIteration) is returned by the Ascend()
-// method
-//
-// The Ascend allows to cahnge the Refs inside given
-// ascendFunc. Be careful, this way you can start an infinity
-// Ascend (for example, if the ascenFunc appends something to
-// the Refs every itteration). It's possile to iterate
-// inside the ascendFunc too
-func (r *Refs) Ascend(pack Pack, ascendFunc IterateFunc) error {
-	return r.ascendFrom(pack, 0, ascendFunc)
-}
-
-func (r *Refs) ascendFrom(pack Pack, from int,
-	ascendFunc IterateFunc) (err error) {
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	if err = validateIndex(from, r.length); err != nil {
-		return
-	}
-
-	if r.length == 0 {
-		return // empty Refs
-	}
-
-	r.startIterating()
-	defer r.stopIterating()
-
-	var rewind bool  // find next element from root of the Refs
-	var i int = from // i is next index to find
-
-	for {
-		// - pass is number of elements iterated (not skipped)
-		//        for current step
-		// - rewind means that we need to find next element from
-		//        root of the Refs, because the Refs has been
-		//        changed
-		// - err is loading error, malformed Refs error or
-		//        ErrStopIteration
-		pass, rewind, err = r.ascend(pack, i, ascendFunc, r.depth, nil, r.leafs,
-			r.branches)
-		// so, we need to find next element from root of the Refs
-		if rewind == true {
-			i += pass // shift the i to don't repeat elements
-			continue  // find next index from root of the Refs
-		}
-		// the loop is necesary for rewinding only
-		break
-	}
-
-	if err == ErrStopIteration {
-		err = nil // clear the ErrStopIteration
-	}
-
-	return
-}
-
-// ascend depending on depth and i (starting element), check
-// changes after every call of the ascendFunc
-//
-// arguments:
-//  - pack is Pack instance
-//  - i is starting element
-//  - ascendFunc is given function
-//  - depth is current depth level (0 for leafs)
-//  - upper is upper *refsNode or nil if it's the Refs (required for loading)
-//  - leafs are leafs of current *refsNode or of the Refs
-//  - branches are branches of current *refsNode or of the Refs
-//
-// reply:
-//  - pass is number of lements skipped or iterated
-//  - rewind is true if finding next index from root of the Refs is required
-//  - err is some error
-//
-func (r *Refs) ascend(pack Pack, i int, ascendFunc IterateFunc, depth int,
-	upper *refsNode, leafs []*refsElement, branches []*refsNode) (pass int,
-	rewind bool, err error) {
-
-	if depth == 0 {
-		return r.ascendLeafs(i, ascendFunc, leafs)
-	}
-
-	// else if depth > 0
-
-	return r.ascendBranches(pack, i, ascendFunc, depth, upper, branches)
-}
-
-func (r *Refs) ascendLeafs(i int, ascendFunc IterateFunc,
-	leafs []*refsElement) (pass int, rewind bool, err error) {
-
-	var skip int // skip elements before the i
-
-	for _, el := range leafs {
-		if el.Deleted == true {
-			continue // deleted elements do not exist
-		}
-
-		if skip < i {
-			skip++ // skip this element
-			continue
-		}
-
-		// here i == skip
-
-		if err = ascendFunc(i, el.Hash); err != nil {
-			return
-		}
-
-		// increment all counters
-		i++    // current index
-		skip++ // skip (not really skip)
-		pass++ // processed elements
-
-		// check out changes of the Refs
-		if rewind = r.isFindingIteratorsIndexFromRootRequired(); rewind {
-			// we need to find next element from root of the Refs,
-			// because the ascendFunc changes the Refs tree
-			return
-		}
-
-		// no changes required, continue
-	}
-
-	return
-}
-
-func (r *Refs) ascendBranches(pack Pack, i int, ascendFunc IterateFunc,
-	depth int, upper *refsNode, branches []*refsNode) (pass int, rewind bool,
-	err error) {
-
-	var subpass int // pass for a subtree (for a branch)
-	var skip int    // skip elements finding the i
-
-	for _, br := range branches {
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth, upper); err != nil {
-			return // eror loading the branch
-		}
-
-		if br.length == 0 {
-			continue // skip empty branches
-		}
-
-		if skip+br.length < i {
-			skip += br.length // skip this branch finding i-th element
-			continue
-		}
-
-		subpass, rewind, err = r.ascend(pack, i, ascendFunc, depth-1, br,
-			br.leafs, br.branches)
-
-		pass += subpass // process elements
-		skip += subpass // increment the skip variable (don't really skip)
-
-		if err != nil || rewind == true {
-			return // some error or changes
-		}
-
-		i += subpass // increment current index
-
-		// this is local variable and incrementing has meaning only
-		// if we a going to ascend next branch
-
-		// continue
-	}
-
-	return
-}
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 
 // Descend iterates over all values descending order until
 // first error or the end. Use ErrStopIteration to
@@ -1104,8 +1021,8 @@ func (r *Refs) descendFrom(pack Pack, from int,
 		return // empty Refs
 	}
 
-	r.startIterating()
-	defer r.stopIterating()
+	r.startIteration()
+	defer r.stopIteration()
 
 	var rewind bool       // find next element from root of the Refs
 	var i = from          // i is next index to find
@@ -1262,16 +1179,6 @@ func (r *Refs) descendBranches(pack Pack, si, i int, descendFunc IterateFunc,
 	}
 
 	return
-}
-
-// AscendFrom iterates over all values ascending order starting
-// from the 'from' element until first error or the end. Use
-// ErrStopIteration to break iteration. Any error is returned
-// by given function (except the ErrStopIteration) is returned
-// by the AscendFrom() method
-func (r *Refs) AscendFrom(pack Pack, from int, ascendFunc IterateFunc) error {
-
-	return r.ascendFrom(pack, from, ascendFunc)
 }
 
 // DescendFrom iterates over all values descending order starting
@@ -1450,34 +1357,6 @@ func (r *Refs) freeSpaceOnTailInBranches(pack Pack, depth int, upper *refsNode,
 	return
 }
 
-// a**b (power)
-func pow(a, b int) (p int) {
-	p = 1
-	for b > 0 {
-		if b&1 != 0 {
-			p *= a
-		}
-		b >>= 1
-		a *= a
-	}
-	return p
-}
-
-// dpethToFit returns depth (real depth - 1); the
-// Refs with this depth can fit the 'fit' elements
-//
-// arguments:
-// - degree is degree of the Refs
-// - start is strting depth (that don't fit)
-// - fit is number of elements to fit
-func depthToFit(degree, start, fit int) int {
-	// the start is 'real depth - 1', thus we add 2 instead of
-	// 1 (e.g. we add the elided 1 and one more 1)
-	for start += 2; pow(degree, start) < fit; start++ {
-	}
-	return start - 1 // found (-1 turs the start to be Refs.depth)
-}
-
 // increaseDepth to fit 'fit' elements; the method replaces
 // this Refs with another that contains the same elements,
 // but has enough dpeth to fit the 'fit' elements;
@@ -1485,10 +1364,6 @@ func depthToFit(degree, start, fit int) int {
 // the Refs structure are empty and should be filled after;
 // the Refs must to be initilized
 func (r *Refs) increaseDepth(pack Pack, fit int) (err error) {
-	// since, max number of elements, that the Refs can fit,
-	// is pow(r.degree, r.depth+1), then required depth is
-	// the base r.degree logarithm of fit; but since we need
-	// interger number, we are using loop to find the number
 
 	depth := depthToFit(r.degree, r.depth, fit)
 
