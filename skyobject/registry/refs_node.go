@@ -168,6 +168,11 @@ func (r *Refs) loadNode(
 	return r.loadSubtree(pack, rn, ern.Elements, depth) // depth is the same
 }
 
+// isLoaded returns true if the node is loaded
+func (r *refsNode) isLoaded() bool {
+	return r.length > 0
+}
+
 // load given node if it's not loaded yet;
 // e.g. if lazy loading used
 func (r *Refs) loadNodeIfNeed(
@@ -178,8 +183,8 @@ func (r *Refs) loadNodeIfNeed(
 	err error, //    : get, decoding or 'invalid refs' error
 ) {
 
-	if rn.length > 0 {
-		return
+	if rn.isLoaded() == true {
+		return // already loaded
 	}
 
 	return r.loadNode(pack, rn, depth)
@@ -893,6 +898,83 @@ func (r *Refs) appendCreatingSliceNode(
 	rn.branches = append(rn.branches, br)
 
 	return r.appendCreatingSliceNode(br, depth-1, hash)
+}
+
+//
+// walk from tail updating
+//
+
+// walkUpdatingNode walks through the Refs updating
+// hash and length fields of every node; the method
+// starts from tail; the method doesn't loads
+// subtrees that doesn't loaded; the method doesn't
+// removes empty nodes; the length argumen will
+// work only if the force argument is set to true
+func (r *Refs) walkUpdatingNode(
+	pack Pack, //    : pack to save
+	rn *refsNode, // : node to start from
+	depth int, //    : depth of the rn
+	length bool, //  : set length field (only if the force is true)
+	force bool, //   : calculate hash even if contentMod flag is not set
+) (
+	err error, //    : error if any
+) {
+
+	// if the force is false, then we should to check
+	// the contentMod flag of the rn, and if the
+	// flag is not set, then we are done
+
+	if force == false && rn.mods&contentMod == 0 {
+		return // nothing to update
+	}
+
+	// if the length argument is true, then we can't
+	// use (*refsNode).isLoaded because the methods
+	// uses the length field
+
+	if depth == 0 { // leafs
+
+		if length == true {
+			rn.length = len(rn.leafs)
+		}
+
+		return rn.updateHash(pack, depth)
+	}
+
+	// else if depth > 0 { branches }
+
+	for _, br := range rn.branches {
+		// here we need to walk through the subtree;
+		// but if the force is false, then we skip
+		// nodes that not loaded and contentMod flag
+		// of which is not set
+
+		if force == false {
+
+			// skip nodes that are not loaded and, also skip
+			// nodes that are in actual state
+			if br.isLoaded() == false || br.mods&contentMod == 0 {
+				continue // skip
+			}
+
+		}
+
+		if length == true {
+
+			err = r.walkUpdatingNode(pack, br, depth-1, length, force)
+
+			if err != nil {
+				return // error
+			}
+
+			//
+
+		}
+
+		//
+	}
+
+	return
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -

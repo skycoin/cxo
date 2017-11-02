@@ -1056,20 +1056,38 @@ func (r *Refs) appnedCreatingSliceFunc(j int) (iter IterateFunc) {
 	var cn = &r.refsNode // current node
 	var depth = r.depth  // depth of the cn
 
-	// we are using j, depth and the cn inside the IterateFunc below
+	// we are using r, j, depth and the cn inside the IterateFunc below
 
 	iter = func(i int, hash cipher.SHA256) (err error) {
 		if i == j {
 			return ErrStopIteration // we are done
 		}
 
-		//
+		// the call will panic if the slice (the r) is invalid
+		cn, depth = r.appendCreatingSliceNode(cn, depth, hash)
 
 		return // continue
 	}
 
 	return
 
+}
+
+func (r *Refs) walkUpdating(
+	pack Pack, //    : pack to save
+	length bool, //  : set length field
+	force bool, //   : calculate hash even if contentMod flag is not set
+) (
+	err error, //    : error if any
+) {
+
+	err = r.walkUpdatingNode(pack, &r.refsNode, r.depth, length, force)
+
+	if err != nil {
+		return
+	}
+
+	return r.updateHashIfNeed(pack, force || r.mods&contentMod != 0)
 }
 
 // Slice returns new Refs that contains values of this Refs from
@@ -1117,14 +1135,21 @@ func (r *Refs) Slice(
 	}
 
 	err = r.AscendFrom(pack, i, slice.appnedCreatingSliceFunc(j))
+
 	if err != nil {
 		slcie = nil // for GC
 		return      // error
 	}
 
-	// TODO (kostyarin): set length and hash fields
+	// the slice contains all necessary elements, but
+	// length and hash fields are empty
 
-	return
+	if err = slice.walkUpdating(pack, true, true); err != nil {
+		slice = nil // GC
+		return      // error
+	}
+
+	return // done
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -

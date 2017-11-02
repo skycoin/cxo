@@ -136,7 +136,7 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	for seqb, er := c.First(); seqb != nil; seqb, er = c.Seek(seqb) {
 
-		seq = binary.LittleEndian.Uint64(seqb)
+		seq = binary.BigEndian.Uint64(seqb)
 
 		if err = r.Decode(er); err != nil {
 			panic(err)
@@ -150,7 +150,7 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 		}
 
 		seq++
-		binary.LittleEndian.PutUint64(sb, seq)
+		binary.BigEndian.PutUint64(sb, seq)
 		seqb = sb
 	}
 	return
@@ -247,6 +247,6 @@ func (d *driveRoots) Len() int {
 
 func utob(u uint64) (p []byte) {
 	p = make([]byte, 8)
-	binary.LittleEndian.PutUint64(p, u)
+	binary.BigEndian.PutUint64(p, u)
 	return
 }
