@@ -1,7 +1,5 @@
 #!/bin/evn bash
 
-GOPATH=~/gonor:$GOPATH
-
 # $1 - os
 # $2 - arch
 function goBuildOsArch {
@@ -22,6 +20,8 @@ function goBuildOsArch {
 	if [ "$arch" == "amd64" ]
 	then
 		humanArchName="64"
+	else
+		humanArchName="32"
 	fi
 
 	if [ "$os" == "dragonfly" ]
