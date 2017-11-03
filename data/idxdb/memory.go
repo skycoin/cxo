@@ -22,6 +22,10 @@ func NewMemeoryDB() (idx data.IdxDB) {
 		panic(err)
 	}
 	fl.Close()
+	os.Remove(fl.Name())
+	// the NewDriveIdxDB uses os.Stat for internals
+	// the removing is not as safe, but any problem
+	// can occurs in < 1% of cases
 	if idx, err = NewDriveIdxDB(fl.Name()); err != nil {
 		panic(err)
 	}

@@ -142,8 +142,8 @@ func NewNode(sc Config) (s *Node, err error) {
 		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
 	} else {
 		if sc.DBPath == "" {
-			cxPath = filepath.Join(sc.DataDir, "cxds.db")
-			idxPath = filepath.Join(sc.DataDir, "idx.db")
+			cxPath = filepath.Join(sc.DataDir, CXDS)
+			idxPath = filepath.Join(sc.DataDir, IdxDB)
 		} else {
 			cxPath = sc.DBPath + ".cxds"
 			idxPath = sc.DBPath + ".idx"
@@ -503,10 +503,10 @@ func (s *Node) ConnectToMessenger(address string) (*factory.Connection, error) {
 		return nil, errors.New("messenger factory not initialised")
 	}
 	return s.discovery.ConnectWithConfig(address, &factory.ConnConfig{
-		Reconnect: true,
-		ReconnectWait: time.Second * 30,
+		Reconnect:                      true,
+		ReconnectWait:                  time.Second * 30,
 		FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
-		OnConnected: s.updateServiceDiscoveryCallback,
+		OnConnected:                    s.updateServiceDiscoveryCallback,
 	})
 }
 

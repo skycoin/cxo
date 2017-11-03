@@ -56,6 +56,12 @@ const (
 	DiscoveryPin                     // discovery
 )
 
+// default DB file names
+const (
+	CXDS  string = "cxds.db"
+	IdxDB string = "idx.db"
+)
+
 // DataDir returns path to default data directory
 func DataDir() string {
 	usr, err := user.Current()

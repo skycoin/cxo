@@ -18,7 +18,7 @@ var (
 	ErrEmptyValue      = errors.New("empty value")
 	ErrMissingMetaInfo = errors.New("missing meta information")
 	ErrMissingVersion  = errors.New("missing version in meta")
-	ErrOldVersion      = errors.New("db file of old version")      // cxdbfix
+	ErrOldVersion      = errors.New("db file of old version")      // cxodbfix
 	ErrNewVersion      = errors.New("db file newer then this CXO") // go get
 )
 

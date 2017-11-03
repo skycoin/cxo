@@ -2,6 +2,7 @@ package idxdb
 
 import (
 	"encoding/binary"
+	"os"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -12,26 +13,76 @@ import (
 )
 
 var (
-	feedsBucket = []byte("f")
+	feedsBucket = []byte("f")       // feeds
+	metaBucket  = []byte("m")       // meta information
+	versionKey  = []byte("version") // encoded version in the meta bucket
 )
 
 type driveDB struct {
 	b *bolt.DB
 }
 
-// NewDriveIdxDB create data.IdxDB instance that
+// NewDriveIdxDB creates data.IdxDB instance that
 // keeps its data on dirive
 func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 
+	var created bool // true if db file has been created
+
+	_, err = os.Stat(fileName)
+	created = os.IsNotExist(err) // set the created var
+
 	var b *bolt.DB
+
 	b, err = bolt.Open(fileName, 0644, &bolt.Options{
 		Timeout: time.Millisecond * 500,
 	})
+
 	if err != nil {
 		return
 	}
 
 	err = b.Update(func(tx *bolt.Tx) (err error) {
+
+		// first of all, take a look the meta bucket
+		var info = tx.Bucket(meta)
+
+		if info == nil {
+
+			// if the file has not been created, then
+			// this DB file seems outdated (version 0)
+			if created == false {
+				return ErrMissingMetaInfo // report
+			}
+
+			// create the bucket and put meta information
+			if info, err = tx.CreateBucket(meta); err != nil {
+				return
+			}
+
+			// put version
+			if err = info.Put(version, versionBytes()); err != nil {
+				return
+			}
+
+		} else {
+
+			// check out the version
+
+			var vb []byte
+			if vb = info.Get(version); len(vb) == 0 {
+				return ErrMissingVersion
+			}
+
+			switch vers := int(binary.BigEndian.Uint32(vb)); {
+			case vers == Version: // ok
+			case vers < Version:
+				return ErrOldVersion
+			case vers > Version:
+				return ErrNewVersion
+			}
+
+		}
+
 		_, err = tx.CreateBucketIfNotExists(feedsBucket)
 		return
 	})
