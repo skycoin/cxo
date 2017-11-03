@@ -89,6 +89,7 @@ For example
 
 No way to rollback fixes, use backups if you want.
 Also, the utilit can't fix broken databases.
+It's safe to call the utility many times.
 
 `, os.Args[0], idxdbPath, cxdsPath)
 
