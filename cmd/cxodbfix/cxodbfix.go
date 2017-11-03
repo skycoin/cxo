@@ -75,6 +75,7 @@ Before running the utility you have to be sure that:
     2) you have made a backups of your DB files
     3) all applications that uses this files closed
     4) the utility has write access to directory with db files
+    5) CXO related applications upgraded to lates to use upgraded DB files
 
 
 For example
@@ -84,8 +85,7 @@ For example
 
     %[1]s
 
-    Perform all available fixes using idx.db and cxds.db files in
-    current directory
+    Perform all available fixes using default paths
 
 No way to rollback fixes, use backups if you want.
 Also, the utilit can't fix broken databases.
