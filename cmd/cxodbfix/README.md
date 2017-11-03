@@ -15,5 +15,5 @@ go build
 and run it with `-h` flag
 
 ```
-cxodbfix -h
+./cxodbfix -h
 ```
