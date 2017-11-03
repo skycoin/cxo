@@ -43,7 +43,7 @@ func main() {
 		log.Fatal(err) // exit code should be 1
 	}
 
-	fmt.Print("done")
+	fmt.Println("done")
 }
 
 func usage() {
@@ -90,7 +90,7 @@ For example
 No way to rollback fixes, use backups if you want.
 Also, the utilit can't fix broken databases.
 
-`, os.Args[1], idxdbPath, cxdsPath)
+`, os.Args[0], idxdbPath, cxdsPath)
 
 }
 
@@ -216,7 +216,7 @@ func fcxds(cxdsPath string) (err error) {
 }
 
 // fix idxdb
-func fidxdb(idxdbPath string) (code int) {
+func fidxdb(idxdbPath string) (err error) {
 
 	if idxdbPath == ":memory:" {
 		return // nothnig to fix
@@ -426,10 +426,14 @@ func fidxdb0_1(sdb, ddb *bolt.DB) (err error) {
 
 			for f, _ := sfc.First(); f != nil; f, _ = sfc.Next() {
 
-				df := dfeeds.CreateBucket(f) // create destination feed
-				sf := sfeeds.Bucket(f)       // source feed
+				var sf = sfeeds.Bucket(f) // source feed
 
-				err = sf.ForEach(func(seqb, val) (err error) {
+				var df *bolt.Bucket // destination feed
+				if df, err = dfeeds.CreateBucket(f); err != nil {
+					return
+				}
+
+				err = sf.ForEach(func(seqb, val []byte) (err error) {
 					seq := decSeq(seqb)             // le
 					return df.Put(encSeq(seq), val) // be
 				})
@@ -439,6 +443,8 @@ func fidxdb0_1(sdb, ddb *bolt.DB) (err error) {
 				}
 
 			}
+
+			return
 
 		})
 	})

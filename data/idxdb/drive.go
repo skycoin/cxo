@@ -44,7 +44,7 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 	err = b.Update(func(tx *bolt.Tx) (err error) {
 
 		// first of all, take a look the meta bucket
-		var info = tx.Bucket(meta)
+		var info = tx.Bucket(metaBucket)
 
 		if info == nil {
 
@@ -55,12 +55,12 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 			}
 
 			// create the bucket and put meta information
-			if info, err = tx.CreateBucket(meta); err != nil {
+			if info, err = tx.CreateBucket(metaBucket); err != nil {
 				return
 			}
 
 			// put version
-			if err = info.Put(version, versionBytes()); err != nil {
+			if err = info.Put(versionKey, versionBytes()); err != nil {
 				return
 			}
 
@@ -69,7 +69,7 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 			// check out the version
 
 			var vb []byte
-			if vb = info.Get(version); len(vb) == 0 {
+			if vb = info.Get(versionKey); len(vb) == 0 {
 				return ErrMissingVersion
 			}
 

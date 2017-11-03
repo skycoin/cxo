@@ -21,7 +21,7 @@ func Test_one(t *testing.T) {
 	if len(one) != 4 {
 		t.Fatal("wrong length of the one")
 	}
-	if binary.LittleEndian.Uint32(one) != 1 {
+	if binary.BigEndian.Uint32(one) != 1 {
 		t.Error("the one is not a one")
 	}
 }
