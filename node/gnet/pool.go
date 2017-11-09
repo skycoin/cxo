@@ -43,7 +43,7 @@ type Pool struct {
 }
 
 // NewPool create new pool instance using
-// given config. It retrns an eror if configurations
+// given config. It returns an error if configurations
 // contains invalid values
 func NewPool(c Config) (p *Pool, err error) {
 	if err = c.Validate(); err != nil {
@@ -311,7 +311,7 @@ func (p *Pool) Connections() []*Conn {
 }
 
 // Connection returns a connection by address
-// or nil if connectios with given address doesn't exists
+// or nil if connections with given address doesn't exists
 func (p *Pool) Connection(address string) *Conn {
 	p.cmx.Lock()
 	defer p.cmx.Unlock()
