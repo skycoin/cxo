@@ -9,7 +9,7 @@ import (
 
 type saveRecursive struct {
 	p     *Pack                 // related pack
-	saved map[cipher.SHA256]int // saved obejct (to rollback on failure)
+	saved map[cipher.SHA256]int // saved object (to rollback on failure)
 }
 
 func (p *saveRecursive) inc(key cipher.SHA256) (err error) {
@@ -86,7 +86,7 @@ func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 		// if the dr has not been changed then
 		// we increment it and return, otherwise
 		// we have to go deepper to save or increment
-		// related (nested) obejcts
+		// related (nested) objects
 		return p.inc(dr.Object)
 	}
 
@@ -103,7 +103,7 @@ func (p *saveRecursive) saveRecursiveDynamic(obj reflect.Value) (err error) {
 	}
 
 	// hash is not blank, so if the hash is not blank and value is nil
-	// then this hash represents alreay saved value and we need to
+	// then this hash represents already saved value and we need to
 	// increment refs count only
 	return p.inc(dr.Object)
 }

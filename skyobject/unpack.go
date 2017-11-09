@@ -45,7 +45,7 @@ const (
 // modify it and walk through. The Pack is
 // not thread safe. All objects of the
 // Pack are not thread safe. Underlying Root
-// obejct is changing. Fields of the Root
+// object is changing. Fields of the Root
 // contains actual values after Save
 // method (if it's successful) and before
 // one other method of the Pack called
@@ -149,8 +149,8 @@ func (p *Pack) Save() (err error) {
 
 	// 1) keep the seq to decrement it next time
 	// 2) range over tree getting Volume/Amount of related objects
-	//   2.1) get the V/A of already existeing obejcts
-	//   2.2) save new obejcts indexing them
+	//   2.1) get the V/A of already existeing objects
+	//   2.2) save new objects indexing them
 	// 3) keep all saved objects to decrement them on failure
 	var (
 		seqDec = p.r.Seq                     // base
@@ -178,7 +178,7 @@ func (p *Pack) Save() (err error) {
 		}
 
 		if called == false {
-			p.r.Seq = 0                // frist Root
+			p.r.Seq = 0                // first Root
 			p.r.Prev = cipher.SHA256{} // first Root
 		}
 
@@ -293,7 +293,7 @@ func (p *Pack) Save() (err error) {
 
 		}
 
-		// all obejcts has been saved and we can clear
+		// all objects has been saved and we can clear
 		// cache to reduce memory pressure
 
 		p.unsaved = make(map[cipher.SHA256][]byte)
@@ -326,8 +326,8 @@ func (p *Pack) init() (err error) {
 	return
 }
 
-// Root of the Pack. It returns underlying Root obejct
-// that changes with cahnges in Pack. Fields of the Root
+// Root of the Pack. It returns underlying Root object
+// that changes with changes in Pack. Fields of the Root
 // are actual after every successful Save (or Unpack) and
 // before first chagnes
 func (p *Pack) Root() *Root { return p.r }
@@ -394,7 +394,7 @@ func (p *Pack) RefByIndex(i int) (obj interface{}, err error) {
 	return
 }
 
-// SetRefByIndex repaces Root.Refs by index with given object.
+// SetRefByIndex replaces Root.Refs by index with given object.
 // Use nil to make the object blank. Type of the object must
 // be registered in related Registry. It panics, if type of
 // the object is not registered
@@ -409,7 +409,7 @@ func (p *Pack) SetRefByIndex(i int, obj interface{}) (err error) {
 	return
 }
 
-// Append given obejcts to Root.Refs. Types of the objects must
+// Append given objects to Root.Refs. Types of the objects must
 // be registered in related Registry. It panics, if type of one
 // of the object is not registered
 func (p *Pack) Append(objs ...interface{}) {
@@ -508,7 +508,7 @@ func (p *Pack) schemaOf(typ reflect.Type) (sch Schema, err error) {
     error:                      %s
     registry reference:         %s
     schema name:                %s
-    reflect.Type of the obejct: %s`,
+    reflect.Type of the object: %s`,
 			err,
 			p.reg.Reference().Short(),
 			name,
@@ -522,7 +522,7 @@ func (p *Pack) initializeDynamic(dr *Dynamic) {
 }
 
 // Dynamic creates Dynamic by given object. The obj must to be
-// a goalgn value of registered type. The method panics on first
+// a golang value of registered type. The method panics on first
 // error. Passing nil returns blank Dynamic
 func (p *Pack) Dynamic(obj interface{}) (dr Dynamic) {
 	p.c.Debugf(VerbosePin, "(*Pack).Dynamic %s %T", p.r.Short(), obj)

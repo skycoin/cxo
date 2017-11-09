@@ -62,9 +62,9 @@ func (d *Dynamic) IsBlank() bool {
 }
 
 // IsValid returns true if the Dynamic is blank, full
-// or has reference to shcema only. A Dynamic is invalid if
-// it has reference to object but deosn't have reference to
-// shcema
+// or has reference to schema only. A Dynamic is invalid if
+// it has reference to object but doesn't have reference to
+// schema
 func (d *Dynamic) IsValid() bool {
 	if d.SchemaRef.IsBlank() {
 		return d.Object == (cipher.SHA256{})
@@ -264,7 +264,7 @@ func (d *Dynamic) Copy() (cp Dynamic) {
 }
 
 // Save updates hash using underlying value.
-// The vaue can be changd from outside, this
+// The value can be changed from outside, this
 // method encodes it and updates hash
 func (d *Dynamic) Save() {
 	if d.dn == nil {

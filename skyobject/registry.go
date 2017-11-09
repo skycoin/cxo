@@ -30,7 +30,7 @@ func newReg() *Reg {
 }
 
 // Register type of given value with given name. If
-// givne value is pointer, then it will be converted to
+// given value is pointer, then it will be converted to
 // non-pointer inside. E.g. it registers non-pointer types
 // only
 func (r *Reg) Register(name string, val interface{}) {
@@ -305,7 +305,7 @@ func (r *Registry) SchemaByName(name string) (Schema, error) {
 	return r.schemaByName(name)
 }
 
-// Types returns Types of the Registry. If this registry creaded using
+// Types returns Types of the Registry. If this registry created using
 // DecodeRegistry (received from network) then result will not
 // be valid (empty maps). The Types used to pack/unpack CX objects
 // directly from and to golang values. You should not modify the

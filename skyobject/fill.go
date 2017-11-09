@@ -19,7 +19,7 @@ import (
 // A WCXO is internal
 type WCXO struct {
 	Key  cipher.SHA256 // hash of wanted CX object
-	GotQ chan []byte   // cahnnel to sent requested CX object
+	GotQ chan []byte   // channel to sent requested CX object
 
 	Announce []cipher.SHA256 // announce get
 }
@@ -77,7 +77,7 @@ func (c *Container) NewFiller(r *Root, bus FillingBus) (fl *Filler) {
 	return
 }
 
-// Root retursn underlying filling Root obejct
+// Root returns underlying filling Root object
 func (f *Filler) Root() *Root {
 	return f.r
 }
@@ -94,7 +94,7 @@ func (f *Filler) full() {
 	// can be unsubscribed from the feed and we should
 	// return proper error
 	f.bus.FullQ <- FullRoot{f.tp, f.r, f.incrs}
-	f.c.Debugf(FillPin, "%s filled after %v, %d obejcts", f.r.Short(),
+	f.c.Debugf(FillPin, "%s filled after %v, %d objects", f.r.Short(),
 		time.Now().Sub(f.tp), len(f.incrs))
 }
 
@@ -443,7 +443,7 @@ func (f *Filler) StartTime() time.Time {
 type DropRootError struct {
 	Tp    time.Time       // start time
 	Root  *Root           // the Root in person
-	Incrs []cipher.SHA256 // obejcts to decrement
+	Incrs []cipher.SHA256 // objects to decrement
 	Err   error           // reason
 }
 
