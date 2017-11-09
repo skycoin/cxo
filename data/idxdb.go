@@ -4,29 +4,29 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// An IterateFeedsFunc represetns function for
+// An IterateFeedsFunc represents function for
 // iterating over all feeds IdxDB contains
 type IterateFeedsFunc func(cipher.PubKey) error
 
-// A Feeds represetns bucket of feeds
+// A Feeds represents bucket of feeds
 type Feeds interface {
 	// Add feed. Adding a feed twice or
 	// mote times does nothing
 	Add(cipher.PubKey) error
 	// Del feed if its empty. It's impossible to
 	// delete non-empty feed. This restriction required
-	// for related obejcts. We need to decrement refs count
-	// of all related obejcts. Del never returns 'not found'
+	// for related objects. We need to decrement refs count
+	// of all related objects. Del never returns 'not found'
 	// error
 	Del(cipher.PubKey) error
 
 	// Iterate all feeds. Use ErrStopRange to break
 	// it iteration. The Iterate passes any error
-	// returned from given functio through. Except
+	// returned from given function through. Except
 	// ErrStopIteration that turns nil. It's possible
 	// to mutate the IdxDB inside the Iterate
 	Iterate(IterateFeedsFunc) error
-	// Has retursn true if the IdxDB contains
+	// Has returns true if the IdxDB contains
 	// feed with given public key
 	Has(cipher.PubKey) bool
 
@@ -40,16 +40,16 @@ type Feeds interface {
 type IterateRootsFunc func(*Root) error
 
 // A Roots represents bucket of Root objects.
-// All Root obejcts ordered by seq number
+// All Root objects ordered by seq number
 // from small to big
 type Roots interface {
-	// Ascend iterates all Root obejct ascending order.
+	// Ascend iterates all Root object ascending order.
 	// Use ErrStopIteration to stop iteration. Any error
 	// (except the ErrStopIteration) returned by given
-	// IterateRootsFunc will be passed throug
+	// IterateRootsFunc will be passed through
 	Ascend(IterateRootsFunc) error
 	// Descend is the same as the Ascend, but it iteates
-	// decending order. From lates Root obejcts to
+	// decending order. From lates Root objects to
 	// oldes
 	Descend(IterateRootsFunc) error
 
@@ -74,7 +74,7 @@ type Roots interface {
 
 // An IdxDB repesents database that contains
 // meta information: feeds meta information
-// about Root obejcts. There is data/idxdb
+// about Root objects. There is data/idxdb
 // package that implements the IdxDB. The
 // IdxDB returns and uses errors ErrNotFound,
 // ErrNoSuchFeed, ErrStopIteration and

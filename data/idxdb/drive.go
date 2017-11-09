@@ -23,7 +23,7 @@ type driveDB struct {
 }
 
 // NewDriveIdxDB creates data.IdxDB instance that
-// keeps its data on dirive
+// keeps its data on drive
 func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 
 	var created bool // true if db file has been created
@@ -102,7 +102,7 @@ func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	})
 }
 
-// CLose the DB
+// Close the DB
 func (d *driveDB) Close() (err error) {
 	return d.b.Close()
 }
@@ -163,7 +163,7 @@ func (d *driveFeeds) Has(pk cipher.PubKey) bool {
 	return d.bk.Bucket(pk[:]) != nil
 }
 
-// Roots returns bucket of Root obejct of given feed
+// Roots returns bucket of Root object of given feed
 func (d *driveFeeds) Roots(pk cipher.PubKey) (rs data.Roots, err error) {
 	bk := d.bk.Bucket(pk[:])
 	if bk == nil {
@@ -176,7 +176,7 @@ type driveRoots struct {
 	bk *bolt.Bucket
 }
 
-// Ascend iternates over all Root obejcts ascending order
+// Ascend iternates over all Root objects ascending order
 func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var seq uint64
@@ -207,7 +207,7 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
-// Descend iternates over all Root obejcts descending order
+// Descend iternates over all Root objects descending order
 func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var r = new(data.Root)
@@ -233,7 +233,7 @@ func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
-// Set new Root obejct or does nothing if
+// Set new Root object or does nothing if
 // the object already exists
 func (d *driveRoots) Set(r *data.Root) (err error) {
 
@@ -266,12 +266,12 @@ func (d *driveRoots) Set(r *data.Root) (err error) {
 	return d.bk.Put(seqb, nr.Encode())
 }
 
-// Del deletes Root obejct by seq
+// Del deletes Root object by seq
 func (d *driveRoots) Del(seq uint64) (err error) {
 	return d.bk.Delete(utob(seq))
 }
 
-// Get Root obejct by seq
+// Get Root object by seq
 func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 	seqb := utob(seq)
 	val := d.bk.Get(seqb)

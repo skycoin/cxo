@@ -7,7 +7,7 @@ import (
 // A CXDS is interface of CX data store. The CXDS is
 // key-value store with references count. There is
 // data/cxds implementation that contains boltdb based
-// and in-memeory (golang map based) implementations of
+// and in-memory (golang map based) implementations of
 // the CXDS. The CXDS returns ErrNotFound from this
 // package if any value has not been found
 type CXDS interface {
