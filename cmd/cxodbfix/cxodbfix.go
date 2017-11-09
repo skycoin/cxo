@@ -210,8 +210,8 @@ func fcxds(cxdsPath string) (err error) {
 		version++ // don't skip next fix
 	}
 
-	sdb.Close() // clsoe, ignoring error
-	ddb.Close() // clsoe, ignoring error
+	sdb.Close() // close, ignoring error
+	ddb.Close() // close, ignoring error
 
 	return os.Rename(ddbPath, cxdsPath) // replace with fixed
 }
@@ -302,8 +302,8 @@ func fidxdb(idxdbPath string) (err error) {
 		version++ // don't skip next fix
 	}
 
-	sdb.Close() // clsoe, ignoring error
-	ddb.Close() // clsoe, ignoring error
+	sdb.Close() // close, ignoring error
+	ddb.Close() // close, ignoring error
 
 	return os.Rename(ddbPath, idxdbPath) // replace with fixed
 }
