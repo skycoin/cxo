@@ -66,6 +66,8 @@ func (r *Refs) loadLeafs(
 		rn.leafs = append(r.leafs, r.loadLeaf(hash, rn))
 	}
 
+	rn.mods |= loadedMod // use flag to mark as loaded
+
 	return
 }
 
@@ -123,6 +125,8 @@ func (r *Refs) loadBranches(
 		rn.branches = append(rn.branches, br)
 	}
 
+	rn.mods |= loadedMod // use flag to mark as loaded
+
 	return
 }
 
@@ -170,7 +174,7 @@ func (r *Refs) loadNode(
 
 // isLoaded returns true if the node is loaded
 func (r *refsNode) isLoaded() bool {
-	return r.length > 0
+	return r.mods&loadedMod != 0
 }
 
 // load given node if it's not loaded yet;
@@ -336,7 +340,7 @@ func (r *refsNode) updateHash(
 	val := rn.encode(depth)
 	// get hash
 	hash := cipher.SumSHA256(val)
-	// compare with previous one
+	// compare with previous one (?)
 	if err = pack.Set(hash, val); err != nil {
 		return
 	}
@@ -901,80 +905,66 @@ func (r *Refs) appendCreatingSliceNode(
 }
 
 //
-// walk from tail updating
+// walk updating
 //
 
-// walkUpdatingNode walks through the Refs updating
-// hash and length fields of every node; the method
-// starts from tail; the method doesn't loads
-// subtrees that doesn't loaded; the method doesn't
-// removes empty nodes; the length argumen will
-// work only if the force argument is set to true
-func (r *Refs) walkUpdatingNode(
+// walkUpdatingFreshNode walks from given node
+// through subtree setting actual length and hash
+// fields and setting loadedMod flag; the method
+// used after creating new Refs
+func (r *Refs) walkUpdatingFreshNode(
 	pack Pack, //    : pack to save
-	rn *refsNode, // : node to start from
-	depth int, //    : depth of the rn
-	length bool, //  : set length field (only if the force is true)
-	force bool, //   : calculate hash even if contentMod flag is not set
+	rn *refsNode, // : the node to walk from
+	depth int, //    : depth of the node
 ) (
 	err error, //    : error if any
 ) {
 
-	// if the force is false, then we should to check
-	// the contentMod flag of the rn, and if the
-	// flag is not set, then we are done
+	if depth == 0 {
 
-	if force == false && rn.mods&contentMod == 0 {
-		return // nothing to update
-	}
+		rn.length = len(rn.leafs) // it's just length of the array
 
-	// if the length argument is true, then we can't
-	// use (*refsNode).isLoaded because the methods
-	// uses the length field
+	} else { // depth > 0
 
-	if depth == 0 { // leafs
+		var length int // use local variable
 
-		if length == true {
-			rn.length = len(rn.leafs)
-		}
+		for _, br := range rn.branches {
 
-		return rn.updateHash(pack, depth)
-	}
-
-	// else if depth > 0 { branches }
-
-	for _, br := range rn.branches {
-		// here we need to walk through the subtree;
-		// but if the force is false, then we skip
-		// nodes that not loaded and contentMod flag
-		// of which is not set
-
-		if force == false {
-
-			// skip nodes that are not loaded and, also skip
-			// nodes that are in actual state
-			if br.isLoaded() == false || br.mods&contentMod == 0 {
-				continue // skip
+			if err = r.walkUpdatingFreshNode(pack, br, depth-1); err != nil {
+				return // some error
 			}
 
-		}
-
-		if length == true {
-
-			err = r.walkUpdatingNode(pack, br, depth-1, length, force)
-
-			if err != nil {
-				return // error
-			}
-
-			//
+			length += br.length
 
 		}
 
-		//
+		rn.length = length // set actual length
+
 	}
+
+	rn.mods |= loadedMod // mark as loaded
+
+	return rn.updateHash(pack, depth) // update hash
+}
+
+//
+// free space on tail
+//
+
+// freeSpaceOnTailNode finds free space
+// on tail of the node
+func (r *Refs) freeSpaceOnTailNode(
+	pack Pack, // : pack to load
+	depth int, // : depth of the node
+) (
+	fsotn int, // : free space on tail of the node
+	err error, // : error if any
+) {
+
+	//
 
 	return
+
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -

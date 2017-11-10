@@ -1073,21 +1073,22 @@ func (r *Refs) appnedCreatingSliceFunc(j int) (iter IterateFunc) {
 
 }
 
-func (r *Refs) walkUpdating(
+// walkUpdatingFresh walks through the refs
+// setting hash and length fields of nodes
+// and mark them as loaded
+func (r *Refs) walkUpdatingFresh(
 	pack Pack, //    : pack to save
-	length bool, //  : set length field
-	force bool, //   : calculate hash even if contentMod flag is not set
 ) (
 	err error, //    : error if any
 ) {
 
-	err = r.walkUpdatingNode(pack, &r.refsNode, r.depth, length, force)
+	err = r.walkUpdatingFreshNode(pack, &r.refsNode, r.depth)
 
 	if err != nil {
 		return
 	}
 
-	return r.updateHashIfNeed(pack, force || r.mods&contentMod != 0)
+	return r.updateHashIfNeed(pack, true)
 }
 
 // Slice returns new Refs that contains values of this Refs from
@@ -1144,12 +1145,65 @@ func (r *Refs) Slice(
 	// the slice contains all necessary elements, but
 	// length and hash fields are empty
 
-	if err = slice.walkUpdating(pack, true, true); err != nil {
+	if err = slice.walkUpdatingFresh(pack); err != nil {
 		slice = nil // GC
 		return      // error
 	}
 
 	return // done
+}
+
+// freeSpaceOnTail finds free space
+// on tail of this Refs; the space can
+// be used to append new elements to
+// the Refs
+func (r *Refs) freeSpaceOnTail(
+	pack Pack, // : pack to load
+) (
+	fsot int, //  : free space on tail
+	err error, // : error if any
+) {
+
+	//
+
+	return
+
+}
+
+// Append another Refs to this one. This Refs
+// will be increased if it can't fit all new
+// elements
+func (r *Refs) Append(
+	pack Pack, //  : pack to load and save
+	refs *Refs, // : the Refs to append to current one
+) (
+	err error, //  : error if any
+) {
+
+	// init
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if err = refs.initialize(pack); err != nil {
+		return
+	}
+
+	var length = refs.length
+
+	if length == 0 {
+		return // short curcit if the refs is blank
+	}
+
+	length += r.length // total new length
+
+	// ok, let's find free space on tail of this Refs (r)
+
+	//
+
+	return
+
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
@@ -1364,95 +1418,6 @@ func (r *Refs) increaseDepth(pack Pack, fit int) (err error) {
 	// TODO (kostyarin): walk from tail setting length 'n' hash fileds
 
 	*r = rn // replace
-	return
-}
-
-// appendIgnoringDeleted append given hash to the Refs ignoring
-// deleted elements (e.g. the Refs must be freshly created, without
-// deleted elements). The method sets length and hash fields only for
-// full branches. E.g. after this call we have to walk from end to
-// set hsah and length firelds for non-full branches and for the
-// Refs itself; the appendIgnoringDeleted returns actual (new) values
-// of leafs and branches every time (even if some error occurs);
-// it returns true if givne hash has been appended successfully;
-// if it returns an error then the error is error of Pack.Add;
-// it returns false if given leafs+branches can't fit one more
-// hash
-func (r *Refs) appendIgnoringDeleted(pack Pack, hash cipher.SHA256, depth int,
-	upper *refsNode, leafs []*refsElement,
-	branches []*refsNode) (newLeafs []*refsElement, newBranches []*refsNode,
-	ok bool) {
-
-	newLeafs, newBranches = leafs, branches // return actual values allways
-
-	if depth == 0 {
-		newLeafs, ok = r.appendToLeafsIgnoringDeleted(pack, hash, upper,
-			leafs)
-		return
-	}
-
-	newBranches, ok = r.appendToBranchesIgnoringDeleted(pack, hash, depth,
-		upper, branches)
-	return
-}
-
-func (r *Refs) appendToLeafsIgnoringDeleted(pack Pack, hash cipher.SHA256,
-	upper *refsNode, leafs []*refsElement) (newLeafs []*refsElement, ok bool) {
-
-	newLeafs = leafs // return actual leafs every time
-
-	if len(leafs) == r.degree {
-		return // leafs, false, nil (can't append anymore)
-	}
-
-	re := &refsElement{
-		Hash:  hash, // Deleted: false,
-		upper: upper,
-	}
-
-	newLeafs = append(leafs, re)
-
-	if r.flags&HashTableIndex != 0 {
-		r.addElementToIndex(re)
-	}
-
-	return
-}
-
-func (r *Refs) appendToBranchesIgnoringDeleted(pack Pack, hash cipher.SHA256,
-	depth int, upper *refsNode, branches []*refsNode) (newBranches []*refsNode,
-	ok bool) {
-
-	newBranches = branches // return actual branches every time
-
-	// first of all, we are trying to append
-	// to last branch, and then checks len-degree
-
-	if len(branches) > 0 {
-		br := branches[len(branches)-1]
-
-		br.branches, br.leafs, ok = r.appendIgnoringDeleted(pack, hash,
-			depth-1, br, br.leafs, br.branches)
-		if ok == true || err != nil {
-			return
-		}
-
-		// not ok and err == nil
-	}
-
-	if len(branches) == r.degree {
-		return // branches, false, nil (can't append anymore)
-	}
-
-	br := &refsNode{
-		upper: upper,
-		root:  r, // TODO (kostyarin): the field is never used
-	}
-
-	newBranches = append(branches, br)
-	br.branches, br.leafs, ok = r.appendIgnoringDeleted(pack, hash,
-		depth-1, br, br.leafs, br.branches)
-
 	return
 }
 
