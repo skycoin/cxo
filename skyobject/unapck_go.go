@@ -24,7 +24,7 @@ func (p *Pack) nilPtrOf(schemaName string) (nilPtr interface{}, err error) {
 	return
 }
 
-// create reflect.Value that represetns pointer of regsitered type
+// create reflect.Value that represents pointer of registered type
 func (p *Pack) newOf(schemaName string) (ptr reflect.Value, err error) {
 
 	p.c.Debugf(VerbosePin, "(*Pack).newOf %q", schemaName)
@@ -41,7 +41,7 @@ func (p *Pack) newOf(schemaName string) (ptr reflect.Value, err error) {
 	return
 }
 
-// given val can't be encoded reference; it guaraneed by
+// given val can't be encoded reference; it guaranteed by
 // Types map: we can't register a reference
 func (p *Pack) unpackToGo(schemaName string,
 	val []byte) (obj interface{}, err error) {

@@ -30,7 +30,7 @@ type Conn struct {
 
 	// not threads safe fields
 
-	// subscriptions of the Conn to resusbcribe OnDial
+	// subscriptions of the Conn to resubscribe OnDial
 	subs map[cipher.PubKey]*sentRoot
 	rr   map[msg.ID]*waitResponse // request-response
 
@@ -49,7 +49,7 @@ type Conn struct {
 	requests map[cipher.SHA256][]chan []byte // wait reply
 
 	// must drain
-	full chan skyobject.FullRoot      // fill Root obejcts
+	full chan skyobject.FullRoot      // fill Root objects
 	drop chan skyobject.DropRootError // root reference with error (reason)
 
 	// filling Roots (hash of Root -> *Filler)
@@ -57,7 +57,7 @@ type Conn struct {
 
 	// synchronisation internals
 
-	// done means that all finialization permormed
+	// done means that all finialization permformed
 	// and handling goroutine exists
 	done chan struct{}
 }
@@ -140,7 +140,7 @@ func (c *Conn) Send(m msg.Msg) error {
 	return c.SendRaw(msg.Encode(m))
 }
 
-// SendRoot obejct to peer. This can be ignored if
+// SendRoot object to peer. This can be ignored if
 // peer is now filling newer Root
 func (c *Conn) SendRoot(r *skyobject.Root) (_ error) {
 	c.s.Debugf(FillPin, "[%s] SendRoot %s", c.Address(), r.Short())
@@ -253,7 +253,7 @@ func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
 	return <-errc
 }
 
-// Unsubscribe stops exchangin given feed with peer.
+// Unsubscribe stops exchanging given feed with peer.
 // It's non-blocking call
 func (c *Conn) Unsubscribe(pk cipher.PubKey) {
 	c.unsubscribeEvent(pk)
@@ -469,12 +469,12 @@ func (c *Conn) handle(hs chan<- error) {
 
 	defer c.terminateFillers()
 
-	defer c.unholdSent() // release sent Root obejcts
+	defer c.unholdSent() // release sent Root objects
 
 	for {
 		select {
 
-		// root obejcts
+		// root objects
 		case r = <-sendRoot:
 			if sent, ok := c.subs[r.Pub]; ok {
 				if sc := sent.current; sc == nil {
@@ -544,13 +544,13 @@ func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
 		ofb(c, r, reason)
 	}
 
-	// the Root is not saved in database but some realted obejcts
+	// the Root is not saved in database but some realted objects
 	// have been saved and we have to decrement them all
 
 	// actually the Root is saved, but it's not saved in index
 
 	if err := c.s.db.CXDS().MultiDec(incrs); err != nil {
-		c.s.Printf("[ERR] [%s] can't drop Root %s related obejcts: %v",
+		c.s.Printf("[ERR] [%s] can't drop Root %s related objects: %v",
 			c.Address(), r.Short(), err)
 	}
 
@@ -578,7 +578,7 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 	// is subscribed to feed of this Root
 	if _, ok := c.subs[fr.Root.Pub]; !ok {
 
-		// drop the Root and remove all related saved obejcts,
+		// drop the Root and remove all related saved objects,
 		// because we are not subscribed to the feed anymore
 
 		c.s.dropavg.AddStartTime(fr.Tp) // stat
@@ -608,7 +608,7 @@ func (c *Conn) rootFilled(fr skyobject.FullRoot) {
 	})
 
 	if err != nil {
-		// can't add this Roto to DB, so, let's drop it
+		// can't add this Root to DB, so, let's drop it
 		c.s.Debugf(FillPin, "[ERR] [%s] can't save Root in IdxDB: %v",
 			c.Address(), err)
 		c.s.dropavg.AddStartTime(fr.Tp) // stat
@@ -651,7 +651,7 @@ func (c *Conn) handlePing(ping *msg.Ping) {
 func (c *Conn) sendLastFull(pk cipher.PubKey) {
 	if r, err := c.s.so.LastRoot(pk); err == nil {
 		c.SendRoot(r)
-		c.s.so.Unhold(pk, r.Seq) // LasRoot holds the Root
+		c.s.so.Unhold(pk, r.Seq) // LastRoot holds the Root
 	}
 }
 
@@ -864,7 +864,7 @@ func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
 		return
 	}
 
-	// add to list of requested obejcts, waiting for incoming objects
+	// add to list of requested objects, waiting for incoming objects
 	// to send it later
 	c.s.wantObject(ro.Key, c)
 }
@@ -881,7 +881,7 @@ func (c *Conn) handleObject(o *msg.Object) {
 		// store in CXDS
 		if _, err := c.s.db.CXDS().Set(key, o.Value); err != nil {
 			c.s.Printf(
-				"[CRIT] [%s] can't set received obejct: %v, terminating...",
+				"[CRIT] [%s] can't set received object: %v, terminating...",
 				c.Address(), err)
 			go c.s.Close() // terminate all
 			return
@@ -895,11 +895,11 @@ func (c *Conn) handleObject(o *msg.Object) {
 		delete(c.requests, key)
 
 		// notify another conections that has been requested
-		// for this obejct
+		// for this object
 		c.s.gotObject(key, o)
 
 	} else {
-		c.s.Debugf(FillPin, "[%s] got obejct the node doesn't want: %s",
+		c.s.Debugf(FillPin, "[%s] got object the node doesn't want: %s",
 			c.Address(), key.Hex()[:7])
 		return
 	}

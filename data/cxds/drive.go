@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	objs    = []byte("o")       // obejcts bucket
+	objs    = []byte("o")       // objects bucket
 	meta    = []byte("m")       // meta information
 	version = []byte("version") // field with version in meta bucket
 )

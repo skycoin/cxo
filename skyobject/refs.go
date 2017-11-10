@@ -10,11 +10,11 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// A Refs represetns array of references.
+// A Refs represents an array of references.
 // The Refs contains RefsElem(s). To delete
 // an element use Delete method of the
 // RefsElem. It's impossible to reborn
-// deleted RefsElem. To cahgne Hash field
+// deleted RefsElem. To change Hash field
 // of the Refs use SetHash method
 type Refs struct {
 	Hash cipher.SHA256 // hash of the Refs
@@ -558,7 +558,7 @@ func (r *Refs) ascend(depth, i int, irf IterateRefsFunc) (pass int, err error) {
 // Descend iterates over Refs descending order. See also
 // docs for IterateRefsFunc. It's safe to delete an element
 // of the Refs inside the Ascend, but it's unsafe to
-// append something to the Refs while the Append ecxecutes
+// append something to the Refs while the Append excecutes
 func (r *Refs) Descend(irf IterateRefsFunc) (err error) {
 
 	if err = r.load(0); err != nil {
@@ -648,7 +648,7 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 	return
 }
 
-// free spece that we can use to append new items;
+// free space that we can use to append new items;
 // for example the tree can contain 1000 elements
 // and contains only 980, and the tree has 10
 // zero elements; and this zero-elements not on tail;
@@ -656,7 +656,7 @@ func (r *Refs) descend(depth, i int, irf IterateRefsFunc) (pass int,
 // to insert more, then we need to rebuild the tree
 // removing zero elements (and possible increasing
 // depth); but if we have enough place on tail then
-// we can aviod unnecessary rebuilding
+// we can avoid unnecessary rebuilding
 //
 // the fsot is free space on tail of the node
 func (r *Refs) freeSpaceOnTail(degree, depth int) (fsot int, err error) {
@@ -699,7 +699,7 @@ func (r *Refs) freeSpaceOnTail(degree, depth int) (fsot int, err error) {
 // try to insert given reference to the node;
 //
 // the el is not blank
-// the tryInsert doesn't cahnge 'length' and 'Hash' fields,
+// the tryInsert doesn't change 'length' and 'Hash' fields,
 // thus we need to walk the tree (from tail or whole tree) and
 // check the length and change hashes if the length has been changed
 func (r *Refs) tryInsert(degree, depth int, el *RefsElem) (ok bool,
@@ -830,7 +830,7 @@ func (r *Refs) save(depth int) {
 // fields to set proper; the method doesn't check hashes of nested
 // nodes or leafs, it checks only lengths; e.g. the method is useful
 // after insert (Append or cahngeDepth); it can't be used after Ascend
-// or Descend (if someone cahnges or removes elements while iterating),
+// or Descend (if someone change or removes elements while iterating),
 // because it walks from tail and stops on first correct (unchanged) node
 func (r *Refs) updateHashLengthFieldsFromTail(depth int) (set bool, err error) {
 
@@ -906,7 +906,7 @@ func (r *Refs) changeDepth(depth int) (err error) {
 	}
 
 	// 1) create branches (keep 'Hash' and 'length' fields blank)
-	// 2) walk throut the tree and set proper 'Hash' and 'length' fields
+	// 2) walk through the tree and set proper 'Hash' and 'length' fields
 
 	_, err = r.ascend(r.depth, 0, func(_ int, ref *RefsElem) (err error) {
 		var ok bool
@@ -955,7 +955,7 @@ func (r *Refs) Schema() (sch Schema) {
 	return r.rn.sch
 }
 
-// Append obejcts to the Refs. Type of the objects must
+// Append objects to the Refs. Type of the objects must
 // be the same as type of the Refs. Nils will be skipped,
 // even if it's nil of some type or nil-interface{}
 func (r *Refs) Append(objs ...interface{}) (err error) {
@@ -999,7 +999,7 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 				return
 			}
 		} else if ns != nil && ns != os {
-			err = fmt.Errorf("can't append obejct of differetn types: %q, %q",
+			err = fmt.Errorf("can't append object of differetn types: %q, %q",
 				ns.String(), os.String())
 			return
 		} else {
@@ -1202,8 +1202,8 @@ func (r *Refs) bubble() (err error) {
 		br.save(i)
 	}
 
-	// the bubble can be triggered by deleteing
-	// and length o the tree can be changed,
+	// the bubble can be triggered by deleting
+	// and length of the tree can be changed,
 	// thus we need to rebuild the tree if it
 	// contains a lot of zero-elements
 
@@ -1224,7 +1224,7 @@ type encodedRefs struct {
 	Depth  uint32          // depth of the Refs (depth-1)
 	Degree uint32          // deger of the Refs
 	Length uint32          // total elements
-	Nested []cipher.SHA256 // hashes of nested objects (leafs or ndoes)
+	Nested []cipher.SHA256 // hashes of nested objects (leafs or nodes)
 }
 
 type encodedRefsNode struct {
@@ -1251,7 +1251,7 @@ func pow(a, b int) (p int) {
 
 // DebugString returns string that represents the Refs as
 // is. E.g. as Merkle-tree. If the tree is not loaded then
-// this mehtod prints only loaded parts. To load all branches
+// this method prints only loaded parts. To load all branches
 // to print pass true
 func (r *Refs) DebugString(forceLoad bool) string {
 	var gt gotree.GTStructure
@@ -1470,7 +1470,7 @@ func (r *RefsElem) SetValue(obj interface{}) (err error) {
 }
 
 // Save updates hash using underlying value.
-// The vaue can be changd from outside, this
+// The value can be changed from outside, this
 // method encodes it and updates hash
 func (r *RefsElem) Save() (err error) {
 	if r.rn == nil || r.value == nil || r.upper == nil {

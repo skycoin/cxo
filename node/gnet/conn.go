@@ -38,16 +38,16 @@ func (c ConnState) String() string {
 }
 
 // A Conn represents connection. The Conn can has and can has
-// not underlying TCP connection. The Conn recereates connection
-// if it fails. This behaviour should be configures. There are
+// not underlying TCP connection. The Conn recreates connection
+// if it fails. This behaviour should be configured. There are
 // DialTimeout, RedialTimeout, MaxRedialTimeout and DialsLimit
-// configuration.Also, you can control dialing and redialing
+// configuration. Also, you can control dialing and redialing
 // using Config.OnDial callback that called when a Conn tries
 // to dial or redial. To detect current state of connection
 // use State method. The state can be ConnStateConnected,
 // ConnStateDialing and ConnStateClosed. But the state can
 // be changed any time after. If the state is ConnStateClosed
-// then it will not be changed anymore. Use Clsoe method to
+// then it will not be changed anymore. Use Close method to
 // terminate connection and wait until it release associated
 // resources (goroutines, TCP connection, buffers)
 type Conn struct {

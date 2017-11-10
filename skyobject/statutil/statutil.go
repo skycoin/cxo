@@ -37,7 +37,7 @@ func (r *RollAvg) AddStartTime(tp time.Time) (avg time.Duration) {
 }
 
 // NewRollAvg creates new RollAvg using
-// given amout of samples. It panics if
+// given amount of samples. It panics if
 // the amount is zero or less
 func NewRollAvg(n int) (ra RollAvg) {
 

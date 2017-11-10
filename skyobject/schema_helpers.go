@@ -30,7 +30,7 @@ func init() {
 	}
 }
 
-// schemaArraySliceSize itterates over encoded elements of array or slise
+// schemaArraySliceSize iterates over encoded elements of array or slise
 // to get size used by them; l is length of array or slice, shift is
 // shift in p slice from which data begins, el is schema of element
 func schemaArraySliceSize(el Schema, l, shift int, p []byte) (n int,
@@ -66,7 +66,7 @@ func getLength(p []byte) (l int, err error) {
 }
 
 // fixedSize returns -1 if given kind represents a
-// varialbe size value (like array, slice or struct);
+// variable size value (like array, slice or struct);
 // in other cases it returns appropriate size
 // (1, 2, 4 or 8)
 func fixedSize(kind reflect.Kind) (n int) {

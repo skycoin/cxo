@@ -19,7 +19,7 @@ const (
 // A Pin of a debug log
 type Pin uint
 
-// A Config represents configurationf for logger
+// A Config represents configuration for logger
 type Config struct {
 	Prefix string    // log prefix
 	Debug  bool      // show debug logs
@@ -27,7 +27,7 @@ type Config struct {
 	Output io.Writer // provide an output
 }
 
-// NewConfig returns Config with defautl values
+// NewConfig returns Config with default values
 func NewConfig() (c Config) {
 	c.Prefix = Prefix
 	c.Debug = Debug

@@ -19,7 +19,7 @@ type Root struct {
 	Seq  uint64 // seq number
 	Time int64  // timestamp (unix nano)
 
-	// sig and hash are anot parts of the Root
+	// sig and hash are not parts of the Root
 
 	Sig cipher.Sig `enc:"-"` // signature (not part of the Root)
 
@@ -38,7 +38,7 @@ func (r *Root) Encode() []byte {
 	return encoder.Serialize(r)
 }
 
-// Short retusn string like "[1a2ef33:2]" ({pub_key:seq})
+// Short return string like "[1a2ef33:2]" ({pub_key:seq})
 func (r *Root) Short() string {
 	return fmt.Sprintf("{%s:%d}",
 		r.Pub.Hex()[:7],
@@ -101,12 +101,12 @@ func (c *Container) AddEncodedRoot(sig cipher.Sig, val []byte) (r *Root,
 	return
 }
 
-// UnholdRoot holdeds given Root obejct
+// UnholdRoot holdeds given Root object
 func (c *Container) UnholdRoot(r *Root) { c.Unhold(r.Pub, r.Seq) }
 
-// LastRoot of given feed. It receive Root obejct from DB, thus the Root
+// LastRoot of given feed. It receive Root object from DB, thus the Root
 // can only be full. E.g. the method is "give me last full Root of this feed".
-// This method returns holded Root obejct and it can't be removed from
+// This method returns holded Root object and it can't be removed from
 // database. You have to unhold it later using Unhold or UnholdRoot method
 func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 
@@ -149,8 +149,8 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 	return
 }
 
-// Root returns Root object by feed and seq numebr. It gets the Root obejct from
-// DB, thus the Root can only be full. This method returns holded Root obejct
+// Root returns Root object by feed and seq numebr. It gets the Root object from
+// DB, thus the Root can only be full. This method returns holded Root object
 // and it can't be removed from database. You have to unhold it later using
 // Unhold or UnholdRoot method
 func (c *Container) Root(pk cipher.PubKey, seq uint64) (r *Root, err error) {

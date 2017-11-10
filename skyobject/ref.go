@@ -30,7 +30,7 @@ func (r *Ref) isInitialized() bool {
 }
 
 type refNode struct {
-	sch   Schema      // scehma of related Ref
+	sch   Schema      // schema of related Ref
 	value interface{} // golang-value of related Ref
 	pack  *Pack       // related Pack
 }
@@ -77,7 +77,7 @@ func (r *Ref) Schema() Schema {
 //
 //     // the usr can be nil if the ref is blank,
 //     // but if the Value call doesn't return an error
-//     // the the valueInterface will be type of the *User
+//     // the valueInterface will be type of the *User
 //     // (will be type of the Schema of the Ref)
 //
 // Type of the obj is pointer, even if you pass non-pointer
@@ -238,7 +238,7 @@ func (r *Ref) Copy() (cp Ref) {
 }
 
 // Save updates hash using underlying value.
-// The vaue can be changd from outside, this
+// The value can be changed from outside, this
 // method encodes it and updates hash
 func (r *Ref) Save() {
 	if r.rn == nil {

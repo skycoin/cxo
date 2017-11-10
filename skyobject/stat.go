@@ -46,7 +46,7 @@ func sharedPercent(shd, objs *ObjectsStat) (sap, svp float64) {
 	return
 }
 
-// A FeedStat represetns detailed
+// A FeedStat represents detailed
 // statistic about a feed
 type FeedStat struct {
 	// Objects is amount of all obejcts used by

@@ -25,7 +25,7 @@ type findRefs struct {
 
 // findRefs of given data.Root including the Root and its registry;
 // findRefs doesn't hold/unhold Root objects, it designed to be used inside
-// trnsaction, where removing can't be performed from outside
+// transaction, where removing can't be performed from outside
 func (c *Container) findRefs(ir *data.Root, fr findRefsFunc) (err error) {
 
 	if ir.Hash == (cipher.SHA256{}) {
@@ -111,7 +111,7 @@ func (f *findRefs) schemaKey(s Schema, key cipher.SHA256,
 	}
 
 	if false == s.HasReferences() {
-		return // this obejct doesn't contain references
+		return // this object doesn't contain references
 	}
 
 	var val []byte
@@ -125,7 +125,7 @@ func (f *findRefs) schemaKey(s Schema, key cipher.SHA256,
 func (f *findRefs) data(s Schema, val []byte, fr findRefsFunc) (err error) {
 
 	if false == s.HasReferences() {
-		return // no references in this obejct
+		return // no references in this object
 	}
 
 	if s.IsReference() {

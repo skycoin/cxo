@@ -15,7 +15,7 @@ import (
 func (c *Container) decrementAll(ir *data.Root) (err error) {
 	// ----
 	// (0) get encoded Root by hash from CXDS
-	// (1) decode the root turning it *skyobejct.Root
+	// (1) decode the root turning it *skyobject.Root
 	// (2) get registry (and decrement it)
 	// (3) range over Refs decrementing them
 	// (4) if a Ref of the Refs deleted decode it and
@@ -73,7 +73,7 @@ func (c *Container) decrement(r *Root) (err error) {
 		return // rc > 0: not removed, doesn't need to decrement all related
 	}
 
-	// ok, the Root has been removed, let's decrement related obejcts
+	// ok, the Root has been removed, let's decrement related objects
 
 	// registry
 
@@ -133,7 +133,7 @@ func (d *decRecur) schemaKey(s Schema, key cipher.SHA256) (err error) {
 	}
 
 	if false == s.HasReferences() {
-		return // this obejct doesn't contain references
+		return // this object doesn't contain references
 	}
 
 	var val []byte
