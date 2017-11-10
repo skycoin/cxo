@@ -22,7 +22,7 @@ See [CXO wiki](https://github.com/skycoin/cxo/wiki) to get this information
 ### Installation and Version
 
 Use [dep](https://github.com/golang/dep) to use particular version of the
-CXO. The maser branch of the repository points to latest stable release.
+CXO. The master branch of the repository points to latest stable release.
 Actually, it points to alpha-release for now.
 
 To get the release use
