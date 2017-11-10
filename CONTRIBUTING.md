@@ -7,7 +7,7 @@ CONTRIBUTING
   `IsExist()`, etc
 - tests, examples and benchmarks should follow Golang naming convention
 
-More then that you should check you code with:
+More than that you should check your code with:
 
 - `go vet` (`go vet ./...`)
 - [`gocyclo`](https://github.com/fzipp/gocyclo) (`gocyclo -over 15 .`)
