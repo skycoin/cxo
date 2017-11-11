@@ -14,8 +14,7 @@ import (
 // A Ref represents reference to object.
 // It is like a pointer
 type Ref struct {
-	// Hash of CX object
-	Hash cipher.SHA256
+	Hash cipher.SHA256 // Hash of CX object
 }
 
 // IsBlank returns true if the Ref is blank
@@ -49,14 +48,18 @@ func (r *Ref) Value(pack Pack, obj interface{}) (err error) {
 	return encoder.DeserializeRaw(val, obj)
 }
 
-// SetValue replacing the Ref with new. Use nil to clear
+// SetValue replacing the Ref with new. Use nil-interface{} to clear
 func (r *Ref) SetValue(pack Pack, obj interface{}) (err error) {
+
 	if true == isNil(obj) {
 		r.Clear()
 		return
 	}
+
 	r.Hash = pack.Add(encoder.Serialize(obj))
+
 	return
+
 }
 
 // Clear the Ref making it blank
@@ -66,9 +69,12 @@ func (r *Ref) Clear() {
 
 // isNil interface or nil pointer of a type
 func isNil(obj interface{}) bool {
+
 	if obj == nil {
 		return true
 	}
+
 	val := reflect.ValueOf(obj)
+
 	return val.Kind() == reflect.Ptr && val.IsNil()
 }

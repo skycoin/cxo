@@ -1044,7 +1044,7 @@ func depthToFit(
 // appnedCreatingSliceFunc returns IterateFunc that creates slice
 // (the r) from elements of origin. Short words:
 //
-//     refs.AscendFrom(i, slice.appnedCreatingSliceFunc(j))
+//     refs.AscendFrom(pack, i, slice.appnedCreatingSliceFunc(j))
 //
 // where i and j are slice indices [i:j]
 func (r *Refs) appnedCreatingSliceFunc(j int) (iter IterateFunc) {
@@ -1073,22 +1073,48 @@ func (r *Refs) appnedCreatingSliceFunc(j int) (iter IterateFunc) {
 
 }
 
-// walkUpdatingFresh walks through the refs
+// walkUpdatingSlice walks through the refs
 // setting hash and length fields of nodes
 // and mark them as loaded
-func (r *Refs) walkUpdatingFresh(
+func (r *Refs) walkUpdatingSlice(
 	pack Pack, //    : pack to save
 ) (
 	err error, //    : error if any
 ) {
 
-	err = r.walkUpdatingFreshNode(pack, &r.refsNode, r.depth)
+	err = r.walkUpdatingSliceNode(pack, &r.refsNode, r.depth)
 
 	if err != nil {
 		return
 	}
 
 	return r.updateHashIfNeed(pack, true)
+}
+
+// create new Refs using given degree, flags and amount of elements the
+// new Refs can fit. The fit argument used to set depth
+func newRefs(
+	degree int, //  : degree of the new Refs
+	flags Flags, // : flags of the new Refs
+	fit int, //     : fit elements
+) (
+	nr *Refs, //    : the new Refs
+) {
+
+	nr = new(Refs)
+
+	nr.degree = degree
+	nr.flags = flags
+
+	if fit > degree {
+		nr.depth = depthToFit(degree, 0, fit) // depth > 0
+	}
+
+	if flags&HashTableIndex != 0 {
+		nr.refsIndex = make(refsIndex)
+	}
+
+	return
 }
 
 // Slice returns new Refs that contains values of this Refs from
@@ -1116,23 +1142,11 @@ func (r *Refs) Slice(
 		return
 	}
 
-	slice = new(Refs)
-
-	slice.degree = r.degree
-	slice.flags = r.flags
-
-	if r.flags&HashTableIndex != 0 {
-		slice.index = make(refsIndex)
-	}
-
-	var ln = j - i // length of the new slice
+	var ln = j - i                         // length of the new slice
+	slice = newRefs(r.degree, r.flags, ln) // create
 
 	if ln == 0 {
 		return // done (new blank Refs has been created)
-	}
-
-	if ln > slice.degree {
-		r.depth = depthToFit(slice.degree, 0, ln) // depth > 0
 	}
 
 	err = r.AscendFrom(pack, i, slice.appnedCreatingSliceFunc(j))
@@ -1145,7 +1159,7 @@ func (r *Refs) Slice(
 	// the slice contains all necessary elements, but
 	// length and hash fields are empty
 
-	if err = slice.walkUpdatingFresh(pack); err != nil {
+	if err = slice.walkUpdatingSlice(pack); err != nil {
 		slice = nil // GC
 		return      // error
 	}
@@ -1164,10 +1178,54 @@ func (r *Refs) freeSpaceOnTail(
 	err error, // : error if any
 ) {
 
-	//
+	// TODO (kostyrain): blank refs and nil &r.refsNode
+
+	return r.freeSpaceOnTailNode(pack, &r.refsNode, r.depth)
+
+}
+
+// appnedFunc returns IterateFunc that creates slice
+// (the r) from elements of origin. Short words:
+//
+//     srcRefs.Ascend(pack, dstRefs.appnedFunc())
+//
+func (r *Refs) appnedFunc() (iter IterateFunc) {
+
+	// in the IterateFunc we are tracking current node and
+	// depth of the current node to avoid unnecessary walking
+	// from root from every element
+
+	var cn = &r.refsNode // current node
+	var depth = r.depth  // depth of the cn
+
+	iter = func(_ int, hash cipher.SHA256) (err error) {
+
+		// the call will panic if the r (the destination) is invalid
+		cn, depth = r.appendNode(cn, depth, hash)
+
+		return // continue
+	}
 
 	return
 
+}
+
+// walkUpdating walks through the refs
+// setting hash and length fields of nodes
+// to actual values
+func (r *Refs) walkUpdating(
+	pack Pack, //    : pack to save
+) (
+	err error, //    : error if any
+) {
+
+	err = r.walkUpdatingNode(pack, &r.refsNode, r.depth)
+
+	if err != nil {
+		return
+	}
+
+	return r.updateHashIfNeed(pack, true)
 }
 
 // Append another Refs to this one. This Refs
@@ -1190,19 +1248,69 @@ func (r *Refs) Append(
 		return
 	}
 
-	var length = refs.length
-
-	if length == 0 {
+	if refs.length == 0 {
 		return // short curcit if the refs is blank
 	}
 
-	length += r.length // total new length
-
 	// ok, let's find free space on tail of this Refs (r)
 
-	//
+	var fsot int
+	if fsot, err = r.freeSpaceOnTail(pack); err != nil {
+		return // loading error
+	}
 
-	return
+	// So, can this Refs fit new elements without rebuilding?
+
+	if fsot < refs.length {
+
+		// we have to rebuild this Refs increasing its depth to fit new elements
+
+		// 1) create new Refs
+		// 2) copy existing Refs to new one
+		// 3) copy given Refs to new one
+
+		// so, here we are using copy+copy to avoid unnecessary
+		// hash calculating
+
+		// (1) create
+		var nr = newRefs(r.degree, r.flags, refs.length+r.length)
+
+		// (2) copy
+		err = r.Ascend(pack, nr.appnedCreatingSliceFunc(r.length))
+
+		if err != nil {
+			return // error
+		}
+
+		// (3) copy
+		err = refs.Ascend(pack, nr.appnedCreatingSliceFunc(refs.length))
+
+		if err != nil {
+			return // error
+		}
+
+		// set length and hash fields and laodedMod flag
+		if err = nr.walkUpdatingSlice(pack); err != nil {
+			return // error
+		}
+
+		r = *nr // replace this Refs with new extended
+
+		return // done
+
+	}
+
+	// ok, here we have enough place to fit all new elements
+
+	if err = refs.Ascend(pack, r.appnedFunc()); err != nil {
+		return // error
+	}
+
+	if err = r.walkUpdating(pack); err != nil {
+		return // error
+	}
+
+	return // done
 
 }
 
@@ -1238,187 +1346,6 @@ func (r *Refs) AppendValues(pack Pack, objs ...interface{}) (err error) {
 	}
 
 	return r.AppendHashes(pack, hashes)
-}
-
-func initializeRefs(pack Pack, rs ...*Refs) (err error) {
-	for _, r := range rs {
-		if err = r.initialize(pack); err != nil {
-			return
-		}
-	}
-	return
-}
-
-// AppendRefs appends another Refs to this one
-func (r *Refs) AppendRefs(pack Pack, refs *Refs) (err error) {
-
-	if err = initializeRefs(pack, r, refs); err != nil {
-		return
-	}
-
-	// TODO (kostyarin): implement
-
-	return
-}
-
-// freeSpaceOnTail returns free space on tail of the Refs
-// we can fill with new elements; if we want to append
-// something to the Refs we can use the space without
-// unnecessary rebuiling (wihtout increasing depth)
-func (r *Refs) freeSpaceOnTail(pack Pack, depth int, upper *refsNode,
-	leafs []*refsElement, branches []*refsNode) (fst int, err error) {
-
-	// the Refs mut be initialized here
-
-	if depth == 0 {
-		// look the leafs
-		fst = r.freeSpaceOnTailInLeafs(leafs)
-		return
-	}
-
-	// else -> look the branches
-	return r.freeSpaceOnTailInBranches(pack, depth, upper, branches)
-}
-
-func (r *Refs) freeSpaceOnTailInLeafs(leafs []*refsElement) (fst int) {
-	// so, every leaf can contain one element, and
-	// max length of leafs is r.degree, but we
-	// should check deleted elements; e.g. we can't
-	// just degree - len(leafs)
-
-	fst = r.degree - len(leafs)
-
-	// iterate the leafs from end to find
-	// not deleted element
-
-	for k := len(leafs) - 1; k >= 0; k-- {
-		if leafs[k].Deleted == true {
-			fst++ // it's free
-			continue
-		}
-		break // no more free space in the leafs
-	}
-
-	return
-}
-
-func (r *Refs) freeSpaceOnTailInBranches(pack Pack, depth int, upper *refsNode,
-	branches []*refsNode) (fst int, err error) {
-
-	var bfst int // free space of a branch
-	var tem int  // free elements of totally empty branch
-
-	// every branch can keep (degree**depth+1) elements,
-	// but since the depth is (real depth - 1), and depth
-	// of a branch is depth - 1 (because the depth argument is
-	// depth of branch that keeps this this branches argument,
-	// and 'depth - 1' is depth of branches or leafs of elements
-	// of the branches argument), and the depth argument is
-	// greater then 0; thus the tem will be degree**depth
-
-	// and the tem is max elements of a branch,
-	// but if the branch has this number of free
-	// elements, then it is empty
-
-	tem = pow(r.degree, depth)
-
-	// check out fullness of the branches
-
-	// if length of the branches argument is not r.degree, then
-	// if contains free 'r.degree - len(branches)' branches
-	// length of which is 'r.degree**depth' (the tem)
-
-	if fst = r.degree - len(r.branches); fst > 0 {
-		fst *= tem // real value
-	}
-
-	// add all totally empty branches from end
-
-	for k := len(branches) - 1; k >= 0; k-- {
-
-		br := branches[k]
-
-		if err = r.loadRefsNodeIfNeed(pack, br, depth-1, upper); err != nil {
-			return
-		}
-
-		// totally empty branch contains degree**depth free elements;
-
-		// so, we are string from the end, and if free space
-		// of a branch is the tem, then we look next (previous)
-		// branch
-
-		if br.length == 0 {
-			fst += tem // yet another empty branch
-			continue
-		}
-
-		bfst, err = r.freeSpaceOnTail(pack, depth-1, br, br.leafs, br.branches)
-		if err != nil {
-			return // loading error
-		}
-
-		fst += bfst // add free places
-
-		if bfst == tem {
-			// the branch turns totally empty
-			continue // look next (previous)
-		}
-
-		break // enough
-	}
-
-	return
-}
-
-// increaseDepth to fit 'fit' elements; the method replaces
-// this Refs with another that contains the same elements,
-// but has enough dpeth to fit the 'fit' elements;
-// hases and lengths of every node of the Refs including
-// the Refs structure are empty and should be filled after;
-// the Refs must to be initilized
-func (r *Refs) increaseDepth(pack Pack, fit int) (err error) {
-
-	depth := depthToFit(r.degree, r.depth, fit)
-
-	// now the depth is depth we need
-
-	var nr Refs // new Refs
-
-	nr.degree = r.degree
-	nr.depth = depth
-	nr.flags = r.flags
-
-	// copy iterators, because we can do that inside and IterateFunc
-	nr.iterators = r.iterators
-
-	if nr.flags&HashTableIndex != 0 {
-		nr.index = make(map[cipher.SHA256][]*refsElement)
-	}
-
-	// build new refs without hashes and length;
-	// the hashes and lengths will be filled later
-
-	// TOTH (kostyarin): may be there is a faster way?
-
-	err = r.Ascend(pack, func(_ int, hash cipher.SHA256) (err error) {
-		var ok bool
-		nr.leafs, nr.branches, ok = nr.appendIgnoringDeleted(pack, hash,
-			nr.depth, nil, nr.leafs, nr.branches)
-		if !ok {
-			panic("can't append to fresh Refs (increasing depth)")
-		}
-		return // continue
-	})
-
-	if err != nil {
-		return // keep the Refs untouched
-	}
-
-	// TODO (kostyarin): walk from tail setting length 'n' hash fileds
-
-	*r = rn // replace
-	return
 }
 
 // AppendHashes appends given hashes to the Refs. You must be sure that

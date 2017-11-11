@@ -78,7 +78,14 @@ type Pack interface {
 	UnsetFlags(Flags) // unset Flags
 }
 
-func get(pack Pack, hash cipher.SHA256, obj interface{}) (err error) {
+// get by hash from the Pack and deocde to given pointer (obj)
+func get(
+	pack Pack, //          : pack to get from
+	hash cipher.SHA256, // : hash of the object
+	obj interface{}, //    : pointer to object
+) (
+	err error, //          : getting or decoding error
+) {
 
 	var val []byte
 

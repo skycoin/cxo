@@ -821,7 +821,7 @@ func (r *Refs) appendCreatingSliceNodeGoUp(
 	// the step (1)
 
 	if rn.upper == nil {
-		// since, we have to add a new has to the slice (to the r),
+		// since, we have to add a new hash to the slice (to the r),
 		// then the full rn (and the rn is full here) must have
 		// upper node to add another one go or upper; e.g. if
 		// the rn.upper is nil, then this case is invalid and
@@ -837,7 +837,7 @@ func (r *Refs) appendCreatingSliceNodeGoUp(
 		return r.appendCreatingSliceNodeGoUp(cn, cdepth, hash) // go up
 	}
 
-	// otherwise we create new branhc and use it;
+	// otherwise we create new branch and use it;
 	// fields hash and length are not set and mods
 	// like contnetMod are not set too
 
@@ -908,11 +908,11 @@ func (r *Refs) appendCreatingSliceNode(
 // walk updating
 //
 
-// walkUpdatingFreshNode walks from given node
+// walkUpdatingSliceNode walks from given node
 // through subtree setting actual length and hash
 // fields and setting loadedMod flag; the method
 // used after creating new Refs
-func (r *Refs) walkUpdatingFreshNode(
+func (r *Refs) walkUpdatingSliceNode(
 	pack Pack, //    : pack to save
 	rn *refsNode, // : the node to walk from
 	depth int, //    : depth of the node
@@ -930,7 +930,7 @@ func (r *Refs) walkUpdatingFreshNode(
 
 		for _, br := range rn.branches {
 
-			if err = r.walkUpdatingFreshNode(pack, br, depth-1); err != nil {
+			if err = r.walkUpdatingSliceNode(pack, br, depth-1); err != nil {
 				return // some error
 			}
 
@@ -954,17 +954,156 @@ func (r *Refs) walkUpdatingFreshNode(
 // freeSpaceOnTailNode finds free space
 // on tail of the node
 func (r *Refs) freeSpaceOnTailNode(
-	pack Pack, // : pack to load
-	depth int, // : depth of the node
+	pack Pack, //    : pack to load
+	rn *refsNode, // : the node
+	depth int, //    : depth of the node
 ) (
-	fsotn int, // : free space on tail of the node
-	err error, // : error if any
+	fsotn int, //    : free space on tail of the node
+	err error, //    : error if any
 ) {
 
-	//
+	if depth == 0 {
 
-	return
+		fsotn = r.degree - len(r.leafs)
+		return
+
+	}
+
+	// else if depth > 0
+
+	// the fsotn = (degree ^ (depth+1)) * (degree - len(rn.branches)) +
+	//         r.freeSpaceOnTailNode() of the last node in the branhces
+
+	fsotn = pow(r.degree, depth+1) * (r.degree - len(rn.branches))
+
+	if len(rn.branches) == 0 {
+		return // done (no branches to check out the last)
+	}
+
+	var last = rn.branches[len(rn.branches)-1] // the last branch
+
+	// load the last if need
+	if err = r.loadNodeIfNeed(pack, last, depth-1); err != nil {
+		return
+	}
+
+	var fsotnl int // fsotn of the last
+
+	if fsotnl, err = r.freeSpaceOnTailNode(pack, last, depth-1); err != nil {
+		return
+	}
+
+	fsotn += fsotnl
+
+	return // done
 
 }
 
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
+//
+// append to non-fresh Refs
+//
+
+// appendNodeGoUp goes up and creates lack
+// nodes; see also appendNode and appendFunc
+func (r *Refs) appendNodeGoUp(
+	rn *refsNode, //       : current node (full)
+	depth int, //          : depth of the current node
+	hash cipher.SHA256, // : hash to append
+) (
+	cn *refsNode, //       : current node (can be another then the rn)
+	cdepth int, //         : current depth (depth of the cn)
+) {
+
+	// the rn is full, since we have to go up;
+	// thus we have to check upper node fullness
+	// and (1) add new branch or go up and repeat
+	// the step (1)
+
+	if rn.upper == nil {
+		// since, we have to add a new hash to the slice (to the r),
+		// then the full rn (and the rn is full here) must have
+		// upper node to add another one go or upper; e.g. if
+		// the rn.upper is nil, then this case is invalid and
+		// this case should produce panicing
+		panic("invalid case")
+	}
+
+	cn, cdepth = rn.upper, depth+1 // go up
+
+	// since we are using r,upper, then the depth is > 0
+	// and the rn.upper contains branches
+	if len(cn.branches) == r.degree { // if it's full
+		return r.appendNodeGoUp(cn, cdepth, hash) // go up
+	}
+
+	// otherwise we create new branch and use it;
+	// fields hash and length are not set and mods
+	// like contnetMod are not set too
+
+	// e.g. one step down is here
+
+	var br = &refsNode{
+		upper: rn,
+		mods:  loadedMod | contentMod | lengthMod, // flags
+	}
+
+	cn.branches = append(cn.branches, br)
+
+	return br, depth // e.g. br, and cdepth - 1
+}
+
+// appendNode appends given hash to the Refs; the method
+// doesn't set 'length' and 'hash' fields for refsNode(s);
+// the method returns new current node with it depth to
+// make caler able to use them; the method sets flags
+// loadedMod, contentMod and lengthMod to all touched
+// nodes; the lengthMod flag is set only if necesssary
+func (r *Refs) appendNode(
+	rn *refsNode, //       : current node
+	depth int, //          : depth of the current node
+	hash cipher.SHA256, // : hash to append
+) (
+	cn *refsNode, //       : current node (can be another then the rn)
+	cdepth int, //         : current depth (depth of the cn)
+) {
+
+	if depth == 0 { // leafs
+
+		if len(rn.leafs) == r.degree { // full
+			return r.appendNodeGoUp(rn, depth, hash) // go up
+		}
+
+		var el = &refsElement{
+			Hash:  hash,
+			upper: rn,
+		}
+
+		if r.flags&HashTableIndex != 0 {
+			r.addElementToIndex(el)
+		}
+
+		rn.leafs = append(rn.leafs, el)
+		rn.length++           // add
+		rn.mods |= contentMod // but length is actual
+
+		return rn, depth // the same
+	}
+
+	// else if depth > 0 { branches }
+
+	// if the depth is not 1, then we should to add new branch and use it;
+	// fields length, hash and mods are still lempty;
+
+	// one more time, if we are here, then the rn has enouth place to
+	// fit new brnahc and the branch should be created and used;
+	// e.g. the step is 'go down', the step is opposite to the 'go up'
+
+	var br = &refsNode{
+		upper: rn,
+		mods:  loadedMod | contentMod | lengthMod,
+	}
+
+	rn.branches = append(rn.branches, br)
+
+	return r.appendNode(br, depth-1, hash)
+}
