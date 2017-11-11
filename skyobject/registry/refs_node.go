@@ -905,7 +905,7 @@ func (r *Refs) appendCreatingSliceNode(
 }
 
 //
-// walk updating
+// walk updating slice
 //
 
 // walkUpdatingSliceNode walks from given node
@@ -1106,4 +1106,47 @@ func (r *Refs) appendNode(
 	rn.branches = append(rn.branches, br)
 
 	return r.appendNode(br, depth-1, hash)
+}
+
+//
+// walk updating
+//
+
+// walkUpdatingNode walks from given node
+// through subtree setting actual length and hash
+// fields; the method used after appending to an
+// existing Refs
+func (r *Refs) walkUpdatingNode(
+	pack Pack, //    : pack to save
+	rn *refsNode, // : the node to walk from
+	depth int, //    : depth of the node
+) (
+	err error, //    : error if any
+) {
+
+	if rn.mods&(lengthMod|loadedMod|contentMod) == 0 {
+		return // the node in actual state
+	}
+
+	// length of a node that contains leafs is already in actual state
+
+	if depth > 0 {
+
+		var length int // use local variable
+
+		for _, br := range rn.branches {
+
+			if err = r.walkUpdatingNode(pack, br, depth-1); err != nil {
+				return // some error
+			}
+
+			length += br.length
+
+		}
+
+		rn.length = length // set actual length
+
+	}
+
+	return rn.updateHash(pack, depth) // update hash
 }

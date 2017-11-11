@@ -1314,99 +1314,137 @@ func (r *Refs) Append(
 
 }
 
+// AppendValues to this Refs. The values msut
+// be schema of the Refs. There are no internal
+// checks for the schema. Use nil-interface{}
+// for blank hash
+func (r *Refs) AppendValues(
+	pack Pack, //             : pack to load and save
+	values ...interface{}, // : values to append
+) (
+	err error, //             : error if any
+) {
+
+	if len(values) == 0 {
+		return // short curcit (nothing to append)
+	}
+
+	var (
+		hashes = make([]cipher.SHA256, 0, len(values)) //
+		hash   cipher.SHA256                           // current
+	)
+
+	for _, val := range values {
+
+		if hash, err = pack.Add(encoder.Serialize(val)); err != nil {
+			return
+		}
+
+		hashes = append(hashes, hash)
+
+	}
+
+	return r.AppendHashes(pack, hashes...)
+}
+
+// AppendHashes to this Refs. The hashes msut
+// point to objects of schema of the Refs.
+// There are no internal checks for the Schema
+func (r *Refs) AppendHashes(
+	pack Pack, //               : pack to load and save
+	hashes ...cipher.SHA256, // : hashes to append
+) (
+	err error, //               : error if any
+) {
+
+	if len(hashes) == 0 {
+		return // short curcit (nothing to append)
+	}
+
+	// ok, let's find free space on tail of this Refs (r)
+
+	var fsot int
+	if fsot, err = r.freeSpaceOnTail(pack); err != nil {
+		return // loading error
+	}
+
+	// So, can this Refs fit new elements without rebuilding?
+
+	if fsot < len(hashes) {
+
+		// we have to rebuild this Refs increasing its depth to fit new elements
+
+		// 1) create new Refs
+		// 2) copy existing Refs to new one
+		// 3) copy given hashes to the new Refs
+
+		// so, here we are using copy+copy to avoid unnecessary
+		// hash calculating
+
+		// (1) create
+		var nr = newRefs(r.degree, r.flags, refs.length+r.length)
+
+		// (2) copy
+		err = r.Ascend(pack, nr.appnedCreatingSliceFunc(r.length))
+
+		if err != nil {
+			return // error
+		}
+
+		// (3) copy
+
+		var acsf = nr.appnedCreatingSliceFunc(len(hashes)) // the func
+
+		for i, hash := range hashes {
+
+			if err = acsf(i, hash); err != nil {
+				return
+			}
+
+		}
+
+		// set length and hash fields and laodedMod flag
+		if err = nr.walkUpdatingSlice(pack); err != nil {
+			return // error
+		}
+
+		r = *nr // replace this Refs with new extended
+
+		return // done
+
+	}
+
+	// ok, here we have enough place to fit all new elements
+
+	var af = nr.appnedFunc(len(hashes)) // the func
+
+	for i, hash := range hashes {
+
+		if err = af(i, hash); err != nil {
+			return
+		}
+
+	}
+
+	if err = r.walkUpdating(pack); err != nil {
+		return // error
+	}
+
+	return // done
+
+}
+
+// Clear the Refs making it blank
+func (r *Refs) Clear() {
+	*r = Refs{}
+	return
+}
+
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
 //
 //  THE CODE BELOW WAITS FOR THE REFACTORING
 //
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-
-// AppendValues appends given objects to the Refs. You
-// must be sure that type of this obejcts is type of this
-// Refs. All nil-interfaces will be treated as blank
-// references (cipher.SHA256{})
-func (r *Refs) AppendValues(pack Pack, objs ...interface{}) (err error) {
-
-	if len(objs) == 0 {
-		return // nothing ot append
-	}
-
-	hashes := make([]cipher.SHA256, 0, len(objs))
-
-	var hash cipher.SHA256
-
-	for _, obj := range objs {
-		if obj == nil {
-			hashes == append(hashes, cipher.SHA256{}) // nil = blank
-			continue
-		}
-		if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
-			return
-		}
-		hashes = append(hashes, hash)
-	}
-
-	return r.AppendHashes(pack, hashes)
-}
-
-// AppendHashes appends given hashes to the Refs. You must be sure that
-// type of the obejcts (the hashes refers to) is type of the Refs
-func (r *Refs) AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error) {
-
-	if len(hashes) == 0 {
-		return // nothing to append
-	}
-
-	if err = r.initialize(pack); err != nil {
-		return
-	}
-
-	var fst int // free space on tail
-
-	fst, err = r.freeSpaceOnTail(pack, r.depth, nil, r.leafs, r.branches)
-	if err != nil {
-		return // loading error
-	}
-
-	if len(hashes) > fst {
-		// so, we have to rebuild the Refs tree increasing its depth
-		// to fit all elements including new
-
-		if err = r.increaseDepth(pack, len(hashes)+r.length); err != nil {
-			return // loading error
-		}
-
-	}
-
-	// so, now we are sure that the Refs can fit new elements
-
-	// TODO (kostyarin): append
-
-	return
-}
-
-// Clear the Refs making them blank
-func (r *Refs) Clear() (err error) {
-
-	// TODO (kostyarin): iterating
-
-	r.Hash = cipher.SHA256{}
-
-	r.depth = 0
-	r.degree = 0
-
-	r.index = nil
-
-	r.length = 0
-
-	r.leafs = nil
-	r.branches = nil
-
-	r.flags = 0
-
-	r.modified = false
-
-	return nil
-}
 
 // Rebuild the Refs if need. It's impossible to rebuild
 // while the Refs is iterating. In most cases you should
