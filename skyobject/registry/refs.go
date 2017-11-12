@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/disiqueira/gotree"
@@ -66,6 +65,17 @@ type Refs struct {
 	// iterate inside another iterator, modify tree insisde an iterator,
 	// etc
 	iterators []bool `enc:"-"`
+}
+
+// String implements fmt.Stringer interface and
+// returns hexadecimal encoded hash of the Refs
+func (r *Refs) String() string {
+	return r.Hash.Hex()
+}
+
+// Short string
+func (r *Refs) Short() string {
+	return r.Hash.Hex()[:7]
 }
 
 func (r *Refs) initialize(pack Pack) (err error) {
@@ -138,7 +148,7 @@ func (r *Refs) Depth(pack Pack) (depth int, err error) {
 }
 
 // Degree returns degree of the Refs tree
-func (r *Refs) Degree() (degree int, err error) {
+func (r *Refs) Degree(pack Pack) (degree int, err error) {
 	if err = r.initialize(pack); err != nil {
 		return
 	}
@@ -591,8 +601,8 @@ func (r *Refs) SetHashByIndex(
 
 // SetValueByIndex saves given value calculating its hash and sets this
 // hash to given index. You must be sure that schema of given element is
-// schema of the Refs. Otherwise, Refs will be broken. Use nil-interface{}
-// to set blank hash
+// schema of the Refs. Otherwise, Refs will be broken. Use nil to set
+// blank hash
 func (r *Refs) SetValueByIndex(
 	pack Pack, //       : pack to load and save
 	i int, //           : index to find
@@ -605,7 +615,7 @@ func (r *Refs) SetValueByIndex(
 
 	var hash cipher.SHA256
 
-	if obj != nil {
+	if false == isNil(obj) {
 		if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
 			return
 		}
@@ -675,7 +685,7 @@ func (r *Refs) deleteByHashUsingHashTable(
 	}
 
 	for _, el := range els {
-		if err = r.deleteElement(el); err != nil {
+		if err = r.deleteElement(pack, el); err != nil {
 			return // errro
 		}
 	}
@@ -818,6 +828,7 @@ func (r *Refs) ascendFrom(
 
 	var rewind bool  // find next element from root of the Refs
 	var i int = from // i is next index to find
+	var pass int     // passed items by current step
 
 	for {
 
@@ -913,6 +924,7 @@ func (r *Refs) descendFrom(
 	var rewind bool          // find next element from root of the Refs
 	var i = from             // i is next index to find
 	var shift = r.length - 1 // subtree ending index (shift from the end)
+	var pass int             // passed items by current step
 
 	for {
 		// - pass is number of elements iterated (not skipped)
@@ -1152,7 +1164,7 @@ func (r *Refs) Slice(
 	err = r.AscendFrom(pack, i, slice.appnedCreatingSliceFunc(j))
 
 	if err != nil {
-		slcie = nil // for GC
+		slice = nil // for GC
 		return      // error
 	}
 
@@ -1294,7 +1306,7 @@ func (r *Refs) Append(
 			return // error
 		}
 
-		r = *nr // replace this Refs with new extended
+		*r = *nr // replace this Refs with new extended
 
 		return // done
 
@@ -1316,8 +1328,7 @@ func (r *Refs) Append(
 
 // AppendValues to this Refs. The values msut
 // be schema of the Refs. There are no internal
-// checks for the schema. Use nil-interface{}
-// for blank hash
+// checks for the schema. Use nil for blank hash
 func (r *Refs) AppendValues(
 	pack Pack, //             : pack to load and save
 	values ...interface{}, // : values to append
@@ -1336,8 +1347,16 @@ func (r *Refs) AppendValues(
 
 	for _, val := range values {
 
-		if hash, err = pack.Add(encoder.Serialize(val)); err != nil {
-			return
+		if true == isNil(val) {
+
+			hash = cipher.SHA256{}
+
+		} else {
+
+			if hash, err = pack.Add(encoder.Serialize(val)); err != nil {
+				return
+			}
+
 		}
 
 		hashes = append(hashes, hash)
@@ -1361,6 +1380,10 @@ func (r *Refs) AppendHashes(
 		return // short curcit (nothing to append)
 	}
 
+	if err = r.initialize(pack); err != nil {
+		return // ititialization failed
+	}
+
 	// ok, let's find free space on tail of this Refs (r)
 
 	var fsot int
@@ -1382,7 +1405,7 @@ func (r *Refs) AppendHashes(
 		// hash calculating
 
 		// (1) create
-		var nr = newRefs(r.degree, r.flags, refs.length+r.length)
+		var nr = newRefs(r.degree, r.flags, len(hashes)+r.length)
 
 		// (2) copy
 		err = r.Ascend(pack, nr.appnedCreatingSliceFunc(r.length))
@@ -1408,7 +1431,7 @@ func (r *Refs) AppendHashes(
 			return // error
 		}
 
-		r = *nr // replace this Refs with new extended
+		*r = *nr // replace this Refs with new extended
 
 		return // done
 
@@ -1416,7 +1439,7 @@ func (r *Refs) AppendHashes(
 
 	// ok, here we have enough place to fit all new elements
 
-	var af = nr.appnedFunc(len(hashes)) // the func
+	var af = r.appnedFunc() // the func
 
 	for i, hash := range hashes {
 
@@ -1437,7 +1460,6 @@ func (r *Refs) AppendHashes(
 // Clear the Refs making it blank
 func (r *Refs) Clear() {
 	*r = Refs{}
-	return
 }
 
 // Rebuild the Refs if need. The Refs can contain
@@ -1474,7 +1496,22 @@ func (r *Refs) Rebuild(
 		}
 	}
 
+	// TODO (kostyarin)
+
 	return
+}
+
+// Tree returns string that represents the Refs tree.
+// The Tree method doesn't initialize the Refs and it
+// doesn't load unloaded subtr
+func (r *Refs) Tree() (tree string) {
+
+	var gt gotree.GTStructure
+
+	gt.Name = "[](refs) " + r.Short() + " " + fmt.Sprintln(r.length)
+
+	return
+
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -

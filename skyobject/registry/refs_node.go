@@ -97,7 +97,13 @@ func (r *Refs) loadBranch(
 		return // don't load deepper (lazy loading)
 	}
 
-	return r.loadNode(pack, rn, depth) // load deepper
+	// load deepper
+	if err = r.loadNode(pack, br, depth); err != nil {
+		br = nil // GC
+		return   // failed
+	}
+
+	return
 }
 
 // 'hash' and 'upper' fields of the rn are already set;
@@ -337,15 +343,15 @@ func (r *refsNode) updateHash(
 ) {
 
 	// encode
-	val := rn.encode(depth)
+	var val = r.encode(depth)
 	// get hash
-	hash := cipher.SumSHA256(val)
+	var hash = cipher.SumSHA256(val)
 	// compare with previous one (?)
 	if err = pack.Set(hash, val); err != nil {
 		return
 	}
 
-	rn.mods &^= contentMod // clear the flag if it has been set
+	r.mods &^= contentMod // clear the flag if it has been set
 	return
 }
 
@@ -472,13 +478,15 @@ func (r *Refs) deleteElementByIndex(
 					return
 				}
 
-				err = rn.updateHashIfNeed(pack, r.flags&LazyUpdating == 0)
+				err = rn.updateHashIfNeed(pack, depth,
+					r.flags&LazyUpdating == 0)
+
 				return // deleted
 			}
 
 		}
 
-		return 0, ErrInvalidRefs // can't find the element
+		return ErrInvalidRefs // can't find the element
 	}
 
 	// else, take a look at branches
@@ -536,8 +544,8 @@ func (r *Refs) deleteElement(
 
 	var up = el.upper
 
-	for i, el := range up.leafs {
-		if el == r {
+	for i, leaf := range up.leafs {
+		if leaf == el {
 			up.deleteElementByIndex(i)
 			up.length--
 
@@ -621,8 +629,8 @@ func (r *Refs) ascendNodeLeafs(
 	return
 }
 
-// ascendBranches iterate element of the ndoe
-func (r *Refs) ascendBranches(
+// ascendNodeBranches iterate element of the ndoe
+func (r *Refs) ascendNodeBranches(
 	pack Pack, //              : pack to load
 	rn *refsNode, //           : the node
 	depth int, //              : depth of the node

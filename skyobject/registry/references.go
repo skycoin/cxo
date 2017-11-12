@@ -1,8 +1,6 @@
 package registry
 
 import (
-	"reflect"
-
 	"github.com/skycoin/skycoin/src/cipher"
 )
 

@@ -49,14 +49,24 @@ func (r *Ref) Value(pack Pack, obj interface{}) (err error) {
 }
 
 // SetValue replacing the Ref with new. Use nil-interface{} to clear
-func (r *Ref) SetValue(pack Pack, obj interface{}) (err error) {
+func (r *Ref) SetValue(
+	pack Pack, //       : pack to save
+	obj interface{}, // : the value
+) (
+	err error, //       : error if any
+) {
 
 	if true == isNil(obj) {
 		r.Clear()
 		return
 	}
 
-	r.Hash = pack.Add(encoder.Serialize(obj))
+	var hash cipher.SHA256
+	if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
+		return
+	}
+
+	r.Hash = hash
 
 	return
 

@@ -74,8 +74,8 @@ type Pack interface {
 	Add(val []byte) (key cipher.SHA256, err error) // set+calculate hash
 
 	Flags() Flags     // flags of the Pack
-	SetFlags(Flags)   // set Flags
-	UnsetFlags(Flags) // unset Flags
+	AddFlags(Flags)   // add given Flags to internal (OR)
+	ClearFlags(Flags) // clear given Flags from internal (AND NOT)
 }
 
 // get by hash from the Pack and deocde to given pointer (obj)

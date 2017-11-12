@@ -4,11 +4,11 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-type refsIndex map[cipher.SHA256][]*refsNode
+type refsIndex map[cipher.SHA256][]*refsElement
 
 // add element to the index
 func (r refsIndex) addElementToIndex(re *refsElement) {
-	r[hash] = append(r[re.Hash], re)
+	r[re.Hash] = append(r[re.Hash], re)
 }
 
 // delete all elements from the index by given hash
@@ -21,10 +21,10 @@ func (r refsIndex) delFromIndex(hash cipher.SHA256) (res []*refsElement) {
 // delete a particular element from the index
 func (r refsIndex) delElementFromIndex(re *refsElement) {
 
-	res = r[re.Hash]
+	var res = r[re.Hash]
 
-	for k, node := range res {
-		if node == rn {
+	for k, el := range res {
+		if el == re {
 
 			copy(res[k:], res[k+1:]) // delete
 			res[len(res)-1] = nil    // from

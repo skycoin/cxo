@@ -22,19 +22,24 @@ type Dynamic struct {
 // shcema
 func (d *Dynamic) IsValid() bool {
 	if d.Schema.IsBlank() {
-		return d.Object == (cipher.SHA256{})
+		return d.Hash == (cipher.SHA256{})
 	}
 	return true
 }
 
 // Short string
 func (d *Dynamic) Short() string {
-	return fmt.Sprintf("{%s:%s}", d.Schema.Short(), d.Object.Hex()[:7])
+	return fmt.Sprintf("{%s:%s}", d.Schema.Short(), d.Hash.Hex()[:7])
 }
 
 // String implements fmt.Stringer interface
 func (d *Dynamic) String() string {
-	return "{" + d.Schema.String() + ", " + d.Object.Hex() + "}"
+	return "{" + d.Schema.String() + ", " + d.Hash.Hex() + "}"
+}
+
+// ISBlank returns true if the Dynamic is blank
+func (d *Dynamic) IsBlank() bool {
+	return *d == Dynamic{}
 }
 
 // Value of the Dynamic. The obj argument
@@ -69,7 +74,12 @@ func (d *Dynamic) SetValue(
 		return
 	}
 
-	d.Hash = pack.Add(encoder.Serialize(obj))
+	var hash cipher.SHA256
+	if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
+		return
+	}
+
+	d.Hash = hash
 
 	return
 }
