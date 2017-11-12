@@ -54,3 +54,13 @@ func (d *dummyPack) Has(key cipher.SHA256) (ok bool) {
 	_, ok = d.vals[key]
 	return
 }
+
+func testPackReg(reg *Registry) (dp *dummyPack) {
+	dp = new(dummyPack)
+	dp.vals = make(map[cipher.SHA256][]byte)
+	dp.reg = reg
+}
+
+func testPack() (dp *dummyPack) {
+	return testPackReg(testRegistry())
+}

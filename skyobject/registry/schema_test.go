@@ -7,148 +7,6 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-type TestInt8 int8
-type TestInt16 int16
-type TestInt32 int32
-type TestInt64 int64
-
-type TestUint8 uint8
-type TestUint16 uint16
-type TestUint32 uint32
-type TestUint64 uint64
-
-type TestInt8Array [3]TestInt8
-type TestInt16Array [3]TestInt16
-type TestInt32Array [3]TestInt32
-type TestInt64Array [3]TestInt64
-
-type TestUint8Array [3]TestUint8
-type TestUint16Array [3]TestUint16
-type TestUint32Array [3]TestUint32
-type TestUint64Array [3]TestUint64
-
-type TestInt8Slice []TestInt8
-type TestInt16Slice []TestInt16
-type TestInt32Slice []TestInt32
-type TestInt64Slice []TestInt64
-
-type TestUint8Slice []TestUint8
-type TestUint16Slice []TestUint16
-type TestUint32Slice []TestUint32
-type TestUint64Slice []TestUint64
-
-type TestString string
-
-type TestNumberStruct struct {
-	Number uint64
-}
-
-type TestNumberStructArray [3]TestNumberStruct
-type TestNumberStructSlice []TestNumberStruct
-
-type TestSmallStruct struct {
-	Ref          Ref  `skyobject:"schema=test.TestNumberStruct"`
-	Refs         Refs `skyobject:"schema=test.TestNumberStruct"`
-	Dynamic      Dynamic
-	DynamicArray [3]Dynamic
-	DynamicSlice []Dynamic
-}
-
-type TestStruct struct {
-	// embedded
-
-	TestInt8
-	TestInt16
-	TestInt32
-	TestInt64
-
-	TestUint8
-	TestUint16
-	TestUint32
-	TestUint64
-
-	TestInt8Array
-	TestInt16Array
-	TestInt32Array
-	TestInt64Array
-
-	TestUint8Array
-	TestUint16Array
-	TestUint32Array
-	TestUint64Array
-
-	TestInt8Slice
-	TestInt16Slice
-	TestInt32Slice
-	TestInt64Slice
-
-	TestUint8Slice
-	TestUint16Slice
-	TestUint32Slice
-	TestUint64Slice
-
-	TestString
-	TestSmallStruct
-
-	TestNumberStructArray
-	TestNumberStructSlice
-
-	Ref  `skyobject:"schema=test.TestNumberStruct"`
-	Refs `skyobject:"schema=test.TestNumberStruct"`
-	Dynamic
-
-	// not embedded fields
-
-	FieldTestInt8  TestInt8
-	FieldTestInt16 TestInt16
-	FieldTestInt32 TestInt32
-	FieldTestInt64 TestInt64
-
-	FieldTestUint8  TestUint8
-	FieldTestUint16 TestUint16
-	FieldTestUint32 TestUint32
-	FieldTestUint64 TestUint64
-
-	FieldTestInt8Array  TestInt8Array
-	FieldTestInt16Array TestInt16Array
-	FieldTestInt32Array TestInt32Array
-	FieldTestInt64Array TestInt64Array
-
-	FieldTestUint8Array  TestUint8Array
-	FieldTestUint16Array TestUint16Array
-	FieldTestUint32Array TestUint32Array
-	FieldTestUint64Array TestUint64Array
-
-	FieldTestInt8Slice  TestInt8Slice
-	FieldTestInt16Slice TestInt16Slice
-	FieldTestInt32Slice TestInt32Slice
-	FieldTestInt64Slice TestInt64Slice
-
-	FieldTestUint8Slice  TestUint8Slice
-	FieldTestUint16Slice TestUint16Slice
-	FieldTestUint32Slice TestUint32Slice
-	FieldTestUint64Slice TestUint64Slice
-
-	FieldTestString      TestString
-	FieldTestSmallStruct TestSmallStruct
-
-	FieldTestNumberStructArray TestNumberStructArray
-	FieldTestNumberStructSlice TestNumberStructSlice
-
-	FieldRef     Ref  `skyobject:"schema=test.TestNumberStruct"`
-	FieldRefs    Refs `skyobject:"schema=test.TestNumberStruct"`
-	FieldDynamic Dynamic
-}
-
-func testSchemaRegistry() (r *Registry) {
-	r = NewRegistry(func(r *Reg) {
-		r.Register("test.TestNumberStruct", TestNumberStruct{})
-		r.Register("test.TestSmallStruct", TestSmallStruct{})
-		r.Register("test.TestStruct", TestStruct{})
-	})
-	return
-}
-
 func testCalculateSchemaRef(s Schema) SchemaRef {
 	return SchemaRef(cipher.SumSHA256(s.Encode()))
 }
@@ -156,25 +14,42 @@ func testCalculateSchemaRef(s Schema) SchemaRef {
 func TestSchema_Reference(t *testing.T) {
 	// Reference() SchemaRef
 
-	r := testSchemaRegistry()
+	var (
+		reg = testRegistry()
 
-	for _, name := range []string{
-		"test.TestNumberStruct",
-		"test.TestSmallStruct",
-		"test.TestStruct",
-	} {
-		t.Log(name)
-		sc, err := r.SchemaByName(name)
-		if err != nil {
-			t.Fatal(err)
+		sc, sg Schema
+		sr     SchemaRef
+
+		err error
+	)
+
+	for _, tt := range testTypes() {
+		t.Log(tt.Name)
+
+		if sc, err = reg.SchemaByName(tt.Name); err != nil {
+			t.Error(err)
+			continue
 		}
-		sr := sc.Reference()
-		if sr == (SchemaRef{}) {
-			t.Error("empty schema reference")
+
+		if sr = sc.Reference(); sr == (SchemaRef{}) {
+			t.Error("blank SchemaRef")
+			continue
 		}
-		if cc := testCalculateSchemaRef(sc); sr != cc {
-			t.Error("wrong reference", sr.Short(), cc.Short())
+
+		if cc := testCalculateSchemaRef(sc); cc != sr {
+			t.Errorf("wrong ScehmaRef: want %s, got %s", cc.Short(), sr.Short())
+			continue
 		}
+
+		if sg, err = reg.SchemaByReference(sr); err != nil {
+			t.Error("can't get Schema by SchemaRef:", err)
+			continue
+		}
+
+		if sg != sc {
+			t.Error("different ponters to the same schema (memory pressure)")
+		}
+
 	}
 
 }
