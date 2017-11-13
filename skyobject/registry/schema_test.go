@@ -24,6 +24,7 @@ func TestSchema_Reference(t *testing.T) {
 	)
 
 	for _, tt := range testTypes() {
+
 		t.Log(tt.Name)
 
 		if sc, err = reg.SchemaByName(tt.Name); err != nil {
@@ -57,44 +58,72 @@ func TestSchema_Reference(t *testing.T) {
 func TestSchema_IsReference(t *testing.T) {
 	// IsReference() bool
 
-	r := testSchemaRegistry()
+	var (
+		reg = testRegistry()
 
-	ts, err := r.SchemaByName("test.TestStruct")
-	if err != nil {
-		t.Fatal(err)
-	}
+		ts  Schema
+		err error
+	)
 
-	if ts.IsReference() {
-		t.Error("wrong IsReference resilt for non-reference struct")
-	}
+	for _, tt := range testTypes() {
 
-	for _, fl := range ts.Fields() {
-		t.Log(fl.Name(), fl.Schema())
-		if fs := fl.Schema(); fs.IsReference() {
-			var el Schema
-			var kindOf string
-			switch fs.ReferenceType() {
-			case ReferenceTypeSingle:
-				el, kindOf = fs.Elem(), "Ref"
-			case ReferenceTypeSlice:
-				el, kindOf = fs.Elem(), "Refs"
-			case ReferenceTypeDynamic:
-				continue
-			default:
-				t.Error("malformed reference:", fs)
-			}
-			if el == nil {
-				t.Error("nil Elem of", kindOf)
-				continue
-			}
-			bn, err := r.SchemaByName(el.Name())
-			if err != nil {
-				t.Errorf("%s (%s) points to unregistered type", kindOf, fs)
-			}
-			if bn != el {
-				t.Error("unnecessary memory overhead")
-			}
+		t.Log(tt.Name)
+
+		if ts, err = reg.SchemaByName(tt.Name); err != nil {
+			t.Error("can't find Shema by name:", err)
+			continue
 		}
+
+		if true == ts.IsReference() {
+			t.Error("IsReference() returns true for non-reference type")
+			// keep going on
+		}
+
+		for _, fl := range ts.Fields() {
+			t.Log(tt.Name, ">", fl.Name())
+
+			if fs := fl.Schema(); true == fs.IsReference() {
+
+				if tt.Name != "test.TestGroup" {
+					t.Error("unexpected reference")
+					continue
+				}
+
+				switch typ := fs.ReferenceType(); typ {
+				case ReferenceTypeNone:
+					t.Error("IsReference() returns true but ReferenceType is " +
+						"ReferenceTypeNone")
+				case ReferenceTypeSingle:
+					if fl.Name() != "Curator" {
+						t.Error("unexpected Ref")
+						continue
+					}
+				case ReferenceTypeSlice:
+					if fl.Name() != "Members" {
+						t.Error("unexpected Refs")
+						continue
+					}
+				case ReferenceTypeDynamic:
+					if fl.Name() != "Developer" {
+						t.Error("unexpected Dynamic reference")
+					}
+				default:
+					t.Error("IsReference() returns true but ReferenceType is "+
+						"undefined %d", typ)
+				}
+
+				if el := fs.Elem(); el.Name() != "test.User" {
+					t.Error("unknown Schema of reference")
+				} else if gs, err := reg.SchemaByName("test.User"); err != nil {
+					t.Error(err)
+				} else if gs != el {
+					t.Error("unnecessary memory overhead")
+				}
+
+			}
+
+		}
+
 	}
 
 }
@@ -102,17 +131,23 @@ func TestSchema_IsReference(t *testing.T) {
 func TestSchema_ReferenceType(t *testing.T) {
 	// ReferenceType() ReferenceType
 
-	r := testSchemaRegistry()
+	var (
+		reg = testRegistry()
 
-	ts, err := r.SchemaByName("test.TestStruct")
-	if err != nil {
+		gr  Schema
+		err error
+	)
+
+	if gr, err = reg.SchemaByName("test.TestGroup"); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, fl := range ts.Fields() {
+	for _, fl := range gr.Fields() {
 		t.Log(fl.Name(), fl.Schema())
-		fs := fl.Schema()
-		if fs.IsReference() {
+
+		var fs = fl.Schema()
+
+		if true == fs.IsReference() {
 			switch fs.ReferenceType() {
 			case ReferenceTypeSingle, ReferenceTypeSlice, ReferenceTypeDynamic:
 			default:
@@ -120,9 +155,11 @@ func TestSchema_ReferenceType(t *testing.T) {
 			}
 			continue
 		}
+
 		if rt := fs.ReferenceType(); rt != ReferenceTypeNone {
 			t.Error("non-reference has ReferenceType", rt)
 		}
+
 	}
 
 }
@@ -130,106 +167,9 @@ func TestSchema_ReferenceType(t *testing.T) {
 func TestSchema_HasReferences(t *testing.T) {
 	// HasReferences() bool
 
-	r := testSchemaRegistry()
+	var reg = testRegistry()
 
-	for _, name := range []string{
-		"test.TestSmallStruct",
-		"test.TestStruct",
-	} {
-		t.Log(name)
-		sc, err := r.SchemaByName(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !sc.HasReferences() {
-			t.Error("schema with references, but HasReferences returns false")
-		}
-	}
-
-	sc, err := r.SchemaByName("test.TestNumberStruct")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sc.HasReferences() {
-		t.Error("schema without references, but HasReferences returns true")
-	}
-
-	ts, err := r.SchemaByName("test.TestStruct")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var hasNotRefs = map[string]struct{}{
-		"TestInt8":                   {},
-		"TestInt16":                  {},
-		"TestInt32":                  {},
-		"TestInt64":                  {},
-		"TestUint8":                  {},
-		"TestUint16":                 {},
-		"TestUint32":                 {},
-		"TestUint64":                 {},
-		"TestInt8Array":              {},
-		"TestInt16Array":             {},
-		"TestInt32Array":             {},
-		"TestInt64Array":             {},
-		"TestUint8Array":             {},
-		"TestUint16Array":            {},
-		"TestUint32Array":            {},
-		"TestUint64Array":            {},
-		"TestInt8Slice":              {},
-		"TestInt16Slice":             {},
-		"TestInt32Slice":             {},
-		"TestInt64Slice":             {},
-		"TestUint8Slice":             {},
-		"TestUint16Slice":            {},
-		"TestUint32Slice":            {},
-		"TestUint64Slice":            {},
-		"TestString":                 {},
-		"TestNumberStructArray":      {},
-		"TestNumberStructSlice":      {},
-		"FieldTestInt8":              {},
-		"FieldTestInt16":             {},
-		"FieldTestInt32":             {},
-		"FieldTestInt64":             {},
-		"FieldTestUint8":             {},
-		"FieldTestUint16":            {},
-		"FieldTestUint32":            {},
-		"FieldTestUint64":            {},
-		"FieldTestInt8Array":         {},
-		"FieldTestInt16Array":        {},
-		"FieldTestInt32Array":        {},
-		"FieldTestInt64Array":        {},
-		"FieldTestUint8Array":        {},
-		"FieldTestUint16Array":       {},
-		"FieldTestUint32Array":       {},
-		"FieldTestUint64Array":       {},
-		"FieldTestInt8Slice":         {},
-		"FieldTestInt16Slice":        {},
-		"FieldTestInt32Slice":        {},
-		"FieldTestInt64Slice":        {},
-		"FieldTestUint8Slice":        {},
-		"FieldTestUint16Slice":       {},
-		"FieldTestUint32Slice":       {},
-		"FieldTestUint64Slice":       {},
-		"FieldTestString":            {},
-		"FieldTestNumberStructArray": {},
-		"FieldTestNumberStructSlice": {},
-	}
-
-	for _, fl := range ts.Fields() {
-		t.Log(fl.Name(), fl.Schema())
-		if _, ok := hasNotRefs[fl.Name()]; ok {
-			if fl.Schema().HasReferences() {
-				t.Error("HasReferences() returns true, " +
-					"but schema has not references")
-			}
-			continue
-		}
-		if !fl.Schema().HasReferences() {
-			t.Error("HasReferences() returns false, " +
-				"but schema has (or is) references")
-		}
-	}
+	// todo inclding deep nested schemas with references
 
 }
 

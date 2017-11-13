@@ -59,6 +59,7 @@ func testPackReg(reg *Registry) (dp *dummyPack) {
 	dp = new(dummyPack)
 	dp.vals = make(map[cipher.SHA256][]byte)
 	dp.reg = reg
+	return
 }
 
 func testPack() (dp *dummyPack) {

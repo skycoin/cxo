@@ -31,7 +31,7 @@ type Schema interface {
 	// Registry by which the Schema created
 	Reference() SchemaRef
 
-	IsReference() bool            // is the schema is reference
+	IsReference() bool            // is the schema reference
 	ReferenceType() ReferenceType // type of the reference if it is a reference
 
 	// HasReferences returns true if this Schema is a reference or contains
