@@ -292,11 +292,11 @@ func TestSchema_Len(t *testing.T) {
 
 			t.Log(tt.Name, ">", fl.Name())
 
-			var rf = rt.FieldByIndex(i).Type // refelct.Type of the field
+			var rf = rt.FieldByIndex([]int{i}).Type // refelct.Type of the field
 
 			if kind := fl.Kind(); kind == reflect.Array {
 
-				if rf.Type.Kind() != reflect.Array {
+				if rf.Kind() != reflect.Array {
 					t.Error("unexpected array")
 					continue
 				}
@@ -344,7 +344,7 @@ func TestSchema_Fields(t *testing.T) {
 
 			t.Log(tt.Name, ">", fl.Name())
 
-			var rf = rt.FieldByIndex(i) // refelct.StructField
+			var rf = rt.FieldByIndex([]int{i}) // refelct.StructField
 
 			// ccompare names
 
@@ -399,7 +399,7 @@ func TestSchema_Elem(t *testing.T) {
 
 			t.Log(tt.Name, ">", fl.Name())
 
-			var rf = rt.FieldByIndex(i) // refelct.StructField
+			var rf = rt.FieldByIndex([]int{i}) // refelct.StructField
 
 			// Ref, Refs, array of slice
 
@@ -536,6 +536,7 @@ func TestSchema_Size(t *testing.T) {
 		reg = testRegistry()
 
 		s   Schema
+		ss  int
 		err error
 	)
 
@@ -550,8 +551,10 @@ func TestSchema_Size(t *testing.T) {
 
 		var data = encoder.Serialize(tt.Val)
 
-		if ss, ds := s.Size(data), len(data); ss != ds {
-			t.Error("wrong struct Size: want %d, got %d", ds, ss)
+		if ss, err = s.Size(data); err != nil {
+			t.Error(err)
+		} else if ss != len(data) {
+			t.Error("wrong struct Size: want %d, got %d", len(data), ss)
 		}
 
 		var rv = reflect.Indirect(reflect.ValueOf(tt.Val))
@@ -562,8 +565,10 @@ func TestSchema_Size(t *testing.T) {
 
 			data = encoder.Serialize(rf.Interface())
 
-			if fss, ds := fl.Schema().Size(data); fss != ds {
-				t.Errorf("wrong Schema Size: want %d, got %d", ds, fss)
+			if ss, err := fl.Schema().Size(data); err != nil {
+				t.Error(err)
+			} else if ss != len(data) {
+				t.Errorf("wrong Schema Size: want %d, got %d", len(data), ss)
 			}
 
 		}
