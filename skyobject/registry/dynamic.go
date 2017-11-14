@@ -37,7 +37,7 @@ func (d *Dynamic) String() string {
 	return "{" + d.Schema.String() + ", " + d.Hash.Hex() + "}"
 }
 
-// ISBlank returns true if the Dynamic is blank
+// IsBlank returns true if the Dynamic is blank
 func (d *Dynamic) IsBlank() bool {
 	return *d == Dynamic{}
 }
@@ -50,6 +50,10 @@ func (d *Dynamic) Value(
 ) (
 	err error, //       : get or decode error
 ) {
+
+	if false == d.IsValid() {
+		return ErrInvalidDynamicReference
+	}
 
 	if true == d.IsBlank() {
 		return ErrReferenceRepresentsNil

@@ -2,6 +2,7 @@ package registry
 
 import (
 	//"testing"
+	"errors"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	//"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -64,4 +65,26 @@ func testPackReg(reg *Registry) (dp *dummyPack) {
 
 func testPack() (dp *dummyPack) {
 	return testPackReg(testRegistry())
+}
+
+// pack that returns error
+
+var errTest = errors.New("test error")
+
+type errorPack struct {
+	*dummyPack
+}
+
+func (e *errorPack) Get(cipher.SHA256) (_ []byte, err error) {
+	err = errTest
+	return
+}
+
+func (e *errorPack) Set(cipher.SHA256, []byte) (_ error) {
+	return errTest
+}
+
+func (e *errorPack) Add([]byte) (_ cipher.SHA256, err error) {
+	err = errTest
+	return
 }
