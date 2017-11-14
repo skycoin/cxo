@@ -271,7 +271,7 @@ func TestSchema_Len(t *testing.T) {
 		err error
 	)
 
-	defer shouldPanic(t) // reflect methods can panic
+	defer shouldNotPanic(t) // reflect methods can panic
 
 	for _, tt := range testTypes() {
 
@@ -327,7 +327,7 @@ func TestSchema_Fields(t *testing.T) {
 		err error
 	)
 
-	defer shouldPanic(t) // reflect methods can panic
+	defer shouldNotPanic(t) // reflect methods can panic
 
 	for _, tt := range testTypes() {
 
@@ -368,28 +368,111 @@ func TestSchema_Fields(t *testing.T) {
 func TestSchema_Elem(t *testing.T) {
 	// Elem() (s Schema)
 
-	// TODO (kostyarin): low priority
+	// The Elem is element of a reference (except
+	// Dynaimc), of an array, or of a slice
+
+	var (
+		reg = testRegistry()
+
+		s   Schema
+		err error
+	)
+
+	defer shouldNotPanic(t) // reflect methods can panic
+
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err = reg.schemaByName(tt.Name); err != nil {
+			t.Error(err)
+			continue
+		}
+
+		if s.Elem() != nil {
+			t.Error("unexpected Elem of struct")
+		}
+
+		var rt = reflect.Indirect(reflect.ValueOf(tt.Val)).Type()
+
+		for i, fl := range s.Fields() {
+
+			t.Log(tt.Name, ">", fl.Name())
+
+			var rf = rt.FieldByIndex(i) // refelct.StructField
+
+			// Ref, Refs, array of slice
+
+			var fs = fl.Schema()
+			var el = fs.Elem()
+
+			switch kind := fs.Kind(); kind {
+			case reflect.Ptr:
+
+				switch fs.ReferenceType() {
+				case ReferenceTypeSingle, ReferenceTypeSlice:
+
+					if el == nil {
+						t.Error("misisng Elem")
+						continue
+					}
+
+					var tsn string
+					if tsn, err = TagSchemaName(rf.Tag); err != nil {
+						t.Error("missing tagged schema")
+					}
+
+					if el.Name() != tsn {
+						t.Errorf("wrong schema iof reference: want %q, got %q",
+							tsn, el.Name())
+					}
+
+				default:
+
+					if el != nil {
+						t.Error("unexpected Elem")
+					}
+
+				}
+
+			case reflect.Array, reflect.Slice:
+
+				if el == nil {
+					t.Error("missing Elem")
+				} else if ek, rk := el.Kind(), rf.Type.Kind(); ek != rk {
+					t.Errorf("invalid kind of Elem: want %s, got %s",
+						rk.String(), ek.String())
+				}
+
+			default:
+
+				if el != nil {
+					t.Error("unexpected Elem")
+				}
+
+			}
+
+		}
+
+	}
 
 }
 
 func TestSchema_RawName(t *testing.T) {
 	// RawName() []byte
 
-	r := testSchemaRegistry()
+	var reg = testRegistry()
 
-	for _, name := range []string{
-		"test.TestNumberStruct",
-		"test.TestSmallStruct",
-		"test.TestStruct",
-	} {
-		t.Log(name)
-		sc, err := r.SchemaByName(name)
-		if err != nil {
-			t.Fatal(err)
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err := reg.SchemaByName(tt.Name); err != nil {
+			t.Error(err)
+		} else if name := string(s.RawName()); name != tt.Name {
+			t.Errorf("wrong Schema RawName: want %q, got %q", tt.Name, name)
 		}
-		if rn := string(sc.RawName()); rn != name {
-			t.Errorf("wrong Name(): want %q, got %q", name, rn)
-		}
+
 	}
 
 }
@@ -397,21 +480,44 @@ func TestSchema_RawName(t *testing.T) {
 func TestSchema_IsRegistered(t *testing.T) {
 	// IsRegistered() bool
 
-	r := testSchemaRegistry()
+	var (
+		reg = testRegistry()
 
-	for _, name := range []string{
-		"test.TestNumberStruct",
-		"test.TestSmallStruct",
-		"test.TestStruct",
-	} {
-		t.Log(name)
-		sc, err := r.SchemaByName(name)
-		if err != nil {
-			t.Fatal(err)
+		s   Schema
+		err error
+	)
+
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err = reg.SchemaByName(tt.Name); err != nil {
+			t.Error(err)
+			continue
 		}
-		if !sc.IsRegistered() {
-			t.Error("registered is not registered")
+
+		if false == s.IsRegistered() {
+			t.Error("IsRegistered returns false for registered schema")
+			// keep going on
 		}
+
+		// only named structures can be registered
+
+		for _, fl := range s.Fields() {
+
+			var fs = fl.Schema()
+
+			if fs.Kind() == reflect.Struct {
+				// TODO (kostyarin): for future to increase coverage easy way
+				continue
+			}
+
+			if true == fs.IsRegistered() {
+				t.Error("IsRegistered of non-struct returns true")
+			}
+
+		}
+
 	}
 
 }
