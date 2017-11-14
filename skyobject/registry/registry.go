@@ -36,23 +36,26 @@ func newRegistry() (r *Registry) {
 	return
 }
 
-// DecodeRegistry decodes registry. It's impossible to
-// use SchemaByInterface of an decoded Registry. A decoded
-// Registry already Done
+// DecodeRegistry decodes an encoded Registry
 func DecodeRegistry(b []byte) (r *Registry, err error) {
+
 	var (
 		res = registryEntities{}
 		s   Schema
 	)
+
 	if err = encoder.DeserializeRaw(b, &res); err != nil {
 		return
 	}
+
 	r = newRegistry()
+
 	for _, re := range res {
 		s, err = decodeSchema(re.Schema)
 		r.reg[re.Name] = s
 		r.srf[s.Reference()] = s
 	}
+
 	r.finialize()
 	return
 }
@@ -67,7 +70,8 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 //     })
 //
 func NewRegistry(cl func(t *Reg)) (r *Registry) {
-	reg := newReg()
+
+	var reg = newReg()
 	cl(reg)
 
 	r = newRegistry()
@@ -81,14 +85,18 @@ func NewRegistry(cl func(t *Reg)) (r *Registry) {
 
 // Encode registry to send
 func (r *Registry) Encode() []byte {
+
 	if len(r.reg) == 0 {
 		return encoder.Serialize(registryEntities{}) // empty
 	}
-	ent := make(registryEntities, 0, len(r.reg))
+
+	var ent = make(registryEntities, 0, len(r.reg))
 	for name, sch := range r.reg {
 		ent = append(ent, registryEntity{name, sch.Encode()})
 	}
+
 	sort.Sort(ent)
+
 	return encoder.Serialize(ent)
 }
 

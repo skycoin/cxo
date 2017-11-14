@@ -33,7 +33,7 @@ func TestNewRegistry(t *testing.T) {
 	)
 
 	if ref = reg.Reference(); ref == (RegistryRef{}) {
-		t.Error("empty RegistryRef") // TOTH (kostyarin): make it empty?
+		t.Error("empty RegistryRef")
 	}
 
 	// keep going on
@@ -50,17 +50,21 @@ func TestNewRegistry(t *testing.T) {
 		t.Error("same RegistryRef")
 	}
 
-	// double registering
+	//  A L L O W
+	//     ||
+	//     \/
 
-	t.Run("twice", func(t *testing.T) {
-		defer shouldPanic(t)
-
-		reg = NewRegistry(func(reg *Reg) {
-			reg.Register("test.A", A{})
-			reg.Register("test.P", &A{})
-		})
-
-	})
+	// // double registering
+	//
+	// t.Run("twice", func(t *testing.T) {
+	// 	defer shouldPanic(t)
+	//
+	// 	reg = NewRegistry(func(reg *Reg) {
+	// 		reg.Register("test.A", A{})
+	// 		reg.Register("test.P", &A{})
+	// 	})
+	//
+	// })
 
 	// unregistered field
 
@@ -212,13 +216,13 @@ func TestDecodeRegistry(t *testing.T) {
 func TestRegistry_identity(t *testing.T) {
 
 	var r1 = NewRegistry(func(r *Reg) {
-		r.Register("cxo.User", TestUser{})
-		r.Register("cxo.Group", TestGroup{})
+		r.Register("test.User", TestUser{})
+		r.Register("test.Group", TestGroup{})
 	})
 
 	var r2 = NewRegistry(func(r *Reg) {
-		r.Register("cxo.Group", TestGroup{})
-		r.Register("cxo.User", TestUser{})
+		r.Register("test.Group", TestGroup{})
+		r.Register("test.User", TestUser{})
 	})
 
 	if r1.Reference() != r2.Reference() {

@@ -57,7 +57,7 @@ func (r *Reg) getSchema(typ reflect.Type) Schema {
 		return &referenceSchema{
 			schema: schema{
 				ref:  SchemaRef{},
-				kind: typ.Kind(),
+				kind: reflect.Interface, // Dynamic is kind of interface{}
 			},
 			typ: ReferenceTypeDynamic,
 		}
@@ -155,7 +155,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaRef{},
-				kind: t.Kind(),
+				kind: reflect.Ptr, // Ref is pointer
 			},
 			typ:  ReferenceTypeSingle,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
@@ -166,7 +166,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaRef{},
-				kind: t.Kind(),
+				kind: reflect.Ptr, // Refs is pointer (actually []*T)
 			},
 			typ:  ReferenceTypeSlice,
 			elem: &schema{kind: reflect.Struct, name: []byte(tagRef)},
@@ -176,7 +176,7 @@ func (r *Reg) getField(sf reflect.StructField) Field {
 		f.schema = &referenceSchema{
 			schema: schema{
 				ref:  SchemaRef{},
-				kind: t.Kind(),
+				kind: reflect.Interface, // Dynamic is interface{}
 			},
 			typ: ReferenceTypeDynamic,
 		}

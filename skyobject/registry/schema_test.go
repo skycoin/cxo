@@ -85,7 +85,7 @@ func TestSchema_IsReference(t *testing.T) {
 
 			if fs := fl.Schema(); true == fs.IsReference() {
 
-				if tt.Name != "test.TestGroup" {
+				if tt.Name != "test.Group" {
 					t.Error("unexpected reference")
 					continue
 				}
@@ -108,9 +108,11 @@ func TestSchema_IsReference(t *testing.T) {
 					if fl.Name() != "Developer" {
 						t.Error("unexpected Dynamic reference")
 					}
+					continue
 				default:
 					t.Error("IsReference() returns true but ReferenceType is "+
 						"undefined %d", typ)
+					continue
 				}
 
 				if el := fs.Elem(); el.Name() != "test.User" {
@@ -139,7 +141,7 @@ func TestSchema_ReferenceType(t *testing.T) {
 		err error
 	)
 
-	if gr, err = reg.SchemaByName("test.TestGroup"); err != nil {
+	if gr, err = reg.SchemaByName("test.Group"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -292,11 +294,11 @@ func TestSchema_Len(t *testing.T) {
 
 			t.Log(tt.Name, ">", fl.Name())
 
-			var rf = rt.FieldByIndex(i).Type // refelct.Type of the field
+			var rf = rt.FieldByIndex([]int{i}).Type // refelct.Type of the field
 
 			if kind := fl.Kind(); kind == reflect.Array {
 
-				if rf.Type.Kind() != reflect.Array {
+				if rf.Kind() != reflect.Array {
 					t.Error("unexpected array")
 					continue
 				}
@@ -344,18 +346,20 @@ func TestSchema_Fields(t *testing.T) {
 
 			t.Log(tt.Name, ">", fl.Name())
 
-			var rf = rt.FieldByIndex(i) // refelct.StructField
+			var rf = rt.FieldByIndex([]int{i}) // refelct.StructField
 
 			// ccompare names
 
 			if name := fl.Name(); name != rf.Name {
-				t.Error("wrong field name: want %q, got %q", rf.Name, name)
+				t.Errorf("wrong field name: want %q, got %q", rf.Name, name)
 			}
 
-			if kind := fl.Kind(); kind == reflect.Ptr {
-				continue // Ref, Refs, Dynaimc (skip them)
+			var kind = fl.Kind()
+
+			if kind == reflect.Ptr || kind == reflect.Interface {
+				continue // Ref, Refs, and Dynaimc (skip them)
 			} else if reflectKind := rf.Type.Kind(); kind != reflectKind {
-				t.Error("invalid kind of struct field: want %s, got %s",
+				t.Errorf("invalid kind of struct field: want %s, got %s",
 					reflectKind.String(), kind.String())
 			}
 
@@ -399,7 +403,7 @@ func TestSchema_Elem(t *testing.T) {
 
 			t.Log(tt.Name, ">", fl.Name())
 
-			var rf = rt.FieldByIndex(i) // refelct.StructField
+			var rf = rt.FieldByIndex([]int{i}) // refelct.StructField
 
 			// Ref, Refs, array of slice
 
@@ -439,7 +443,10 @@ func TestSchema_Elem(t *testing.T) {
 
 				if el == nil {
 					t.Error("missing Elem")
-				} else if ek, rk := el.Kind(), rf.Type.Kind(); ek != rk {
+					continue
+				}
+
+				if ek, rk := el.Kind(), rf.Type.Elem().Kind(); ek != rk {
 					t.Errorf("invalid kind of Elem: want %s, got %s",
 						rk.String(), ek.String())
 				}
@@ -536,6 +543,7 @@ func TestSchema_Size(t *testing.T) {
 		reg = testRegistry()
 
 		s   Schema
+		ss  int
 		err error
 	)
 
@@ -550,8 +558,10 @@ func TestSchema_Size(t *testing.T) {
 
 		var data = encoder.Serialize(tt.Val)
 
-		if ss, ds := s.Size(data), len(data); ss != ds {
-			t.Error("wrong struct Size: want %d, got %d", ds, ss)
+		if ss, err = s.Size(data); err != nil {
+			t.Error(err)
+		} else if ss != len(data) {
+			t.Error("wrong struct Size: want %d, got %d", len(data), ss)
 		}
 
 		var rv = reflect.Indirect(reflect.ValueOf(tt.Val))
@@ -562,8 +572,10 @@ func TestSchema_Size(t *testing.T) {
 
 			data = encoder.Serialize(rf.Interface())
 
-			if fss, ds := fl.Schema().Size(data); fss != ds {
-				t.Errorf("wrong Schema Size: want %d, got %d", ds, fss)
+			if ss, err := fl.Schema().Size(data); err != nil {
+				t.Error(err)
+			} else if ss != len(data) {
+				t.Errorf("wrong Schema Size: want %d, got %d", len(data), ss)
 			}
 
 		}
