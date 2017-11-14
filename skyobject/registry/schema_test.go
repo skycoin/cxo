@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -167,9 +168,70 @@ func TestSchema_ReferenceType(t *testing.T) {
 func TestSchema_HasReferences(t *testing.T) {
 	// HasReferences() bool
 
-	var reg = testRegistry()
+	var (
+		reg = testRegistry()
+
+		s   Schema
+		err error
+	)
 
 	// todo inclding deep nested schemas with references
+
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err = reg.SchemaByName(tt.Name); err != nil {
+			continue
+		}
+
+		if true == s.HasReferences() {
+			if s.Name() == "test.Group" {
+				continue // ok
+			} else {
+				t.Error(tt.Name, "has references")
+			}
+		}
+
+	}
+
+	// deep nested reference
+
+	type A struct {
+		Name string
+	}
+
+	type B struct {
+		A Ref `skyobject:"schema=test.A"`
+	}
+
+	type C struct {
+		B B
+	}
+
+	type D struct {
+		S []B
+	}
+
+	type E struct {
+		A [3]D
+	}
+
+	reg = NewRegistry(func(r *Reg) {
+		r.Register("test.A", A{})
+		r.Register("test.B", B{})
+		r.Register("test.C", C{})
+		r.Register("test.D", D{})
+		r.Register("test.E", E{})
+	})
+
+	if s, err = reg.SchemaByName("test.E"); err != nil {
+		t.Fatal(err)
+	}
+
+	if false == s.HasReferences() {
+		t.Error("has not references (deep)")
+	}
 
 }
 
@@ -183,21 +245,18 @@ func TestSchema_Kind(t *testing.T) {
 func TestSchema_Name(t *testing.T) {
 	// Name() string
 
-	r := testSchemaRegistry()
+	var reg = testRegistry()
 
-	for _, name := range []string{
-		"test.TestNumberStruct",
-		"test.TestSmallStruct",
-		"test.TestStruct",
-	} {
-		t.Log(name)
-		sc, err := r.SchemaByName(name)
-		if err != nil {
-			t.Fatal(err)
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err := reg.SchemaByName(tt.Name); err != nil {
+			t.Error(err)
+		} else if name := s.Name(); name != tt.Name {
+			t.Errorf("wrong Schema name: want %q, got %q", tt.Name, name)
 		}
-		if sc.Name() != name {
-			t.Errorf("wrong Name(): want %q, got %q", name, sc.Name())
-		}
+
 	}
 
 }
@@ -205,14 +264,104 @@ func TestSchema_Name(t *testing.T) {
 func TestSchema_Len(t *testing.T) {
 	// Len() int
 
-	// TODO (kostyarin): low priority
+	var (
+		reg = testRegistry()
+
+		s   Schema
+		err error
+	)
+
+	defer shouldPanic(t) // reflect methods can panic
+
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err = reg.schemaByName(tt.Name); err != nil {
+			t.Error(err)
+			continue
+		}
+
+		if s.Len() != 0 {
+			t.Error("got non-zero Len of struct")
+		}
+
+		var rt = reflect.Indirect(reflect.ValueOf(tt.Val)).Type()
+
+		for i, fl := range s.Fields() {
+
+			t.Log(tt.Name, ">", fl.Name())
+
+			var rf = rt.FieldByIndex(i).Type // refelct.Type of the field
+
+			if kind := fl.Kind(); kind == reflect.Array {
+
+				if rf.Type.Kind() != reflect.Array {
+					t.Error("unexpected array")
+					continue
+				}
+
+				if sl, rl := fl.Schema().Len(), rf.Len(); sl != rl {
+					t.Errorf("invalid length of array: want %d, got %d", sl, rl)
+				}
+
+			} else if s.Len() != 0 {
+
+				t.Error("got non-zero Len of", kind.String())
+
+			}
+
+		}
+
+	}
 
 }
 
 func TestSchema_Fields(t *testing.T) {
 	// Fields() []Field
 
-	// TODO (kostyarin): low priority
+	var (
+		reg = testRegistry()
+
+		s   Schema
+		err error
+	)
+
+	defer shouldPanic(t) // reflect methods can panic
+
+	for _, tt := range testTypes() {
+
+		t.Log(tt.Name)
+
+		if s, err = reg.schemaByName(tt.Name); err != nil {
+			t.Error(err)
+			continue
+		}
+
+		var rt = reflect.Indirect(reflect.ValueOf(tt.Val)).Type()
+
+		for i, fl := range s.Fields() {
+
+			t.Log(tt.Name, ">", fl.Name())
+
+			var rf = rt.FieldByIndex(i) // refelct.StructField
+
+			// ccompare names
+
+			if name := fl.Name(); name != rf.Name {
+				t.Error("wrong field name: want %q, got %q", rf.Name, name)
+			}
+
+			if kind := fl.Kind(); kind == reflect.Ptr {
+				continue // Ref, Refs, Dynaimc (skip them)
+			} else if reflectKind := rf.Type.Kind(); kind != reflectKind {
+				t.Error("invalid kind of struct field: want %s, got %s",
+					reflectKind.String(), kind.String())
+			}
+
+		}
+
+	}
 
 }
 

@@ -63,7 +63,7 @@ type TestNamedFloatsStruct struct {
 	Float64 TestNamedFloat64
 }
 
-type TestNamedArray [3]int32
+type TestNamedArray [5]int32
 
 type TestEmptyStruct struct{}
 
@@ -73,6 +73,7 @@ type TestArraysStruct struct {
 	TwoStrings       [2]string
 	ThreeEmptyStruct [3]TestEmptyStruct
 	FourStringStruct [4]TestStringStruct
+	Named            TestNamedArray
 }
 
 type TestNamedSlice []int32
@@ -126,6 +127,7 @@ func testTypes() (ts []testType) {
 			[2]string{"string", "string"},
 			[3]TestEmptyStruct{},
 			[4]TestStringStruct{{"string"}, {"string"}, {"string"}, {"string"}},
+			TestNamedArray{10, 11, 12, 13, 14},
 		}},
 		{"test.Slices", TestSliceStruct{
 			[]int8{8},
