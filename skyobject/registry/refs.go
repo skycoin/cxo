@@ -615,7 +615,7 @@ func (r *Refs) SetValueByIndex(
 
 	var hash cipher.SHA256
 
-	if false == isNil(obj) {
+	if isNil(obj) == false {
 		if hash, err = pack.Add(encoder.Serialize(obj)); err != nil {
 			return
 		}
@@ -1347,7 +1347,7 @@ func (r *Refs) AppendValues(
 
 	for _, val := range values {
 
-		if true == isNil(val) {
+		if isNil(val) == true {
 
 			hash = cipher.SHA256{}
 
@@ -1502,16 +1502,97 @@ func (r *Refs) Rebuild(
 }
 
 // Tree returns string that represents the Refs tree.
-// The Tree method doesn't initialize the Refs and it
-// doesn't load unloaded subtr
-func (r *Refs) Tree() (tree string) {
+// By default, it doesn't load branhces that is not
+// loaded yet. But the forceLoad argument forces the
+// Tree method to load them using given pack. So, if
+// the forceLaod argument is false, then the pack
+// argument is not used. And if the Refs is not loaded
+// then the Tree method prints only hash
+func (r *Refs) Tree(
+	pack Pack, //      : pack to load
+	forceLoad bool, // : load unloaded branches
+) (
+	tree string, //    : the tree
+	err error, //      : loading error
+) {
 
 	var gt gotree.GTStructure
 
-	gt.Name = "[](refs) " + r.Short() + " " + fmt.Sprintln(r.length)
+	if forceLoad == true {
+		if err = r.initialize(pack); err != nil {
+			return
+		}
+	}
+
+	gt.Name = "[](refs) " + r.Short()
+
+	if forceLoad == true || r.mods&loadedMod != 0 {
+		gt.Name += " " + fmt.Sprintln(r.length)
+	}
+
+	gt.Items, err = r.treeNode(pack, forceLoad, &r.refsNode, r.depth)
+	return
+}
+
+func (r *Refs) treeNode(
+	pack Pack, //                  : pack to laod
+	forceLoad bool, //             : force load subtrees
+	rn *refsNode, //               : the node
+	depth int, //                  : depth of the node
+) (
+	items []gotree.GTStructure, // : items of the node
+	err error, //                  : error if any
+) {
+
+	// hash and length of the node are already printed
+
+	if depth == 0 {
+
+		if len(rn.leafs) == 0 {
+			items = []gotree.GTStructure{{Name: "(empty)"}}
+			return
+		}
+
+		for _, el := range rn.leafs {
+			items = append(items, gotree.GTStructure{
+				Name: el.Hash.Hex()[:7], // short
+			})
+		}
+
+		return
+	}
+
+	// else if depth > 0
+
+	for _, br := range rn.branches {
+
+		if forceLoad == true {
+			if err = r.loadNodeIfNeed(pack, br, depth-1); err != nil {
+				return
+			}
+		}
+
+		if br.isLoaded() == false {
+			items = append(items, gotree.GTStructure{
+				Name: br.hash.Hex()[:7] + " (not loaded)",
+			})
+			continue
+		}
+
+		var item gotree.GTStructure
+
+		item.Name = br.hash.Hex()[:7] + " " + fmt.Sprintln(br.length)
+		item.Items, err = r.treeNode(pack, forceLoad, br, depth-1)
+
+		if err != nil {
+			return
+		}
+
+		items = append(items, item)
+
+	}
 
 	return
-
 }
 
 // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -

@@ -8,14 +8,14 @@ import (
 func TestRefs_String(t *testing.T) {
 	// String() string
 
-	//
+	// TODO (kostyarin): lowest priority
 
 }
 
 func TestRefs_Short(t *testing.T) {
 	// Short() string
 
-	//
+	// TODO (kostyarin): lowest priority
 
 }
 
