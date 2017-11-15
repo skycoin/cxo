@@ -35,7 +35,7 @@ func (r *Ref) String() string {
 // Value of the Ref
 func (r *Ref) Value(pack Pack, obj interface{}) (err error) {
 
-	if r.IsBlank() {
+	if true == r.IsBlank() {
 		return ErrReferenceRepresentsNil
 	}
 
