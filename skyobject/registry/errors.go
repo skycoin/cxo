@@ -27,6 +27,7 @@ var (
 	ErrInvalidSliceIndex  = errors.New("invalid slice index")
 	ErrInvalidRefsState   = errors.New("invalid state of the Refs")
 	ErrRefsIterating      = errors.New("Refs is iterating")
+	ErrInvalidDegree      = errors.New("invalid degree")
 
 	ErrNotFound      = errors.New("not found")
 	ErrStopIteration = errors.New("stop iteration")

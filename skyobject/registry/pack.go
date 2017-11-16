@@ -65,6 +65,11 @@ const (
 
 )
 
+// common contants
+const (
+	Degree int = 16 // default degree of Refs
+)
+
 // A Pack represents ...
 type Pack interface {
 	Registry() *Registry // related registry

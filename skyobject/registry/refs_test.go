@@ -2,7 +2,11 @@ package registry
 
 import (
 	"testing"
-	//"github.com/skycoin/skycoin/src/cipher"
+	// "github.com/skycoin/skycoin/src/cipher"
+)
+
+const (
+	testNoMeaninFlag Flags = 1024 + iota
 )
 
 func TestRefs_String(t *testing.T) {
@@ -22,7 +26,43 @@ func TestRefs_Short(t *testing.T) {
 func TestRefs_Init(t *testing.T) {
 	// Init(pack Pack) (err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+		err  error
+	)
+
+	pack.AddFlags(testNoMeaninFlag)
+
+	// blank
+
+	if err = refs.Init(pack); err != nil {
+		t.Fatal("can't initialize blank Refs:", err)
+	}
+
+	if refs.mods != loadedMod {
+		t.Error("loadedMod flag has not been set")
+	}
+
+	if refs.flags != testNoMeaninFlag {
+		t.Error("flags has not been set")
+	}
+
+	// fill
+
+	var users = testUsers(Degree + 1)
+
+	if err = refs.AppendValues(pack, users...); err != nil {
+		t.Fatal(err)
+	}
+
+	var tree string
+	if tree, err = refs.Tree(pack, false); err != nil {
+		t.Error(err)
+	}
+
+	println(tree)
 
 }
 

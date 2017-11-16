@@ -346,9 +346,27 @@ func (r *refsNode) updateHash(
 	var val = r.encode(depth)
 	// get hash
 	var hash = cipher.SumSHA256(val)
-	// compare with previous one (?)
-	if err = pack.Set(hash, val); err != nil {
-		return
+
+	if hash == r.hash {
+		return // the hash is the same
+	}
+
+	// don't Save if the node is part of the Refs
+	// it will be saved inside another method
+	// with depth and degree
+	if r.upper != nil {
+
+		// save the node
+		if err = pack.Set(hash, val); err != nil {
+			return
+		}
+
+		// ignore the field if the node is
+		// part of the Refs and set it in
+		// other cases
+
+		r.hash = hash // set the  hash
+
 	}
 
 	r.mods &^= contentMod // clear the flag if it has been set
@@ -857,7 +875,7 @@ func (r *Refs) appendCreatingSliceNodeGoUp(
 
 	cn.branches = append(cn.branches, br)
 
-	return br, depth // e.g. br, and cdepth - 1
+	return r.appendCreatingSliceNode(br, depth, hash) // e.g. br, and cdepth - 1
 }
 
 // appendCreatingSliceNode appends given hash to the Refs

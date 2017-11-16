@@ -51,8 +51,6 @@ type Refs struct {
 	depth  int `enc:"-"` // depth - 1
 	degree int `enc:"-"` // degree
 
-	length int `enc:"-"` // length of Refs
-
 	refsIndex `enc:"-"` // hash-table index
 	refsNode  `enc:"-"` // leafs, branches, mods and length
 
@@ -87,6 +85,8 @@ func (r *Refs) initialize(pack Pack) (err error) {
 	r.mods = loadedMod     // mark as loaded
 	r.flags = pack.Flags() // keep current flags
 
+	r.degree = Degree // use default degree
+
 	if r.Hash == (cipher.SHA256{}) {
 		return // blank Refs, don't need to load
 	}
@@ -97,7 +97,7 @@ func (r *Refs) initialize(pack Pack) (err error) {
 	}
 
 	r.depth = int(er.Depth)
-	r.degree = int(er.Degree)
+	r.degree = int(er.Degree) // overwrite from saved
 
 	r.length = int(er.Length)
 
@@ -153,6 +153,43 @@ func (r *Refs) Degree(pack Pack) (degree int, err error) {
 		return
 	}
 	degree = r.degree
+	return
+}
+
+func validateDegree(degree int) (err error) {
+	if degree < 2 {
+		err = ErrInvalidDegree
+	}
+	return
+}
+
+// SetDegree rebuild the Refs with given degree
+func (r *Refs) SetDegree(pack Pack, degree int) (err error) {
+
+	if err = validateDegree(degree); err != nil {
+		return
+	}
+
+	if err = r.initialize(pack); err != nil {
+		return
+	}
+
+	if r.Hash == (cipher.SHA256{}) {
+		r.degree = degree
+		return // it's enough
+	}
+
+	// replace this Refs with new one with new degree
+	var nr = newRefs(degree, r.flags, r.length)
+
+	if err = nr.Append(pack, r); err != nil {
+		return
+	}
+
+	nr.iterators = r.iterators // copy iterators
+
+	*r = *nr
+
 	return
 }
 
@@ -552,17 +589,24 @@ func (r *Refs) updateHashIfNeed(pack Pack, need bool) (err error) {
 func (r *Refs) updateHash(pack Pack) (err error) {
 
 	if r.length == 0 {
-		r.Hash = cipher.SHA256{} // blank hash is blank Refs
-		r.mods &^= contentMod    // clear the flag
-		r.mods |= originMod      // the Refs has been changed
+		r.Hash = cipher.SHA256{}       // blank hash is blank Refs
+		r.mods &^= contentMod          // clear the flag
+		r.mods |= originMod            // the Refs has been changed
+		r.leafs, r.branches = nil, nil // clear
 		return
 	}
 
 	val := r.encode()
 	hash := cipher.SumSHA256(val)
 
-	if err = pack.Set(hash, val); err != nil {
-		return // saving error
+	if r.Hash != hash {
+
+		if err = pack.Set(hash, val); err != nil {
+			return // saving error
+		}
+
+		r.Hash = hash
+
 	}
 
 	r.mods &^= contentMod // clear the flag if set
@@ -815,6 +859,10 @@ func (r *Refs) ascendFrom(
 		return
 	}
 
+	if from == 0 && r.length == 0 {
+		return // nothing to iterate
+	}
+
 	if err = validateIndex(from, r.length); err != nil {
 		return
 	}
@@ -1040,15 +1088,15 @@ func pow(a, b int) (p int) {
 // are Refs.depth. E.g. Refs.depth = 'real depth'-1
 func depthToFit(
 	degree int, // : degree of the Refs
-	start int, //  : starting depth (that doesn't fit)
+	start int, //  : starting depth
 	fit int, //    : number of elements to fit
 ) (
 	depth int, //  : the needle
 ) {
 
-	// the start is 'real depth - 1', thus we add 2 instead of
-	// 1 (e.g. we add the elided 1 and one more 1)
-	for start += 2; pow(degree, start) < fit; start++ {
+	// the start is 'real depth', but we need
+	// Refs' depth that is 'real depth' - 1
+	for ; pow(degree, start) < fit; start++ {
 	}
 	return start - 1 // found (-1 turns the start to be Refs.depth)
 }
@@ -1431,7 +1479,8 @@ func (r *Refs) AppendHashes(
 			return // error
 		}
 
-		*r = *nr // replace this Refs with new extended
+		nr.iterators = r.iterators // copy iterators
+		*r = *nr                   // replace this Refs with new extended
 
 		return // done
 
@@ -1527,10 +1576,13 @@ func (r *Refs) Tree(
 	gt.Name = "[](refs) " + r.Short()
 
 	if forceLoad == true || r.mods&loadedMod != 0 {
-		gt.Name += " " + fmt.Sprintln(r.length)
+		gt.Name += fmt.Sprintf(" length: %d, degree: %d, depth: %d",
+			r.length, r.degree, r.depth)
 	}
 
 	gt.Items, err = r.treeNode(pack, forceLoad, &r.refsNode, r.depth)
+
+	tree = gotree.StringTree(gt)
 	return
 }
 
@@ -1581,7 +1633,7 @@ func (r *Refs) treeNode(
 
 		var item gotree.GTStructure
 
-		item.Name = br.hash.Hex()[:7] + " " + fmt.Sprintln(br.length)
+		item.Name = br.hash.Hex()[:7] + " " + fmt.Sprint(br.length)
 		item.Items, err = r.treeNode(pack, forceLoad, br, depth-1)
 
 		if err != nil {
