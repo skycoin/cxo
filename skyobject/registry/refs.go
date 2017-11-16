@@ -1094,10 +1094,19 @@ func depthToFit(
 	depth int, //  : the needle
 ) {
 
+	if fit <= degree {
+		return 0
+	}
+
+	if start == 0 {
+		start++
+	}
+
 	// the start is 'real depth', but we need
 	// Refs' depth that is 'real depth' - 1
 	for ; pow(degree, start) < fit; start++ {
 	}
+
 	return start - 1 // found (-1 turns the start to be Refs.depth)
 }
 

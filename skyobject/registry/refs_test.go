@@ -2,7 +2,9 @@ package registry
 
 import (
 	"testing"
+
 	// "github.com/skycoin/skycoin/src/cipher"
+	"github.com/kr/pretty"
 )
 
 const (
@@ -51,7 +53,7 @@ func TestRefs_Init(t *testing.T) {
 
 	// fill
 
-	var users = testUsers(Degree + 1)
+	var users = testUsers(Degree*Degree + 1)
 
 	if err = refs.AppendValues(pack, users...); err != nil {
 		t.Fatal(err)
@@ -63,6 +65,8 @@ func TestRefs_Init(t *testing.T) {
 	}
 
 	println(tree)
+
+	_ = pretty.Print
 
 }
 

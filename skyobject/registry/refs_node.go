@@ -841,41 +841,40 @@ func (r *Refs) appendCreatingSliceNodeGoUp(
 	cdepth int, //         : current depth (depth of the cn)
 ) {
 
-	// the rn is full, since we have to go up;
-	// thus we have to check upper node fullness
-	// and (1) add new branch or go up and repeat
-	// the step (1)
+	for {
 
-	if rn.upper == nil {
-		// since, we have to add a new hash to the slice (to the r),
-		// then the full rn (and the rn is full here) must have
-		// upper node to add another one go or upper; e.g. if
-		// the rn.upper is nil, then this case is invalid and
-		// this case should produce panicing
-		panic("invalid case")
+		// the rn is full, since we have to go up;
+		// thus we have to check upper node fullness
+		// and (1) add new branch or go up and repeat
+		// the step (1)
+
+		if rn.upper == nil {
+			// since, we have to add a new hash to the slice (to the r),
+			// then the full rn (and the rn is full here) must have
+			// upper node to add another one go or upper; e.g. if
+			// the rn.upper is nil, then this case is invalid and
+			// this case should produce panicing
+			panic("invalid case")
+		}
+
+		rn, depth = rn.upper, depth+1 // go up
+
+		// since we are using r.upper, then the depth is > 0
+		// and the rn.upper contains branches
+		if len(rn.branches) == r.degree { // if it's full
+			continue // go up
+		}
+
+		// otherwise we create new branch and use it;
+		// fields hash and length are not set and mods
+		// like contnetMod are not set too
+
+		// e.g. one step down is here
+
+		return r.appendCreatingSliceNode(rn, depth, hash)
+
 	}
 
-	cn, cdepth = rn.upper, depth+1 // go up
-
-	// since we are using r,upper, then the depth is > 0
-	// and the rn.upper contains branches
-	if len(cn.branches) == r.degree { // if it's full
-		return r.appendCreatingSliceNodeGoUp(cn, cdepth, hash) // go up
-	}
-
-	// otherwise we create new branch and use it;
-	// fields hash and length are not set and mods
-	// like contnetMod are not set too
-
-	// e.g. one step down is here
-
-	var br = &refsNode{
-		upper: rn,
-	}
-
-	cn.branches = append(cn.branches, br)
-
-	return r.appendCreatingSliceNode(br, depth, hash) // e.g. br, and cdepth - 1
 }
 
 // appendCreatingSliceNode appends given hash to the Refs

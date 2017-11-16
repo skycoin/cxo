@@ -13,6 +13,8 @@ func getHash(val interface{}) cipher.SHA256 {
 
 func testUsers(n int) (users []interface{}) {
 
+	users = make([]interface{}, 0, n)
+
 	for i := 0; i < n; i++ {
 
 		var usr = TestUser{
