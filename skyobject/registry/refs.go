@@ -235,16 +235,10 @@ func (r *Refs) Reset() (err error) {
 		return ErrRefsIterating // can't reset during iterating
 	}
 
-	r.degree = 0 // clear
-	r.depth = 0  // clear
+	var hash = r.Hash // }
+	*r = Refs{}       // }reset
+	r.Hash = hash     // }
 
-	// the node
-	r.length = 0     // clear
-	r.leafs = nil    // free
-	r.branches = nil // free
-	r.mods = 0       // mark as not loaded
-
-	r.flags = 0 // clear flags
 	return
 }
 

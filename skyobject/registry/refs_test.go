@@ -3,13 +3,158 @@ package registry
 import (
 	"testing"
 
-	// "github.com/skycoin/skycoin/src/cipher"
 	"github.com/kr/pretty"
+
+	"github.com/skycoin/skycoin/src/cipher"
 )
 
 const (
-	testNoMeaninFlag Flags = 1024 + iota
+	testNoMeaninFlag Flags = 1 << 7
 )
+
+type testRefs struct {
+	hash cipher.SHA256
+
+	flags Flags
+
+	depth  int
+	degree int
+
+	testNode
+}
+
+type testNode struct {
+	hash cipher.SHA256
+
+	mods   refsMod
+	length int
+
+	leafs   []cipher.SHA256
+	brances []*testNode
+}
+
+func testRefsTest(t *testing.T, r *Refs, tr *testRefs) {
+
+	if r.flags != tr.flags {
+		t.Errorf("wrong flags: want %08b, got %08b", tr.flags, r.flags)
+	}
+
+	if r.depth != tr.depth {
+		t.Errorf("wrong depth: want %d, got: %d", tr.depth, r.depth)
+	}
+
+	if r.degree != tr.degree {
+		t.Errorf("wrong degree: want %d, got: %d", tr.degree, r.degree)
+	}
+
+	if r.Hash != tr.hash {
+		t.Errorf("wrong hash: want %s, got %s", tr.hash.Hex()[:7], r.String())
+	}
+
+	testNodeTest(t, r, &r.refsNode, &tr.testNode)
+
+}
+
+func testNodeTest(t *testing.T, r *Refs, rn *refsNode, tn *testNode) {
+
+	if rn.hash != tn.hash {
+		t.Errorf("wrong node hash: want %s, got %s", tn.hash.Hex()[:7],
+			rn.hash.Hex()[:7])
+	}
+
+	if rn.mods != tn.mods {
+		t.Errorf("wrong mods: want %08b, got %08b", tn.mods, rn.mods)
+	}
+
+	if rn.length != tn.length {
+		t.Errorf("wrong length: want %d, got: %d", tn.length, rn.length)
+	}
+
+	if &r.refsNode != rn && rn.upper == nil {
+		t.Errorf("missing upper reference")
+	}
+
+	if len(rn.leafs) != len(tn.leafs) {
+		t.Errorf("wrong leafs length: want %d, got %d", len(tn.leafs),
+			len(rn.leafs))
+	} else {
+		for i, leaf := range tn.leafs {
+			var el = rn.leafs[i]
+			if el.Hash != leaf {
+				t.Errorf("wrong leaf %d", i)
+			}
+			if r.flags&HashTableIndex != 0 {
+				if res, ok := r.refsIndex[leaf]; !ok {
+					t.Errorf("missing in hash table index")
+				} else {
+					for _, re := range res {
+						if re == el {
+							goto leafInIndexFound
+						}
+					}
+					t.Errorf("missing element in index")
+				leafInIndexFound:
+				}
+			}
+			if el.upper != rn {
+				t.Errorf("wron upper of leaf")
+			}
+		}
+	}
+
+	if len(rn.branches) != len(tn.brances) {
+		t.Errorf("wrong branches length: want %d, got %d", len(tn.brances),
+			len(rn.branches))
+	} else {
+		for i, branch := range tn.brances {
+			testNodeTest(t, r, rn.branches[i], branch)
+			if rn.branches[i].upper != rn {
+				t.Errorf("wrong upper reference of the node")
+			}
+		}
+	}
+
+}
+
+func testRefsFromRefs(r *Refs) (tr *testRefs) {
+	tr = new(testRefs)
+	tr.hash = r.Hash
+	tr.flags = r.flags
+	tr.depth = r.depth
+	tr.degree = r.degree
+	tr.testNode = *testNodeFromNode(&r.refsNode)
+	return
+}
+
+func testNodeFromNode(rn *refsNode) (tn *testNode) {
+	tn = new(testNode)
+	tn.hash = rn.hash
+	tn.mods = rn.mods
+	tn.length = rn.length
+
+	for _, el := range rn.leafs {
+		tn.leafs = append(tn.leafs, el.Hash)
+	}
+
+	for _, br := range rn.branches {
+		tn.brances = append(tn.brances, testNodeFromNode(br))
+	}
+
+	return
+}
+
+func logRefsTree(t *testing.T, r *Refs, pack Pack, forceLoad bool) {
+
+	var tree string
+	var err error
+
+	if tree, err = r.Tree(pack, forceLoad); err != nil {
+		t.Error(err)
+	}
+
+	t.Log(tree)
+
+}
 
 func TestRefs_String(t *testing.T) {
 	// String() string
@@ -37,34 +182,82 @@ func TestRefs_Init(t *testing.T) {
 
 	pack.AddFlags(testNoMeaninFlag)
 
-	// blank
+	t.Run("blank", func(t *testing.T) {
 
-	if err = refs.Init(pack); err != nil {
-		t.Fatal("can't initialize blank Refs:", err)
-	}
+		if err = refs.Init(pack); err != nil {
+			t.Fatal("can't initialize blank Refs:", err)
+		}
 
-	if refs.mods != loadedMod {
-		t.Error("loadedMod flag has not been set")
-	}
+		testRefsTest(t, &refs, &testRefs{
+			testNode: testNode{mods: loadedMod},
+			flags:    testNoMeaninFlag,
+			degree:   Degree,
+		})
 
-	if refs.flags != testNoMeaninFlag {
-		t.Error("flags has not been set")
-	}
+		logRefsTree(t, &refs, pack, false)
+
+	})
 
 	// fill
 
-	var users = testUsers(Degree*Degree + 1)
+	var users = testUsers(Degree + 1)
 
 	if err = refs.AppendValues(pack, users...); err != nil {
 		t.Fatal(err)
 	}
 
-	var tree string
-	if tree, err = refs.Tree(pack, false); err != nil {
-		t.Error(err)
+	//logRefsTree(t, &refs, pack, false)
+
+	var trFull = testRefsFromRefs(&refs) // keep the refs
+	var trHead = testRefsFromRefs(&refs) // to cut
+
+	for _, br := range trHead.brances {
+		br.length = 0    // only
+		br.mods = 0      // hash
+		br.brances = nil // and
+		br.leafs = nil   // upper
 	}
 
-	println(tree)
+	trFull.mods &^= originMod
+	trHead.mods &^= originMod
+
+	// load from pack (no flags)
+
+	t.Run("load", func(t *testing.T) {
+
+		refs.Reset() // reset the refs
+
+		if err = refs.Init(pack); err != nil {
+			t.Fatal(err)
+		}
+
+		testRefsTest(t, &refs, trHead)
+		logRefsTree(t, &refs, pack, false)
+
+	})
+
+	t.Run("load entire", func(t *testing.T) {
+
+		refs.Reset() // reset the refs
+
+		pack.AddFlags(EntireRefs) // set the flag to load entire Refs
+
+		if err = refs.Init(pack); err != nil {
+			t.Fatal(err)
+		}
+
+		trFull.flags |= EntireRefs
+
+		testRefsTest(t, &refs, trFull)
+		logRefsTree(t, &refs, pack, false)
+
+		for _, br := range refs.branches {
+			t.Log(br.hash.Hex())
+			t.Log(br.length)
+			t.Logf("%#v", br.leafs)
+		}
+
+	})
 
 	_ = pretty.Print
 

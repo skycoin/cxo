@@ -63,7 +63,7 @@ func (r *Refs) loadLeafs(
 	rn.leafs = make([]*refsElement, 0, len(elements))
 
 	for _, hash := range elements {
-		rn.leafs = append(r.leafs, r.loadLeaf(hash, rn))
+		rn.leafs = append(rn.leafs, r.loadLeaf(hash, rn))
 	}
 
 	rn.mods |= loadedMod // use flag to mark as loaded
@@ -125,7 +125,7 @@ func (r *Refs) loadBranches(
 
 	var br *refsNode
 	for _, hash := range elements {
-		if br, err = r.loadBranch(pack, hash, depth, rn); err != nil {
+		if br, err = r.loadBranch(pack, hash, depth-1, rn); err != nil {
 			return
 		}
 		rn.branches = append(rn.branches, br)
