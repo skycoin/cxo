@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/kr/pretty"
@@ -29,8 +30,8 @@ type testNode struct {
 	mods   refsMod
 	length int
 
-	leafs   []cipher.SHA256
-	brances []*testNode
+	leafs    []cipher.SHA256
+	branches []*testNode
 }
 
 func testRefsTest(t *testing.T, r *Refs, tr *testRefs) {
@@ -102,11 +103,11 @@ func testNodeTest(t *testing.T, r *Refs, rn *refsNode, tn *testNode) {
 		}
 	}
 
-	if len(rn.branches) != len(tn.brances) {
-		t.Errorf("wrong branches length: want %d, got %d", len(tn.brances),
+	if len(rn.branches) != len(tn.branches) {
+		t.Errorf("wrong branches length: want %d, got %d", len(tn.branches),
 			len(rn.branches))
 	} else {
-		for i, branch := range tn.brances {
+		for i, branch := range tn.branches {
 			testNodeTest(t, r, rn.branches[i], branch)
 			if rn.branches[i].upper != rn {
 				t.Errorf("wrong upper reference of the node")
@@ -137,7 +138,7 @@ func testNodeFromNode(rn *refsNode) (tn *testNode) {
 	}
 
 	for _, br := range rn.branches {
-		tn.brances = append(tn.brances, testNodeFromNode(br))
+		tn.branches = append(tn.branches, testNodeFromNode(br))
 	}
 
 	return
@@ -154,6 +155,26 @@ func logRefsTree(t *testing.T, r *Refs, pack Pack, forceLoad bool) {
 
 	t.Log(tree)
 
+}
+
+func testFillRefsWithUsers(
+	t *testing.T, //        : the testing
+	r *Refs, //             : the Refs to fill
+	pack Pack, //           : pack to save the users in
+	n int, //               : numbrof users
+) (
+	users []interface{}, // : the users
+) {
+
+	var err error
+
+	users = testUsers(n)
+
+	if err = r.AppendValues(pack, users...); err != nil {
+		t.Error(err)
+	}
+
+	return
 }
 
 func TestRefs_String(t *testing.T) {
@@ -184,8 +205,13 @@ func TestRefs_Init(t *testing.T) {
 
 	t.Run("blank", func(t *testing.T) {
 
-		if err = refs.Init(pack); err != nil {
-			t.Fatal("can't initialize blank Refs:", err)
+		// (1) load and (2) use already loaded Refs
+		for i := 0; i < 2; i++ {
+
+			if err = refs.Init(pack); err != nil {
+				t.Fatal("can't initialize blank Refs:", err)
+			}
+
 		}
 
 		testRefsTest(t, &refs, &testRefs{
@@ -199,78 +225,126 @@ func TestRefs_Init(t *testing.T) {
 	})
 
 	// fill
+	//   (1) only leafs
+	//   (2) leafs and branches
+	//   (3) branches with branches with leafs
 
-	var users = testUsers(Degree + 1)
+	for _, length := range []int{
+		Degree,            // only leafs
+		Degree + 1,        // leafs and branches
+		Degree*Degree + 1, // branches with branches with leafs
+	} {
 
-	if err = refs.AppendValues(pack, users...); err != nil {
-		t.Fatal(err)
+		t.Logf("Refs with %d elements", length)
+
+		refs.Clear()
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(testNoMeaninFlag)
+
+		if testFillRefsWithUsers(t, &refs, pack, length); t.Failed() {
+			t.FailNow()
+		}
+
+		//logRefsTree(t, &refs, pack, false)
+
+		var trFull = testRefsFromRefs(&refs) // keep the refs
+		var trHead = testRefsFromRefs(&refs) // to cut
+
+		for _, br := range trHead.branches {
+			br.length = 0     // only
+			br.mods = 0       // hash
+			br.branches = nil // and
+			br.leafs = nil    // upper
+		}
+
+		trFull.mods &^= originMod
+		trHead.mods &^= originMod
+
+		// to be sure
+		// ----
+
+		for _, tr := range []*testRefs{
+			trFull,
+			trHead,
+		} {
+
+			tr.length = length
+			tr.mods = loadedMod
+			tr.flags = pack.Flags()
+			tr.degree = Degree
+
+		}
+
+		// ----
+
+		// load from pack (no flags)
+
+		t.Run(fmt.Sprintf("load %d", length), func(t *testing.T) {
+
+			refs.Reset() // reset the refs
+
+			// (1) load and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if err = refs.Init(pack); err != nil {
+					t.Fatal(err)
+				}
+
+			}
+
+			testRefsTest(t, &refs, trHead)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+		t.Run(fmt.Sprintf("load entire %d", length), func(t *testing.T) {
+
+			refs.Reset() // reset the refs
+
+			pack.AddFlags(EntireRefs) // set the flag to load entire Refs
+
+			// (1) load and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if err = refs.Init(pack); err != nil {
+					t.Fatal(err)
+				}
+
+			}
+
+			trFull.flags |= EntireRefs
+
+			testRefsTest(t, &refs, trFull)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+		t.Run(fmt.Sprintf("hash table index %d", length), func(t *testing.T) {
+
+			refs.Reset()
+
+			pack.ClearFlags(EntireRefs)
+			pack.AddFlags(HashTableIndex)
+
+			// (1) load and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if err = refs.Init(pack); err != nil {
+					t.Fatal(err)
+				}
+
+			}
+
+			trFull.flags &^= EntireRefs
+			trFull.flags |= HashTableIndex
+
+			testRefsTest(t, &refs, trFull)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
 	}
-
-	//logRefsTree(t, &refs, pack, false)
-
-	var trFull = testRefsFromRefs(&refs) // keep the refs
-	var trHead = testRefsFromRefs(&refs) // to cut
-
-	for _, br := range trHead.brances {
-		br.length = 0    // only
-		br.mods = 0      // hash
-		br.brances = nil // and
-		br.leafs = nil   // upper
-	}
-
-	trFull.mods &^= originMod
-	trHead.mods &^= originMod
-
-	// load from pack (no flags)
-
-	t.Run("load", func(t *testing.T) {
-
-		refs.Reset() // reset the refs
-
-		if err = refs.Init(pack); err != nil {
-			t.Fatal(err)
-		}
-
-		testRefsTest(t, &refs, trHead)
-		logRefsTree(t, &refs, pack, false)
-
-	})
-
-	t.Run("load entire", func(t *testing.T) {
-
-		refs.Reset() // reset the refs
-
-		pack.AddFlags(EntireRefs) // set the flag to load entire Refs
-
-		if err = refs.Init(pack); err != nil {
-			t.Fatal(err)
-		}
-
-		trFull.flags |= EntireRefs
-
-		testRefsTest(t, &refs, trFull)
-		logRefsTree(t, &refs, pack, false)
-
-	})
-
-	t.Run("hash table index", func(t *testing.T) {
-
-		refs.Reset()
-
-		pack.ClearFlags(EntireRefs)
-		pack.AddFlags(HashTableIndex)
-
-		if err = refs.Init(pack); err != nil {
-			t.Fatal(err)
-		}
-
-		trFull.flags &^= EntireRefs
-		trFull.flags |= HashTableIndex
-
-		testRefsTest(t, &refs, trFull)
-		logRefsTree(t, &refs, pack, false)
-
-	})
 
 	_ = pretty.Print
 
@@ -279,7 +353,175 @@ func TestRefs_Init(t *testing.T) {
 func TestRefs_Len(t *testing.T) {
 	// Len(pack Pack) (ln int, err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+
+		ln  int
+		err error
+	)
+
+	pack.AddFlags(testNoMeaninFlag)
+
+	t.Run("blank", func(t *testing.T) {
+
+		// (1) load and (2) use already loaded Refs
+		for i := 0; i < 2; i++ {
+
+			if ln, err = refs.Len(pack); err != nil {
+				t.Fatal("can't initialize blank Refs:", err)
+			}
+
+			if ln != 0 {
+				t.Errorf("wrong length, want 0, got %d", ln)
+			}
+
+		}
+
+		testRefsTest(t, &refs, &testRefs{
+			testNode: testNode{mods: loadedMod},
+			flags:    testNoMeaninFlag,
+			degree:   Degree,
+		})
+
+		logRefsTree(t, &refs, pack, false)
+
+	})
+
+	// fill
+	//   (1) only leafs
+	//   (2) leafs and branches
+	//   (3) branches with branches with leafs
+
+	for _, length := range []int{
+		Degree,            // only leafs
+		Degree + 1,        // leafs and branches
+		Degree*Degree + 1, // branches with branches with leafs
+	} {
+
+		t.Logf("Refs with %d elements", length)
+
+		refs.Clear()
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(testNoMeaninFlag)
+
+		if testFillRefsWithUsers(t, &refs, pack, length); t.Failed() {
+			t.FailNow()
+		}
+
+		//logRefsTree(t, &refs, pack, false)
+
+		var trFull = testRefsFromRefs(&refs) // keep the refs
+		var trHead = testRefsFromRefs(&refs) // to cut
+
+		for _, br := range trHead.branches {
+			br.length = 0     // only
+			br.mods = 0       // hash
+			br.branches = nil // and
+			br.leafs = nil    // upper
+		}
+
+		trFull.mods &^= originMod
+		trHead.mods &^= originMod
+
+		// to be sure
+		// ----
+
+		for _, tr := range []*testRefs{
+			trFull,
+			trHead,
+		} {
+
+			tr.length = length
+			tr.mods = loadedMod
+			tr.flags = pack.Flags()
+			tr.degree = Degree
+
+		}
+
+		// ----
+
+		// load from pack (no flags)
+
+		t.Run(fmt.Sprintf("load %d", length), func(t *testing.T) {
+
+			refs.Reset() // reset the refs
+
+			// (1) laod and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if ln, err = refs.Len(pack); err != nil {
+					t.Fatal(err)
+				}
+
+				if ln != length {
+					t.Error("wrong length: want %d, got %d", length, ln)
+				}
+
+			}
+
+			testRefsTest(t, &refs, trHead)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+		t.Run(fmt.Sprintf("load entire %d", length), func(t *testing.T) {
+
+			refs.Reset() // reset the refs
+
+			pack.AddFlags(EntireRefs) // set the flag to load entire Refs
+
+			// (1) laod and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if ln, err = refs.Len(pack); err != nil {
+					t.Fatal(err)
+				}
+
+				if ln != length {
+					t.Error("wrong length: want %d, got %d", length, ln)
+				}
+
+			}
+
+			trFull.flags |= EntireRefs
+
+			testRefsTest(t, &refs, trFull)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+		t.Run(fmt.Sprintf("hash table index %d", length), func(t *testing.T) {
+
+			refs.Reset()
+
+			pack.ClearFlags(EntireRefs)
+			pack.AddFlags(HashTableIndex)
+
+			// (1) laod and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if ln, err = refs.Len(pack); err != nil {
+					t.Fatal(err)
+				}
+
+				if ln != length {
+					t.Error("wrong length: want %d, got %d", length, ln)
+				}
+
+			}
+
+			trFull.flags &^= EntireRefs
+			trFull.flags |= HashTableIndex
+
+			testRefsTest(t, &refs, trFull)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+	}
 
 }
 
