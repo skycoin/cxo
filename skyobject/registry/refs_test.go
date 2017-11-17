@@ -705,7 +705,179 @@ func TestRefs_Depth(t *testing.T) {
 func TestRefs_Degree(t *testing.T) {
 	// Degree(pack Pack) (degree int, err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+
+		dg  int // degree
+		err error
+	)
+
+	pack.AddFlags(testNoMeaninFlag)
+
+	t.Run("blank", func(t *testing.T) {
+
+		// (1) load and (2) use already loaded Refs
+		for i := 0; i < 2; i++ {
+
+			if dg, err = refs.Degree(pack); err != nil {
+				t.Fatal("can't initialize blank Refs:", err)
+			}
+
+			if dg != Degree {
+				t.Errorf("wrong degree, want %d, got %d", Degree, dg)
+			}
+
+		}
+
+		testRefsTest(t, &refs, &testRefs{
+			testNode: testNode{mods: loadedMod},
+			flags:    testNoMeaninFlag,
+			degree:   Degree,
+		})
+
+		logRefsTree(t, &refs, pack, false)
+
+		// so if the Refs is blank, then we can't change the degree
+		// and save the degree inside a database (pack for the tests);
+		// but it is part of SetDegree tests, ha-ha
+
+	})
+
+	// fill
+	//   (1) only leafs
+	//   (2) leafs and branches
+	//   (3) branches with branches with leafs
+
+	for _, length := range []int{
+		Degree,            // only leafs
+		Degree + 1,        // leafs and branches
+		Degree*Degree + 1, // branches with branches with leafs
+	} {
+
+		t.Logf("Refs with %d elements", length)
+
+		refs.Clear()
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(testNoMeaninFlag)
+
+		if testFillRefsWithUsers(t, &refs, pack, length); t.Failed() {
+			t.FailNow()
+		}
+
+		//logRefsTree(t, &refs, pack, false)
+
+		var trFull = testRefsFromRefs(&refs) // keep the refs
+		var trHead = testRefsFromRefs(&refs) // to cut
+
+		for _, br := range trHead.branches {
+			br.length = 0     // only
+			br.mods = 0       // hash
+			br.branches = nil // and
+			br.leafs = nil    // upper
+		}
+
+		trFull.mods &^= originMod
+		trHead.mods &^= originMod
+
+		// to be sure
+		// ----
+
+		for _, tr := range []*testRefs{
+			trFull,
+			trHead,
+		} {
+
+			tr.length = length
+			tr.mods = loadedMod
+			tr.flags = pack.Flags()
+			tr.degree = Degree
+
+		}
+
+		// ----
+
+		// load from pack (no flags)
+
+		t.Run(fmt.Sprintf("load %d", length), func(t *testing.T) {
+
+			refs.Reset() // reset the refs
+
+			// (1) laod and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if dg, err = refs.Degree(pack); err != nil {
+					t.Fatal(err)
+				}
+
+				if dg != Degree {
+					t.Error("wrong degree: want %d, got %d", Degree, dg)
+				}
+
+			}
+
+			testRefsTest(t, &refs, trHead)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+		t.Run(fmt.Sprintf("load entire %d", length), func(t *testing.T) {
+
+			refs.Reset() // reset the refs
+
+			pack.AddFlags(EntireRefs) // set the flag to load entire Refs
+
+			// (1) laod and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if dg, err = refs.Degree(pack); err != nil {
+					t.Fatal(err)
+				}
+
+				if dg != Degree {
+					t.Error("wrong degree: want %d, got %d", Degree, dg)
+				}
+
+			}
+
+			trFull.flags |= EntireRefs
+
+			testRefsTest(t, &refs, trFull)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+		t.Run(fmt.Sprintf("hash table index %d", length), func(t *testing.T) {
+
+			refs.Reset()
+
+			pack.ClearFlags(EntireRefs)
+			pack.AddFlags(HashTableIndex)
+
+			// (1) laod and (2) use already loaded Refs
+			for i := 0; i < 2; i++ {
+
+				if dg, err = refs.Degree(pack); err != nil {
+					t.Fatal(err)
+				}
+
+				if dg != Degree {
+					t.Error("wrong degree: want %d, got %d", Degree, dg)
+				}
+
+			}
+
+			trFull.flags &^= EntireRefs
+			trFull.flags |= HashTableIndex
+
+			testRefsTest(t, &refs, trFull)
+			logRefsTree(t, &refs, pack, false)
+
+		})
+
+	}
 
 }
 
