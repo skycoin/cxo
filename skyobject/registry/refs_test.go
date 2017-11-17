@@ -251,11 +251,24 @@ func TestRefs_Init(t *testing.T) {
 		testRefsTest(t, &refs, trFull)
 		logRefsTree(t, &refs, pack, false)
 
-		for _, br := range refs.branches {
-			t.Log(br.hash.Hex())
-			t.Log(br.length)
-			t.Logf("%#v", br.leafs)
+	})
+
+	t.Run("hash table index", func(t *testing.T) {
+
+		refs.Reset()
+
+		pack.ClearFlags(EntireRefs)
+		pack.AddFlags(HashTableIndex)
+
+		if err = refs.Init(pack); err != nil {
+			t.Fatal(err)
 		}
+
+		trFull.flags &^= EntireRefs
+		trFull.flags |= HashTableIndex
+
+		testRefsTest(t, &refs, trFull)
+		logRefsTree(t, &refs, pack, false)
 
 	})
 
