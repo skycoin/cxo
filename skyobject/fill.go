@@ -139,7 +139,7 @@ func (f *Filler) fill() {
 	f.full()
 }
 
-// Requset given object from remove peer. If announce is not
+// Request given object from remove peer. If announce is not
 // blank, then request them too, but don't sent them through
 // the got-channel
 func (f *Filler) request(key cipher.SHA256,
@@ -235,7 +235,7 @@ func (f *Filler) fillData(sch Schema, val []byte) (err error) {
 		return f.fillDataStruct(sch, val)
 	}
 	return fmt.Errorf("schema is not reference, array, slice or struct but"+
-		"HasReferences() retruns true: %s", sch)
+		"HasReferences() returns true: %s", sch)
 }
 
 func (f *Filler) fillDataArray(sch Schema, val []byte) (err error) {

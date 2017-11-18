@@ -24,7 +24,7 @@ func NewRPCClient(address string) (rc *RPCClient, err error) {
 	return
 }
 
-// AddFeed to the Node. If given fed already exists, then this
+// AddFeed to the Node. If given feed already exists, then this
 // method does nothing
 func (r *RPCClient) AddFeed(pk cipher.PubKey) error {
 	return r.c.Call("cxo.AddFeed", pk, &struct{}{})
@@ -47,7 +47,7 @@ func (r *RPCClient) Subscribe(address string, feed cipher.PubKey) (err error) {
 	return
 }
 
-// Unsubscribe from a feed. If address is emty string then it
+// Unsubscribe from a feed. If address is empty string then it
 // unsubscribes from feed entirely. Otherwise, from a feed of
 // a peer
 func (r *RPCClient) Unsubscribe(address string,
@@ -123,7 +123,7 @@ func (r *RPCClient) Info() (info *Info, err error) {
 	return
 }
 
-// Roots returns brief information about all root obejts of a feed
+// Roots returns brief information about all root objects of a feed
 func (r *RPCClient) Roots(feed cipher.PubKey) (ris []RootInfo, err error) {
 	err = r.c.Call("cxo.Roots", feed, &ris)
 	return

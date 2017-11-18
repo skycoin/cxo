@@ -165,7 +165,7 @@ func (d *decRecur) data(s Schema, val []byte) (err error) {
 	}
 
 	return fmt.Errorf("[CXO BUG] schema is not reference, array, slice or "+
-		"struct but (Schema).HasReferences() retruns true: %s", s)
+		"struct but (Schema).HasReferences() returns true: %s", s)
 }
 
 func (d *decRecur) dataArray(s Schema, val []byte) (err error) {

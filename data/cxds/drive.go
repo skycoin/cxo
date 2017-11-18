@@ -22,7 +22,7 @@ type driveCXDS struct {
 	b *bolt.DB
 }
 
-// NewDriveCXDS opens existsing CXDS-database
+// NewDriveCXDS opens existing CXDS-database
 // or creates new by given file name. Underlying
 // database is boltdb (github.com/boltdb/bolt).
 // E.g. this stores data on disk

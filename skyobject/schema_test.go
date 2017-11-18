@@ -190,7 +190,7 @@ func TestSchema_IsReference(t *testing.T) {
 	}
 
 	if ts.IsReference() {
-		t.Error("wrong IsReference resilt for non-reference struct")
+		t.Error("wrong IsReference result for non-reference struct")
 	}
 
 	for _, fl := range ts.Fields() {

@@ -372,7 +372,7 @@ func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 	return
 }
 
-// A Stat represetns Node statistic
+// A Stat represents Node statistic
 type Stat struct {
 	CXO  skyobject.Stat // skyobject stat
 	Node struct {

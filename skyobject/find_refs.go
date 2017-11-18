@@ -24,7 +24,7 @@ type findRefs struct {
 }
 
 // findRefs of given data.Root including the Root and its registry;
-// findRefs doesn't hold/unhold Root objects, it designed to be used inside
+// findRefs doesn't hold/unhold Root objects, it's designed to be used inside
 // transaction, where removing can't be performed from outside
 func (c *Container) findRefs(ir *data.Root, fr findRefsFunc) (err error) {
 
@@ -142,7 +142,7 @@ func (f *findRefs) data(s Schema, val []byte, fr findRefsFunc) (err error) {
 	}
 
 	return fmt.Errorf("[CXO BUG] schema is not reference, array, slice or "+
-		"struct but (Schema).HasReferences() retruns true: %s", s)
+		"struct but (Schema).HasReferences() returns true: %s", s)
 }
 
 func (f *findRefs) dataArray(s Schema, val []byte,

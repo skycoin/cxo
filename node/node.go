@@ -43,7 +43,7 @@ var (
 	ErrConnClosed = errors.New("connection closed")
 	// ErrUnsubscribed is a reason of dropping a filling Root
 	ErrUnsubscribed = errors.New("unsubscribed")
-	// ErrInvalidPubKeyLength occurs durong decoding cipher.PubKey from hex
+	// ErrInvalidPubKeyLength occurs during decoding cipher.PubKey from hex
 	ErrInvalidPubKeyLength = errors.New("invalid PubKey length")
 )
 
@@ -55,7 +55,7 @@ type Node struct {
 
 	src msg.Src // msg source
 
-	conf Config // configuratios
+	conf Config // configurations
 
 	db *data.DB             // database
 	so *skyobject.Container // skyobject
@@ -70,7 +70,7 @@ type Node struct {
 	conns  []*Conn
 	connsl []*Conn // cow
 
-	// waiting/wanted obejcts
+	// waiting/wanted objects
 	wmx sync.Mutex
 	wos map[cipher.SHA256]map[*Conn]struct{}
 
@@ -107,7 +107,7 @@ type Node struct {
 //
 //     node, err := NewNode(conf)
 //
-// The recommended way to use NewConfig and chagning
+// The recommended way to use NewConfig and changing
 // result, instead of "empty config" with some fields:
 //
 //     // use this if you really know what you do

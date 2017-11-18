@@ -43,7 +43,7 @@ func (r *rootsHolder) Unhold(pk cipher.PubKey, seq uint64) {
 	}
 }
 
-// IsHolded check is Root object holded or not
+// IsHolded check if Root object is holded or not
 func (r *rootsHolder) IsHolded(pk cipher.PubKey, seq uint64) (yep bool) {
 	r.hmx.Lock()
 	defer r.hmx.Unlock()

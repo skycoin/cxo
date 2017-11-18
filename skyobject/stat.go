@@ -86,7 +86,7 @@ type objStat struct {
 	vol data.Volume
 }
 
-// Stat returns detailed statiscit. The call requires
+// Stat returns detailed statistic. The call requires
 // iterating over all objects. Thus, the call is slow
 func (c *Container) Stat() (s Stat, err error) {
 

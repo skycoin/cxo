@@ -99,7 +99,7 @@ type Accept struct {
 func (*Accept) Type() Type { return AcceptType }
 
 // A Reject is response for the Hello
-// if subsctioption has not been accepted
+// if subscription has not been accepted
 type Reject struct {
 	ResponseFor ID
 	Address     cipher.Address // reserved for future
@@ -180,7 +180,7 @@ func (*NonPublicServer) Type() Type { return NonPublicServerType }
 
 // A Root sent from one node to another one
 // to update root object of feed described in
-// Feed filed of the message
+// Feed field of the message
 type Root struct {
 	Feed  cipher.PubKey
 	Seq   uint64     // for node internals
@@ -341,7 +341,7 @@ var (
 	// ErrIncomplieDecoding occurs when incoming message
 	// decoded correctly but the decoding doesn't use
 	// entire encoded message
-	ErrIncomplieDecoding = errors.New("incomplite decoding")
+	ErrIncomplieDecoding = errors.New("incomplete decoding")
 )
 
 // Decode encoded Type-prefixed data to message.

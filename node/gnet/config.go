@@ -63,7 +63,7 @@ type Config struct {
 	WriteTimeout time.Duration // write deadline
 
 	ReadQueueLen  int // reading queue length
-	WriteQueueLen int // // writing queue length
+	WriteQueueLen int // writing queue length
 
 	RedialTimeout    time.Duration // timeout between redials
 	MaxRedialTimeout time.Duration // increase RedilaTimeout up to it every time

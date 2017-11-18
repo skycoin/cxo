@@ -176,7 +176,7 @@ type driveRoots struct {
 	bk *bolt.Bucket
 }
 
-// Ascend iternates over all Root objects ascending order
+// Ascend iterates over all Root objects ascending order
 func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var seq uint64
@@ -207,7 +207,7 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
-// Descend iternates over all Root objects descending order
+// Descend iterates over all Root objects descending order
 func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var r = new(data.Root)
