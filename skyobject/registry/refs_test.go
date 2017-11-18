@@ -705,6 +705,8 @@ func TestRefs_Depth(t *testing.T) {
 func TestRefs_Degree(t *testing.T) {
 	// Degree(pack Pack) (degree int, err error)
 
+	// degree saved only if the Refs is not blank
+
 	var (
 		pack = testPack()
 
@@ -775,7 +777,7 @@ func TestRefs_Degree(t *testing.T) {
 				t.FailNow()
 			}
 
-			//logRefsTree(t, &refs, pack, false)
+			logRefsTree(t, &refs, pack, false)
 
 			var trFull = testRefsFromRefs(&refs) // keep the refs
 			var trHead = testRefsFromRefs(&refs) // to cut
@@ -895,21 +897,185 @@ func TestRefs_Degree(t *testing.T) {
 func TestRefs_Flags(t *testing.T) {
 	// Flags() (flags Flags)
 
-	//
+	// flags are not saved in DB
+
+	// So, the Flags tested inside another tests
+	// let's mark this test case low priority
+
+	// TODO (kostyarin): low priority
 
 }
 
 func TestRefs_Reset(t *testing.T) {
 	// Reset() (err error)
 
-	//
+	// TODO (kostyarin): lowest priority
+
+}
+
+func getHashList(users []interface{}) (has []cipher.SHA256) {
+
+	has = make([]cipher.SHA256, 0, len(users))
+
+	for _, user := range users {
+		has = append(has, getHash(user))
+	}
+
+	return
+
+}
+
+func testRefsHasHash(
+	t *testing.T, //        : the testing
+	r *Refs, //            : the Refs to test
+	pack Pack, //           : the pack
+	not cipher.SHA256, //   : has not this hash
+	has []cipher.SHA256, // : has this hashes
+) {
+
+	var (
+		ok  bool
+		err error
+	)
+
+	// check the "not" first
+
+	// (1) init and (2) use initialized Refs
+	for i := 0; i < 2; i++ {
+
+		if ok, err = r.HasHash(pack, not); err != nil {
+			t.Error(err)
+		}
+
+		if ok == true {
+			t.Error("the Refs has hash that it should not have")
+		}
+
+	}
+
+	// check all users
+
+	for _, hash := range has {
+
+		if ok, err = r.HasHash(pack, hash); err != nil {
+			t.Error(err)
+		}
+
+		if ok == false {
+			t.Error("missing hash:", hash.Hex()[:7])
+		}
+
+	}
 
 }
 
 func TestRefs_HasHash(t *testing.T) {
 	// HasHsah(pack Pack, hash cipher.SHA256) (ok bool, err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+		err  error
+
+		has []cipher.SHA256 // the users
+		not = cipher.SumSHA256([]byte("any Refs doesn't contain this hash"))
+
+		users []interface{}
+
+		clear = func(t *testing.T, r *Refs, degree int) {
+			refs.Clear()          // clear the Refs making it Refs{}
+			if degree != Degree { // if it's not default
+				if err = refs.SetDegree(pack, degree); err != nil { // change it
+					t.Fatal(err)
+				}
+			}
+		}
+	)
+
+	for _, degree := range []int{
+		Degree,     // default
+		Degree + 7, // changed
+	} {
+
+		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+			testRefsHasHash(t, &refs, pack, not, nil)
+
+		})
+
+		// fill
+		//   (1) only leafs
+		//   (2) leafs and branches
+		//   (3) branches with branches with leafs
+
+		for _, length := range []int{
+			degree,            // only leafs
+			degree + 1,        // leafs and branches
+			degree*degree + 1, // branches with branches with leafs
+		} {
+
+			t.Logf("Refs with %d elements (degree %d)", length, degree)
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+
+			// generate users
+			users = testFillRefsWithUsers(t, &refs, pack, length)
+
+			if t.Failed() {
+				t.FailNow()
+			}
+
+			logRefsTree(t, &refs, pack, false)
+
+			has = getHashList(users)
+
+			///////
+
+			t.Run(fmt.Sprintf("load %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset() // reset the refs
+
+					testRefsHasHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("load entire %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()              // reset the refs
+					pack.AddFlags(EntireRefs) // load entire Refs
+
+					testRefsHasHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("hash table index %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()
+
+					pack.ClearFlags(EntireRefs)
+					pack.AddFlags(HashTableIndex)
+
+					testRefsHasHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+		}
+
+	}
 
 }
 
