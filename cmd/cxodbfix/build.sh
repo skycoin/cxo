@@ -1,4 +1,4 @@
-#!/bin/evn bash
+#!/usr/bin/env bash
 
 # $1 - os
 # $2 - arch
