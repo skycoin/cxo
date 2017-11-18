@@ -161,7 +161,7 @@ func testFillRefsWithUsers(
 	t *testing.T, //        : the testing
 	r *Refs, //             : the Refs to fill
 	pack Pack, //           : pack to save the users in
-	n int, //               : numbrof users
+	n int, //               : number of users
 ) (
 	users []interface{}, // : the users
 ) {
@@ -371,9 +371,7 @@ func TestRefs_Len(t *testing.T) {
 
 			if ln, err = refs.Len(pack); err != nil {
 				t.Fatal("can't initialize blank Refs:", err)
-			}
-
-			if ln != 0 {
+			} else if ln != 0 {
 				t.Errorf("wrong length, want 0, got %d", ln)
 			}
 
@@ -454,9 +452,7 @@ func TestRefs_Len(t *testing.T) {
 
 				if ln, err = refs.Len(pack); err != nil {
 					t.Fatal(err)
-				}
-
-				if ln != length {
+				} else if ln != length {
 					t.Error("wrong length: want %d, got %d", length, ln)
 				}
 
@@ -478,9 +474,7 @@ func TestRefs_Len(t *testing.T) {
 
 				if ln, err = refs.Len(pack); err != nil {
 					t.Fatal(err)
-				}
-
-				if ln != length {
+				} else if ln != length {
 					t.Error("wrong length: want %d, got %d", length, ln)
 				}
 
@@ -505,9 +499,7 @@ func TestRefs_Len(t *testing.T) {
 
 				if ln, err = refs.Len(pack); err != nil {
 					t.Fatal(err)
-				}
-
-				if ln != length {
+				} else if ln != length {
 					t.Error("wrong length: want %d, got %d", length, ln)
 				}
 
@@ -546,9 +538,7 @@ func TestRefs_Depth(t *testing.T) {
 
 			if dp, err = refs.Depth(pack); err != nil {
 				t.Fatal("can't initialize blank Refs:", err)
-			}
-
-			if dp-1 != 0 {
+			} else if dp-1 != 0 {
 				t.Errorf("wrong depth, want 0, got %d", dp)
 			}
 
@@ -631,9 +621,7 @@ func TestRefs_Depth(t *testing.T) {
 
 				if dp, err = refs.Depth(pack); err != nil {
 					t.Fatal(err)
-				}
-
-				if dp-1 != depth {
+				} else if dp-1 != depth {
 					t.Error("wrong depth: want %d, got %d", depth, dp)
 				}
 
@@ -655,9 +643,7 @@ func TestRefs_Depth(t *testing.T) {
 
 				if dp, err = refs.Depth(pack); err != nil {
 					t.Fatal(err)
-				}
-
-				if dp-1 != depth {
+				} else if dp-1 != depth {
 					t.Error("wrong depth: want %d, got %d", depth, dp)
 				}
 
@@ -682,9 +668,7 @@ func TestRefs_Depth(t *testing.T) {
 
 				if dp, err = refs.Depth(pack); err != nil {
 					t.Fatal(err)
-				}
-
-				if dp-1 != depth {
+				} else if dp-1 != depth {
 					t.Error("wrong depth: want %d, got %d", depth, dp)
 				}
 
@@ -739,9 +723,7 @@ func TestRefs_Degree(t *testing.T) {
 
 			if dg, err = refs.Degree(pack); err != nil {
 				t.Fatal("can't initialize blank Refs:", err)
-			}
-
-			if dg != degree {
+			} else if dg != degree {
 				t.Errorf("wrong degree, want %d, got %d", degree, dg)
 			}
 
@@ -820,9 +802,7 @@ func TestRefs_Degree(t *testing.T) {
 
 					if dg, err = refs.Degree(pack); err != nil {
 						t.Fatal(err)
-					}
-
-					if dg != degree {
+					} else if dg != degree {
 						t.Error("wrong degree: want %d, got %d", degree, dg)
 					}
 
@@ -844,9 +824,7 @@ func TestRefs_Degree(t *testing.T) {
 
 					if dg, err = refs.Degree(pack); err != nil {
 						t.Fatal(err)
-					}
-
-					if dg != degree {
+					} else if dg != degree {
 						t.Error("wrong degree: want %d, got %d", degree, dg)
 					}
 
@@ -872,9 +850,7 @@ func TestRefs_Degree(t *testing.T) {
 
 						if dg, err = refs.Degree(pack); err != nil {
 							t.Fatal(err)
-						}
-
-						if dg != degree {
+						} else if dg != degree {
 							t.Error("wrong degree: want %d, got %d", degree, dg)
 						}
 
@@ -927,7 +903,7 @@ func getHashList(users []interface{}) (has []cipher.SHA256) {
 
 func testRefsHasHash(
 	t *testing.T, //        : the testing
-	r *Refs, //            : the Refs to test
+	r *Refs, //             : the Refs to test
 	pack Pack, //           : the pack
 	not cipher.SHA256, //   : has not this hash
 	has []cipher.SHA256, // : has this hashes
@@ -945,9 +921,7 @@ func testRefsHasHash(
 
 		if ok, err = r.HasHash(pack, not); err != nil {
 			t.Error(err)
-		}
-
-		if ok == true {
+		} else if ok == true {
 			t.Error("the Refs has hash that it should not have")
 		}
 
@@ -959,9 +933,7 @@ func testRefsHasHash(
 
 		if ok, err = r.HasHash(pack, hash); err != nil {
 			t.Error(err)
-		}
-
-		if ok == false {
+		} else if ok == false {
 			t.Error("missing hash:", hash.Hex()[:7])
 		}
 
@@ -1077,12 +1049,202 @@ func TestRefs_HasHash(t *testing.T) {
 
 	}
 
+	t.Run("blank hash", func(t *testing.T) {
+
+		refs.Clear()
+		pack.ClearFlags(^0) // all
+
+		if err = refs.AppendHashes(pack, cipher.SHA256{}); err != nil {
+			t.Fatal(err)
+		}
+
+		var ok bool
+		if ok, err = refs.HasHash(pack, cipher.SHA256{}); err != nil {
+			t.Error(err)
+		} else if ok == false {
+			t.Error("missing blank hash")
+		}
+
+	})
+
+}
+
+// don't compare Hidden field, only Name and Age
+func testUserEq(u1, u2 *TestUser) (equal bool) {
+	return u1.Name == u2.Name && u1.Age == u2.Age
+}
+
+func testRefsValueByHash(
+	t *testing.T, //         : the testing
+	r *Refs, //              : the Refs to test
+	pack Pack, //            : the pack
+	not cipher.SHA256, //    : has not this hash
+	has []cipher.SHA256, //  : has this hashes
+	valuse []interface{}, // : expected values
+) {
+
+	var (
+		usr TestUser
+		err error
+	)
+
+	// check the "not" first
+
+	// (1) init and (2) use initialized Refs
+	for i := 0; i < 2; i++ {
+
+		if err = r.ValueByHash(pack, not, &usr); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Errorf("wrong error: want ErrNotFound, got %q", err)
+		}
+
+	}
+
+	// check all users
+
+	for i, hash := range has {
+
+		if err = r.ValueByHash(pack, hash, &usr); err != nil {
+			t.Error(err)
+		} else {
+
+			var want = valuse[i].(TestUser)
+
+			if testUserEq(&usr, &want) == false {
+				t.Error("got wrong value")
+			}
+		}
+
+	}
+
 }
 
 func TestRefs_ValueByHash(t *testing.T) {
 	// ValueByHash(pack Pack, hash cipher.SHA256, obj interface{}) (err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+		err  error
+
+		has []cipher.SHA256 // the users
+		not = cipher.SumSHA256([]byte("any Refs doesn't contain this hash"))
+
+		users []interface{}
+
+		clear = func(t *testing.T, r *Refs, degree int) {
+			refs.Clear()          // clear the Refs making it Refs{}
+			if degree != Degree { // if it's not default
+				if err = refs.SetDegree(pack, degree); err != nil { // change it
+					t.Fatal(err)
+				}
+			}
+		}
+	)
+
+	for _, degree := range []int{
+		Degree,     // default
+		Degree + 7, // changed
+	} {
+
+		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+			testRefsHasHash(t, &refs, pack, not, nil)
+
+		})
+
+		// fill
+		//   (1) only leafs
+		//   (2) leafs and branches
+		//   (3) branches with branches with leafs
+
+		for _, length := range []int{
+			degree,            // only leafs
+			degree + 1,        // leafs and branches
+			degree*degree + 1, // branches with branches with leafs
+		} {
+
+			t.Logf("Refs with %d elements (degree %d)", length, degree)
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+
+			// generate users
+			users = testFillRefsWithUsers(t, &refs, pack, length)
+
+			if t.Failed() {
+				t.FailNow()
+			}
+
+			logRefsTree(t, &refs, pack, false)
+
+			has = getHashList(users)
+
+			////////////
+
+			t.Run(fmt.Sprintf("load %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset() // reset the refs
+
+					testRefsValueByHash(t, &refs, pack, not, has, users)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("load entire %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()              // reset the refs
+					pack.AddFlags(EntireRefs) // load entire Refs
+
+					testRefsValueByHash(t, &refs, pack, not, has, users)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("hash table index %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()
+
+					pack.ClearFlags(EntireRefs)
+					pack.AddFlags(HashTableIndex)
+
+					testRefsValueByHash(t, &refs, pack, not, has, users)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+		}
+
+	}
+
+	t.Run("blank hash", func(t *testing.T) {
+
+		refs.Clear()
+		pack.ClearFlags(^0) // all
+
+		if err = refs.AppendHashes(pack, cipher.SHA256{}); err != nil {
+			t.Fatal(err)
+		}
+
+		var usr TestUser
+		if err = refs.ValueByHash(pack, cipher.SHA256{}, &usr); err == nil {
+			t.Error("missing error")
+		} else if err != ErrRefsElementIsNil {
+			t.Errorf("wrong error: want ErrRefsElementIsNil, got %q", err)
+		}
+
+	})
 
 }
 
