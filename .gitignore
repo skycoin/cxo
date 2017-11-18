@@ -6,10 +6,15 @@
 # Folders
 _obj
 _test
+vendor/
 
 # Architecture specific extensions/prefixes
 *.[568vq]
 [568vq].out
+
+# dep package manager files
+Gopkg.lock
+Gopkg.toml
 
 *.cgo1.go
 *.cgo2.c
