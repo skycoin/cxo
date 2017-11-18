@@ -19,7 +19,7 @@ type CXDS interface {
 	// increments references count. Otherwise the references count
 	// will be set to 1
 	Set(key cipher.SHA256, val []byte) (rc uint32, err error)
-	// Add value, calculating hash internally. E.g. it clculates
+	// Add value, calculating hash internally. E.g. it calculates
 	// hash and performs Set
 	Add(val []byte) (key cipher.SHA256, rc uint32, err error)
 	// Inc increments references count
@@ -49,6 +49,6 @@ type CXDS interface {
 	// ErrStopIteration to stop an iteration
 	Iterate(func(key cipher.SHA256, rc uint32) error) error
 
-	// Clsoe the CXDS
+	// Close the CXDS
 	Close() (err error)
 }

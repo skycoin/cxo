@@ -24,7 +24,7 @@ type Flag int
 const (
 	// EntireTree - load all possible. Stop on first error
 	EntireTree Flag = 1 << iota
-	// EntireMerkleTree - load Refs with all brances (not leafs). Otherwise,
+	// EntireMerkleTree - load Refs with all branches (not leafs). Otherwise,
 	// the Refs will be loaded partially depending needs. The EntireTree and
 	// HashTableIndex flags set this one
 	EntireMerkleTree
@@ -34,7 +34,7 @@ const (
 	// ViewOnly don't allows modifications
 	ViewOnly
 
-	// intrnal flags
+	// internal flags
 	freshRoot // root is not based on some other Root we should not remove
 )
 
@@ -149,7 +149,7 @@ func (p *Pack) Save() (err error) {
 
 	// 1) keep the seq to decrement it next time
 	// 2) range over tree getting Volume/Amount of related objects
-	//   2.1) get the V/A of already existeing objects
+	//   2.1) get the V/A of already existing objects
 	//   2.2) save new objects indexing them
 	// 3) keep all saved objects to decrement them on failure
 	var (
@@ -327,7 +327,7 @@ func (p *Pack) init() (err error) {
 }
 
 // Root of the Pack. It returns underlying Root object
-// that changes with changes in Pack. Fields of the Root
+// that change with changes in Pack. Fields of the Root
 // are actual after every successful Save (or Unpack) and
 // before first chagnes
 func (p *Pack) Root() *Root { return p.r }

@@ -13,7 +13,7 @@ import (
 
 // Inspect given root returning himan readable string
 // with tree that represents this Root with all
-// related obejcts
+// related objects
 func (c *Container) Inspect(r *Root) string {
 	ins := inspector{
 		c: c,

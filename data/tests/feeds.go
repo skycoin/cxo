@@ -137,7 +137,7 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 		pks[pk] = struct{}{}
 	}
 
-	t.Run("itterate", func(t *testing.T) {
+	t.Run("iterate", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
 			var called int
 			err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
@@ -156,7 +156,7 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 				t.Error("called wrong times", called)
 			}
 			if len(pks) != 0 {
-				t.Error("existsing feeds was not iterated")
+				t.Error("existing feeds was not iterated")
 			}
 			return
 		})

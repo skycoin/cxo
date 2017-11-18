@@ -92,13 +92,13 @@ func (a *Addresses) Set(addr string) error {
 	return nil
 }
 
-// A Config represnets configurations
+// A Config represents configurations
 // of a Node. The config contains configurations
 // for gnet.Pool and  for log.Logger. If logger of
 // gnet.Config is nil, then logger of Config
 // will be used
 type Config struct {
-	gnet.Config // pool confirations
+	gnet.Config // pool configurations
 
 	Log log.Config // logger configurations (logger of Node)
 
@@ -172,7 +172,7 @@ type Config struct {
 	// subscribe to feed of this (local) node. This callback
 	// never called if subscription rejected by any reason.
 	// If this callback returns a non-nil error the subscription
-	// willl be rejected, even if it's ok. This callback should
+	// will be rejected, even if it's ok. This callback should
 	// not block, because it performs inside message handling
 	// goroutine and long freeze breaks connection
 	OnSubscribeRemote func(c *Conn, feed cipher.PubKey) (reject error)
@@ -205,7 +205,7 @@ type Config struct {
 	// The Root will be removed after this callback
 	// with all related objects. The Root is not full
 	// and can't be used in skyobject methods.This
-	// callback should not block because it permforms
+	// callback should not block because it performs
 	// in handling goroutine
 	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
 

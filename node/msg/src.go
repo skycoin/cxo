@@ -20,7 +20,7 @@ var (
 // represented as [8]byte
 type ID [8]byte
 
-// IsZero retursn true if the ID is blank
+// IsZero returns true if the ID is blank
 func (i ID) IsZero() bool {
 	return i == (ID{})
 }
@@ -39,10 +39,10 @@ func (i *ID) Set(u uint64) {
 // creates messages with unique ID
 type Src struct{}
 
-// ID retusn new randon ID
+// ID returns new random ID
 func (s *Src) ID() (id ID) {
 	if _, err := rand.Read(id[:]); err != nil {
-		panic("[CRIT] can'st crypto/rand.Read, fatality!")
+		panic("[CRIT] can't crypto/rand.Read, fatality!")
 	}
 	return
 }

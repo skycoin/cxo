@@ -36,7 +36,7 @@ type Feeds interface {
 }
 
 // An IterateRootsFunc represents function for
-// iteratin over all Root objects of a feed
+// iterating over all Root objects of a feed
 type IterateRootsFunc func(*Root) error
 
 // A Roots represents bucket of Root objects.
@@ -48,7 +48,7 @@ type Roots interface {
 	// (except the ErrStopIteration) returned by given
 	// IterateRootsFunc will be passed through
 	Ascend(IterateRootsFunc) error
-	// Descend is the same as the Ascend, but it iteates
+	// Descend is the same as the Ascend, but it iterates
 	// decending order. From lates Root objects to
 	// oldes
 	Descend(IterateRootsFunc) error
@@ -68,7 +68,7 @@ type Roots interface {
 	Has(uint64) bool
 
 	// Len returns amount of saved Root
-	// oebjcts of this feed
+	// objects of this feed
 	Len() int
 }
 

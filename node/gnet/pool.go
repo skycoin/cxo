@@ -16,7 +16,7 @@ var (
 	ErrClosed = errors.New("closed pool")
 	// ErrConnectionsLimit reached error
 	ErrConnectionsLimit = errors.New("connections limit reached")
-	// ErrAlreadyListen occurswhen you try to Listen may times
+	// ErrAlreadyListen occurs when you try to Listen may times
 	ErrAlreadyListen = errors.New("already listen")
 )
 

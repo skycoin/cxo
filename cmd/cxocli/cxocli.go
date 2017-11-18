@@ -30,7 +30,7 @@ const (
 )
 
 var (
-	out io.Writer = os.Stdout // it's nessesary for tests
+	out io.Writer = os.Stdout // it's necessary for tests
 
 	errUnknowCommand    = errors.New("unknown command")
 	errMisisngArgument  = errors.New("missing argument")
@@ -325,7 +325,7 @@ func showHelp() {
 	fmt.Fprintln(out, `
 
   add feed <public key>
-    start shareing feed
+    start sharing feed
   del feed <public key>
     stop sharing feed
 

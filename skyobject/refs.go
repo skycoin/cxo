@@ -89,7 +89,7 @@ func (r *Refs) isInitialized() bool {
 
 type refsNode struct {
 	pack  *Pack                       // related Pack
-	sch   Schema                      // shema of the Refs
+	sch   Schema                      // schema of the Refs
 	index map[cipher.SHA256]*RefsElem // index (or reference)
 
 	// lock
@@ -105,7 +105,7 @@ func (r *Refs) IsBlank() bool {
 }
 
 // Eq returns true if given Refs is the same
-// as this one (ccompare hashes only)
+// as this one (compare hashes only)
 func (r *Refs) Eq(x *Refs) bool {
 	return r.Hash == x.Hash
 }
@@ -389,7 +389,7 @@ func (r *Refs) refByHashWihtoutHashTable(hash cipher.SHA256) (i int,
 
 // RefByHash returns Ref by its hash. If HashTableIndex flag
 // is set, and there are many values with the same hash,
-// then which value will be retuned is not defined. If the
+// then which value will be returned is not defined. If the
 // flag is not set, then it returns last value
 func (r *Refs) RefByHash(hash cipher.SHA256) (needle *RefsElem, err error) {
 
@@ -826,7 +826,7 @@ func (r *Refs) save(depth int) {
 	return
 }
 
-// walk from tail to fild nodes that has incorrect 'Hash' and 'length'
+// walk from tail to find nodes that has incorrect 'Hash' and 'length'
 // fields to set proper; the method doesn't check hashes of nested
 // nodes or leafs, it checks only lengths; e.g. the method is useful
 // after insert (Append or cahngeDepth); it can't be used after Ascend
@@ -999,7 +999,7 @@ func (r *Refs) Append(objs ...interface{}) (err error) {
 				return
 			}
 		} else if ns != nil && ns != os {
-			err = fmt.Errorf("can't append object of differetn types: %q, %q",
+			err = fmt.Errorf("can't append object of different types: %q, %q",
 				ns.String(), os.String())
 			return
 		} else {

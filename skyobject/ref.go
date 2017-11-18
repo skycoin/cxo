@@ -218,7 +218,7 @@ func (r *Ref) Clear() (err error) {
 	return
 }
 
-// Copy returs copy of this reference.
+// Copy returns a copy of this reference.
 // The Copy will have the same schema and hash.
 // But underlying value (golagn value) will be nil
 // and the value can be extracted from DB. This will

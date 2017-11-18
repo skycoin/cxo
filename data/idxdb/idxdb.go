@@ -9,7 +9,7 @@ const Version = 1 // previous is 0
 
 // common errors
 var (
-	ErrInvalidSize = errors.New("invalid size of encoded obejct")
+	ErrInvalidSize = errors.New("invalid size of encoded object")
 
 	ErrMissingMetaInfo = errors.New("missing meta information")
 	ErrMissingVersion  = errors.New("missing version in meta")

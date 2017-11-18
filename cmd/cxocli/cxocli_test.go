@@ -402,9 +402,9 @@ func Test_term(t *testing.T) {
 		}
 
 		if err := term(cl); err == nil {
-			t.Error("misisng error")
+			t.Error("missing error")
 		} else if err.Error() != "not allowed" {
-			t.Error("wrong errro")
+			t.Error("wrong error")
 		} else if testOut.Len() != 0 {
 			t.Error("something on stdout")
 		}

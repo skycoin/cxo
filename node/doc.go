@@ -6,7 +6,7 @@
 //
 // A Container represents wrapper of skyobject.Container. And Root is
 // wrapper of skyobject.Root. There's only one difference between
-// skyobject.Root and node.Root. A node.Root sends all cahnges to
+// skyobject.Root and node.Root. A node.Root sends all changes to
 // connected peers that subscribed to feed of the Root. A Container
 // returns node.Root instead of skyobject.Root
 //

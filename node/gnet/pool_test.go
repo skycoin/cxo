@@ -67,7 +67,7 @@ func TestNewPool(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.Logger == nil {
-			t.Error("logger doen't created")
+			t.Error("logger doesn't created")
 		}
 		c := NewConfig()
 		c.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})

@@ -50,7 +50,7 @@ In another terminal launch the `ca` node
 go run $GOPATH/src/github.com/skycoin/cxo/intro/exchange/ca/ca.go
 ```
 
-And finally, in another terminal lauch the `cb` node
+And finally, in another terminal launch the `cb` node
 ```
 go run $GOPATH/src/github.com/skycoin/cxo/intro/exchange/cb/cb.go
 ```

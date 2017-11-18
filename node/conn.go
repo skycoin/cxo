@@ -12,7 +12,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 )
 
-// onenctions related errors
+// connections related errors
 var (
 	ErrWriteQueueFull              = errors.New("write queue full")
 	ErrWrongResponseID             = errors.New("wrong response ID")
@@ -57,7 +57,7 @@ type Conn struct {
 
 	// synchronisation internals
 
-	// done means that all finialization permformed
+	// done means that all finialization performed
 	// and handling goroutine exists
 	done chan struct{}
 }
@@ -195,7 +195,7 @@ type waitResponse struct {
 	ttm  chan struct{} // teminate timeout (nil if not timeout set)
 }
 
-// id id ID of the req Msg
+// ID of the req Msg
 func (c *Conn) sendRequest(id msg.ID, req msg.Msg,
 	cerr chan error, rspn chan msg.Msg) (wr *waitResponse, err error) {
 
@@ -544,7 +544,7 @@ func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
 		ofb(c, r, reason)
 	}
 
-	// the Root is not saved in database but some realted objects
+	// the Root is not saved in database but some related objects
 	// have been saved and we have to decrement them all
 
 	// actually the Root is saved, but it's not saved in index
