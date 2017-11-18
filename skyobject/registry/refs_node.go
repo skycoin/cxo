@@ -264,17 +264,24 @@ func (r *refsElement) indexInUpper() (i int, err error) {
 // indexInRefs returns index of first element of the
 // node in Refs; e.g. a refsNode has not an index, but
 // it contains elements with indicies, and this mehtod
-// returns index of first element
+// returns index of first element; other words the index
+// is shift of the node in the Refs
 func (r *refsNode) indexInRefs() (i int, err error) {
 
 Upper:
 	for up, down := r.upper, r; up != nil; up, down = up.upper, up {
+
 		for _, br := range up.branches {
+
 			if br != down {
 				i += br.length
+				continue // get next branch until the down
 			}
-			continue Upper
+
+			continue Upper // go up
+
 		}
+
 		return 0, ErrInvalidRefs // can't find in upper.branches
 	}
 

@@ -1155,7 +1155,7 @@ func TestRefs_ValueByHash(t *testing.T) {
 			pack.AddFlags(testNoMeaninFlag)
 
 			clear(t, &refs, degree)
-			testRefsHasHash(t, &refs, pack, not, nil)
+			testRefsValueByHash(t, &refs, pack, not, nil, nil)
 
 		})
 
@@ -1187,8 +1187,6 @@ func TestRefs_ValueByHash(t *testing.T) {
 			logRefsTree(t, &refs, pack, false)
 
 			has = getHashList(users)
-
-			////////////
 
 			t.Run(fmt.Sprintf("load %d:%d", length, degree),
 				func(t *testing.T) {
@@ -1248,10 +1246,178 @@ func TestRefs_ValueByHash(t *testing.T) {
 
 }
 
+func testRefsIndexOfHash(
+	t *testing.T, //         : the testing
+	r *Refs, //              : the Refs to test
+	pack Pack, //            : the pack
+	not cipher.SHA256, //    : has not this hash
+	has []cipher.SHA256, //  : has this hashes
+) {
+
+	var (
+		idx int
+		err error
+	)
+
+	// check the "not" first
+
+	// (1) init and (2) use initialized Refs
+	for i := 0; i < 2; i++ {
+
+		if _, err = r.IndexOfHash(pack, not); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Errorf("wrong error: want ErrNotFound, got %q", err)
+		}
+
+	}
+
+	// check all users
+
+	for i, hash := range has {
+
+		if idx, err = r.IndexOfHash(pack, hash); err != nil {
+			t.Error(err)
+		} else if idx < 0 || idx >= len(has) {
+			t.Error("got index out of range")
+		} else if has[idx] != hash {
+			t.Errorf("wrong index, want %d, got %d", i, idx)
+		}
+
+	}
+
+}
+
 func TestRefs_IndexOfHash(t *testing.T) {
 	// IndexOfHash(pack Pack, hash cipher.SHA256) (i int, err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+		err  error
+
+		has []cipher.SHA256 // the users
+		not = cipher.SumSHA256([]byte("any Refs doesn't contain this hash"))
+
+		users []interface{}
+
+		clear = func(t *testing.T, r *Refs, degree int) {
+			refs.Clear()          // clear the Refs making it Refs{}
+			if degree != Degree { // if it's not default
+				if err = refs.SetDegree(pack, degree); err != nil { // change it
+					t.Fatal(err)
+				}
+			}
+		}
+	)
+
+	for _, degree := range []int{
+		Degree,     // default
+		Degree + 7, // changed
+	} {
+
+		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+			testRefsIndexOfHash(t, &refs, pack, not, nil)
+
+		})
+
+		// fill
+		//   (1) only leafs
+		//   (2) leafs and branches
+		//   (3) branches with branches with leafs
+
+		for _, length := range []int{
+			degree,            // only leafs
+			degree + 1,        // leafs and branches
+			degree*degree + 1, // branches with branches with leafs
+		} {
+
+			t.Logf("Refs with %d elements (degree %d)", length, degree)
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+
+			// generate users
+			users = testFillRefsWithUsers(t, &refs, pack, length)
+
+			if t.Failed() {
+				t.FailNow()
+			}
+
+			logRefsTree(t, &refs, pack, false)
+
+			has = getHashList(users)
+
+			t.Run(fmt.Sprintf("load %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset() // reset the refs
+
+					testRefsIndexOfHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("load entire %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()              // reset the refs
+					pack.AddFlags(EntireRefs) // load entire Refs
+
+					testRefsIndexOfHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("hash table index %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()
+
+					pack.ClearFlags(EntireRefs)
+					pack.AddFlags(HashTableIndex)
+
+					testRefsIndexOfHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+		}
+
+	}
+
+	t.Run("blank hash", func(t *testing.T) {
+
+		refs.Clear()
+		pack.ClearFlags(^0) // all
+
+		var hashes = []cipher.SHA256{
+			{1, 2, 3}, //
+			{4, 5, 6}, //
+			{},        // the blank one
+		}
+
+		if err = refs.AppendHashes(pack, hashes...); err != nil {
+			t.Fatal(err)
+		}
+
+		var idx int
+		if idx, err = refs.IndexOfHash(pack, cipher.SHA256{}); err != nil {
+			t.Error(err)
+		} else if idx != len(hashes)-1 {
+			t.Errorf("wrong index of blank hash: want %d, got %d",
+				len(hashes)-1, idx)
+		}
+
+	})
 
 }
 
