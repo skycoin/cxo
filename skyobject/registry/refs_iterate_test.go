@@ -490,13 +490,15 @@ func TestRefs_Descend(t *testing.T) {
 
 			var called int
 
-			err = refs.Ascend(pack, func(int, cipher.SHA256) (_ error) {
+			err = refs.Descend(pack, func(int, cipher.SHA256) (_ error) {
 				called++
 				return
 			})
 
-			if err != nil {
-				t.Error(err)
+			if err == nil {
+				t.Error("missing error")
+			} else if err != ErrIndexOutOfRange {
+				t.Error("wrong error")
 			} else if called > 0 {
 				t.Errorf("called %d times, but should not be called at all",
 					called)

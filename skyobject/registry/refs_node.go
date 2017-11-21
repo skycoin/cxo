@@ -823,8 +823,8 @@ func (r *Refs) descendNodeBranches(
 		// these are local variables and decrementing has
 		// meaning only if we a going to descend next branch
 
-		shift -= subpass // e.g. shift -= br.length
-		i -= subpass     // decrement current absolute index
+		shift -= br.length // e.g. shift -= br.length
+		i -= subpass       // decrement current absolute index
 
 		// continue
 	}
