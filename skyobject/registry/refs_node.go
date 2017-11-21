@@ -693,10 +693,10 @@ func (r *Refs) ascendNodeBranches(
 		// these are local variables and incrementing has meaning only
 		// if we a going to ascend next branch
 
-		i += subpass     // increment absolute index of current element
-		shift += subpass // move the shift forward
+		i += subpass       // increment absolute index of current element
+		shift += br.length // move the shift forward
 
-		// continue
+		// continue (next branch)
 	}
 
 	return // done

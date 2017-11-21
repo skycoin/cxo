@@ -982,7 +982,14 @@ func (r *Refs) descendFrom(
 		// so, we need to find next element from root of the Refs
 		if rewind == true {
 			i -= pass // shift the i to don't repeat elements
-			continue  // find next index from root of the Refs
+
+			// if the length has been changed
+			if i >= r.length {
+				return ErrIndexOutOfRange // out
+			}
+			shift = r.length - 1 // set shift
+
+			continue // find next index from root of the Refs
 		}
 
 		// the loop is necesary for rewinding only
