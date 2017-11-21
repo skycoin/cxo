@@ -921,10 +921,10 @@ func (r *Refs) appendCreatingSliceNode(
 	// else if depth > 0 { branches }
 
 	// if the depth is not 1, then we should to add new branch and use it;
-	// fields length, hash and mods are still lempty;
+	// fields length, hash and mods are still empty;
 
 	// one more time, if we are here, then the rn has enouth place to
-	// fit new brnahc and the branch should be created and used;
+	// fit new brnach and the branch should be created and used;
 	// e.g. the step is 'go down', the step is opposite to the 'go up'
 
 	var br = &refsNode{
@@ -933,7 +933,7 @@ func (r *Refs) appendCreatingSliceNode(
 
 	rn.branches = append(rn.branches, br)
 
-	return r.appendCreatingSliceNode(br, depth-1, hash)
+	return r.appendCreatingSliceNode(br, depth-1, hash) // go down
 }
 
 //
@@ -1038,18 +1038,24 @@ func (r *Refs) freeSpaceOnTailNode(
 // appendNodeGoUp goes up and creates lack
 // nodes; see also appendNode and appendFunc
 func (r *Refs) appendNodeGoUp(
+	pack Pack, //          : pack to load
 	rn *refsNode, //       : current node (full)
 	depth int, //          : depth of the current node
 	hash cipher.SHA256, // : hash to append
 ) (
 	cn *refsNode, //       : current node (can be another then the rn)
 	cdepth int, //         : current depth (depth of the cn)
+	err error, //          : loading error
 ) {
 
 	// the rn is full, since we have to go up;
 	// thus we have to check upper node fullness
 	// and (1) add new branch or go up and repeat
 	// the step (1)
+
+	// note: if we are here, then node below is full and the node
+	// below is last node of the rn.upper.branches, e.g. we
+	// just compare len(rn.branches) with r.degree
 
 	if rn.upper == nil {
 		// since, we have to add a new hash to the slice (to the r),
@@ -1062,10 +1068,10 @@ func (r *Refs) appendNodeGoUp(
 
 	cn, cdepth = rn.upper, depth+1 // go up
 
-	// since we are using r,upper, then the depth is > 0
+	// since we are using r.upper, then the depth is > 0
 	// and the rn.upper contains branches
 	if len(cn.branches) == r.degree { // if it's full
-		return r.appendNodeGoUp(cn, cdepth, hash) // go up
+		return r.appendNodeGoUp(pack, cn, cdepth, hash) // go up
 	}
 
 	// otherwise we create new branch and use it;
@@ -1081,7 +1087,7 @@ func (r *Refs) appendNodeGoUp(
 
 	cn.branches = append(cn.branches, br)
 
-	return br, depth // e.g. br, and cdepth - 1
+	return br, depth, nil // e.g. br, and cdepth - 1
 }
 
 // appendNode appends given hash to the Refs; the method
@@ -1091,18 +1097,20 @@ func (r *Refs) appendNodeGoUp(
 // loadedMod, contentMod and lengthMod to all touched
 // nodes; the lengthMod flag is set only if necesssary
 func (r *Refs) appendNode(
+	pack Pack, //          : pack to load
 	rn *refsNode, //       : current node
 	depth int, //          : depth of the current node
 	hash cipher.SHA256, // : hash to append
 ) (
 	cn *refsNode, //       : current node (can be another then the rn)
 	cdepth int, //         : current depth (depth of the cn)
+	err error, //          : loading error
 ) {
 
 	if depth == 0 { // leafs
 
 		if len(rn.leafs) == r.degree { // full
-			return r.appendNodeGoUp(rn, depth, hash) // go up
+			return r.appendNodeGoUp(pack, rn, depth, hash) // go up
 		}
 
 		var el = &refsElement{
@@ -1118,26 +1126,52 @@ func (r *Refs) appendNode(
 		rn.length++           // add
 		rn.mods |= contentMod // but length is actual
 
-		return rn, depth // the same
+		return rn, depth, nil // the same
+
 	}
 
 	// else if depth > 0 { branches }
 
-	// if the depth is not 1, then we should to add new branch and use it;
-	// fields length, hash and mods are still lempty;
+	// go down
 
-	// one more time, if we are here, then the rn has enouth place to
-	// fit new brnahc and the branch should be created and used;
-	// e.g. the step is 'go down', the step is opposite to the 'go up'
+	// mark this ndoe as modified, it can be wrong but
+	// it doesn't make sence
+	rn.mods |= (contentMod | lengthMod)
 
-	var br = &refsNode{
-		upper: rn,
-		mods:  loadedMod | contentMod | lengthMod,
+	for depth > 0 {
+
+		if len(rn.branches) == 0 {
+
+			// just append branch if the rn.branches is empty
+
+			var br = &refsNode{
+				upper: rn,
+				mods:  loadedMod | contentMod | lengthMod,
+			}
+
+			rn.branches = append(rn.branches, br)
+
+			return r.appendNode(pack, br, depth-1, hash)
+		}
+
+		// do down to the ground
+
+		rn = rn.branches[len(rn.branches)-1] // get last
+		depth--                              // go down
+
+		// load the last if need
+
+		if err = r.loadNodeIfNeed(pack, rn, depth); err != nil {
+			return
+		}
+
 	}
 
-	rn.branches = append(rn.branches, br)
+	// depth is 0 and the last contains branch with leafs
+	// the branch can be full, or can not
 
-	return r.appendNode(br, depth-1, hash)
+	return r.appendNode(pack, rn, depth, hash)
+
 }
 
 //

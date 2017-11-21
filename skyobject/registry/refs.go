@@ -1250,9 +1250,9 @@ func (r *Refs) freeSpaceOnTail(
 // appnedFunc returns IterateFunc that creates slice
 // (the r) from elements of origin. Short words:
 //
-//     srcRefs.Ascend(pack, dstRefs.appnedFunc())
+//     srcRefs.Ascend(pack, dstRefs.appnedFunc(pack))
 //
-func (r *Refs) appnedFunc() (iter IterateFunc) {
+func (r *Refs) appnedFunc(pack Pack) (iter IterateFunc) {
 
 	// in the IterateFunc we are tracking current node and
 	// depth of the current node to avoid unnecessary walking
@@ -1264,13 +1264,12 @@ func (r *Refs) appnedFunc() (iter IterateFunc) {
 	iter = func(_ int, hash cipher.SHA256) (err error) {
 
 		// the call will panic if the r (the destination) is invalid
-		cn, depth = r.appendNode(cn, depth, hash)
+		cn, depth, err = r.appendNode(pack, cn, depth, hash)
 
 		return // continue
 	}
 
 	return
-
 }
 
 // walkUpdating walks through the refs
@@ -1294,6 +1293,10 @@ func (r *Refs) walkUpdating(
 // Append another Refs to this one. This Refs
 // will be increased if it can't fit all new
 // elements
+//
+// TODO (kostyarin): append itself. The ablility
+// to append the Refs itself is not implemented
+// yet. Behaviour in this case is undefined
 func (r *Refs) Append(
 	pack Pack, //  : pack to load and save
 	refs *Refs, // : the Refs to append to current one
@@ -1338,17 +1341,18 @@ func (r *Refs) Append(
 		// (1) create
 		var nr = newRefs(r.degree, r.flags, refs.length+r.length)
 
-		// (2) copy
-		err = r.Ascend(pack, nr.appnedCreatingSliceFunc(r.length))
+		// just the the j to bigger then length of the r and of the refs
+		var acsf = nr.appnedCreatingSliceFunc(
+			max(r.length, refs.length),
+		)
 
-		if err != nil {
+		// (2) copy
+		if err = r.Ascend(pack, acsf); err != nil {
 			return // error
 		}
 
 		// (3) copy
-		err = refs.Ascend(pack, nr.appnedCreatingSliceFunc(refs.length))
-
-		if err != nil {
+		if err = refs.Ascend(pack, acsf); err != nil {
 			return // error
 		}
 
@@ -1365,7 +1369,7 @@ func (r *Refs) Append(
 
 	// ok, here we have enough place to fit all new elements
 
-	if err = refs.Ascend(pack, r.appnedFunc()); err != nil {
+	if err = refs.Ascend(pack, r.appnedFunc(pack)); err != nil {
 		return // error
 	}
 
@@ -1417,6 +1421,13 @@ func (r *Refs) AppendValues(
 	return r.AppendHashes(pack, hashes...)
 }
 
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // AppendHashes to this Refs. The hashes msut
 // point to objects of schema of the Refs.
 // There are no internal checks for the Schema
@@ -1458,17 +1469,19 @@ func (r *Refs) AppendHashes(
 		// (1) create
 		var nr = newRefs(r.degree, r.flags, len(hashes)+r.length)
 
-		// (2) copy
-		err = r.Ascend(pack, nr.appnedCreatingSliceFunc(r.length))
+		// actually argument will not be used,
+		// we set the max to be sure that all
+		// elements will be proceeded
+		var acsf = nr.appnedCreatingSliceFunc(
+			max(r.length, len(hashes)),
+		)
 
-		if err != nil {
+		// (2) copy
+		if err = r.Ascend(pack, acsf); err != nil {
 			return // error
 		}
 
 		// (3) copy
-
-		var acsf = nr.appnedCreatingSliceFunc(len(hashes)) // the func
-
 		for i, hash := range hashes {
 
 			if err = acsf(i, hash); err != nil {
@@ -1491,7 +1504,7 @@ func (r *Refs) AppendHashes(
 
 	// ok, here we have enough place to fit all new elements
 
-	var af = r.appnedFunc() // the func
+	var af = r.appnedFunc(pack) // the func
 
 	for i, hash := range hashes {
 
@@ -1649,71 +1662,3 @@ func (r *Refs) treeNode(
 
 	return
 }
-
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-//
-//  THE CODE BELOW WAITS FOR THE REFACTORING
-//
-// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
-
-/*
-
-
-
-// ------ ------ ------ ------ ------ ------ ------ ------ ------ ------ ------
-
-// print debug tree
-
-// DebugString returns string that represents the Refs as
-// is. E.g. as Merkle-tree. If the tree is not loaded then
-// this mehtod prints only loaded parts. To load all branches
-// to print pass true
-func (r *Refs) DebugString(forceLoad bool) string {
-	var gt gotree.GTStructure
-	gt.Name = "[](refs) " + r.Short() + " " + fmt.Sprint(r.length)
-
-	if !forceLoad && !r.isLoaded() {
-		gt.Name += " (not loaded)"
-		return gotree.StringTree(gt)
-	}
-
-	if err := r.load(0); err != nil {
-		gt.Items = []gotree.GTStructure{{Name: "(error): " + err.Error()}}
-		return gotree.StringTree(gt)
-	}
-
-	gt.Items = r.debugItems(forceLoad, r.depth)
-	return gotree.StringTree(gt)
-}
-
-func (r *Refs) debugItems(forceLoad bool,
-	depth int) (its []gotree.GTStructure) {
-
-	if forceLoad {
-		if err := r.load(depth); err != nil {
-			return []gotree.GTStructure{{Name: "(error): " + err.Error()}}
-		}
-	}
-
-	if depth == 0 {
-		for _, leaf := range r.leafs {
-			its = append(its, gotree.GTStructure{
-				Name: "*(ref) " + leaf.Short(),
-			})
-		}
-		return
-	}
-
-	for _, br := range r.branches {
-		its = append(its, gotree.GTStructure{
-			Name:  br.Hash.Hex()[:7] + " " + fmt.Sprint(br.length),
-			Items: br.debugItems(forceLoad, depth-1),
-		})
-	}
-	return
-
-}
-
-// ------ ------ ------ ------ ------ ------ ------ ------ ------ ------ ------
-
-*/

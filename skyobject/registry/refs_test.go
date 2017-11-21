@@ -1009,8 +1009,6 @@ func TestRefs_HasHash(t *testing.T) {
 
 			has = getHashList(users)
 
-			///////
-
 			t.Run(fmt.Sprintf("load %d:%d", length, degree),
 				func(t *testing.T) {
 
@@ -1421,10 +1419,228 @@ func TestRefs_IndexOfHash(t *testing.T) {
 
 }
 
+func testRefsIndicesByHash(
+	t *testing.T, //         : the testing
+	r *Refs, //              : the Refs to test
+	pack Pack, //            : the pack
+	not cipher.SHA256, //    : has not this hash
+	has []cipher.SHA256, //  : has this hashes
+) {
+
+	var (
+		is  []int
+		err error
+	)
+
+	// check the "not" first
+
+	// (1) init and (2) use initialized Refs
+	for i := 0; i < 2; i++ {
+
+		if _, err = r.IndicesByHash(pack, not); err == nil {
+			t.Error("missing error")
+		} else if err != ErrNotFound {
+			t.Errorf("wrong error: want ErrNotFound, got %q", err)
+		}
+
+	}
+
+	// check all users
+
+	for _, hash := range has {
+
+		if is, err = r.IndicesByHash(pack, hash); err != nil {
+			t.Error(err)
+		} else if len(is) != 2 {
+			t.Errorf("wrong number of indices: want 2, got %d", len(is))
+		} else {
+			for _, idx := range is {
+				if idx >= len(has) {
+					idx -= len(has)
+				}
+				if has[idx] != hash {
+					t.Error("got wrong index", idx)
+				}
+			}
+		}
+
+	}
+
+}
+
+// generate once, append twice
+func testFillRefsWithUsersTwice(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	n int,
+) (
+	users []interface{},
+) {
+
+	users = testFillRefsWithUsers(t, r, pack, n)
+
+	if err := r.AppendValues(pack, users...); err != nil {
+		t.Error(err)
+	}
+
+	return
+
+}
+
+func logRefsIndex(t *testing.T, r *Refs) {
+	for hash, res := range r.refsIndex {
+		t.Logf("{%s: %d}", hash.Hex()[:7], len(res))
+	}
+}
+
 func TestRefs_IndicesByHash(t *testing.T) {
 	// IndicesByHash(pack Pack, hash cipher.SHA256) (is []int, err error)
 
-	//
+	t.Skip("test Append first")
+
+	var (
+		pack = testPack()
+
+		refs Refs
+		err  error
+
+		has []cipher.SHA256 // the users
+		not = cipher.SumSHA256([]byte("any Refs doesn't contain this hash"))
+
+		users []interface{}
+
+		clear = func(t *testing.T, r *Refs, degree int) {
+			refs.Clear()          // clear the Refs making it Refs{}
+			if degree != Degree { // if it's not default
+				if err = refs.SetDegree(pack, degree); err != nil { // change it
+					t.Fatal(err)
+				}
+			}
+		}
+	)
+
+	for _, degree := range []int{
+		Degree,     // default
+		Degree + 7, // changed
+	} {
+
+		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+			testRefsIndicesByHash(t, &refs, pack, not, nil)
+
+		})
+
+		// fill
+		//   (1) only leafs
+		//   (2) leafs and branches
+		//   (3) branches with branches with leafs
+
+		// so, since we adds this users twice, then we have to
+		// redue the length to test only leafs and so on
+
+		for _, length := range []int{
+			degree / 2,        // only leafs
+			degree,            // leafs and branches
+			degree*degree + 1, // branches with branches with leafs
+		} {
+
+			t.Logf("Refs with %d elements (degree %d)", length, degree)
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+
+			// generate users
+			users = testFillRefsWithUsersTwice(t, &refs, pack, length)
+
+			if t.Failed() {
+				t.FailNow()
+			}
+
+			if refs.length != length*2 {
+				t.Fatal("WRONG LENGTH", length, refs.length)
+			}
+
+			logRefsTree(t, &refs, pack, false)
+			logRefsIndex(t, &refs)
+
+			has = getHashList(users)
+
+			t.Run(fmt.Sprintf("load %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset() // reset the refs
+
+					testRefsIndicesByHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+					logRefsIndex(t, &refs)
+
+				})
+
+			t.Run(fmt.Sprintf("load entire %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()              // reset the refs
+					pack.AddFlags(EntireRefs) // load entire Refs
+
+					testRefsIndicesByHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+					logRefsIndex(t, &refs)
+
+				})
+
+			t.Run(fmt.Sprintf("hash table index %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()
+
+					pack.ClearFlags(EntireRefs)
+					pack.AddFlags(HashTableIndex)
+
+					testRefsIndicesByHash(t, &refs, pack, not, has)
+					logRefsTree(t, &refs, pack, false)
+					logRefsIndex(t, &refs)
+
+				})
+
+		}
+
+	}
+
+	t.Run("blank hash", func(t *testing.T) {
+
+		refs.Clear()
+		pack.ClearFlags(^0) // all
+
+		var hashes = []cipher.SHA256{
+			{}, // the blank one
+			{}, // the blank two
+		}
+
+		if err = refs.AppendHashes(pack, hashes...); err != nil {
+			t.Fatal(err)
+		}
+
+		var is []int
+		if is, err = refs.IndicesByHash(pack, cipher.SHA256{}); err != nil {
+			t.Error(err)
+		} else if len(is) != 2 {
+			t.Errorf("wron number of indices: want 2, got %d", len(is))
+		} else {
+			for _, idx := range is {
+				if (idx == 0 || idx == 1) == false {
+					t.Error("got wrong index:", idx)
+				}
+			}
+		}
+
+	})
 
 }
 
@@ -1479,32 +1695,11 @@ func TestRefs_DeleteByHash(t *testing.T) {
 
 }
 
-func TestRefs_Ascend(t *testing.T) {
-	// Ascend(pack Pack, ascendFunc IterateFunc) (err error)
-
-	//
-
-}
-
-func TestRefs_AscendFrom(t *testing.T) {
-	// AscendFrom(pack Pack, from int, ascendFunc IterateFunc) (err error)
-
-	//
-}
-
-func TestRefs_Descend(t *testing.T) {
-	// Descend(pack Pack, descendFunc IterateFunc) (err error)
-
-	//
-
-}
-
-func TestRefs_DescendFrom(t *testing.T) {
-	// DescendFrom(pack Pack, from int, descendFunc IterateFunc) (err error)
-
-	//
-
-}
+// see 'refs_iterate_test.go' for
+//  - Ascend
+//  - AscendFrom
+//  - Descend
+//  - DescendFrom
 
 func TestRefs_Slice(t *testing.T) {
 	// Slice(pack Pack, i int, j int) (slice *Refs, err error)
