@@ -1652,10 +1652,172 @@ func TestRefs_ValueOfHashWithIndex(t *testing.T) {
 
 }
 
+func testRefsHashByIndex(
+	t *testing.T, //          :
+	r *Refs, //               :
+	pack Pack, //             :
+	users []cipher.SHA256, // :
+) {
+
+	var ln int
+	var err error
+
+	if ln, err = r.Len(pack); err != nil {
+
+		t.Error(err)
+
+	} else if ln != len(users) {
+
+		t.Error("wrong length, want %d, got %d", len(users), ln)
+
+	} else {
+
+		var h cipher.SHA256
+
+		for i, hash := range users {
+
+			if h, err = r.HashByIndex(pack, i); err != nil {
+				t.Error(err)
+			} else if h != hash {
+				t.Error("wrong hash of %d: wnat %s, got %s",
+					i,
+					hash.Hex()[:7],
+					h.Hex()[:7],
+				)
+			}
+
+		}
+
+	}
+
+}
+
 func TestRefs_HashByIndex(t *testing.T) {
 	// HashByIndex(pack Pack, i int) (hash cipher.SHA256, err error)
 
-	//
+	var (
+		pack = testPack()
+
+		refs Refs
+		err  error
+
+		users []cipher.SHA256 // the users
+
+		clear = func(t *testing.T, r *Refs, degree int) {
+			refs.Clear()          // clear the Refs making it Refs{}
+			if degree != Degree { // if it's not default
+				if err = refs.SetDegree(pack, degree); err != nil { // change it
+					t.Fatal(err)
+				}
+			}
+		}
+	)
+
+	for _, degree := range []int{
+		Degree,     // default
+		Degree + 7, // changed
+	} {
+
+		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+			testRefsHashByIndex(t, &refs, pack, nil)
+
+		})
+
+		// fill
+		//   (1) only leafs
+		//   (2) leafs and branches
+		//   (3) branches with branches with leafs
+
+		for _, length := range []int{
+			degree,            // only leafs
+			degree + 1,        // leafs and branches
+			degree*degree + 1, // branches with branches with leafs
+		} {
+
+			t.Logf("Refs with %d elements (degree %d)", length, degree)
+
+			pack.ClearFlags(^0)
+			pack.AddFlags(testNoMeaninFlag)
+
+			clear(t, &refs, degree)
+
+			// generate users
+			users = getHashList(
+				testFillRefsWithUsers(t, &refs, pack, length),
+			)
+
+			logRefsTree(t, &refs, pack, false)
+
+			if t.Failed() {
+				t.FailNow()
+			}
+
+			t.Run(fmt.Sprintf("load %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset() // reset the refs
+
+					testRefsHashByIndex(t, &refs, pack, users)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("load entire %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()              // reset the refs
+					pack.AddFlags(EntireRefs) // load entire Refs
+
+					testRefsHashByIndex(t, &refs, pack, users)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+			t.Run(fmt.Sprintf("hash table index %d:%d", length, degree),
+				func(t *testing.T) {
+
+					refs.Reset()
+
+					pack.ClearFlags(EntireRefs)
+					pack.AddFlags(HashTableIndex)
+
+					testRefsHashByIndex(t, &refs, pack, users)
+					logRefsTree(t, &refs, pack, false)
+
+				})
+
+		}
+
+	}
+
+	t.Run("blank hash", func(t *testing.T) {
+
+		refs.Clear()
+		pack.ClearFlags(^0) // all
+
+		var hashes = []cipher.SHA256{
+			{1, 2, 3}, //
+			{4, 5, 6}, //
+			{},        // the blank one
+		}
+
+		if err = refs.AppendHashes(pack, hashes...); err != nil {
+			t.Fatal(err)
+		}
+
+		var hash cipher.SHA256
+		if hash, err = refs.HashByIndex(pack, 2); err != nil {
+			t.Error(err)
+		} else if hash != (cipher.SHA256{}) {
+			t.Errorf("wrong hash: want blank, got %d", hash.Hex()[:7])
+		}
+
+	})
 
 }
 
@@ -1708,26 +1870,10 @@ func TestRefs_Slice(t *testing.T) {
 
 }
 
-func TestRefs_Append(t *testing.T) {
-	// Append(pack Pack, refs *Refs) (err error)
-
-	//
-
-}
-
-func TestRefs_AppendValues(t *testing.T) {
-	// AppendValues(pack Pack, values ...interface{}) (err error)
-
-	//
-
-}
-
-func TestRefs_AppendHashes(t *testing.T) {
-	// AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error)
-
-	//
-
-}
+// see 'refs_append_test.go' for
+//  - Append
+//  - AppendValues
+//  - AppendHashes
 
 func TestRefs_Clear(t *testing.T) {
 	// Clear()

@@ -325,7 +325,7 @@ func (r *Refs) elementByIndex(
 			return
 		}
 
-		if i < br.length {
+		if i >= br.length {
 			i -= br.length // subtract length of the skipped branch
 			continue       // and skip the branch
 		}
