@@ -1046,12 +1046,9 @@ func (r *Refs) freeSpaceOnTailNode(
 // nodes; see also appendNode and appendFunc
 func (r *Refs) appendNodeGoUp(
 	pack Pack, //          : pack to load
-	rn *refsNode, //       : current node (full)
-	depth int, //          : depth of the current node
+	ap *appendPoint, //    : append point
 	hash cipher.SHA256, // : hash to append
 ) (
-	_ *refsNode, //        : current node (can be another then the rn)
-	_ int, //              : current depth (depth of the cn)
 	err error, //          : loading error
 ) {
 
@@ -1064,7 +1061,7 @@ func (r *Refs) appendNodeGoUp(
 	// below is last node of the rn.upper.branches, e.g. we
 	// just compare len(rn.branches) with r.degree
 
-	if rn.upper == nil {
+	if ap.rn.upper == nil {
 		// since, we have to add a new hash to the slice (to the r),
 		// then the full rn (and the rn is full here) must have
 		// upper node to add another one go or upper; e.g. if
@@ -1073,68 +1070,99 @@ func (r *Refs) appendNodeGoUp(
 		panic("invalid case")
 	}
 
-	rn, depth = rn.upper, depth+1 // go up
-
-	// since we are using r.upper, then the depth is > 0
-	// and the rn.upper contains branches
-	if len(rn.branches) == r.degree { // if it's full
-		return r.appendNodeGoUp(pack, rn, depth, hash) // go up
+	// bubble the length increasing first
+	if ap.increase > 0 {
+		for up := ap.rn.upper; up != nil; up = up.upper {
+			up.length += ap.increase // add
+			up.mods |= lengthMod     // mark
+		}
 	}
 
-	// otherwise we create new branch and use it;
-	// fields hash and length are not set and mods
-	// like contnetMod are not set too
+	ap.rn, ap.depth = ap.rn.upper, ap.depth+1 // use upper node
+
+	// since we are using ap.rn.upper, then the ap.depth
+	// is > 0 and the ap.rn.upper contains branches
+	if len(ap.rn.branches) == r.degree {
+
+		// not increased (idle pass)
+		if ap.increase == 0 {
+			return r.appendNodeGoUp(pack, ap, hash) // go up
+		}
+
+		ap.increase = 0 // reset
+
+		// TODO (kostyarin): LazyUpdating
+
+		// else -> increased
+		err = ap.rn.updateHashIfNeed(pack, ap.depth, true)
+
+		if err != nil {
+			return // saving error
+		}
+
+		return r.appendNodeGoUp(pack, ap, hash) // go up
+
+	}
+
+	ap.increase = 0 // reset
+
+	// the ap.increase has been bubbled up and reset;
+	// here ap.rn doesn't contain all branches; let's
+	// append new one
 
 	// e.g. one step down is here
 
 	var br = &refsNode{
-		upper: rn,
-		mods:  loadedMod | contentMod | lengthMod, // flags
+		upper: ap.rn,
+		mods:  loadedMod | contentMod, // flags
 	}
 
-	rn.branches = append(rn.branches, br)
-	rn.mods |= (loadedMod | contentMod | lengthMod) // modified
+	ap.rn.branches = append(ap.rn.branches, br) // go down
+	ap.rn.mods |= contentMod                    // modified
+	ap.depth--                                  // go down
 
-	return r.appendNode(pack, br, depth-1, hash) // e.g. br, and cdepth - 1
+	return r.appendNode(pack, ap, hash)
 }
 
-// appendNode appends given hash to the Refs; the method
-// doesn't set 'length' and 'hash' fields for refsNode(s);
-// the method returns new current node with it depth to
-// make caler able to use them; the method sets flags
-// loadedMod, contentMod and lengthMod to all touched
-// nodes; the lengthMod flag is set only if necesssary
+// ...
 func (r *Refs) appendNode(
 	pack Pack, //          : pack to load
-	rn *refsNode, //       : current node
-	depth int, //          : depth of the current node
+	ap *appendPoint, //    : current point to append
 	hash cipher.SHA256, // : hash to append
 ) (
-	cn *refsNode, //       : current node (can be another then the rn)
-	cdepth int, //         : current depth (depth of the cn)
 	err error, //          : loading error
 ) {
 
-	if depth == 0 { // leafs
+	if ap.depth == 0 { // leafs
 
-		if len(rn.leafs) == r.degree { // full
-			return r.appendNodeGoUp(pack, rn, depth, hash) // go up
+		if len(ap.rn.leafs) == r.degree { // full
+
+			// TODO (kostyarin): LazyUpdating
+			if err = ap.rn.updateHashIfNeed(pack, ap.depth, true); err != nil {
+				return // saving error
+			}
+
+			return r.appendNodeGoUp(pack, ap, hash) // go up
+
 		}
 
 		var el = &refsElement{
 			Hash:  hash,
-			upper: rn,
+			upper: ap.rn,
 		}
 
 		if r.flags&HashTableIndex != 0 {
 			r.addElementToIndex(el)
 		}
 
-		rn.leafs = append(rn.leafs, el)
-		rn.length++           // add
-		rn.mods |= contentMod // but length is actual
+		ap.rn.leafs = append(ap.rn.leafs, el)
+		ap.rn.length++ // add
 
-		return rn, depth, nil // the same
+		// TODO (kostyarin): LazyUpdating
+
+		ap.increase++ // increase the length
+
+		return nil // the same point
 
 	}
 
@@ -1142,34 +1170,36 @@ func (r *Refs) appendNode(
 
 	// go down
 
-	// mark this ndoe as modified, it can be wrong but
-	// it doesn't make sence
-	rn.mods |= (loadedMod | contentMod | lengthMod)
+	for ap.depth > 0 {
 
-	for depth > 0 {
-
-		if len(rn.branches) == 0 {
+		if len(ap.rn.branches) == 0 {
 
 			// just append branch if the rn.branches is empty
 
+			// TODO (kostyarin): LazyUpdating
+
 			var br = &refsNode{
-				upper: rn,
-				mods:  loadedMod | contentMod | lengthMod,
+				upper: ap.rn,
+				mods:  loadedMod,
 			}
 
-			rn.branches = append(rn.branches, br)
+			ap.rn.branches = append(ap.rn.branches, br)
 
-			return r.appendNode(pack, br, depth-1, hash)
+			ap.rn = br
+			ap.depth--
+
+			return r.appendNode(pack, ap, hash)
+
 		}
 
 		// do down to the ground
 
-		rn = rn.branches[len(rn.branches)-1] // get last
-		depth--                              // go down
+		ap.rn = ap.rn.branches[len(ap.rn.branches)-1] // get last
+		ap.depth--                                    // go down
 
 		// load the last if need
 
-		if err = r.loadNodeIfNeed(pack, rn, depth); err != nil {
+		if err = r.loadNodeIfNeed(pack, ap.rn, ap.depth); err != nil {
 			return
 		}
 
@@ -1178,7 +1208,7 @@ func (r *Refs) appendNode(
 	// depth is 0 and the last contains branch with leafs
 	// the branch can be full, or can not
 
-	return r.appendNode(pack, rn, depth, hash)
+	return r.appendNode(pack, ap, hash)
 
 }
 

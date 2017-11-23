@@ -737,6 +737,24 @@ func TestRefs_Degree(t *testing.T) {
 
 		})
 
+		t.Run(fmt.Sprintf("don't save blank (degree %d)", degree),
+			func(t *testing.T) {
+
+				pack.ClearFlags(^0)
+				pack.AddFlags(testNoMeaninFlag)
+
+				clear(t, &refs, degree)
+
+				refs.Reset()
+
+				if dg, err = refs.Degree(pack); err != nil {
+					t.Error(err)
+				} else if dg != Degree {
+					t.Error("saved degree", dg)
+				}
+
+			})
+
 		// fill
 		//   (1) only leafs
 		//   (2) leafs and branches
@@ -1668,7 +1686,7 @@ func testRefsHashByIndex(
 
 	} else if ln != len(users) {
 
-		t.Error("wrong length, want %d, got %d", len(users), ln)
+		t.Errorf("wrong length, want %d, got %d", len(users), ln)
 
 	} else {
 

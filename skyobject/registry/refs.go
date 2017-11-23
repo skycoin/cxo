@@ -1186,6 +1186,7 @@ func newRefs(
 	}
 
 	nr.refsNode = new(refsNode)
+	nr.mods |= loadedMod
 
 	return
 }
@@ -1264,26 +1265,95 @@ func (r *Refs) hasEnoughFreeSpaceOnTail(
 
 }
 
-// appnedFunc returns IterateFunc that creates slice
-// (the r) from elements of origin. Short words:
+type appendPoint struct {
+	rn       *refsNode // current node
+	depth    int       // depth of the rn
+	increase int       // length diff for current subtree
+}
+
+// appendFunc returns an IterateFunc that appends
+// given hashes to the Refs; the appendFunc also
+// returns fini functions that used to finialize
+// the appending; short words
 //
-//     srcRefs.Ascend(pack, dstRefs.appnedFunc(pack))
+//     var af, fini = dstRefs.appendFunc(pack)
+//     if err = srcRefs.Ascend(pack, af); err != nil {
+//          // handle the err
+//     }
+//     if err = fini(); err != nil {
+//         // handle the err
+//     }
+//     // elements of the srcRefs appended to the dstRefs
 //
-func (r *Refs) appnedFunc(pack Pack) (iter IterateFunc) {
+func (r *Refs) appnedFunc(
+	pack Pack, //               : pack to save new nodes
+) (
+	iter IterateFunc, //        : append iterating
+	fini func() (err error), // : finialize
+) {
 
 	// in the IterateFunc we are tracking current node and
 	// depth of the current node to avoid unnecessary walking
 	// from root from every element
 
-	var cn = r.refsNode // current node
-	var depth = r.depth // depth of the cn
+	// append point
+
+	var ap = appendPoint{
+		rn:       r.refsNode,
+		depth:    r.depth,
+		increase: 0,
+	}
 
 	iter = func(_ int, hash cipher.SHA256) (err error) {
 
 		// the call will panic if the r (the destination) is invalid
-		cn, depth, err = r.appendNode(pack, cn, depth, hash)
+		err = r.appendNode(pack, &ap, hash)
 
 		return // continue
+	}
+
+	fini = func() (err error) {
+
+		if ap.increase == 0 {
+			return // nothing to finialize
+		}
+
+		// ap.increase > 0, ap.rn contians leafs
+
+		for ; ap.rn != nil; ap.rn, ap.depth = ap.rn.upper, ap.depth+1 {
+
+			if ap.depth == 0 {
+				// first node
+
+				if len(ap.rn.leafs) == r.degree { // full
+					// TODO (kostyarin): LazyUpdating
+					err = ap.rn.updateHashIfNeed(pack, ap.depth, true)
+					if err != nil {
+						return // saving error
+					}
+				}
+
+			} else {
+
+				ap.rn.length += ap.increase
+
+				if len(ap.rn.branches) == r.degree {
+					// TODO (kostyarin): LazyUpdating
+					err = ap.rn.updateHashIfNeed(pack, ap.depth, true)
+					if err != nil {
+						return // saving error
+					}
+				}
+
+			}
+
+		}
+
+		// TODO (kostyarin): LazyUpdating
+
+		err = r.updateHashIfNeed(pack, true)
+		return
+
 	}
 
 	return
@@ -1386,12 +1456,14 @@ func (r *Refs) Append(
 
 	// ok, here we have enough place to fit all new elements
 
-	if err = refs.Ascend(pack, r.appnedFunc(pack)); err != nil {
+	var af, fini = r.appnedFunc(pack)
+
+	if err = refs.Ascend(pack, af); err != nil {
 		return // error
 	}
 
-	if err = r.walkUpdating(pack); err != nil {
-		return // error
+	if err = fini(); err != nil {
+		return
 	}
 
 	return // done
@@ -1521,7 +1593,7 @@ func (r *Refs) AppendHashes(
 
 	// ok, here we have enough place to fit all new elements
 
-	var af = r.appnedFunc(pack) // the func
+	var af, fini = r.appnedFunc(pack) // the func
 
 	for i, hash := range hashes {
 
@@ -1531,7 +1603,7 @@ func (r *Refs) AppendHashes(
 
 	}
 
-	if err = r.walkUpdating(pack); err != nil {
+	if err = fini(); err != nil {
 		return // error
 	}
 

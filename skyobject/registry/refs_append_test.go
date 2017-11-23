@@ -102,8 +102,9 @@ func TestRefs_AppendHashes(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		2,
+		// Degree,     // default
+		// Degree + 7, // changed
 	} {
 
 		t.Run(
@@ -121,7 +122,7 @@ func TestRefs_AppendHashes(t *testing.T) {
 				}
 			})
 
-		var length = degree*degree + 1
+		var length = 4 // degree*degree + 1
 
 		t.Logf("Refs with %d elements (degree %d)", length, degree)
 
@@ -179,6 +180,25 @@ func TestRefs_AppendHashes(t *testing.T) {
 				}
 
 				testRefsAppendHashesCheck(t, &refs, pack, len(users), users)
+
+			})
+
+		t.Run(fmt.Sprintf("append-reset-append %d:%d", length, degree),
+			func(t *testing.T) {
+
+				clearRefs(t, &refs, pack, degree)
+
+				for k := 0; k < len(users) && t.Failed() == false; k++ {
+
+					if err = refs.AppendHashes(pack, users[k]); err != nil {
+						t.Fatal(err)
+					}
+
+					testRefsAppendHashesCheck(t, &refs, pack, 0, users[:k+1])
+
+					refs.Reset() // keep degree
+
+				}
 
 			})
 
