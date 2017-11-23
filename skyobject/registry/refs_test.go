@@ -1515,8 +1515,6 @@ func logRefsIndex(t *testing.T, r *Refs) {
 func TestRefs_IndicesByHash(t *testing.T) {
 	// IndicesByHash(pack Pack, hash cipher.SHA256) (is []int, err error)
 
-	t.Skip("test Append first")
-
 	var (
 		pack = getTestPack()
 
