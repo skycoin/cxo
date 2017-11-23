@@ -63,7 +63,7 @@ func testPackReg(reg *Registry) (dp *dummyPack) {
 	return
 }
 
-func testPack() (dp *dummyPack) {
+func getTestPack() (dp *dummyPack) {
 	return testPackReg(testRegistry())
 }
 

@@ -52,7 +52,7 @@ type Refs struct {
 	degree int `enc:"-"` // degree
 
 	refsIndex `enc:"-"` // hash-table index
-	refsNode  `enc:"-"` // leafs, branches, mods and length
+	*refsNode `enc:"-"` // leafs, branches, mods and length (pointer)
 
 	flags Flags `enc:"-"` // first use (load) flags
 
@@ -78,9 +78,12 @@ func (r *Refs) Short() string {
 
 func (r *Refs) initialize(pack Pack) (err error) {
 
-	if r.mods != 0 {
+	if r.refsNode != nil && r.mods != 0 {
 		return // already initialized
 	}
+
+	// r.refsNode.hash is always blank
+	r.refsNode = new(refsNode)
 
 	r.mods = loadedMod     // mark as loaded
 	r.flags = pack.Flags() // keep current flags
@@ -109,9 +112,7 @@ func (r *Refs) initialize(pack Pack) (err error) {
 		r.refsIndex = make(refsIndex)
 	}
 
-	// r.refsNode.hash is always blank
-
-	return r.loadSubtree(pack, &r.refsNode, er.Elements, r.depth)
+	return r.loadSubtree(pack, r.refsNode, er.Elements, r.depth)
 }
 
 // Init does nothing, but if the Refs are not
@@ -496,7 +497,7 @@ func (r *Refs) HashByIndex(
 	}
 
 	var el *refsElement
-	if el, err = r.elementByIndex(pack, &r.refsNode, i, r.depth); err != nil {
+	if el, err = r.elementByIndex(pack, r.refsNode, i, r.depth); err != nil {
 		return
 	}
 
@@ -630,7 +631,7 @@ func (r *Refs) SetHashByIndex(
 	}
 
 	var el *refsElement
-	if el, err = r.elementByIndex(pack, &r.refsNode, i, r.depth); err != nil {
+	if el, err = r.elementByIndex(pack, r.refsNode, i, r.depth); err != nil {
 		return
 	}
 
@@ -695,7 +696,7 @@ func (r *Refs) DeleteByIndex(
 		return
 	}
 
-	if err = r.deleteElementByIndex(pack, &r.refsNode, i, r.depth); err != nil {
+	if err = r.deleteElementByIndex(pack, r.refsNode, i, r.depth); err != nil {
 		return // an error
 	}
 
@@ -881,7 +882,7 @@ func (r *Refs) ascendFrom(
 		//        changed
 		// - err is loading error, malformed Refs error or
 		//        ErrStopIteration
-		pass, rewind, err = r.ascendNode(pack, &r.refsNode, r.depth, 0, i,
+		pass, rewind, err = r.ascendNode(pack, r.refsNode, r.depth, 0, i,
 			ascendFunc)
 
 		// so, we need to find next element from root of the Refs
@@ -976,7 +977,7 @@ func (r *Refs) descendFrom(
 		//        changed
 		// - err is loading error, malformed Refs error or
 		//        ErrStopIteration
-		pass, rewind, err = r.descendNode(pack, &r.refsNode, r.depth, shift, i,
+		pass, rewind, err = r.descendNode(pack, r.refsNode, r.depth, shift, i,
 			descendFunc)
 
 		// so, we need to find next element from root of the Refs
@@ -1123,8 +1124,8 @@ func (r *Refs) appnedCreatingSliceFunc(j int) (iter IterateFunc) {
 	// depth of the current node to avoid unnecessary walking
 	// from root from every element
 
-	var cn = &r.refsNode // current node
-	var depth = r.depth  // depth of the cn
+	var cn = r.refsNode // current node
+	var depth = r.depth // depth of the cn
 
 	// we are using r, j, depth and the cn inside the IterateFunc below
 
@@ -1152,7 +1153,7 @@ func (r *Refs) walkUpdatingSlice(
 	err error, //    : error if any
 ) {
 
-	err = r.walkUpdatingSliceNode(pack, &r.refsNode, r.depth)
+	err = r.walkUpdatingSliceNode(pack, r.refsNode, r.depth)
 
 	if err != nil {
 		return
@@ -1183,6 +1184,8 @@ func newRefs(
 	if flags&HashTableIndex != 0 {
 		nr.refsIndex = make(refsIndex)
 	}
+
+	nr.refsNode = new(refsNode)
 
 	return
 }
@@ -1237,20 +1240,27 @@ func (r *Refs) Slice(
 	return // done
 }
 
-// freeSpaceOnTail finds free space
-// on tail of this Refs; the space can
-// be used to append new elements to
-// the Refs
-func (r *Refs) freeSpaceOnTail(
+// hasEnoughFreeSpaceOnTail look for tail
+// of the Refs and returns true if the Refs
+// can fit given number of elements without
+// increasing depth
+func (r *Refs) hasEnoughFreeSpaceOnTail(
 	pack Pack, // : pack to load
+	fit int, //   : number of elements to fit
 ) (
-	fsot int, //  : free space on tail
+	ok bool, //   : can fit if true
 	err error, // : error if any
 ) {
 
-	// TODO (kostyrain): blank refs and nil &r.refsNode
+	var fsotn int
+	fsotn, err = r.freeSpaceOnTailNode(pack, r.refsNode, r.depth, fit)
 
-	return r.freeSpaceOnTailNode(pack, &r.refsNode, r.depth)
+	if err != nil {
+		return
+	}
+
+	ok = fsotn >= fit
+	return
 
 }
 
@@ -1265,8 +1275,8 @@ func (r *Refs) appnedFunc(pack Pack) (iter IterateFunc) {
 	// depth of the current node to avoid unnecessary walking
 	// from root from every element
 
-	var cn = &r.refsNode // current node
-	var depth = r.depth  // depth of the cn
+	var cn = r.refsNode // current node
+	var depth = r.depth // depth of the cn
 
 	iter = func(_ int, hash cipher.SHA256) (err error) {
 
@@ -1288,7 +1298,7 @@ func (r *Refs) walkUpdating(
 	err error, //    : error if any
 ) {
 
-	err = r.walkUpdatingNode(pack, &r.refsNode, r.depth)
+	err = r.walkUpdatingNode(pack, r.refsNode, r.depth)
 
 	if err != nil {
 		return
@@ -1327,14 +1337,14 @@ func (r *Refs) Append(
 
 	// ok, let's find free space on tail of this Refs (r)
 
-	var fsot int
-	if fsot, err = r.freeSpaceOnTail(pack); err != nil {
+	var canFit bool
+	if canFit, err = r.hasEnoughFreeSpaceOnTail(pack, refs.length); err != nil {
 		return // loading error
 	}
 
 	// So, can this Refs fit new elements without rebuilding?
 
-	if fsot < refs.length {
+	if canFit == false { // have to be rebuilt
 
 		// we have to rebuild this Refs increasing its depth to fit new elements
 
@@ -1455,14 +1465,14 @@ func (r *Refs) AppendHashes(
 
 	// ok, let's find free space on tail of this Refs (r)
 
-	var fsot int
-	if fsot, err = r.freeSpaceOnTail(pack); err != nil {
+	var canFit bool
+	if canFit, err = r.hasEnoughFreeSpaceOnTail(pack, len(hashes)); err != nil {
 		return // loading error
 	}
 
 	// So, can this Refs fit new elements without rebuilding?
 
-	if fsot < len(hashes) {
+	if canFit == false { // have to be rebuilt
 
 		// we have to rebuild this Refs increasing its depth to fit new elements
 
@@ -1603,7 +1613,7 @@ func (r *Refs) Tree(
 			r.length, r.degree, r.depth)
 	}
 
-	gt.Items, err = r.treeNode(pack, forceLoad, &r.refsNode, r.depth)
+	gt.Items, err = r.treeNode(pack, forceLoad, r.refsNode, r.depth)
 
 	tree = gotree.StringTree(gt)
 	return

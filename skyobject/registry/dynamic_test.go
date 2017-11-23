@@ -77,7 +77,7 @@ func TestDynamic_IsBlank(t *testing.T) {
 func TestDynamic_Value(t *testing.T) {
 	// Value(pack Pack, obj interface{}) (err error)
 
-	var pack = testPack() // dummy pack
+	var pack = getTestPack() // dummy pack
 
 	var usr = TestUser{
 		Name:   "Alice",
@@ -139,7 +139,7 @@ func TestDynamic_SetValue(t *testing.T) {
 	// SetValue(pack Pack, obj interface{}) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		dr   Dynamic
 		hash cipher.SHA256

@@ -52,7 +52,7 @@ func testRefsTest(t *testing.T, r *Refs, tr *testRefs) {
 		t.Errorf("wrong hash: want %s, got %s", tr.hash.Hex()[:7], r.String())
 	}
 
-	testNodeTest(t, r, &r.refsNode, &tr.testNode)
+	testNodeTest(t, r, r.refsNode, &tr.testNode)
 
 }
 
@@ -71,7 +71,7 @@ func testNodeTest(t *testing.T, r *Refs, rn *refsNode, tn *testNode) {
 		t.Errorf("wrong length: want %d, got: %d", tn.length, rn.length)
 	}
 
-	if &r.refsNode != rn && rn.upper == nil {
+	if r.refsNode != rn && rn.upper == nil {
 		t.Errorf("missing upper reference")
 	}
 
@@ -123,7 +123,7 @@ func testRefsFromRefs(r *Refs) (tr *testRefs) {
 	tr.flags = r.flags
 	tr.depth = r.depth
 	tr.degree = r.degree
-	tr.testNode = *testNodeFromNode(&r.refsNode)
+	tr.testNode = *testNodeFromNode(r.refsNode)
 	return
 }
 
@@ -168,7 +168,7 @@ func testFillRefsWithUsers(
 
 	var err error
 
-	users = testUsers(n)
+	users = getTestUsers(n)
 
 	if err = r.AppendValues(pack, users...); err != nil {
 		t.Error(err)
@@ -195,7 +195,7 @@ func TestRefs_Init(t *testing.T) {
 	// Init(pack Pack) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -354,7 +354,7 @@ func TestRefs_Len(t *testing.T) {
 	// Len(pack Pack) (ln int, err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 
@@ -521,7 +521,7 @@ func TestRefs_Depth(t *testing.T) {
 	// Depth(pack Pack) (depth int, err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 
@@ -692,7 +692,7 @@ func TestRefs_Degree(t *testing.T) {
 	// degree saved only if the Refs is not blank
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 
@@ -945,7 +945,7 @@ func TestRefs_HasHash(t *testing.T) {
 	// HasHsah(pack Pack, hash cipher.SHA256) (ok bool, err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -1122,7 +1122,7 @@ func TestRefs_ValueByHash(t *testing.T) {
 	// ValueByHash(pack Pack, hash cipher.SHA256, obj interface{}) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -1290,7 +1290,7 @@ func TestRefs_IndexOfHash(t *testing.T) {
 	// IndexOfHash(pack Pack, hash cipher.SHA256) (i int, err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -1500,7 +1500,7 @@ func TestRefs_IndicesByHash(t *testing.T) {
 	t.Skip("test Append first")
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -1696,7 +1696,7 @@ func TestRefs_HashByIndex(t *testing.T) {
 	// HashByIndex(pack Pack, i int) (hash cipher.SHA256, err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error

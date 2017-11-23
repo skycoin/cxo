@@ -7,6 +7,26 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+// clear Refs, and set provided degree to the Refs
+func clearRefs(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	degree int,
+) {
+
+	var err error
+
+	r.Clear() // clear the Refs making it Refs{}
+
+	if degree != Degree { // if it's not default
+		if err = r.SetDegree(pack, degree); err != nil { // change it
+			t.Fatal(err)
+		}
+	}
+
+}
+
 func TestRefs_Append(t *testing.T) {
 	// Append(pack Pack, refs *Refs) (err error)
 
@@ -23,33 +43,6 @@ func TestRefs_AppendValues(t *testing.T) {
 
 }
 
-func testRefsAppendHashes(
-	t *testing.T, //           :
-	r *Refs, //                :
-	pack Pack, //              :
-	hashes []cipher.SHA256, // :
-) (
-	nl int, //                 : new length
-) {
-
-	var ln int
-	var err error
-
-	if ln, err = r.Len(pack); err != nil {
-		t.Error(err)
-		return
-	}
-
-	if err = r.AppendHashes(pack, hashes...); err != nil {
-		t.Error(err)
-		return
-	}
-
-	nl = testRefsAppendHashesCheck(t, r, pack, ln, hashes)
-	return
-
-}
-
 func testRefsAppendHashesCheck(
 	t *testing.T, //           : the testing
 	r *Refs, //                : the Refs
@@ -63,25 +56,34 @@ func testRefsAppendHashesCheck(
 	var err error
 
 	if nl, err = r.Len(pack); err != nil {
+
 		t.Error(err)
-		return
-	}
 
-	if nl != shift+len(hashes) {
-		t.Error("wrong new length", nl, shift+len(hashes))
-	}
+	} else if nl != shift+len(hashes) {
 
-	var h cipher.SHA256
-	for i, hash := range hashes {
-		if h, err = r.HashByIndex(pack, shift+i); err != nil {
-			t.Error(err)
-		} else if h != hash {
-			t.Error("wrong hash of %d: %s, want %s",
-				shift+i,
-				h.Hex()[:7],
-				hash.Hex()[:7])
+		t.Errorf("wrong new length %d, but want %d", nl, shift+len(hashes))
+
+	} else {
+
+		var h cipher.SHA256
+		for i, hash := range hashes {
+			if h, err = r.HashByIndex(pack, shift+i); err != nil {
+				t.Errorf("shift %d, i %d, %s", shift, i, err.Error())
+			} else if h != hash {
+				t.Error("wrong hash of %d: %s, want %s",
+					shift+i,
+					h.Hex()[:7],
+					hash.Hex()[:7])
+			}
 		}
+
 	}
+
+	if shift > 0 {
+		hashes = append(hashes, hashes...) // stub for now
+	}
+
+	logRefsTree(t, r, pack, false)
 
 	return
 
@@ -90,27 +92,13 @@ func testRefsAppendHashesCheck(
 func TestRefs_AppendHashes(t *testing.T) {
 	// AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error)
 
-	t.Skip("test HashByIndex first")
-
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
-		ln   int // length of the Refs before appending
 		err  error
 
 		users []cipher.SHA256 // hashes of the users
-
-		// clear and set degree
-		clear = func(t *testing.T, r *Refs, degree int) {
-			pack.ClearFlags(^0)   // clear all flags
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
-				if err = refs.SetDegree(pack, degree); err != nil { // change it
-					t.Fatal(err)
-				}
-			}
-		}
 	)
 
 	for _, degree := range []int{
@@ -118,83 +106,125 @@ func TestRefs_AppendHashes(t *testing.T) {
 		Degree + 7, // changed
 	} {
 
-		t.Run(fmt.Sprintf("append nothing to blank (degree %d)", degree),
+		t.Run(
+			fmt.Sprintf("append nothing to blank Refs (degree is %d)", degree),
 			func(t *testing.T) {
-				clear(t, &refs, degree)
-				if ln = testRefsAppendHashes(t, &refs, pack, nil); t.Failed() {
-					logRefsTree(t, &refs, pack, false)
-					t.FailNow()
+
+				clearRefs(t, &refs, pack, degree)
+				var ln int
+				if err = refs.AppendHashes(pack); err != nil {
+					t.Error(err)
+				} else if ln, err = refs.Len(pack); err != nil {
+					t.Error(err)
+				} else if ln != 0 {
+					t.Error("wrong length")
 				}
 			})
 
-		// fill
-		//   (1) only leafs
-		//   (2) leafs and branches
-		//   (3) branches with branches with leafs
+		var length = degree*degree + 1
 
-		// so, since we adds this users twice, then we have to
-		// redue the length to test only leafs and so on
+		t.Logf("Refs with %d elements (degree %d)", length, degree)
 
-		for _, length := range []int{
-			degree,            // only leafs
-			degree + 1,        // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
-		} {
+		pack.ClearFlags(^0) //clear all flags
+		clearRefs(t, &refs, pack, degree)
 
-			t.Logf("Refs with %d elements (degree %d)", length, degree)
+		// generate users
+		users = getHashList(getTestUsers(length))
 
-			clear(t, &refs, degree)
+		t.Run(
+			fmt.Sprintf("reset-append increasing number of elements %d:%d",
+				length,
+				degree),
+			func(t *testing.T) {
 
-			// generate users
-			users = getHashList(testUsers(length))
+				for k := 0; k <= len(users) && t.Failed() == false; k++ {
 
-			if ln = testRefsAppendHashes(t, &refs, pack, users); t.Failed() {
+					clearRefs(t, &refs, pack, degree) // can call t.Fatal
+
+					if err = refs.AppendHashes(pack, users[:k]...); err != nil {
+						t.Fatal(err)
+					}
+
+					testRefsAppendHashesCheck(t, &refs, pack, 0, users[:k])
+
+				}
+
+			})
+
+		t.Run(fmt.Sprintf("append one by one %d:%d", length, degree),
+			func(t *testing.T) {
+
+				clearRefs(t, &refs, pack, degree) // can call t.Fatal
+
+				for k := 0; k < len(users) && t.Failed() == false; k++ {
+
+					if err = refs.AppendHashes(pack, users[k]); err != nil {
+						t.Fatal(err)
+					}
+
+					testRefsAppendHashesCheck(t, &refs, pack, 0, users[:k+1])
+
+				}
+
+			})
+
+		t.Run(fmt.Sprintf("append many to full Refs %d:%d", length, degree),
+			func(t *testing.T) {
+
 				logRefsTree(t, &refs, pack, false)
-				t.FailNow()
-			}
 
-			t.Run(fmt.Sprintf("load %d:%d", length, degree),
-				func(t *testing.T) {
+				// now the Refs contains all the hashes, let's append them twice
+				if err = refs.AppendHashes(pack, users...); err != nil {
+					t.Fatal(err)
+				}
 
-					refs.Reset() // reset the refs
+				testRefsAppendHashesCheck(t, &refs, pack, len(users), users)
 
-					testRefsAppendHashesCheck(t, &refs, pack, ln, users)
-					logRefsTree(t, &refs, pack, false)
+			})
 
-				})
+		/*t.Run(fmt.Sprintf("load (to blank) %d:%d", length, degree),
+			func(t *testing.T) {
 
-			t.Run(fmt.Sprintf("load entire %d:%d", length, degree),
-				func(t *testing.T) {
+				refs.Reset() // reset the refs
 
-					refs.Reset()              // reset the refs
-					pack.AddFlags(EntireRefs) // load entire Refs
+				testRefsAppendHashesCheck(t, &refs, pack, 0, users)
+				logRefsTree(t, &refs, pack, false)
 
-					testRefsAppendHashesCheck(t, &refs, pack, ln, users)
-					logRefsTree(t, &refs, pack, false)
+			})
 
-				})
+		t.Run(fmt.Sprintf("load entire (to blank) %d:%d", length, degree),
+			func(t *testing.T) {
 
-			t.Run(fmt.Sprintf("hash table index %d:%d", length, degree),
-				func(t *testing.T) {
+				refs.Reset()              // reset the refs
+				pack.AddFlags(EntireRefs) // load entire Refs
 
-					refs.Reset()
+				testRefsAppendHashesCheck(t, &refs, pack, 0, users)
+				logRefsTree(t, &refs, pack, false)
 
-					pack.ClearFlags(EntireRefs)
-					pack.AddFlags(HashTableIndex)
+			})
 
-					testRefsAppendHashesCheck(t, &refs, pack, ln, users)
-					logRefsTree(t, &refs, pack, false)
+		t.Run(
+			fmt.Sprintf("hash table index (to blank) %d:%d",
+				length,
+				degree,
+			),
+			func(t *testing.T) {
 
-				})
+				refs.Reset()
 
-		}
+				pack.ClearFlags(EntireRefs)
+				pack.AddFlags(HashTableIndex)
+
+				testRefsAppendHashesCheck(t, &refs, pack, 0, users)
+				logRefsTree(t, &refs, pack, false)
+
+			})*/
 
 	}
 
 	t.Run("blank hash", func(t *testing.T) {
 
-		refs.Clear()
-		pack.ClearFlags(^0) // all
+		clearRefs(t, &refs, pack, Degree)
 
 		var hashes = []cipher.SHA256{
 			{}, // the blank one
@@ -205,18 +235,7 @@ func TestRefs_AppendHashes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		var is []int
-		if is, err = refs.IndicesByHash(pack, cipher.SHA256{}); err != nil {
-			t.Error(err)
-		} else if len(is) != 2 {
-			t.Errorf("wron number of indices: want 2, got %d", len(is))
-		} else {
-			for _, idx := range is {
-				if (idx == 0 || idx == 1) == false {
-					t.Error("got wrong index:", idx)
-				}
-			}
-		}
+		testRefsAppendHashesCheck(t, &refs, pack, 0, hashes)
 
 	})
 

@@ -42,7 +42,7 @@ func TestRef_Value(t *testing.T) {
 	// Value(pack Pack, obj interface{}) (err error)
 
 	var (
-		pack = testPack() // dummy pack
+		pack = getTestPack() // dummy pack
 
 		usr = TestUser{
 			Name:   "Alice",
@@ -92,7 +92,7 @@ func TestRef_SetValue(t *testing.T) {
 	// SetValue(pack Pack, obj interface{}) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		ref  Ref
 		hash cipher.SHA256

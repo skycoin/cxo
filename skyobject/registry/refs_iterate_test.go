@@ -42,7 +42,7 @@ func TestRefs_Ascend(t *testing.T) {
 	// Ascend(pack Pack, ascendFunc IterateFunc) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -256,7 +256,7 @@ func TestRefs_AscendFrom(t *testing.T) {
 	// AscendFrom(pack Pack, from int, ascendFunc IterateFunc) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -461,7 +461,7 @@ func TestRefs_Descend(t *testing.T) {
 	// Descend(pack Pack, descendFunc IterateFunc) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error
@@ -688,7 +688,7 @@ func TestRefs_DescendFrom(t *testing.T) {
 	// DescendFrom(pack Pack, from int, descendFunc IterateFunc) (err error)
 
 	var (
-		pack = testPack()
+		pack = getTestPack()
 
 		refs Refs
 		err  error

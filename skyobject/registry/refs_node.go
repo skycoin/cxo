@@ -358,7 +358,7 @@ func (r *refsNode) updateHash(
 		return // the hash is the same
 	}
 
-	// don't Save if the node is part of the Refs
+	// don't save if the node is part of the Refs
 	// it will be saved inside another method
 	// with depth and degree
 	if r.upper != nil {
@@ -989,14 +989,15 @@ func (r *Refs) freeSpaceOnTailNode(
 	pack Pack, //    : pack to load
 	rn *refsNode, // : the node
 	depth int, //    : depth of the node
+	fit int, //      : wanted free space
 ) (
-	fsotn int, //    : free space on tail of the node
+	fsotn int, //    : free space on tail of the node (at least)
 	err error, //    : error if any
 ) {
 
 	if depth == 0 {
 
-		fsotn = r.degree - len(r.leafs)
+		fsotn = r.degree - len(rn.leafs)
 		return
 
 	}
@@ -1006,7 +1007,11 @@ func (r *Refs) freeSpaceOnTailNode(
 	// the fsotn = (degree ^ (depth+1)) * (degree - len(rn.branches)) +
 	//         r.freeSpaceOnTailNode() of the last node in the branhces
 
-	fsotn = pow(r.degree, depth+1) * (r.degree - len(rn.branches))
+	fsotn = pow(r.degree, depth) * (r.degree - len(rn.branches))
+
+	if fsotn >= fit {
+		return // at least
+	}
 
 	if len(rn.branches) == 0 {
 		return // done (no branches to check out the last)
@@ -1021,7 +1026,9 @@ func (r *Refs) freeSpaceOnTailNode(
 
 	var fsotnl int // fsotn of the last
 
-	if fsotnl, err = r.freeSpaceOnTailNode(pack, last, depth-1); err != nil {
+	fsotnl, err = r.freeSpaceOnTailNode(pack, last, depth-1, fit-fsotn)
+
+	if err != nil {
 		return
 	}
 
@@ -1043,8 +1050,8 @@ func (r *Refs) appendNodeGoUp(
 	depth int, //          : depth of the current node
 	hash cipher.SHA256, // : hash to append
 ) (
-	cn *refsNode, //       : current node (can be another then the rn)
-	cdepth int, //         : current depth (depth of the cn)
+	_ *refsNode, //        : current node (can be another then the rn)
+	_ int, //              : current depth (depth of the cn)
 	err error, //          : loading error
 ) {
 
@@ -1066,12 +1073,12 @@ func (r *Refs) appendNodeGoUp(
 		panic("invalid case")
 	}
 
-	cn, cdepth = rn.upper, depth+1 // go up
+	rn, depth = rn.upper, depth+1 // go up
 
 	// since we are using r.upper, then the depth is > 0
 	// and the rn.upper contains branches
-	if len(cn.branches) == r.degree { // if it's full
-		return r.appendNodeGoUp(pack, cn, cdepth, hash) // go up
+	if len(rn.branches) == r.degree { // if it's full
+		return r.appendNodeGoUp(pack, rn, depth, hash) // go up
 	}
 
 	// otherwise we create new branch and use it;
@@ -1085,9 +1092,10 @@ func (r *Refs) appendNodeGoUp(
 		mods:  loadedMod | contentMod | lengthMod, // flags
 	}
 
-	cn.branches = append(cn.branches, br)
+	rn.branches = append(rn.branches, br)
+	rn.mods |= (loadedMod | contentMod | lengthMod) // modified
 
-	return br, depth, nil // e.g. br, and cdepth - 1
+	return r.appendNode(pack, br, depth-1, hash) // e.g. br, and cdepth - 1
 }
 
 // appendNode appends given hash to the Refs; the method
@@ -1136,7 +1144,7 @@ func (r *Refs) appendNode(
 
 	// mark this ndoe as modified, it can be wrong but
 	// it doesn't make sence
-	rn.mods |= (contentMod | lengthMod)
+	rn.mods |= (loadedMod | contentMod | lengthMod)
 
 	for depth > 0 {
 
@@ -1190,7 +1198,7 @@ func (r *Refs) walkUpdatingNode(
 	err error, //    : error if any
 ) {
 
-	if rn.mods&(lengthMod|loadedMod|contentMod) == 0 {
+	if rn.mods&loadedMod == 0 || rn.mods&(contentMod|lengthMod) == 0 {
 		return // the node in actual state
 	}
 
@@ -1210,7 +1218,8 @@ func (r *Refs) walkUpdatingNode(
 
 		}
 
-		rn.length = length // set actual length
+		rn.length = length    // set actual length
+		rn.mods &^= lengthMod // clear the flag
 
 	}
 
