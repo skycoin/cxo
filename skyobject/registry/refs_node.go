@@ -438,7 +438,8 @@ func (r *Refs) setElementHash(
 
 	if r.flags&HashTableIndex != 0 {
 		r.delElementFromIndex(el) // delete old
-		r.addElementToIndex(el)   // add new
+		el.Hash = hash
+		r.addElementToIndex(el) // add new
 	}
 
 	el.Hash = hash

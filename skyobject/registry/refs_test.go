@@ -1664,7 +1664,10 @@ func TestRefs_ValueOfHashWithIndex(t *testing.T) {
 	// ValueOfHashWithIndex(pack Pack, hash cipher.SHA256,
 	//     obj interface{}) (i int, err error)
 
-	//
+	// The method based on IndexOfHash method. Som let it be
+	// low priority
+
+	// TODO (kostyarin): low priority
 
 }
 
@@ -1841,14 +1844,170 @@ func TestRefs_ValueByIndex(t *testing.T) {
 	// ValueByIndex(pack Pack, i int, obj interface{}) (hash cipher.SHA256,
 	//     err error)
 
-	//
+	// The ValueByIndex emthod based on the HashByIndex
+	// method, and thus, I mark the test as low prority
 
+	// TODO (kostyarin): low priority
+
+}
+
+func testRefsSetHashByIndexOutOfRangeSet(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	i int,
+	hash cipher.SHA256,
+) {
+
+	var err error
+
+	if err = r.SetHashByIndex(pack, i, hash); err == nil {
+		t.Error("missing error")
+	} else if err != ErrIndexOutOfRange {
+		t.Error("wrong error %q, want %q", ErrIndexOutOfRange)
+	}
+
+}
+
+func testRefsSetHashByIndexSet(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	i int,
+	hash cipher.SHA256,
+) {
+
+	var (
+		p, h cipher.SHA256
+		ok   bool
+
+		err error
+	)
+
+	if p, err = r.HashByIndex(pack, i); err != nil {
+		t.Error(err)
+	} else if err = r.SetHashByIndex(pack, i, hash); err != nil {
+		t.Error(err)
+	} else if h, err = r.HashByIndex(pack, i); err != nil {
+		t.Error(err)
+	} else if h != hash {
+		t.Error("wrong hash of %d: %s, want %s", i, h.Hex()[:7], hash.Hex()[:7])
+	} else if r.flags&HashTableIndex != 0 {
+		if r.refsIndex == nil {
+			t.Error("hash-table index is nil")
+		} else if _, ok = r.refsIndex[hash]; !ok {
+			t.Error("missing in hash-table")
+		} else if _, ok = r.refsIndex[p]; ok {
+			t.Errorf("previous %s hash was not removed from hash-table index",
+				p.Hex()[:7])
+		}
+	}
+
+}
+
+func testRefsDegrees() []int {
+	return []int{2, Degree, Degree + 7}
+}
+
+func testRefsLengths(degree int) []int {
+	return []int{
+		degree - 1,
+		degree,
+		degree + 1,
+		degree * degree,
+		degree*degree + 1,
+	}
+}
+
+func testRefsFlags() []Flags {
+	return []Flags{
+		0,
+		EntireRefs,
+		HashTableIndex,
+	}
+}
+
+func hashByNumber(u uint64) (h cipher.SHA256) {
+	h[0] = uint8(u >> 0)
+	h[1] = uint8(u >> 8)
+	h[2] = uint8(u >> 16)
+	h[3] = uint8(u >> 24)
+
+	h[4] = uint8(u >> 32)
+	h[5] = uint8(u >> 40)
+	h[6] = uint8(u >> 48)
+	h[7] = uint8(u >> 56)
+
+	return
 }
 
 func TestRefs_SetHashByIndex(t *testing.T) {
 	// SetHashByIndex(pack Pack, i int, hash cipher.SHA256) (err error)
 
-	//
+	var (
+		pack = getTestPack()
+
+		users []cipher.SHA256
+		hash  cipher.SHA256
+
+		r   Refs
+		err error
+	)
+
+	for _, flags := range testRefsFlags() {
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(flags)
+
+		t.Logf("flags %08b", flags)
+
+		for _, degree := range testRefsDegrees() {
+
+			t.Log("degree", degree)
+
+			for _, length := range testRefsLengths(degree) {
+
+				t.Log("length", length)
+
+				clearRefs(t, &r, pack, degree)
+				users = getHashList(getTestUsers(length))
+
+				if err = r.AppendHashes(pack, users...); err != nil {
+					t.Fatal(err)
+				}
+
+				testRefsSetHashByIndexOutOfRangeSet(t, &r, pack, -1, hash)
+				testRefsSetHashByIndexOutOfRangeSet(t, &r, pack, len(users),
+					hash)
+
+				for i := 0; i < length; i++ {
+
+					// loaded
+					hash = hashByNumber(uint64(i))
+					testRefsSetHashByIndexSet(t, &r, pack, i, hash)
+
+					if t.Failed() {
+						logRefsTree(t, &r, pack, false)
+						t.FailNow() // don't continue
+					}
+
+					// load
+					r.Reset() // reset (make it unloaded)
+					hash = hashByNumber(uint64(length + i))
+					testRefsSetHashByIndexSet(t, &r, pack, i, hash)
+
+					if t.Failed() {
+						logRefsTree(t, &r, pack, false)
+						t.FailNow() // don't continue
+					}
+
+				}
+
+			}
+
+		}
+
+	}
 
 }
 
