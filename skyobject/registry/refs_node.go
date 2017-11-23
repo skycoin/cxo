@@ -1074,7 +1074,6 @@ func (r *Refs) appendNodeGoUp(
 	if ap.increase > 0 {
 		for up := ap.rn.upper; up != nil; up = up.upper {
 			up.length += ap.increase // add
-			up.mods |= lengthMod     // mark
 		}
 	}
 
@@ -1094,9 +1093,7 @@ func (r *Refs) appendNodeGoUp(
 		// TODO (kostyarin): LazyUpdating
 
 		// else -> increased
-		err = ap.rn.updateHashIfNeed(pack, ap.depth, true)
-
-		if err != nil {
+		if err = ap.rn.updateHashIfNeed(pack, ap.depth, true); err != nil {
 			return // saving error
 		}
 
@@ -1117,9 +1114,12 @@ func (r *Refs) appendNodeGoUp(
 		mods:  loadedMod | contentMod, // flags
 	}
 
-	ap.rn.branches = append(ap.rn.branches, br) // go down
-	ap.rn.mods |= contentMod                    // modified
-	ap.depth--                                  // go down
+	ap.rn.branches = append(ap.rn.branches, br) // add the new branch
+	ap.rn.mods |= contentMod                    // mark as modified
+
+	ap.rn = br               // use the branch
+	ap.rn.mods |= contentMod // mark it as modified
+	ap.depth--               // go down
 
 	return r.appendNode(pack, ap, hash)
 }

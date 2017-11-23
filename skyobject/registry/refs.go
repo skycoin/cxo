@@ -90,6 +90,10 @@ func (r *Refs) initialize(pack Pack) (err error) {
 
 	r.degree = Degree // use default degree
 
+	if r.flags&HashTableIndex != 0 {
+		r.refsIndex = make(refsIndex)
+	}
+
 	if r.Hash == (cipher.SHA256{}) {
 		return // blank Refs, don't need to load
 	}
@@ -106,10 +110,6 @@ func (r *Refs) initialize(pack Pack) (err error) {
 
 	if r.length == 0 || r.degree < 2 {
 		return ErrInvalidEncodedRefs // invalid state
-	}
-
-	if r.flags&HashTableIndex != 0 {
-		r.refsIndex = make(refsIndex)
 	}
 
 	return r.loadSubtree(pack, r.refsNode, er.Elements, r.depth)
@@ -1322,29 +1322,12 @@ func (r *Refs) appnedFunc(
 
 		for ; ap.rn != nil; ap.rn, ap.depth = ap.rn.upper, ap.depth+1 {
 
-			if ap.depth == 0 {
-				// first node
-
-				if len(ap.rn.leafs) == r.degree { // full
-					// TODO (kostyarin): LazyUpdating
-					err = ap.rn.updateHashIfNeed(pack, ap.depth, true)
-					if err != nil {
-						return // saving error
-					}
-				}
-
-			} else {
-
+			if ap.depth > 0 {
 				ap.rn.length += ap.increase
+			}
 
-				if len(ap.rn.branches) == r.degree {
-					// TODO (kostyarin): LazyUpdating
-					err = ap.rn.updateHashIfNeed(pack, ap.depth, true)
-					if err != nil {
-						return // saving error
-					}
-				}
-
+			if err = ap.rn.updateHashIfNeed(pack, ap.depth, true); err != nil {
+				return // saving error
 			}
 
 		}
@@ -1680,12 +1663,14 @@ func (r *Refs) Tree(
 
 	gt.Name = "[](refs) " + r.Short()
 
-	if forceLoad == true || r.mods&loadedMod != 0 {
+	if forceLoad == true || (r.refsNode != nil && r.mods&loadedMod != 0) {
 		gt.Name += fmt.Sprintf(" length: %d, degree: %d, depth: %d",
 			r.length, r.degree, r.depth)
-	}
 
-	gt.Items, err = r.treeNode(pack, forceLoad, r.refsNode, r.depth)
+		gt.Items, err = r.treeNode(pack, forceLoad, r.refsNode, r.depth)
+	} else {
+		gt.Name += " (not loaded)"
+	}
 
 	tree = gotree.StringTree(gt)
 	return

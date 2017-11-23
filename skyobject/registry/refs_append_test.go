@@ -70,7 +70,7 @@ func testRefsAppendHashesCheck(
 			if h, err = r.HashByIndex(pack, shift+i); err != nil {
 				t.Errorf("shift %d, i %d, %s", shift, i, err.Error())
 			} else if h != hash {
-				t.Error("wrong hash of %d: %s, want %s",
+				t.Errorf("wrong hash of %d: %s, want %s",
 					shift+i,
 					h.Hex()[:7],
 					hash.Hex()[:7])
@@ -89,6 +89,22 @@ func testRefsAppendHashesCheck(
 
 }
 
+// peristence but not number of elements
+func testRefsHashTableIndex(t *testing.T, r *Refs, hashes []cipher.SHA256) {
+
+	if r.refsIndex == nil {
+		t.Error("Refs has not hash-table index")
+		return
+	}
+
+	for _, hash := range hashes {
+		if _, ok := r.refsIndex[hash]; !ok {
+			t.Error("misisng hash in hash table:", hash.Hex()[:7])
+		}
+	}
+
+}
+
 func TestRefs_AppendHashes(t *testing.T) {
 	// AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error)
 
@@ -102,10 +118,11 @@ func TestRefs_AppendHashes(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		2,
-		// Degree,     // default
-		// Degree + 7, // changed
+		//Degree,     // default
+		Degree + 7, // changed
 	} {
+
+		pack.ClearFlags(^0) // all
 
 		t.Run(
 			fmt.Sprintf("append nothing to blank Refs (degree is %d)", degree),
@@ -122,11 +139,10 @@ func TestRefs_AppendHashes(t *testing.T) {
 				}
 			})
 
-		var length = 4 // degree*degree + 1
+		var length = degree*degree + 1
 
 		t.Logf("Refs with %d elements (degree %d)", length, degree)
 
-		pack.ClearFlags(^0) //clear all flags
 		clearRefs(t, &refs, pack, degree)
 
 		// generate users
@@ -158,6 +174,8 @@ func TestRefs_AppendHashes(t *testing.T) {
 				clearRefs(t, &refs, pack, degree) // can call t.Fatal
 
 				for k := 0; k < len(users) && t.Failed() == false; k++ {
+
+					t.Log("append hash", users[k].Hex()[:7])
 
 					if err = refs.AppendHashes(pack, users[k]); err != nil {
 						t.Fatal(err)
@@ -202,43 +220,51 @@ func TestRefs_AppendHashes(t *testing.T) {
 
 			})
 
-		/*t.Run(fmt.Sprintf("load (to blank) %d:%d", length, degree),
+		t.Run(fmt.Sprintf("append-reset-append (entire) %d:%d", length, degree),
 			func(t *testing.T) {
 
-				refs.Reset() // reset the refs
+				clearRefs(t, &refs, pack, degree)
+				pack.AddFlags(EntireRefs)
 
-				testRefsAppendHashesCheck(t, &refs, pack, 0, users)
-				logRefsTree(t, &refs, pack, false)
+				for k := 0; k < len(users) && t.Failed() == false; k++ {
 
-			})
+					if err = refs.AppendHashes(pack, users[k]); err != nil {
+						t.Fatal(err)
+					}
 
-		t.Run(fmt.Sprintf("load entire (to blank) %d:%d", length, degree),
-			func(t *testing.T) {
+					testRefsAppendHashesCheck(t, &refs, pack, 0, users[:k+1])
 
-				refs.Reset()              // reset the refs
-				pack.AddFlags(EntireRefs) // load entire Refs
+					refs.Reset() // keep degree
 
-				testRefsAppendHashesCheck(t, &refs, pack, 0, users)
-				logRefsTree(t, &refs, pack, false)
+				}
 
 			})
 
 		t.Run(
-			fmt.Sprintf("hash table index (to blank) %d:%d",
+			fmt.Sprintf("append-reset-append (hash-table index) %d:%d",
 				length,
-				degree,
-			),
+				degree),
 			func(t *testing.T) {
 
-				refs.Reset()
-
-				pack.ClearFlags(EntireRefs)
+				pack.ClearFlags(^0)
 				pack.AddFlags(HashTableIndex)
 
-				testRefsAppendHashesCheck(t, &refs, pack, 0, users)
-				logRefsTree(t, &refs, pack, false)
+				clearRefs(t, &refs, pack, degree)
 
-			})*/
+				for k := 0; k < len(users) && t.Failed() == false; k++ {
+
+					if err = refs.AppendHashes(pack, users[k]); err != nil {
+						t.Fatal(err)
+					}
+
+					testRefsHashTableIndex(t, &refs, users[:k+1])
+					testRefsAppendHashesCheck(t, &refs, pack, 0, users[:k+1])
+
+					refs.Reset() // keep degree
+
+				}
+
+			})
 
 	}
 
