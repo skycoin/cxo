@@ -1851,7 +1851,7 @@ func TestRefs_ValueByIndex(t *testing.T) {
 
 }
 
-func testRefsSetHashByIndexOutOfRangeSet(
+func testRefsSetHashByIndexOutOfRange(
 	t *testing.T,
 	r *Refs,
 	pack Pack,
@@ -1869,7 +1869,7 @@ func testRefsSetHashByIndexOutOfRangeSet(
 
 }
 
-func testRefsSetHashByIndexSet(
+func testRefsSetHashByIndex(
 	t *testing.T,
 	r *Refs,
 	pack Pack,
@@ -1976,15 +1976,14 @@ func TestRefs_SetHashByIndex(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				testRefsSetHashByIndexOutOfRangeSet(t, &r, pack, -1, hash)
-				testRefsSetHashByIndexOutOfRangeSet(t, &r, pack, len(users),
-					hash)
+				testRefsSetHashByIndexOutOfRange(t, &r, pack, -1, hash)
+				testRefsSetHashByIndexOutOfRange(t, &r, pack, len(users), hash)
 
 				for i := 0; i < length; i++ {
 
 					// loaded
 					hash = hashByNumber(uint64(i))
-					testRefsSetHashByIndexSet(t, &r, pack, i, hash)
+					testRefsSetHashByIndex(t, &r, pack, i, hash)
 
 					if t.Failed() {
 						logRefsTree(t, &r, pack, false)
@@ -1994,7 +1993,7 @@ func TestRefs_SetHashByIndex(t *testing.T) {
 					// load
 					r.Reset() // reset (make it unloaded)
 					hash = hashByNumber(uint64(length + i))
-					testRefsSetHashByIndexSet(t, &r, pack, i, hash)
+					testRefsSetHashByIndex(t, &r, pack, i, hash)
 
 					if t.Failed() {
 						logRefsTree(t, &r, pack, false)
@@ -2014,14 +2013,186 @@ func TestRefs_SetHashByIndex(t *testing.T) {
 func TestRefs_SetValueByIndex(t *testing.T) {
 	// SetValueByIndex(pack Pack, i int, obj interface{}) (err error)
 
-	//
+	// The method based on the SetHashByIndex and I mark it
+	// as low priority
+
+	// TODO (kostyarin): low priority
+
+}
+
+func testRefsDeleteByIndexOutOfRange(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	i int,
+) {
+
+	var err error
+
+	if err = r.DeleteByIndex(pack, i); err == nil {
+		t.Error("missing error")
+	} else if err != ErrIndexOutOfRange {
+		t.Error("wrong error %q, want %q", ErrIndexOutOfRange)
+	}
+
+}
+
+func testRefsDeleteByIndex(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	i int,
+) {
+
+	var (
+		hash cipher.SHA256
+
+		ln, nl int
+		ok     bool
+
+		err error
+	)
+
+	if hash, err = r.HashByIndex(pack, i); err != nil {
+		t.Error(err)
+	} else if ln, err = r.Len(pack); err != nil {
+		t.Error(err)
+	} else if err = r.DeleteByIndex(pack, i); err != nil {
+		t.Error(err, i, ln)
+	} else if nl, err = r.Len(pack); err != nil {
+		t.Error(err)
+	} else if nl != ln-1 {
+		t.Error("length does not reduced")
+	} else if r.flags&HashTableIndex != 0 {
+		if r.refsIndex == nil {
+			t.Error("hash-table index is nil")
+		} else if _, ok = r.refsIndex[hash]; ok {
+			t.Errorf("previous %s hash was not removed from hash-table index",
+				hash.Hex()[:7])
+		}
+	}
 
 }
 
 func TestRefs_DeleteByIndex(t *testing.T) {
 	// DeleteByIndex(pack Pack, i int) (err error)
 
-	//
+	var (
+		pack = getTestPack()
+
+		users []cipher.SHA256
+
+		r   Refs
+		err error
+	)
+
+	for _, flags := range testRefsFlags() {
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(flags)
+
+		t.Logf("flags %08b", flags)
+
+		for _, degree := range testRefsDegrees() {
+
+			t.Log("degree", degree)
+
+			for _, length := range testRefsLengths(degree) {
+
+				t.Log("length", length)
+
+				clearRefs(t, &r, pack, degree)
+				users = getHashList(getTestUsers(length))
+
+				t.Run("out of range", func(t *testing.T) {
+					testRefsDeleteByIndexOutOfRange(t, &r, pack, -1)
+					testRefsDeleteByIndexOutOfRange(t, &r, pack, len(users))
+				})
+
+				t.Run("del by one", func(t *testing.T) {
+					for i := 0; i < length && t.Failed() == false; i++ {
+
+						clearRefs(t, &r, pack, degree)
+
+						if err = r.AppendHashes(pack, users...); err != nil {
+							t.Fatal(err)
+						}
+
+						// loaded
+						testRefsDeleteByIndex(t, &r, pack, i)
+						logRefsTree(t, &r, pack, false)
+
+					}
+				})
+
+				t.Run("del by one (load)", func(t *testing.T) {
+					for i := 0; i < length && t.Failed() == false; i++ {
+
+						clearRefs(t, &r, pack, degree)
+
+						if err = r.AppendHashes(pack, users...); err != nil {
+							t.Fatal(err)
+						}
+
+						// load
+						r.Reset() // reset (make it unloaded)
+						testRefsDeleteByIndex(t, &r, pack, i)
+						logRefsTree(t, &r, pack, false)
+
+					}
+				})
+
+				t.Run("del first to blank", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+
+					for i := 0; i < length && t.Failed() == false; i++ {
+						testRefsDeleteByIndex(t, &r, pack, 0)
+					}
+				})
+
+				t.Run("del last to blank", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+
+					for i := length - 1; i >= 0 && t.Failed() == false; i-- {
+						testRefsDeleteByIndex(t, &r, pack, i)
+					}
+				})
+
+				t.Run("del first to blank (load)", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+
+					r.Reset()
+					for i := 0; i < length && t.Failed() == false; i++ {
+						testRefsDeleteByIndex(t, &r, pack, 0)
+					}
+				})
+
+				t.Run("del last to blank (load)", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+
+					r.Reset()
+					for i := length - 1; i >= 0 && t.Failed() == false; i-- {
+						testRefsDeleteByIndex(t, &r, pack, i)
+					}
+				})
+
+			}
+
+		}
+
+	}
 
 }
 
