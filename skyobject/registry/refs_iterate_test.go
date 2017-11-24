@@ -495,10 +495,8 @@ func TestRefs_Descend(t *testing.T) {
 				return
 			})
 
-			if err == nil {
-				t.Error("missing error")
-			} else if err != ErrIndexOutOfRange {
-				t.Error("wrong error")
+			if err != nil {
+				t.Error(err)
 			} else if called > 0 {
 				t.Errorf("called %d times, but should not be called at all",
 					called)

@@ -40,4 +40,5 @@ func (r refsIndex) delElementFromIndex(re *refsElement) {
 	}
 
 	r[re.Hash] = res
+
 }

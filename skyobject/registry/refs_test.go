@@ -2196,10 +2196,162 @@ func TestRefs_DeleteByIndex(t *testing.T) {
 
 }
 
+func testRefsDeleteByHashNotFound(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	not cipher.SHA256,
+) {
+
+	var err error
+
+	if err = r.DeleteByHash(pack, not); err == nil {
+		t.Error("missing error")
+	} else if err != ErrNotFound {
+		t.Errorf("wrong error %q, want %q", err, ErrNotFound)
+	}
+
+}
+
+func testRefsDeleteByHash(
+	t *testing.T,
+	r *Refs,
+	pack Pack,
+	hash cipher.SHA256,
+) {
+
+	var (
+		ln, nl int
+		ok     bool
+
+		err error
+	)
+
+	if ok, err = r.HasHash(pack, hash); err != nil {
+		t.Error(err)
+	} else if ok == false {
+		t.Error("missing element") // broken test case or preparation
+	} else if ln, err = r.Len(pack); err != nil {
+		t.Error(err)
+	} else if err = r.DeleteByHash(pack, hash); err != nil {
+		t.Error(err)
+	} else if nl, err = r.Len(pack); err != nil {
+		t.Error(err)
+	} else if nl != ln-1 {
+		t.Error("length does not reduced")
+	} else if r.flags&HashTableIndex != 0 {
+		if r.refsIndex == nil {
+			t.Error("hash-table index is nil")
+		} else if _, ok = r.refsIndex[hash]; ok {
+			t.Errorf("hash %s was not removed from hash-table index",
+				hash.Hex()[:7])
+		}
+	}
+
+}
+
 func TestRefs_DeleteByHash(t *testing.T) {
 	// DeleteByHash(pack Pack, hash cipher.SHA256) (err error)
 
-	//
+	var (
+		pack = getTestPack()
+
+		users []cipher.SHA256
+		not   = cipher.SumSHA256([]byte("any Refs doesn't contain this hash"))
+
+		r   Refs
+		err error
+	)
+
+	for _, flags := range testRefsFlags() {
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(flags)
+
+		t.Logf("flags %08b", flags)
+
+		for _, degree := range testRefsDegrees() {
+
+			t.Log("degree", degree)
+
+			for _, length := range testRefsLengths(degree) {
+
+				t.Log("length", length)
+
+				clearRefs(t, &r, pack, degree)
+				users = getHashList(getTestUsers(length))
+
+				t.Run("not found", func(t *testing.T) {
+					testRefsDeleteByHashNotFound(t, &r, pack, not)
+				})
+
+				t.Run("del by one", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+					for i := 0; i < len(users) && t.Failed() == false; i++ {
+						testRefsDeleteByHash(t, &r, pack, users[i])
+						logRefsTree(t, &r, pack, false)
+					}
+				})
+
+				t.Run("del by one (load)", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+					for i := 0; i < len(users) && t.Failed() == false; i++ {
+						r.Reset() // load
+						testRefsDeleteByHash(t, &r, pack, users[i])
+						logRefsTree(t, &r, pack, false)
+					}
+				})
+
+				// these must be the last cases in the length loop
+
+				t.Run("many", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					for i := 0; i < len(users); i++ {
+						users[i] = cipher.SHA256{} // any hash
+					}
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+					var ln int
+					if err = r.DeleteByHash(pack, cipher.SHA256{}); err != nil {
+						t.Error(err)
+					} else if ln, err = r.Len(pack); err != nil {
+						t.Error(err)
+					} else if ln != 0 {
+						t.Error("not blank")
+					}
+				})
+
+				t.Run("many (load)", func(t *testing.T) {
+					clearRefs(t, &r, pack, degree)
+					for i := 0; i < length; i++ {
+						users[i] = cipher.SHA256{} // any hash
+					}
+					if err = r.AppendHashes(pack, users...); err != nil {
+						t.Fatal(err)
+					}
+					r.Reset() // load
+					var ln int
+					if err = r.DeleteByHash(pack, cipher.SHA256{}); err != nil {
+						t.Error(err)
+					} else if ln, err = r.Len(pack); err != nil {
+						t.Error(err)
+					} else if ln != 0 {
+						t.Error("not blank")
+					}
+				})
+
+			}
+
+		}
+
+	}
 
 }
 

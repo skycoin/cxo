@@ -719,18 +719,39 @@ func (r *Refs) deleteByHashUsingHashTable(
 
 	var ok bool
 	var els []*refsElement
+
 	if els, ok = r.refsIndex[hash]; !ok {
-		return // nothing to delete
+		return ErrNotFound // nothing to delete
 	}
 
+	// if the Refs contains one element with the hash,
+	// then we update subtree in place, otherwise
+	// we call walkUpdating in the end
+
+	var one = len(els) == 1 // only one element
+
+	delete(r.refsIndex, hash) // remove all from the index
+
 	for _, el := range els {
-		if err = r.deleteElement(pack, el); err != nil {
-			return // errro
+		if err = r.deleteElement(pack, el, one); err != nil {
+			return // error
 		}
 	}
 
-	if err = r.updateHashIfNeed(pack, r.flags&LazyUpdating == 0); err != nil {
-		return // error
+	// if the one is true, then everything is up to date
+	// and we have to update the Refs (the root) only;
+	// otherwise, we update all modified subtrees
+
+	// if not lazy
+	if r.flags&LazyUpdating == 0 {
+		if one == true {
+			err = r.updateHash(pack)
+		} else {
+			err = r.walkUpdating(pack)
+		}
+		if err != nil {
+			return
+		}
 	}
 
 	r.rewindIterators() // for iterators
@@ -1026,6 +1047,10 @@ func (r *Refs) Descend(
 
 	if err = r.initialize(pack); err != nil {
 		return
+	}
+
+	if r.length == 0 {
+		return // otherwise, r.length-1 causes ErrIndexOutOfRange error
 	}
 
 	return r.descendFrom(pack, r.length-1, descendFunc)

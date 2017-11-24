@@ -557,31 +557,56 @@ func (r *Refs) deleteElementByIndex(
 	return rn.updateHashIfNeed(pack, depth, r.flags&LazyUpdating == 0)
 }
 
+func (r *refsNode) elementIndex(el *refsElement) (i int, err error) {
+	var leaf *refsElement
+	for i, leaf = range r.leafs {
+		if leaf == el {
+			return
+		}
+	}
+	return 0, ErrInvalidRefs // invalid state
+}
+
 // deleteElement from the Refs if the Refs is loaded
-// and the element is found by hash-table
+// and the element is found by hash-table. More then
+// that, the elements already removed from hash-table
+// index or will be removed later (this method doesn't
+// remove the element from the hash-table)
 func (r *Refs) deleteElement(
 	pack Pack, //       : pack to save
 	el *refsElement, // : element to delete
+	update bool, //     : update subtree
 ) (
 	err error, //       : error if any
 ) {
 
-	r.delElementFromIndex(el)
+	var (
+		up    = el.upper // node with leafs
+		i     int        // index of the el in the up
+		depth int        //
+	)
 
-	var up = el.upper
-
-	for i, leaf := range up.leafs {
-		if leaf == el {
-			up.deleteElementByIndex(i)
-			up.length--
-
-			//
-
-			return
-		}
+	if i, err = up.elementIndex(el); err != nil {
+		return // invalid state
 	}
 
-	return ErrInvalidRefs // can't find in upper leafs
+	up.deleteElementByIndex(i)
+
+	for ; up != nil; up, depth = up.upper, depth+1 {
+
+		up.length--
+		up.mods |= contentMod
+
+		if update == true {
+			err = up.updateHashIfNeed(pack, depth, update)
+			if err != nil {
+				return
+			}
+		}
+
+	}
+
+	return
 }
 
 //
@@ -1218,9 +1243,12 @@ func (r *Refs) appendNode(
 //
 
 // walkUpdatingNode walks from given node
-// through subtree setting actual length and hash
-// fields; the method used after appending to an
-// existing Refs
+// through subtree setting actual and hash
+// field; the method used after appending
+// to or removing from an existing Refs;
+// the 'existing Refs' means that the Refs
+// is not created using slice related
+// methods
 func (r *Refs) walkUpdatingNode(
 	pack Pack, //    : pack to save
 	rn *refsNode, // : the node to walk from
@@ -1229,7 +1257,7 @@ func (r *Refs) walkUpdatingNode(
 	err error, //    : error if any
 ) {
 
-	if rn.mods&loadedMod == 0 || rn.mods&(contentMod|lengthMod) == 0 {
+	if rn.mods&loadedMod == 0 || rn.mods&contentMod == 0 {
 		return // the node in actual state
 	}
 
@@ -1237,22 +1265,30 @@ func (r *Refs) walkUpdatingNode(
 
 	if depth > 0 {
 
-		var length int // use local variable
+		var br *refsNode
 
-		for _, br := range rn.branches {
+		for i := 0; i < len(rn.branches); i++ {
+
+			br = rn.branches[i]
 
 			if err = r.walkUpdatingNode(pack, br, depth-1); err != nil {
 				return // some error
 			}
 
-			length += br.length
+			// remove blank
+
+			if br.mods&loadedMod != 0 && br.length == 0 {
+				rn.deleteNodeByIndex(i)
+				i--
+			}
 
 		}
 
-		rn.length = length    // set actual length
-		rn.mods &^= lengthMod // clear the flag
-
 	}
 
-	return rn.updateHash(pack, depth) // update hash
+	if rn.length > 0 {
+		err = rn.updateHash(pack, depth) // only if it's not blank now
+	}
+
+	return
 }
