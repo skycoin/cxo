@@ -15,9 +15,7 @@ type CXDS interface {
 	// Get and increment. Use negative inc to decrement and zero
 	// to keep untouched
 	Get(key cipher.SHA256, inc int) (val []byte, rc uint32, err error)
-	// Set and increment. Use negative inc to decrement or zero to
-	// keep untouched. E.g. Set(smthng, 0) can be a bad choose,
-	// because the Set doesn't appends one to references counter
+	// Set and increment. Set with zero or negaive inc panics
 	Set(key cipher.SHA256, inc int) (rc uint32, err error)
 	// Inc increments or decrements (if given inc is negative)
 	// references count for value with given key
