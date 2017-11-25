@@ -2,6 +2,7 @@ package cxds
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"time"
 
@@ -98,252 +99,174 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 	return
 }
 
-// Get value by key
-func (d *driveCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
-	err = d.b.View(func(tx *bolt.Tx) (_ error) {
-		got := tx.Bucket(objs).Get(key[:])
+func incr(
+	o *bolt.Bucket, // : objects
+	key []byte, //     : key[:]
+	val []byte, //     : value without leading rc (4 bytes)
+	rc uint32, //      : existing rc
+	inc int, //        : change the rc
+) (
+	nrc uint32, //     : new rc
+	err error, //      : an error
+) {
+
+	switch {
+
+	case inc == 0:
+
+		// all done (no changes)
+		nrc = rc
+
+	case inc < 0:
+
+		inc = -inc // change its sign
+
+		if uinc := uint32(inc); uinc >= rc {
+
+			// delete value (rc <= 0), nrc = 0
+			err = o.Delete(key[:])
+
+		} else {
+
+			// reduce (rc > 0), keep value
+			var repl = make([]byte, 4, 4+len(val))
+			nrc = rc - uinc // reduced
+			setRefsCount(repl, nrc)
+			repl = append(repl, val)
+			err = o.Put(key[:], repl)
+
+		}
+
+	case inc > 0:
+
+		// increase the rc
+		nrc = rc + uint32(inc)
+		var repl = make([]byte, 4, 4+len(val))
+		setRefsCount(repl, nrc)
+		repl = append(repl, val)
+		err = o.Put(key[:], repl)
+
+	}
+
+	return
+}
+
+// Get value by key changing or
+// leaving as is references counter
+func (d *driveCXDS) Get(
+	key cipher.SHA256, // :
+	inc int, //           :
+) (
+	val []byte, //        :
+	rc uint32, //         :
+	err error, //         :
+) {
+
+	var tx = func(tx *bolt.Tx) (err error) {
+
+		var (
+			o   = tx.Bucket(objs)
+			got = o.Get(key[:])
+		)
+
 		if len(got) == 0 {
 			return data.ErrNotFound // pass through
 		}
+
 		rc = getRefsCount(got)
 		val = make([]byte, len(got)-4)
 		copy(val, got[4:])
+
+		rc, err = incr(o, key[:], val, rc, inc)
 		return
-	})
+	}
+
+	if inc == 0 {
+		err = d.b.View(tx) // lookup only
+	} else {
+		err = d.b.Update(tx) // some changes
+	}
+
 	return
 }
 
-// GetInc is Get + Inc
-func (d *driveCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
-	err error) {
-
-	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
-		got := tx.Bucket(objs).Get(key[:])
-		if len(got) == 0 {
-			return data.ErrNotFound // pass through
-		}
-
-		got = copy204(got) // this copying required
-
-		rc = incRefsCount(got)
-		val = got[4:]
-		return
-	})
-	return
+func panicf(format string, args ...interface{}) {
+	panic(fmt.Sprintf(format, args...))
 }
 
-// Set of Inc if exists
-func (d *driveCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
+// Set value and its references counter
+func (d *driveCXDS) Set(
+	key cipher.SHA256,
+	val []byte,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
+
+	if inc <= 0 {
+		panicf("invalid inc argument in CXDS.Set: %d", inc)
+	}
+
 	if len(val) == 0 {
 		err = ErrEmptyValue
 		return
 	}
-	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
-		bk := tx.Bucket(objs)
-		got := bk.Get(key[:])
+
+	err = d.b.Update(func(tx *bolt.Tx) (err error) {
+
+		var (
+			o   = tx.Bucket(objs)
+			got = o.Get(key[:])
+		)
+
 		if len(got) == 0 {
-			rc = 1
-			return bk.Put(key[:], append(one, val...))
+			rc, err = incr(o, key[:], val, 0, 1)
+			return
 		}
 
-		// TODO (kostyarin): take a look the issue
-		// https://github.com/boltdb/bolt/issues/204
-		got = copy204(got)
-
-		rc = incRefsCount(got) // increment refs count
-		return bk.Put(key[:], got)
-	})
-	return
-}
-
-// Add is like Set, but it calculates key inside
-func (d *driveCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
-	if len(val) == 0 {
-		err = ErrEmptyValue
+		rc, err = incr(o, key[:], got[4:], getRefsCount(got), inc)
 		return
-	}
-	key = getHash(val)
-	rc, err = d.Set(key, val)
+	})
+
 	return
 }
 
-// Inc increments references counter
-func (d *driveCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
-	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
-		bk := tx.Bucket(objs)
-		got := bk.Get(key[:])
+// Inc changes references counter
+func (d *driveCXDS) Inc(
+	key cipher.SHA256,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
+
+	tx = func(tx *bolt.Tx) (_ error) {
+
+		var (
+			o   = tx.Bucket(objs)
+			got = o.Get(key[:])
+		)
+
 		if len(got) == 0 {
 			return data.ErrNotFound
 		}
 
-		// TODO (kostyarin): take a look the issue
-		// https://github.com/boltdb/bolt/issues/204
-		got = copy204(got)
-
-		rc = incRefsCount(got)
-		return bk.Put(key[:], got)
-	})
-	return
-}
-
-// Dec decrements referecnes counter and removes vlaue if it turns 0
-func (d *driveCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
-	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
-		bk := tx.Bucket(objs)
-		got := bk.Get(key[:])
-		if len(got) == 0 {
-			return data.ErrNotFound
+		if inc == 0 {
+			return // just check presence if the inc is zero
 		}
 
-		// TODO (kostyarin): take a look the issue
-		// https://github.com/boltdb/bolt/issues/204
-		got = copy204(got)
-
-		rc = decRefsCount(got)
-		if rc == 0 {
-			return bk.Delete(key[:])
-		}
-		return bk.Put(key[:], got)
-	})
-	return
-}
-
-// DecGet is Get + Dec
-func (d *driveCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
-	err error) {
-
-	err = d.b.Update(func(tx *bolt.Tx) (_ error) {
-		bk := tx.Bucket(objs)
-		got := bk.Get(key[:])
-		if len(got) == 0 {
-			return data.ErrNotFound
-		}
-
-		got = copy204(got) // copying requied
-		val = got[4:]
-
-		rc = decRefsCount(got)
-		if rc == 0 {
-			return bk.Delete(key[:])
-		}
-		return bk.Put(key[:], got)
-	})
-	return
-}
-
-// MultiGet returns many values by list of keys
-func (d *driveCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
-	if len(keys) == 0 {
+		rc = getRefsCount(got)
+		rc, err = incr(o, key[:], got[4:], rc, inc)
 		return
 	}
-	vals = make([][]byte, len(keys))
-	err = d.b.View(func(tx *bolt.Tx) (_ error) {
-		bk := tx.Bucket(objs)
-		for i, k := range keys {
-			if got := bk.Get(k[:]); len(got) > 0 {
-				val := make([]byte, len(got)-4)
-				copy(val, got[4:])
-				vals[i] = val
-			} else {
-				return data.ErrNotFound
-			}
-		}
-		return
-	})
-	return
-}
 
-// MultiAdd appends all given values like the Add
-func (d *driveCXDS) MultiAdd(vals [][]byte) (err error) {
-	if len(vals) == 0 {
-		return
+	if inc == 0 {
+		err = d.b.View(tx) // lookup only
+	} else {
+		err = d.b.Update(tx) // changes required
 	}
-	err = d.b.Update(func(tx *bolt.Tx) (err error) {
-		bk := tx.Bucket(objs)
-		for _, val := range vals {
-			if len(val) == 0 {
-				return ErrEmptyValue
-			}
-			key := getHash(val)
 
-			got := bk.Get(key[:])
-			if len(got) == 0 {
-				if err = bk.Put(key[:], append(one, val...)); err != nil {
-					return
-				}
-				continue
-			}
-
-			// TODO (kostyarin): take a look the issue
-			// https://github.com/boltdb/bolt/issues/204
-			got = copy204(got)
-
-			incRefsCount(got) // increment refs count
-			if err = bk.Put(key[:], got); err != nil {
-				return
-			}
-		}
-		return
-	})
-	return
-}
-
-// MultiInc increments references counter for all values by given keys
-func (d *driveCXDS) MultiInc(keys []cipher.SHA256) (err error) {
-	if len(keys) == 0 {
-		return
-	}
-	err = d.b.Update(func(tx *bolt.Tx) (err error) {
-		bk := tx.Bucket(objs)
-		for _, k := range keys {
-			if got := bk.Get(k[:]); len(got) > 0 {
-
-				// TODO (kostyarin): take a look the issue
-				// https://github.com/boltdb/bolt/issues/204
-				got = copy204(got)
-
-				incRefsCount(got)
-				if err = bk.Put(k[:], got); err != nil {
-					return
-				}
-			} else {
-				return data.ErrNotFound
-			}
-		}
-		return
-	})
-	return
-}
-
-// MultiDec decrements all values by given keys
-func (d *driveCXDS) MultiDec(keys []cipher.SHA256) (err error) {
-	if len(keys) == 0 {
-		return
-	}
-	err = d.b.Update(func(tx *bolt.Tx) (err error) {
-		bk := tx.Bucket(objs)
-		for _, k := range keys {
-			if got := bk.Get(k[:]); len(got) > 0 {
-
-				// TODO (kostyarin): take a look the issue
-				// https://github.com/boltdb/bolt/issues/204
-				got = copy204(got)
-
-				if rc := decRefsCount(got); rc == 0 {
-					if err = bk.Delete(k[:]); err != nil {
-						return
-					}
-					continue
-				}
-				if err = bk.Put(k[:], got); err != nil {
-					return
-				}
-			} else {
-				return data.ErrNotFound
-			}
-		}
-		return
-	})
 	return
 }
 
@@ -352,10 +275,11 @@ func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 	uint32) error) (err error) {
 
 	err = d.b.View(func(tx *bolt.Tx) (err error) {
-		var key cipher.SHA256
 
-		bk := tx.Bucket(objs)
-		c := bk.Cursor()
+		var (
+			key cipher.SHA256
+			c   = Bucket(objs).Cursor()
+		)
 
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			copy(key[:], k)
@@ -376,8 +300,7 @@ func (d *driveCXDS) Close() (err error) {
 	return d.b.Close()
 }
 
-// https://github.com/boltdb/bolt/issues/204
-func copy204(in []byte) (got []byte) {
+func copySlice(in []byte) (got []byte) {
 	got = make([]byte, len(in))
 	copy(got, in)
 	return

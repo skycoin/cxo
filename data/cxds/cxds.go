@@ -11,7 +11,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-const Version int = 1 // previous is 0
+const Version int = 2 // previous is 1
 
 // comon errors
 var (
@@ -22,29 +22,14 @@ var (
 	ErrNewVersion      = errors.New("db file newer then this CXO") // go get
 )
 
-var one []byte
-
-func init() {
-	one = make([]byte, 4)
-	binary.BigEndian.PutUint32(one, 1)
-}
-
 //
 func getRefsCount(val []byte) (rc uint32) {
 	rc = binary.BigEndian.Uint32(val)
 	return
 }
 
-// returns new uint32
-func incRefsCount(val []byte) (rc uint32) {
-	rc = binary.BigEndian.Uint32(val) + 1
-	binary.BigEndian.PutUint32(val, rc)
-	return
-}
-
-// returns new uint32
-func decRefsCount(val []byte) (rc uint32) {
-	rc = binary.BigEndian.Uint32(val) - 1
+//
+func setRefsCount(val []byte, rc uint32) {
 	binary.BigEndian.PutUint32(val, rc)
 	return
 }
