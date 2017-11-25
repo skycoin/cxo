@@ -38,12 +38,30 @@ type Feeds interface {
 	Len() int
 }
 
+// An IterateHeadsFunc used to iterate over
+// heads of a feed
+type IterateHeadsFunc func(nonce uint64) (err error)
+
 // A Heads represens all heads of a feed
 type Heads interface {
 	// Roots of head with given nonce
 	Roots(nonce uint64) (rs Roots, err error)
 	// List all heads
 	List() (heads []uint64, err error)
+	// Add new head with given nonce.
+	// If a head with given nonce already
+	// exists, then this method does nothing
+	Add(nonce uint64) (rs Roots, err error)
+	// Del deletes head with given nonce and
+	// all its Root objects. The method returns
+	// ErrNotFound if a head with given nonce
+	// doesn't exist
+	Del(nonce uint64) (err error)
+	// Has returns true if a head with given
+	// nonce exits in the CXDS
+	Has(nonce uint64) (ok bool, err error)
+	// Iterate over all heads
+	Iterate(IterateHeadsFunc) (err error)
 	// Len returns number of heads
 	Len() int
 }

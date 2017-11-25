@@ -8,7 +8,7 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-func testAddFeed(t *testing.T, idx data.IdxDB, pk cipher.PubKey) {
+func addFeed(t *testing.T, idx data.IdxDB, pk cipher.PubKey) {
 	err := idx.Tx(func(feeds data.Feeds) (err error) {
 		return feeds.Add(pk)
 	})
@@ -17,7 +17,7 @@ func testAddFeed(t *testing.T, idx data.IdxDB, pk cipher.PubKey) {
 	}
 }
 
-func testNewRoot(seed string, sk cipher.SecKey) (r *data.Root) {
+func newRoot(seed string, sk cipher.SecKey) (r *data.Root) {
 	r = new(data.Root)
 	r.CreateTime = 111
 	r.AccessTime = 222
@@ -29,7 +29,7 @@ func testNewRoot(seed string, sk cipher.SecKey) (r *data.Root) {
 	return
 }
 
-func testAddRoot(t *testing.T, idx data.IdxDB, pk cipher.PubKey, r *data.Root) {
+func addRoot(t *testing.T, idx data.IdxDB, pk cipher.PubKey, r *data.Root) {
 	err := idx.Tx(func(feeds data.Feeds) (err error) {
 		var rs data.Roots
 		if rs, err = feeds.Roots(pk); err != nil {
@@ -47,7 +47,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -75,15 +75,15 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r1 := testNewRoot("r", sk)
-	r2 := testNewRoot("e", sk)
+	r1 := newRoot("r", sk)
+	r2 := newRoot("e", sk)
 
 	r2.Seq, r2.Prev = 1, cipher.SumSHA256([]byte("random"))
 
 	ra := []*data.Root{r1, r2}
 
 	for _, r := range ra {
-		if testAddRoot(t, idx, pk, r); t.Failed() {
+		if addRoot(t, idx, pk, r); t.Failed() {
 			return
 		}
 	}
@@ -144,7 +144,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r3 := testNewRoot("w", sk)
+	r3 := newRoot("w", sk)
 	r3.Seq, r3.Prev = 2, cipher.SumSHA256([]byte("random"))
 
 	t.Run("mutate add", func(t *testing.T) {
@@ -212,7 +212,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -240,8 +240,8 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r3 := testNewRoot("r", sk)
-	r2 := testNewRoot("e", sk)
+	r3 := newRoot("r", sk)
+	r2 := newRoot("e", sk)
 
 	r3.Seq, r3.Prev = 2, cipher.SumSHA256([]byte("random"))
 	r2.Seq, r2.Prev = 1, cipher.SumSHA256([]byte("random"))
@@ -249,7 +249,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 	ra := []*data.Root{r3, r2}
 
 	for _, r := range ra {
-		if testAddRoot(t, idx, pk, r); t.Failed() {
+		if addRoot(t, idx, pk, r); t.Failed() {
 			return
 		}
 	}
@@ -310,7 +310,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r1 := testNewRoot("w", sk)
+	r1 := newRoot("w", sk)
 
 	t.Run("mutate add", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
@@ -377,11 +377,11 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
-	r := testNewRoot("r", sk)
+	r := newRoot("r", sk)
 
 	t.Run("create", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
@@ -443,7 +443,7 @@ func RootsDel(t *testing.T, idx data.IdxDB) {
 
 	/*	pk, sk := cipher.GenerateKeyPair()
 
-		if testAddFeed(t, idx, pk); t.Failed() {
+		if addFeed(t, idx, pk); t.Failed() {
 			return
 		}*/
 
@@ -454,7 +454,7 @@ func RootsGet(t *testing.T, idx data.IdxDB) {
 
 	pk, _ := cipher.GenerateKeyPair()
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -481,7 +481,7 @@ func RootsHas(t *testing.T, idx data.IdxDB) {
 
 	pk, sk := cipher.GenerateKeyPair()
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -501,7 +501,7 @@ func RootsHas(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	testAddRoot(t, idx, pk, testNewRoot("seed", sk))
+	addRoot(t, idx, pk, newRoot("seed", sk))
 
 	t.Run("has", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {

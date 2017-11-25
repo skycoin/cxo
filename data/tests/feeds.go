@@ -63,7 +63,7 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -83,10 +83,10 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
-	if testAddRoot(t, idx, pk, testNewRoot("root", sk)); t.Failed() {
+	if addRoot(t, idx, pk, newRoot("root", sk)); t.Failed() {
 		return
 	}
 
@@ -131,7 +131,7 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 	pks := make(map[cipher.PubKey]struct{})
 
 	for _, pk := range []cipher.PubKey{pk1, pk2} {
-		if testAddFeed(t, idx, pk); t.Failed() {
+		if addFeed(t, idx, pk); t.Failed() {
 			return
 		}
 		pks[pk] = struct{}{}
@@ -254,7 +254,7 @@ func FeedsHas(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
@@ -272,20 +272,39 @@ func FeedsHas(t *testing.T, idx data.IdxDB) {
 
 }
 
-// FeedsRoots is test case for Feeds.Roots
-func FeedsRoots(t *testing.T, idx data.IdxDB) {
+func addHead(t *testing.T, idx data.IdxDB, pk cipher.SHA256, nonce uint32) {
+	err = idx.Tx(func(fs data.Feeds) (err error) {
+		var hs data.Heads
+		if hs, err = fs.Heads(pk); err != nil {
+			return
+		}
+		var rs data.Roots
+		if rs, err = hs.Add(nonce); err != nil {
+			return
+		} else if rs == nil {
+			t.Error("got nil-Roots")
+		}
+		return
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// FeedsHeads is test case for Feeds.Heads
+func FeedsHeads(t *testing.T, idx data.IdxDB) {
 
 	pk, _ := cipher.GenerateKeyPair()
 
 	t.Run("no such feed", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
-			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err == nil {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err == nil {
 				t.Error("missng data.ErrNoSuchFeed")
 			} else if err != data.ErrNoSuchFeed {
 				return // bubble the err up
-			} else if rs != nil {
-				t.Error("NoSuchFeed but Roots are not nil")
+			} else if hs != nil {
+				t.Error("NoSuchFeed but Heads are not nil")
 			}
 			return nil
 		})
@@ -294,17 +313,37 @@ func FeedsRoots(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	if testAddFeed(t, idx, pk); t.Failed() {
+	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
 
 	t.Run("empty", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
-			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
 				return // bubble the err up
 			}
-			if rs == nil {
+			if hs == nil {
+				t.Error("got nil")
+			}
+			return // ok mutherfucekr
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+
+	if addHead(t, idx, pk, 1); t.Failed() {
+		return
+	}
+
+	t.Run("heads", func(t *testing.T) {
+		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return // bubble the err up
+			}
+			if hs == nil {
 				t.Error("got nil")
 			}
 			return // ok mutherfucekr
