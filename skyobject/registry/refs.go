@@ -1368,8 +1368,10 @@ func (r *Refs) appnedFunc(
 }
 
 // walkUpdating walks through the refs
-// setting hash and length fields of nodes
-// to actual values
+// setting hash fields of nodes to
+// actual values if a node is changed
+// and contentMod flag of the node is
+// set
 func (r *Refs) walkUpdating(
 	pack Pack, //    : pack to save
 ) (
@@ -1630,7 +1632,7 @@ func (r *Refs) Clear() {
 // can reduce depth of the Refs if it's possible.
 //
 // The Rebuild can't be called insisde an iterator.
-/// It returns ErrRefsIterating in this case.
+// It returns ErrRefsIterating in this case.
 //
 // The Rebuild called by *skyobject.Pack inside
 // Save method. Thus in most cases you should not
@@ -1652,13 +1654,25 @@ func (r *Refs) Rebuild(
 		return ErrRefsIterating
 	}
 
-	if r.refsNode.mods&(contentMod|lengthMod) != 0 {
-		if err = r.walkUpdating(pack); err != nil {
-			return
-		}
+	if err = r.initialize(pack); err != nil {
+		return
 	}
 
-	// TODO (kostyarin)
+	// can we reduce lenght of the Refs?
+
+	// TODO (kostyarin): improve the algorithm
+	var dif = depthToFit(r.degree, 0, r.length)
+
+	if dif != r.depth {
+		// the Slice includes walkUpdating steps
+		var slice *Refs
+		if slice, err = r.Slice(pack, 0, r.length); err != nil {
+			return
+		}
+		*r = *slice // replace
+	} else {
+		err = r.walkUpdating(pack)
+	}
 
 	return
 }

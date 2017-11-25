@@ -1924,6 +1924,7 @@ func testRefsFlags() []Flags {
 		0,
 		EntireRefs,
 		HashTableIndex,
+		LazyUpdating,
 	}
 }
 
@@ -2326,6 +2327,8 @@ func TestRefs_DeleteByHash(t *testing.T) {
 					} else if ln != 0 {
 						t.Error("not blank")
 					}
+					logRefsTree(t, &r, pack, false)
+
 				})
 
 				t.Run("many (load)", func(t *testing.T) {
@@ -2345,6 +2348,7 @@ func TestRefs_DeleteByHash(t *testing.T) {
 					} else if ln != 0 {
 						t.Error("not blank")
 					}
+					logRefsTree(t, &r, pack, false)
 				})
 
 			}
@@ -2361,10 +2365,137 @@ func TestRefs_DeleteByHash(t *testing.T) {
 //  - Descend
 //  - DescendFrom
 
+func testRefsSlice(
+	t *testing.T, //          : the testing
+	r *Refs, //               : the source
+	pack Pack, //             : pack to load
+	users []cipher.SHA256, // : content of the source
+	i int, //                 : starting index
+	j int, //                 : ending index
+) {
+
+	var (
+		slice *Refs
+
+		sl   int
+		hash cipher.SHA256
+
+		err error
+	)
+
+	t.Logf("[%d:%d]", i, j)
+
+	if slice, err = r.Slice(pack, i, j); err != nil {
+		t.Error(err)
+	} else if sl, err = slice.Len(pack); err != nil {
+		t.Error(err)
+	} else if sl != j-i {
+		t.Errorf("wrong slice length: %d, want %d", sl, j-i)
+	} else {
+		for k := 0; k+i < j; k++ {
+			if hash, err = slice.HashByIndex(pack, k); err != nil {
+				t.Error(err)
+			} else if hash != users[k+i] {
+				t.Errorf("wrong hash in slice (%d/%d) %s, want %s",
+					k,
+					k+i,
+					hash.Hex()[:7],
+					users[k+i].Hex()[:7])
+			}
+		}
+	}
+
+	if slice.flags != r.flags {
+		t.Error("wrong flags")
+	} else if len(slice.iterators) != 0 {
+		t.Error("unexpected iterators")
+	} else if slice.degree != r.degree {
+		t.Error("wrong degree")
+	}
+
+	logRefsTree(t, r, pack, false)
+	logRefsTree(t, slice, pack, false)
+
+}
+
 func TestRefs_Slice(t *testing.T) {
 	// Slice(pack Pack, i int, j int) (slice *Refs, err error)
 
-	//
+	var (
+		pack = getTestPack()
+
+		users []cipher.SHA256
+
+		r Refs
+		//slice *Refs
+		err error
+	)
+
+	for _, flags := range testRefsFlags() {
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(flags)
+
+		t.Logf("flags %08b", flags)
+
+		for _, degree := range testRefsDegrees() {
+
+			t.Log("degree", degree)
+
+			for _, length := range testRefsLengths(degree) {
+
+				t.Log("length", length)
+
+				clearRefs(t, &r, pack, degree)
+				users = getHashList(getTestUsers(length))
+
+				t.Run("out of range", func(t *testing.T) {
+					if _, err = r.Slice(pack, 0, 1); err == nil {
+						t.Error("missing error")
+					}
+					if _, err = r.Slice(pack, 1, 0); err == nil {
+						t.Error("missing error")
+					}
+					if _, err = r.Slice(pack, 1, 2); err == nil {
+						t.Error("missing error")
+					}
+				})
+
+				if err = r.AppendHashes(pack, users...); err != nil {
+					t.Fatal(err)
+				}
+
+				t.Run("head", func(t *testing.T) {
+					for j := 0; j < len(users) && t.Failed() == false; j++ {
+						testRefsSlice(t, &r, pack, users, 0, j)
+					}
+				})
+
+				t.Run("tail", func(t *testing.T) {
+					for i := 0; i < len(users) && t.Failed() == false; i++ {
+						testRefsSlice(t, &r, pack, users, i, len(users))
+					}
+				})
+
+				t.Run("head (load)", func(t *testing.T) {
+					for j := 0; j < len(users) && t.Failed() == false; j++ {
+						r.Reset()
+						testRefsSlice(t, &r, pack, users, 0, j)
+					}
+				})
+
+				t.Run("tail (load)", func(t *testing.T) {
+					for i := 0; i < len(users) && t.Failed() == false; i++ {
+						r.Reset()
+						testRefsSlice(t, &r, pack, users, i, len(users))
+					}
+				})
+
+			}
+
+		}
+
+	}
 
 }
 
@@ -2376,20 +2507,65 @@ func TestRefs_Slice(t *testing.T) {
 func TestRefs_Clear(t *testing.T) {
 	// Clear()
 
-	//
+	// The Clear is just *r = Refs{}
+
+	// TODO (kostyarin): lowest priority
 
 }
 
 func TestRefs_Rebuild(t *testing.T) {
 	// Rebuild(pack Pack) (err error)
 
-	//
+	var (
+		pack = getTestPack()
+
+		users []cipher.SHA256
+
+		r Refs
+		//slice *Refs
+		err error
+	)
+
+	for _, flags := range testRefsFlags() {
+
+		pack.ClearFlags(^0)
+		pack.AddFlags(flags)
+
+		t.Logf("flags %08b", flags)
+
+		for _, degree := range testRefsDegrees() {
+
+			t.Log("degree", degree)
+
+			for _, length := range testRefsLengths(degree) {
+
+				t.Log("length", length)
+
+				clearRefs(t, &r, pack, degree)
+
+				t.Run("blank", func(t *testing.T) {
+					if err = r.Rebuild(pack); err != nil {
+						t.Error(err)
+					}
+				})
+
+				users = getHashList(getTestUsers(length))
+
+				_ = users
+
+				// TODO (kostyarin): the test
+
+			}
+
+		}
+
+	}
 
 }
 
 func TestRefs_Tree(t *testing.T) {
 	// Tree() (tree string)
 
-	//
+	// TODO (kostyarin): low priority
 
 }
