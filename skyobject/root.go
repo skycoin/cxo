@@ -13,6 +13,9 @@ import (
 type Root struct {
 	Refs []Dynamic // main branches
 
+	Nonce      uint64 // head of the feed
+	Descriptor []byte // decriptor of the Root
+
 	Reg RegistryRef   // registry
 	Pub cipher.PubKey // feed
 
@@ -47,8 +50,9 @@ func (r *Root) Short() string {
 
 // String implements fmt.Stringer interface
 func (r *Root) String() string {
-	return fmt.Sprintf("Root{%s:%d:%s}",
+	return fmt.Sprintf("Root{[%s:%d]:%d:%s}",
 		r.Pub.Hex()[:7],
+		r.Nonce,
 		r.Seq,
 		r.Hash.Hex()[:7])
 }

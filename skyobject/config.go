@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/skycoin/cxo/node/log"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // config related constants and defaults
 const (
-	Prefix       string = "[skyobject] " // default log prefix
-	MerkleDegree int    = 16             // default References' degree
+	Prefix string = "[skyobject] " // default log prefix
 
 	RollAvgSamples int = 5 // rolling average samples
 
@@ -44,7 +44,7 @@ func NewConfig() (conf *Config) {
 
 	// core configs
 
-	conf.MerkleDegree = MerkleDegree
+	conf.MerkleDegree = registry.Degree
 
 	// logger
 
@@ -57,7 +57,7 @@ func NewConfig() (conf *Config) {
 
 // Validate the Config
 func (c *Config) Validate() error {
-	if c.MerkleDegree <= 1 {
+	if c.MerkleDegree <= 2 {
 		return fmt.Errorf("skyobject.Config.MerkleDegree too small: %d",
 			c.MerkleDegree)
 	}
