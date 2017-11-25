@@ -1,3 +1,5 @@
+![cxo logo](https://user-images.githubusercontent.com/26845312/32426759-2a7c367c-c282-11e7-87bc-9f0a936046af.png)
+
 CX Object System
 ================
 
@@ -5,8 +7,6 @@ CX Object System
 [![Coverage Status](https://coveralls.io/repos/skycoin/cxo/badge.svg?branch=master)](https://coveralls.io/r/skycoin/cxo?branch=master)
 [![GoReportCard](https://goreportcard.com/badge/skycoin/cxo)](https://goreportcard.com/report/skycoin/cxo)
 [![Telegram group link](telegram-group.svg)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
-
-![logo](cxo_logo.png)
 
 The CXO is objects system, goal of which is sharing any objects. The CXO
 is low level and designed to build application on top of it
@@ -22,7 +22,7 @@ See [CXO wiki](https://github.com/skycoin/cxo/wiki) to get this information
 ### Installation and Version
 
 Use [dep](https://github.com/golang/dep) to use particular version of the
-CXO. The maser branch of the repository points to latest stable release.
+CXO. The master branch of the repository points to latest stable release.
 Actually, it points to alpha-release for now.
 
 To get the release use

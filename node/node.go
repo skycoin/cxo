@@ -39,11 +39,11 @@ var (
 	// feeds because it is not public
 	ErrNonPublicPeer = errors.New(
 		"request list of feeds from non-public peer")
-	// ErrConnClsoed occurs if coonection closed but an action requested
-	ErrConnClsoed = errors.New("connection closed")
+	// ErrConnClosed occurs if connection closed but an action requested
+	ErrConnClosed = errors.New("connection closed")
 	// ErrUnsubscribed is a reason of dropping a filling Root
 	ErrUnsubscribed = errors.New("unsubscribed")
-	// ErrInvalidPubKeyLength occurs durong decoding cipher.PubKey from hex
+	// ErrInvalidPubKeyLength occurs during decoding cipher.PubKey from hex
 	ErrInvalidPubKeyLength = errors.New("invalid PubKey length")
 )
 
@@ -55,7 +55,7 @@ type Node struct {
 
 	src msg.Src // msg source
 
-	conf Config // configuratios
+	conf Config // configurations
 
 	db *data.DB             // database
 	so *skyobject.Container // skyobject
@@ -70,7 +70,7 @@ type Node struct {
 	conns  []*Conn
 	connsl []*Conn // cow
 
-	// waiting/wanted obejcts
+	// waiting/wanted objects
 	wmx sync.Mutex
 	wos map[cipher.SHA256]map[*Conn]struct{}
 
@@ -95,7 +95,7 @@ type Node struct {
 	await sync.WaitGroup
 }
 
-// NewNode creates new Node instnace using given
+// NewNode creates new Node instance using given
 // configurations. The functions creates database and
 // Container of skyobject instances internally. Use
 // Config.Skyobject to provide appropriate configuration
@@ -107,7 +107,7 @@ type Node struct {
 //
 //     node, err := NewNode(conf)
 //
-// The recommended way to use NewConfig and chagning
+// The recommended way to use NewConfig and changing
 // result, instead of "empty config" with some fields:
 //
 //     // use this if you really know what you do
@@ -147,8 +147,8 @@ func NewNode(sc Config) (s *Node, err error) {
 	} else {
 
 		if sc.DBPath == "" {
-			cxPath = filepath.Join(sc.DataDir, "cxds.db")
-			idxPath = filepath.Join(sc.DataDir, "idx.db")
+			cxPath = filepath.Join(sc.DataDir, CXDS)
+			idxPath = filepath.Join(sc.DataDir, IdxDB)
 		} else {
 			cxPath = sc.DBPath + ".cxds"
 			idxPath = sc.DBPath + ".idx"
@@ -481,7 +481,7 @@ func (s *Node) gotObject(key cipher.SHA256, obj *msg.Object) {
 	delete(s.wos, key)
 }
 
-func (s *Node) wantObejct(key cipher.SHA256, c *Conn) {
+func (s *Node) wantObject(key cipher.SHA256, c *Conn) {
 	s.wmx.Lock()
 	defer s.wmx.Unlock()
 
@@ -499,6 +499,25 @@ func (s *Node) delConnFromWantedObjects(c *Conn) {
 	for _, cs := range s.wos {
 		delete(cs, c)
 	}
+}
+
+// Discovery returns *factory.MessengerFactory of the Node.
+// It can be nil if this feature disabled by configs
+func (s *Node) Discovery() *factory.MessengerFactory {
+	return s.discovery
+}
+
+// ConnectToMessenger connects to a messenger server.
+func (s *Node) ConnectToMessenger(address string) (*factory.Connection, error) {
+	if s.discovery == nil {
+		return nil, errors.New("messenger factory not initialised")
+	}
+	return s.discovery.ConnectWithConfig(address, &factory.ConnConfig{
+		Reconnect:                      true,
+		ReconnectWait:                  time.Second * 30,
+		FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
+		OnConnected:                    s.updateServiceDiscoveryCallback,
+	})
 }
 
 // Connections of the Node. It returns shared
@@ -556,7 +575,7 @@ func (s *Node) Close() (err error) {
 	// close database after all
 	s.db.Close() // TODO (kostyarin): error
 
-	// release the s.Closed() cahnnel
+	// release the s.Closed() channel
 	s.doneo.Do(func() {
 		close(s.done)
 	})
@@ -674,7 +693,7 @@ func (s *Node) onDial(gc *gnet.Conn, _ error) (_ error) {
 	return
 }
 
-// Quiting returns cahnnel that closed
+// Quiting returns channel that closed
 // when the Node performs closing and
 // after that. This channel can be used to
 // stop Root objects handling and
@@ -695,7 +714,7 @@ func (s *Node) Closed() <-chan struct{} {
 }
 
 // RPCAddress returns address of RPC listener
-// or an empty stirng if disabled
+// or an empty string if disabled
 func (s *Node) RPCAddress() (address string) {
 	if s.rpc != nil {
 		address = s.rpc.Address()
@@ -704,7 +723,7 @@ func (s *Node) RPCAddress() (address string) {
 }
 
 // Publish given Root (send to feed). Given Root
-// must be holded and not chagned during this call
+// must be holded and not changed during this call
 // (holded during this call only)
 func (s *Node) Publish(r *skyobject.Root) {
 
@@ -768,16 +787,16 @@ func (s *Node) ConnectOrGet(address string) (c *Conn, err error) {
 	}
 
 	// So, at this point the gc can be created by any other
-	// oroutine, but not established yet. Thus, we can't create a
+	// goroutine, but not established yet. Thus, we can't create a
 	// connection by it
 
-	// TODO (kostyarin): rid out of spinning; so, gnet chagnes required,
+	// TODO (kostyarin): rid out of spinning; so, gnet changes required,
 	//                   like DialWithValue or something like this
 
 	for {
 		select {
 		case <-gc.Closed():
-			err = ErrConnClsoed // TODO (kostyarin): recreate or not?
+			err = ErrConnClosed // TODO (kostyarin): recreate or not?
 			return
 		default:
 			if cv := gc.Value(); cv != nil {
@@ -803,7 +822,7 @@ func (s *Node) createConnection(gc *gnet.Conn) (c *Conn, err error) {
 }
 
 // AddFeed to list of feed the Node shares.
-// This method adds feed to undrlying skyobject.Container
+// This method adds feed to underlying skyobject.Container
 // and database. But it doesn't starts exchanging
 // the feed with peers. Use following code to
 // subscribe al connections to the feed

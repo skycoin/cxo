@@ -46,7 +46,7 @@ func sharedPercent(shd, objs *ObjectsStat) (sap, svp float64) {
 	return
 }
 
-// A FeedStat represetns detailed
+// A FeedStat represents detailed
 // statistic about a feed
 type FeedStat struct {
 	// Objects is amount of all obejcts used by
@@ -86,7 +86,7 @@ type objStat struct {
 	vol data.Volume
 }
 
-// Stat returns detailed statiscit. The call requires
+// Stat returns detailed statistic. The call requires
 // iterating over all objects. Thus, the call is slow
 func (c *Container) Stat() (s Stat, err error) {
 

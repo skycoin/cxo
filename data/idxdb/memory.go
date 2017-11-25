@@ -14,7 +14,7 @@ type memoryDB struct {
 
 // NewMemeoryDB returns stub for memory DB.
 // The memeory-db is not implemened yet
-// and the function retusn on-drive-db that
+// and the function returns on-drive-db that
 // uses temporary file that deleted on Close
 func NewMemeoryDB() (idx data.IdxDB) {
 	fl, err := ioutil.TempFile("", "cxds")
@@ -22,6 +22,10 @@ func NewMemeoryDB() (idx data.IdxDB) {
 		panic(err)
 	}
 	fl.Close()
+	os.Remove(fl.Name())
+	// the NewDriveIdxDB uses os.Stat for internals
+	// the removing is not as safe, but any problem
+	// can occurs in < 1% of cases
 	if idx, err = NewDriveIdxDB(fl.Name()); err != nil {
 		panic(err)
 	}

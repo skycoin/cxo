@@ -261,7 +261,7 @@ func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
 	return
 }
 
-// A Info represents beif
+// A Info represents brief
 // information about a node,
 // excluding statistic
 type Info struct {
@@ -302,7 +302,7 @@ func decodeRoot(val []byte) (r *skyobject.Root, err error) {
 	return
 }
 
-// Roots returns basic information about all root obejcts of a feed.
+// Roots returns basic information about all root objects of a feed.
 // It returns (by RPC) list sorted from old roots to new
 func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
 	ris := make([]RootInfo, 0)
@@ -372,12 +372,12 @@ func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
 	return
 }
 
-// A Stat represetns Node statistic
+// A Stat represents Node statistic
 type Stat struct {
 	CXO  skyobject.Stat // skyobject stat
 	Node struct {
 		FillAvg     time.Duration // avg filling time of filled roots
-		DropAvg     time.Duration // avg filling time of drpped roots
+		DropAvg     time.Duration // avg filling time of dropped roots
 		Connections int           // amount of connections
 		Feeds       int           // amount of feeds
 	} // node stat

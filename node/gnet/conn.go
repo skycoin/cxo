@@ -38,20 +38,20 @@ func (c ConnState) String() string {
 }
 
 // A Conn represents connection. The Conn can has and can has
-// not underlying TCP connection. The Conn recereates connection
-// if it fails. This behaviour should be configures. There are
+// not underlying TCP connection. The Conn recreates connection
+// if it fails. This behaviour should be configured. There are
 // DialTimeout, RedialTimeout, MaxRedialTimeout and DialsLimit
-// configuration.Also, you can control dialing and redialing
+// configuration. Also, you can control dialing and redialing
 // using Config.OnDial callback that called when a Conn tries
 // to dial or redial. To detect current state of connection
 // use State method. The state can be ConnStateConnected,
 // ConnStateDialing and ConnStateClosed. But the state can
 // be changed any time after. If the state is ConnStateClosed
-// then it will not be changed anymore. Use Clsoe method to
+// then it will not be changed anymore. Use Close method to
 // terminate connection and wait until it release associated
 // resources (goroutines, TCP connection, buffers)
 type Conn struct {
-	address string // diaing address
+	address string // dialing address
 
 	// cmx locks conn, and state fields
 	cmx   sync.Mutex // connection lock for redialing
@@ -415,7 +415,7 @@ TriggerLoop: // -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -
 						case <-c.closed:
 							return
 						}
-					} else { // witout timeout
+					} else { // without timeout
 						if c.isClosed() {
 							return
 						}
@@ -484,11 +484,11 @@ DialLoop: // -------------------------------------------------------------------
 			ln = binary.LittleEndian.Uint32(head)
 			l = int(ln)
 			if l < 0 { // negative length (32-bit CPU)
-				c.p.Printf("[ERR] %s negative messge length %d", c.address, l)
+				c.p.Printf("[ERR] %s negative message length %d", c.address, l)
 				return // fatal
 			}
 			if c.p.conf.MaxMessageSize > 0 && l > c.p.conf.MaxMessageSize {
-				c.p.Printf("[ERR] %s got messge exceeds max size allowed %d",
+				c.p.Printf("[ERR] %s got message exceeds max size allowed %d",
 					c.address,
 					l)
 				return // fatal

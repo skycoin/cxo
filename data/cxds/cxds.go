@@ -11,38 +11,52 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+const Version int = 1 // previous is 0
+
 // comon errors
 var (
-	ErrEmptyValue = errors.New("empty value")
+	ErrEmptyValue      = errors.New("empty value")
+	ErrMissingMetaInfo = errors.New("missing meta information")
+	ErrMissingVersion  = errors.New("missing version in meta")
+	ErrOldVersion      = errors.New("db file of old version")      // cxodbfix
+	ErrNewVersion      = errors.New("db file newer then this CXO") // go get
 )
 
 var one []byte
 
 func init() {
 	one = make([]byte, 4)
-	binary.LittleEndian.PutUint32(one, 1)
+	binary.BigEndian.PutUint32(one, 1)
 }
 
 //
 func getRefsCount(val []byte) (rc uint32) {
-	rc = binary.LittleEndian.Uint32(val)
+	rc = binary.BigEndian.Uint32(val)
 	return
 }
 
 // returns new uint32
 func incRefsCount(val []byte) (rc uint32) {
-	rc = binary.LittleEndian.Uint32(val) + 1
-	binary.LittleEndian.PutUint32(val, rc)
+	rc = binary.BigEndian.Uint32(val) + 1
+	binary.BigEndian.PutUint32(val, rc)
 	return
 }
 
 // returns new uint32
 func decRefsCount(val []byte) (rc uint32) {
-	rc = binary.LittleEndian.Uint32(val) - 1
-	binary.LittleEndian.PutUint32(val, rc)
+	rc = binary.BigEndian.Uint32(val) - 1
+	binary.BigEndian.PutUint32(val, rc)
 	return
 }
 
 func getHash(val []byte) (key cipher.SHA256) {
 	return cipher.SumSHA256(val)
+}
+
+// version
+
+func versionBytes() (vb []byte) {
+	vb = make([]byte, 4)
+	binary.BigEndian.PutUint32(vb, uint32(Version))
+	return
 }

@@ -2,6 +2,7 @@ package idxdb
 
 import (
 	"encoding/binary"
+	"os"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -12,26 +13,76 @@ import (
 )
 
 var (
-	feedsBucket = []byte("f")
+	feedsBucket = []byte("f")       // feeds
+	metaBucket  = []byte("m")       // meta information
+	versionKey  = []byte("version") // encoded version in the meta bucket
 )
 
 type driveDB struct {
 	b *bolt.DB
 }
 
-// NewDriveIdxDB create data.IdxDB instance that
-// keeps its data on dirive
+// NewDriveIdxDB creates data.IdxDB instance that
+// keeps its data on drive
 func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 
+	var created bool // true if db file has been created
+
+	_, err = os.Stat(fileName)
+	created = os.IsNotExist(err) // set the created var
+
 	var b *bolt.DB
+
 	b, err = bolt.Open(fileName, 0644, &bolt.Options{
 		Timeout: time.Millisecond * 500,
 	})
+
 	if err != nil {
 		return
 	}
 
 	err = b.Update(func(tx *bolt.Tx) (err error) {
+
+		// first of all, take a look the meta bucket
+		var info = tx.Bucket(metaBucket)
+
+		if info == nil {
+
+			// if the file has not been created, then
+			// this DB file seems outdated (version 0)
+			if created == false {
+				return ErrMissingMetaInfo // report
+			}
+
+			// create the bucket and put meta information
+			if info, err = tx.CreateBucket(metaBucket); err != nil {
+				return
+			}
+
+			// put version
+			if err = info.Put(versionKey, versionBytes()); err != nil {
+				return
+			}
+
+		} else {
+
+			// check out the version
+
+			var vb []byte
+			if vb = info.Get(versionKey); len(vb) == 0 {
+				return ErrMissingVersion
+			}
+
+			switch vers := int(binary.BigEndian.Uint32(vb)); {
+			case vers == Version: // ok
+			case vers < Version:
+				return ErrOldVersion
+			case vers > Version:
+				return ErrNewVersion
+			}
+
+		}
+
 		_, err = tx.CreateBucketIfNotExists(feedsBucket)
 		return
 	})
@@ -51,7 +102,7 @@ func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	})
 }
 
-// CLose the DB
+// Close the DB
 func (d *driveDB) Close() (err error) {
 	return d.b.Close()
 }
@@ -112,7 +163,7 @@ func (d *driveFeeds) Has(pk cipher.PubKey) bool {
 	return d.bk.Bucket(pk[:]) != nil
 }
 
-// Roots returns bucket of Root obejct of given feed
+// Roots returns bucket of Root object of given feed
 func (d *driveFeeds) Roots(pk cipher.PubKey) (rs data.Roots, err error) {
 	bk := d.bk.Bucket(pk[:])
 	if bk == nil {
@@ -125,7 +176,7 @@ type driveRoots struct {
 	bk *bolt.Bucket
 }
 
-// Ascend iternates over all Root obejcts ascending order
+// Ascend iterates over all Root objects ascending order
 func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var seq uint64
@@ -156,7 +207,7 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
-// Descend iternates over all Root obejcts descending order
+// Descend iterates over all Root objects descending order
 func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
 	var r = new(data.Root)
@@ -182,7 +233,7 @@ func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 	return
 }
 
-// Set new Root obejct or does nothing if
+// Set new Root object or does nothing if
 // the object already exists
 func (d *driveRoots) Set(r *data.Root) (err error) {
 
@@ -215,12 +266,12 @@ func (d *driveRoots) Set(r *data.Root) (err error) {
 	return d.bk.Put(seqb, nr.Encode())
 }
 
-// Del deletes Root obejct by seq
+// Del deletes Root object by seq
 func (d *driveRoots) Del(seq uint64) (err error) {
 	return d.bk.Delete(utob(seq))
 }
 
-// Get Root obejct by seq
+// Get Root object by seq
 func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 	seqb := utob(seq)
 	val := d.bk.Get(seqb)

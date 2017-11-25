@@ -51,7 +51,7 @@ func TestRoot_Decode(t *testing.T) {
 	}
 
 	if err := x.Decode(p[:12]); err == nil {
-		t.Error("misisng error")
+		t.Error("missing error")
 	}
 
 }

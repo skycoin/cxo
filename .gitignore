@@ -6,10 +6,15 @@
 # Folders
 _obj
 _test
+vendor/
 
 # Architecture specific extensions/prefixes
 *.[568vq]
 [568vq].out
+
+# dep package manager files
+Gopkg.lock
+Gopkg.toml
 
 *.cgo1.go
 *.cgo2.c
@@ -41,6 +46,7 @@ cover.html
 
 cmd/cxocli/cxocli
 cmd/cxod/cxod
+cmd/cxodbfix/cxodbfix
 
 intro/pass_through/server/server
 intro/pass_through/pipe/pipe

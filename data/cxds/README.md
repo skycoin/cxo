@@ -20,8 +20,8 @@ Schema is simple.
 hash - > object
 ```
 
-Where the hash is SHA256 hash of the obejct. And the obejct is any
-obejct encoded to `[]byte`
+Where the hash is SHA256 hash of the object. And the object is any
+object encoded to `[]byte`
 
 
 ## Binary internals
@@ -29,11 +29,11 @@ obejct encoded to `[]byte`
 Every object is
 
 ```
-[4 byte: refs count][encode obejct]
+[4 byte: refs count][encode object]
 ```
 
 Where `4 byte: refs count` is little-endian encoded `uint32` that represents
-references count for this obejct.
+references count for this object.
 
 
 ---

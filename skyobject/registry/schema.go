@@ -420,7 +420,7 @@ func (s *structSchema) Encode() (b []byte) {
 // Field
 //
 
-// A Field represetns struct field
+// A Field represents struct field
 type Field interface {
 	Schema() Schema     // Schema of the Field
 	Kind() reflect.Kind // kind of the Field (short hand)

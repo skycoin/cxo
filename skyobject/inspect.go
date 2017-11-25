@@ -11,9 +11,9 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
-// Inspect given root returning himan readale string
+// Inspect given root returning himan readable string
 // with tree that represents this Root with all
-// related obejcts
+// related objects
 func (c *Container) Inspect(r *Root) string {
 	ins := inspector{
 		c: c,
@@ -253,7 +253,7 @@ func (*inspector) String(sch Schema, val []byte) (it gotree.GTStructure) {
 	return
 }
 
-// slcie or array
+// slice or array
 func (i *inspector) Slice(sch Schema, val []byte) (it gotree.GTStructure) {
 
 	el := sch.Elem()

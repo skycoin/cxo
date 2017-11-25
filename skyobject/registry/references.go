@@ -4,7 +4,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// A RegistryRef represetns reference to Registry
+// A RegistryRef represents reference to Registry
 type RegistryRef cipher.SHA256
 
 // Short returns short string
@@ -22,7 +22,7 @@ func (r RegistryRef) IsBlank() bool {
 	return r == (RegistryRef{})
 }
 
-// A SchemaRef represetns reference to Schema
+// A SchemaRef represents reference to Schema
 type SchemaRef cipher.SHA256
 
 // Short returns short string

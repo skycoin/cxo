@@ -21,7 +21,7 @@ const (
 	VerbosePin // too many logs to show
 )
 
-// A Config represents oconfigurations
+// A Config represents configurations
 // and options of Container
 type Config struct {
 	// Registry that will be used as "core registry".

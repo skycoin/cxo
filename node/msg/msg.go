@@ -78,7 +78,7 @@ type Pong struct {
 // Type implements Msg interface
 func (*Pong) Type() Type { return PongType }
 
-// A Hello is handhake initiator message
+// A Hello is handshake initiator message
 type Hello struct {
 	ID       ID
 	Protocol uint16
@@ -89,7 +89,7 @@ type Hello struct {
 func (*Hello) Type() Type { return HelloType }
 
 // An Accept is response for the Hello
-// if handhake has been accepted
+// if handshake has been accepted
 type Accept struct {
 	ResponseFor ID
 	Address     cipher.Address // reserved for future
@@ -99,7 +99,7 @@ type Accept struct {
 func (*Accept) Type() Type { return AcceptType }
 
 // A Reject is response for the Hello
-// if subsctioption has not been accepted
+// if subscription has not been accepted
 type Reject struct {
 	ResponseFor ID
 	Address     cipher.Address // reserved for future
@@ -180,7 +180,7 @@ func (*NonPublicServer) Type() Type { return NonPublicServerType }
 
 // A Root sent from one node to another one
 // to update root object of feed described in
-// Feed filed of the message
+// Feed field of the message
 type Root struct {
 	Feed  cipher.PubKey
 	Seq   uint64     // for node internals
@@ -192,10 +192,10 @@ type Root struct {
 func (*Root) Type() Type { return RootType }
 
 // A RootDone is response for the Root.
-// A node that receivs a Root obejct requires
+// A node that receives a Root object requires
 // some time to fill or drop it. After that
 // it sends the RootDone back to notify
-// peer that this Root obejct no longer
+// peer that this Root object no longer
 // needed. E.g. a node holds a Root before
 // sending, to prevent removing. And the
 // node have to know when peer fills this
@@ -216,7 +216,7 @@ type RequestObject struct {
 // Type implements Msg interface
 func (*RequestObject) Type() Type { return RequestObjectType }
 
-// An Object reperesents encoded obejct
+// An Object reperesents encoded object
 type Object struct {
 	Value []byte // encoded object in person
 }
@@ -316,12 +316,12 @@ type ErrInvalidType struct {
 	msgType Type
 }
 
-// Type return Type which cuse the error
+// Type return Type which cause the error
 func (e ErrInvalidType) Type() Type {
 	return e.msgType
 }
 
-// Error implements builtin error interface
+// Error implements builting error interface
 func (e ErrInvalidType) Error() string {
 	return fmt.Sprint("invalid message type: ", e.msgType.String())
 }
@@ -341,7 +341,7 @@ var (
 	// ErrIncomplieDecoding occurs when incoming message
 	// decoded correctly but the decoding doesn't use
 	// entire encoded message
-	ErrIncomplieDecoding = errors.New("incomplite decoding")
+	ErrIncomplieDecoding = errors.New("incomplete decoding")
 )
 
 // Decode encoded Type-prefixed data to message.

@@ -18,7 +18,7 @@ var (
 	ErrMissingTypes             = errors.New("missing Types maps")
 	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
 	ErrMissingInverseMapInTypes = errors.New("missing Inverse map in Types")
-	ErrEmptyRegistryRef         = errors.New("empty refsitry reference")
+	ErrEmptyRegistryRef         = errors.New("empty registry reference")
 	ErrNotFound                 = errors.New("not found")
 	ErrEmptyRootHash            = errors.New("empty hash of Root")
 	ErrMissingDB                = errors.New(
@@ -26,10 +26,10 @@ var (
 )
 
 // A Container represents overlay for database
-// and all realted to CX obejcts. The Container
-// manages DB, Registries, Root obejcts. The
+// and all related to CX objects. The Container
+// manages DB, Registries, Root objects. The
 // Container also provides a way to create, explore
-// and modify Root obejcts, add/remove feeds, etc
+// and modify Root objects, add/remove feeds, etc
 type Container struct {
 	log.Logger
 
@@ -152,7 +152,7 @@ func (c *Container) Unpack(r *Root, flags Flag, types *Types,
 	c.Debugln(VerbosePin, "Unpack", r.Pub.Hex()[:7], r.Seq)
 
 	if err = r.Pub.Verify(); err != nil {
-		err = fmt.Errorf("invalud public key of given Root: %v", err)
+		err = fmt.Errorf("invalid public key of given Root: %v", err)
 		return
 	}
 
@@ -257,9 +257,9 @@ func (c *Container) Close() error {
 // feeds
 //
 
-// AddFeed add feed to DB. The method never retruns to
-// make the Container able handle Root object related to
-// the feed. The feed stored in DB. This mehtod never
+// AddFeed add feed to DB. The method never returns to
+// make the Container able to handle Root object related to
+// the feed. The feed stored in DB. This method never
 // returns "already exists" errors
 func (c *Container) AddFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "AddFeed", pk.Hex()[:7])
@@ -269,11 +269,11 @@ func (c *Container) AddFeed(pk cipher.PubKey) error {
 	})
 }
 
-// DelFeed deletes feed and all related Root obejcts and objects
-// relates to the Root obejcts (if this obejcts not used by some other feeds).
+// DelFeed deletes feed and all related Root objects and objects
+// related to the Root objects (if this objects not used by some other feeds).
 // The method never returns "not found" errors. The method returns error
-// if there are holded Root obejcts of the feed. Close all Pack
-// instances that uses Root obejcts of the feed to release them
+// if there are holded Root objects of the feed. Close all Pack
+// instances that uses Root objects of the feed to release them
 func (c *Container) DelFeed(pk cipher.PubKey) error {
 	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
 
@@ -293,7 +293,7 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 		}
 
 		// remove all Root objects first
-		// (and decrement refs count of all related obejcts)
+		// (and decrement refs count of all related objects)
 		// checking out holded Roots
 
 		err = rs.Ascend(func(ir *data.Root) (err error) {
@@ -317,7 +317,7 @@ func (c *Container) DelFeed(pk cipher.PubKey) error {
 }
 
 // DelRoot deletes Root of given feed with given seq number. If the Root
-// doesn't exsits, then this mehtod doesn't returns an error. Even if the feed
+// doesn't exsits, then this method doesn't returns an error. Even if the feed
 // does not exist
 func (c *Container) DelRoot(pk cipher.PubKey, seq uint64) (err error) {
 	c.Debugln(VerbosePin, "DelRoot", pk.Hex()[:7])

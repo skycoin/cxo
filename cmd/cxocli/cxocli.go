@@ -30,7 +30,7 @@ const (
 )
 
 var (
-	out io.Writer = os.Stdout // it's nessesary for tests
+	out io.Writer = os.Stdout // it's necessary for tests
 
 	errUnknowCommand    = errors.New("unknown command")
 	errMisisngArgument  = errors.New("missing argument")
@@ -162,7 +162,7 @@ func main() {
 	}
 	defer saveHistory(line)
 
-	// rpompt loop
+	// prompt loop
 
 	fmt.Fprintln(out, "enter 'help' to get help")
 	for {
@@ -325,7 +325,7 @@ func showHelp() {
 	fmt.Fprintln(out, `
 
   add feed <public key>
-    start shareing feed
+    start sharing feed
   del feed <public key>
     stop sharing feed
 
@@ -386,10 +386,10 @@ func showHelp() {
     the "seq query" can be used if public key given, there are variants:
       1    - statistic of given root (with seq = 1)
       1..3 - statistic of root objects 1, 2 and 3
-      ..3  - statistic of all root obejcts before 3 (inclusive)
-      3..  - statistic of all root obejcts after 3 (inclusive)
-      -3   - statistic of latest 3 root obejcts
-      +3   - statistic of first 3 root obejcts
+      ..3  - statistic of all root objects before 3 (inclusive)
+      3..  - statistic of all root objects after 3 (inclusive)
+      -3   - statistic of latest 3 root objects
+      +3   - statistic of first 3 root objects
 
     for example
 
@@ -582,7 +582,7 @@ func stat(rpc *node.RPCClient, args []string) (err error) {
 		return // don't give a shit about arguments and anything else
 	}
 
-	// 1. no arguments    -> print every feed with lats root
+	// 1. no arguments    -> print every feed with last root
 	// 2. 'full' argument -> print all
 	// 3. pk argument     -> print given feed
 	// 4. pk + query      -> print by the query
@@ -735,10 +735,10 @@ func printFeedStatQuery(pk cipher.PubKey, fs *cxo.FeedStat,
 
 	// 1    - given root (with seq = 1)
 	// 1..3 - root objects 1, 2 and 3
-	// ..3  - all root obejcts before 3 (inclusive)
-	// 3..  - all root obejcts after 3 (inclusive)
-	// -3   - latest 3 root obejcts
-	// +3   - first 3 root obejcts
+	// ..3  - all root objects before 3 (inclusive)
+	// 3..  - all root objects after 3 (inclusive)
+	// -3   - latest 3 root objects
+	// +3   - first 3 root objects
 
 	printFeedStatHead(pk, fs)
 	if len(fs.Roots) == 0 {
@@ -767,7 +767,7 @@ func printFeedStatQuery(pk cipher.PubKey, fs *cxo.FeedStat,
 			printRootStat(seq, &rs)
 			return
 		}
-		fmt.Fprintln(out, "      no such root obejct")
+		fmt.Fprintln(out, "      no such root object")
 	}
 	return
 }
@@ -800,7 +800,7 @@ func printDefaultFeedsStat(stat *cxo.Stat) {
 	for _, fs := range cfs {
 		printFeedStatHead(fs.pk, fs.stat)
 		if len(fs.stat.Roots) == 0 {
-			fmt.Fprintln(out, "      no root obejcts")
+			fmt.Fprintln(out, "      no root objects")
 			continue
 		}
 		seq, rs := getLastRootStat(fs.stat)
@@ -811,7 +811,7 @@ func printDefaultFeedsStat(stat *cxo.Stat) {
 func printFullFeedStat(pk cipher.PubKey, fs *cxo.FeedStat) {
 	printFeedStatHead(pk, fs)
 	if len(fs.Roots) == 0 {
-		fmt.Fprintln(out, "      no root obejcts")
+		fmt.Fprintln(out, "      no root objects")
 		return
 	}
 	for _, crs := range sortRootStats(fs) {
