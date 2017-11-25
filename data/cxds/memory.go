@@ -25,39 +25,79 @@ func NewMemoryCXDS() data.CXDS {
 	return &memoryCXDS{kvs: make(map[cipher.SHA256]memoryObject)}
 }
 
-// Get value by key
-func (m *memoryCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
-	m.mx.RLock()
-	defer m.mx.RUnlock()
+func mincr(
+	m *memoryCXDS,
+	key cipher.SHA256,
+	mo memoryObject,
+	rc uint32,
+	inc int,
+) (
+	nrc uint32,
+) {
+
+	switch {
+	case inc == 0:
+		nrc = rc
+	case inc < 0:
+		if uinc := uint32(inc); uinc >= rc {
+			nrc = 0
+			delete(m.kvs, key) // remove
+		} else {
+			nrc = rc - uinc
+			mo.rc = nrc
+			m.kvs[key] = mo
+		}
+	case inc > 0:
+		nrc = rc + uint32(inc)
+		mo.rc = nrc
+		m.kvs[key] = mo
+	}
+
+	return
+
+}
+
+// Get value and change rc
+func (m *memoryCXDS) Get(
+	key cipher.SHA256,
+	inc int,
+) (
+	val []byte,
+	rc uint32,
+	err error,
+) {
+
+	if inc == 0 { // read only
+		m.mx.RLock()
+		defer m.mx.RUnlock()
+	} else { // read-write
+		m.mx.Lock()
+		defer m.mx.Unlock()
+	}
 
 	if mo, ok := m.kvs[key]; ok {
 		val, rc = mo.val, mo.rc
+		rc = mincr(m, key, mo, rc, inc)
 		return
 	}
 	err = data.ErrNotFound
 	return
 }
 
-// GetInc is Get + Inc
-func (m *memoryCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
-	err error) {
+// Set value and change rc
+func (m *memoryCXDS) Set(
+	key cipher.SHA256,
+	val []byte,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
 
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc++
-		val = mo.val
-		rc = mo.rc
-		m.kvs[key] = mo // save
-		return
+	if inc <= 0 {
+		panicf("invalid inc argument is Set: %d", inc)
 	}
-	err = data.ErrNotFound
-	return
-}
 
-// Set of Inc if exists
-func (m *memoryCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 	m.mx.Lock()
 	defer m.mx.Unlock()
 
@@ -65,132 +105,40 @@ func (m *memoryCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
 		err = ErrEmptyValue
 		return
 	}
+
 	if mo, ok := m.kvs[key]; ok {
-		mo.rc++
-		m.kvs[key] = mo
-		rc = mo.rc
-		return
+		mincr(m, key, mo, mo.rc, inc)
 	}
-	m.kvs[key] = memoryObject{1, val}
-	rc = 1
+
+	rc = uitn32(inc)
+	m.kvs[key] = memoryObject{rc, val}
+
 	return
 }
 
-// Add is like Set, but it calculates key inside
-func (m *memoryCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
-	if len(val) == 0 {
-		err = ErrEmptyValue
-		return
-	}
-	key = getHash(val)
-	rc, err = m.Set(key, val)
-	return
-}
+// Inc changes rc
+func (m *memoryCXDS) Inc(
+	key cipher.SHA256,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
 
-// Inc increments references counter
-func (m *memoryCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
-	m.mx.Lock()
-	defer m.mx.Unlock()
+	if inc == 0 { // presence check
+		m.mx.RLock()
+		defer m.mx.RUnlock()
+	} else { // changes
+		m.mx.Lock()
+		defer m.mx.Unlock()
+	}
 
 	if mo, ok := m.kvs[key]; ok {
-		mo.rc++
-		m.kvs[key] = mo
-		rc = mo.rc
+		rc = mincr(m, key, mo, mo.rc, inc)
 		return
 	}
+
 	err = data.ErrNotFound
-	return
-}
-
-// Dec decrements referecnes counter and removes value if it turns 0
-func (m *memoryCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc--
-		rc = mo.rc
-		if mo.rc == 0 {
-			delete(m.kvs, key)
-			return
-		}
-		m.kvs[key] = mo
-		return
-	}
-	err = data.ErrNotFound
-	return
-}
-
-// DecGet is Get + Dec
-func (m *memoryCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
-	err error) {
-
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc--
-		rc = mo.rc
-		val = mo.val
-		if mo.rc == 0 {
-			delete(m.kvs, key)
-			return
-		}
-		m.kvs[key] = mo
-		return
-	}
-	err = data.ErrNotFound
-	return
-}
-
-// MultiGet returns many values by list of keys
-func (m *memoryCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
-	if len(keys) == 0 {
-		return
-	}
-	vals = make([][]byte, 0, len(keys))
-
-	m.mx.RLock()
-	defer m.mx.RUnlock()
-
-	for _, key := range keys {
-		if mo, ok := m.kvs[key]; ok {
-			vals = append(vals, mo.val)
-			continue
-		}
-		err = data.ErrNotFound
-		return
-	}
-	return
-}
-
-// MultiAdd appends all given values like the Add
-func (m *memoryCXDS) MultiAdd(vals [][]byte) (err error) {
-	for _, val := range vals {
-		if _, _, err = m.Add(val); err != nil {
-			return
-		}
-	}
-	return
-}
-
-// MultiInc increments references counter for all values by given keys
-func (m *memoryCXDS) MultiInc(keys []cipher.SHA256) (err error) {
-	for _, key := range keys {
-		if _, err = m.Inc(key); err != nil {
-			return
-		}
-	}
-	return
-}
-
-// MultiDec decrements all values by given keys
-func (m *memoryCXDS) MultiDec(keys []cipher.SHA256) (err error) {
-	for _, key := range keys {
-		if _, err = m.Dec(key); err != nil {
-			return
-		}
-	}
 	return
 }
 

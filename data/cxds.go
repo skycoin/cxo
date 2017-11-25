@@ -34,7 +34,10 @@ type CXDS interface {
 	// increase the rc, or create and increase the rc
 	Set(key cipher.SHA256, inc int) (rc uint32, err error)
 	// Inc increments or decrements (if given inc is negative)
-	// references count for value with given key
+	// references count for value with given key. If given
+	// inc argument is zero, then the Inc method checks
+	// presence of the value. E.g. if it returns ErrNotFound
+	// then value doesn't exist
 	Inc(key cipher.SHA256, inc int) (err error)
 
 	// Iterate all keys in CXDS. The rc is refs count.
