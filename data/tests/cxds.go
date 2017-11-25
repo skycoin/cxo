@@ -19,7 +19,7 @@ func testIncs() []int {
 }
 
 func shouldNotExistInCXDS(t *testing.T, ds data.CXDS, key cipher.SHA256) {
-	if _, rc, err = ds.Get(key, 0); err == nil {
+	if _, rc, err := ds.Get(key, 0); err == nil {
 		t.Error("missing error")
 	} else if err != data.ErrNotFound {
 		t.Error("unexpected error:", err)
@@ -48,12 +48,6 @@ func shouldExistInCXDS(
 func shouldPanic(t *testing.T) {
 	if recover() == nil {
 		t.Error("missing panic")
-	}
-}
-
-func shouldNotPanic(t *testing.T) {
-	if err := recover(); err != nil {
-		t.Error("unexpected panic", err)
 	}
 }
 
@@ -135,12 +129,12 @@ func CXDSSet(t *testing.T, ds data.CXDS) {
 	key, value := testKeyValue("something")
 
 	t.Run("zero", func(t *testing.T) {
-		defer shoudPanic(t)
+		defer shouldPanic(t)
 		ds.Set(key, value, 0)
 	})
 
 	t.Run("negaive", func(t *testing.T) {
-		defer shoudPanic(t)
+		defer shouldPanic(t)
 		ds.Set(key, value, -1)
 	})
 
@@ -176,7 +170,7 @@ func CXDSSet(t *testing.T, ds data.CXDS) {
 // CXDSInc tests Inc method of CXDS
 func CXDSInc(t *testing.T, ds data.CXDS) {
 
-	key, value := testKeyValue("something")
+	var key, value = testKeyValue("something")
 
 	t.Run("not exist", func(t *testing.T) {
 		for _, inc := range testIncs() {

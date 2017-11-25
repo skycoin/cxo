@@ -132,7 +132,7 @@ func incr(
 			var repl = make([]byte, 4, 4+len(val))
 			nrc = rc - uinc // reduced
 			setRefsCount(repl, nrc)
-			repl = append(repl, val)
+			repl = append(repl, val...)
 			err = o.Put(key[:], repl)
 
 		}
@@ -143,7 +143,7 @@ func incr(
 		nrc = rc + uint32(inc)
 		var repl = make([]byte, 4, 4+len(val))
 		setRefsCount(repl, nrc)
-		repl = append(repl, val)
+		repl = append(repl, val...)
 		err = o.Put(key[:], repl)
 
 	}
@@ -241,7 +241,7 @@ func (d *driveCXDS) Inc(
 	err error,
 ) {
 
-	tx = func(tx *bolt.Tx) (_ error) {
+	var tx = func(tx *bolt.Tx) (_ error) {
 
 		var (
 			o   = tx.Bucket(objs)
@@ -252,11 +252,12 @@ func (d *driveCXDS) Inc(
 			return data.ErrNotFound
 		}
 
+		rc = getRefsCount(got)
+
 		if inc == 0 {
-			return // just check presence if the inc is zero
+			return // done
 		}
 
-		rc = getRefsCount(got)
 		rc, err = incr(o, key[:], got[4:], rc, inc)
 		return
 	}
@@ -278,7 +279,7 @@ func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 
 		var (
 			key cipher.SHA256
-			c   = Bucket(objs).Cursor()
+			c   = tx.Bucket(objs).Cursor()
 		)
 
 		for k, v := c.First(); k != nil; k, v = c.Next() {

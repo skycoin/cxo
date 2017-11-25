@@ -39,6 +39,8 @@ func mincr(
 	case inc == 0:
 		nrc = rc
 	case inc < 0:
+		inc = -inc // change the sign
+
 		if uinc := uint32(inc); uinc >= rc {
 			nrc = 0
 			delete(m.kvs, key) // remove
@@ -107,10 +109,11 @@ func (m *memoryCXDS) Set(
 	}
 
 	if mo, ok := m.kvs[key]; ok {
-		mincr(m, key, mo, mo.rc, inc)
+		rc = mincr(m, key, mo, mo.rc, inc)
+		return
 	}
 
-	rc = uitn32(inc)
+	rc = uint32(inc)
 	m.kvs[key] = memoryObject{rc, val}
 
 	return

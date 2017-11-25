@@ -32,13 +32,13 @@ type CXDS interface {
 	// argument is negative or zero, then the Set method
 	// panics. Other words, the Set method used to create,
 	// increase the rc, or create and increase the rc
-	Set(key cipher.SHA256, inc int) (rc uint32, err error)
+	Set(key cipher.SHA256, val []byte, inc int) (rc uint32, err error)
 	// Inc increments or decrements (if given inc is negative)
 	// references count for value with given key. If given
 	// inc argument is zero, then the Inc method checks
 	// presence of the value. E.g. if it returns ErrNotFound
-	// then value doesn't exist
-	Inc(key cipher.SHA256, inc int) (err error)
+	// then value doesn't exist. The Inc returns new rc
+	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
 
 	// Iterate all keys in CXDS. The rc is refs count.
 	// Given function must not mutate database. Use

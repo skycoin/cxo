@@ -29,10 +29,20 @@ func newRoot(seed string, sk cipher.SecKey) (r *data.Root) {
 	return
 }
 
-func addRoot(t *testing.T, idx data.IdxDB, pk cipher.PubKey, r *data.Root) {
+func addRoot(
+	t *testing.T,
+	idx data.IdxDB,
+	pk cipher.PubKey,
+	nonce uint64,
+	r *data.Root,
+) {
 	err := idx.Tx(func(feeds data.Feeds) (err error) {
+		var hs data.Heads
+		if hs, err = feeds.Heads(pk); err != nil {
+			return
+		}
 		var rs data.Roots
-		if rs, err = feeds.Roots(pk); err != nil {
+		if rs, err = hs.Add(nonce); err != nil {
 			return
 		}
 		return rs.Set(r)
@@ -45,7 +55,9 @@ func addRoot(t *testing.T, idx data.IdxDB, pk cipher.PubKey, r *data.Root) {
 // RootsAscend is test case for Roots.Ascend
 func RootsAscend(t *testing.T, idx data.IdxDB) {
 
-	pk, sk := cipher.GenerateKeyPair()
+	const nonce = 1
+
+	var pk, sk = cipher.GenerateKeyPair()
 
 	if addFeed(t, idx, pk); t.Failed() {
 		return
@@ -53,11 +65,15 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("empty feed", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
-			var called int
-			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
 				return
 			}
+			var rs data.Roots
+			if rs, err = hs.Roots(nonce); err != nil {
+				return
+			}
+			var called int
 			err = rs.Ascend(func(r *data.Root) (err error) {
 				called++
 				return
@@ -75,23 +91,29 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r1 := newRoot("r", sk)
-	r2 := newRoot("e", sk)
+	var (
+		r1 = newRoot("r", sk)
+		r2 = newRoot("e", sk)
+	)
 
 	r2.Seq, r2.Prev = 1, cipher.SumSHA256([]byte("random"))
 
-	ra := []*data.Root{r1, r2}
+	var ra = []*data.Root{r1, r2}
 
 	for _, r := range ra {
-		if addRoot(t, idx, pk, r); t.Failed() {
+		if addRoot(t, idx, pk, nonce, r); t.Failed() {
 			return
 		}
 	}
 
 	t.Run("ascend", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -122,8 +144,12 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("stop iteration", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -144,13 +170,18 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r3 := newRoot("w", sk)
+	var r3 = newRoot("w", sk)
+
 	r3.Seq, r3.Prev = 2, cipher.SumSHA256([]byte("random"))
 
 	t.Run("mutate add", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -178,8 +209,12 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("mutate del", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -210,7 +245,10 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 // RootsDescend is test case for Roots.Descend
 func RootsDescend(t *testing.T, idx data.IdxDB) {
 
-	pk, sk := cipher.GenerateKeyPair()
+	var (
+		pk, sk        = cipher.GenerateKeyPair()
+		nonce  uint64 = 1
+	)
 
 	if addFeed(t, idx, pk); t.Failed() {
 		return
@@ -218,11 +256,15 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("empty feed", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
-			var called int
-			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
 				return
 			}
+			var rs data.Roots
+			if rs, err = hs.Roots(nonce); err != nil {
+				return
+			}
+			var called int
 			err = rs.Descend(func(r *data.Root) (err error) {
 				called++
 				return
@@ -240,24 +282,30 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	r3 := newRoot("r", sk)
-	r2 := newRoot("e", sk)
+	var (
+		r3 = newRoot("r", sk)
+		r2 = newRoot("e", sk)
+	)
 
 	r3.Seq, r3.Prev = 2, cipher.SumSHA256([]byte("random"))
 	r2.Seq, r2.Prev = 1, cipher.SumSHA256([]byte("random"))
 
-	ra := []*data.Root{r3, r2}
+	var ra = []*data.Root{r3, r2}
 
 	for _, r := range ra {
-		if addRoot(t, idx, pk, r); t.Failed() {
+		if addRoot(t, idx, pk, nonce, r); t.Failed() {
 			return
 		}
 	}
 
 	t.Run("descend", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -288,8 +336,12 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("stop iteration", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -314,8 +366,12 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("mutate add", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -343,8 +399,12 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 
 	t.Run("mutate del", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			var called int
@@ -375,7 +435,9 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 // RootsSet is test case for Roots.Set
 func RootsSet(t *testing.T, idx data.IdxDB) {
 
-	pk, sk := cipher.GenerateKeyPair()
+	const nonce = 1
+
+	var pk, sk = cipher.GenerateKeyPair()
 
 	if addFeed(t, idx, pk); t.Failed() {
 		return
@@ -385,8 +447,12 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 
 	t.Run("create", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			if err = rs.Set(r); err != nil {
@@ -414,8 +480,12 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 
 	t.Run("update", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			if err = rs.Set(r); err != nil {
@@ -452,7 +522,9 @@ func RootsDel(t *testing.T, idx data.IdxDB) {
 // RootsGet is test case for Roots.Get
 func RootsGet(t *testing.T, idx data.IdxDB) {
 
-	pk, _ := cipher.GenerateKeyPair()
+	const nonce = 1
+
+	var pk, _ = cipher.GenerateKeyPair()
 
 	if addFeed(t, idx, pk); t.Failed() {
 		return
@@ -460,8 +532,12 @@ func RootsGet(t *testing.T, idx data.IdxDB) {
 
 	t.Run("not found", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			_, err = rs.Get(0)
@@ -479,7 +555,9 @@ func RootsGet(t *testing.T, idx data.IdxDB) {
 // RootsHas is test case for Roots.Has
 func RootsHas(t *testing.T, idx data.IdxDB) {
 
-	pk, sk := cipher.GenerateKeyPair()
+	const nonce = 1
+
+	var pk, sk = cipher.GenerateKeyPair()
 
 	if addFeed(t, idx, pk); t.Failed() {
 		return
@@ -487,8 +565,12 @@ func RootsHas(t *testing.T, idx data.IdxDB) {
 
 	t.Run("not found", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			if true == rs.Has(0) {
@@ -501,12 +583,16 @@ func RootsHas(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	addRoot(t, idx, pk, newRoot("seed", sk))
+	addRoot(t, idx, pk, nonce, newRoot("seed", sk))
 
 	t.Run("has", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
+			var hs data.Heads
+			if hs, err = feeds.Heads(pk); err != nil {
+				return
+			}
 			var rs data.Roots
-			if rs, err = feeds.Roots(pk); err != nil {
+			if rs, err = hs.Roots(nonce); err != nil {
 				return
 			}
 			if true != rs.Has(0) {

@@ -1,7 +1,6 @@
 package cxds
 
 import (
-	"encoding/binary"
 	"os"
 	"testing"
 
@@ -14,15 +13,6 @@ const testFileName = "test.db.goignore"
 func testShouldNotPanic(t *testing.T) {
 	if pc := recover(); pc != nil {
 		t.Error("unexpected panic:", pc)
-	}
-}
-
-func Test_one(t *testing.T) {
-	if len(one) != 4 {
-		t.Fatal("wrong length of the one")
-	}
-	if binary.BigEndian.Uint32(one) != 1 {
-		t.Error("the one is not a one")
 	}
 }
 

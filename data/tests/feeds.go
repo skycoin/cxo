@@ -10,7 +10,8 @@ import (
 
 // FeedsAdd is test case for Feeds.Add
 func FeedsAdd(t *testing.T, idx data.IdxDB) {
-	pk, _ := cipher.GenerateKeyPair()
+
+	var pk, _ = cipher.GenerateKeyPair()
 
 	t.Run("add", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
@@ -51,7 +52,9 @@ func FeedsAdd(t *testing.T, idx data.IdxDB) {
 // FeedsDel is test case for Feeds.Del
 func FeedsDel(t *testing.T, idx data.IdxDB) {
 
-	pk, sk := cipher.GenerateKeyPair()
+	const nonce = 1
+
+	var pk, sk = cipher.GenerateKeyPair()
 
 	// not found (should not return NotFoundError)
 	t.Run("not found", func(t *testing.T) {
@@ -86,7 +89,7 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
-	if addRoot(t, idx, pk, newRoot("root", sk)); t.Failed() {
+	if addRoot(t, idx, pk, nonce, newRoot("root", sk)); t.Failed() {
 		return
 	}
 
@@ -125,10 +128,12 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	pk1, _ := cipher.GenerateKeyPair()
-	pk2, _ := cipher.GenerateKeyPair()
+	var (
+		pk1, _ = cipher.GenerateKeyPair()
+		pk2, _ = cipher.GenerateKeyPair()
 
-	pks := make(map[cipher.PubKey]struct{})
+		pks = make(map[cipher.PubKey]struct{})
+	)
 
 	for _, pk := range []cipher.PubKey{pk1, pk2} {
 		if addFeed(t, idx, pk); t.Failed() {
@@ -187,7 +192,7 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 
 	// mutating during iteration
 
-	pk3, _ := cipher.GenerateKeyPair()
+	var pk3, _ = cipher.GenerateKeyPair()
 
 	t.Run("mutate add", func(t *testing.T) {
 		var called int
@@ -240,7 +245,7 @@ func FeedsIterate(t *testing.T, idx data.IdxDB) {
 // FeedsHas is test case for Feeds.Has
 func FeedsHas(t *testing.T, idx data.IdxDB) {
 
-	pk, _ := cipher.GenerateKeyPair()
+	var pk, _ = cipher.GenerateKeyPair()
 
 	t.Run("not exist", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (_ error) {
@@ -272,8 +277,8 @@ func FeedsHas(t *testing.T, idx data.IdxDB) {
 
 }
 
-func addHead(t *testing.T, idx data.IdxDB, pk cipher.SHA256, nonce uint32) {
-	err = idx.Tx(func(fs data.Feeds) (err error) {
+func addHead(t *testing.T, idx data.IdxDB, pk cipher.PubKey, nonce uint64) {
+	err := idx.Tx(func(fs data.Feeds) (err error) {
 		var hs data.Heads
 		if hs, err = fs.Heads(pk); err != nil {
 			return
@@ -294,7 +299,7 @@ func addHead(t *testing.T, idx data.IdxDB, pk cipher.SHA256, nonce uint32) {
 // FeedsHeads is test case for Feeds.Heads
 func FeedsHeads(t *testing.T, idx data.IdxDB) {
 
-	pk, _ := cipher.GenerateKeyPair()
+	var pk, _ = cipher.GenerateKeyPair()
 
 	t.Run("no such feed", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (err error) {
