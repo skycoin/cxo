@@ -11,38 +11,17 @@ import (
 // the CXDS. The CXDS returns ErrNotFound from this
 // package if any value has not been found
 type CXDS interface {
-	// Get value by key. Result is value and references count
-	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
-	// GetInc is the same as Inc+Get
-	GetInc(key cipher.SHA256) (val []byte, rc uint32, err error)
-	// Set key-value pair. If value already exists the Set
-	// increments references count. Otherwise the references count
-	// will be set to 1
-	Set(key cipher.SHA256, val []byte) (rc uint32, err error)
-	// Add value, calculating hash internally. E.g. it calculates
-	// hash and performs Set
-	Add(val []byte) (key cipher.SHA256, rc uint32, err error)
-	// Inc increments references count
-	Inc(key cipher.SHA256) (rc uint32, err error)
-	// Dec decrements references count. The rc is zero if
-	// value has been deleted by the Dec
-	Dec(key cipher.SHA256) (rc uint32, err error)
-	// DecGet is the same as Dec but it returns value even if
-	// it has been deleted by call
-	DecGet(key cipher.SHA256) (val []byte, rc uint32, err error)
 
-	// batch operation
-
-	// MultiGet returns values by keys. It stops on first error.
-	// If a value doesn't exist it returns ErrNotFound
-	MultiGet(keys []cipher.SHA256) (vals [][]byte, err error)
-	// MultiAdd append given values calulating hashes internally
-	MultiAdd(vals [][]byte) (err error)
-
-	// MultiInc increments all by keys.
-	MultiInc(keys []cipher.SHA256) (err error)
-	// MultiDec decrements
-	MultiDec(keys []cipher.SHA256) (err error)
+	// Get and increment. Use negative inc to decrement and zero
+	// to keep untouched
+	Get(key cipher.SHA256, inc int) (val []byte, rc uint32, err error)
+	// Set and increment. Use negative inc to decrement or zero to
+	// keep untouched. E.g. Set(smthng, 0) can be a bad choose,
+	// because the Set doesn't appends one to references counter
+	Set(key cipher.SHA256, inc int) (rc uint32, err error)
+	// Inc increments or decrements (if given inc is negative)
+	// references count for value with given key
+	Inc(key cipher.SHA256, inc int) (err error)
 
 	// Iterate all keys in CXDS. The rc is refs count.
 	// Given function must not mutate database. Use

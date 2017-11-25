@@ -30,9 +30,22 @@ type Feeds interface {
 	// feed with given public key
 	Has(cipher.PubKey) bool
 
-	// Roots of feed. It returns ErrNoSuchFeed
+	// Heads of feed. It returns ErrNoSuchFeed
 	// if given feed doesn't exist
-	Roots(cipher.PubKey) (Roots, error)
+	Heads(cipher.PubKey) (hs Heads, err error)
+
+	// Len returns number of feeds
+	Len() int
+}
+
+// A Heads represens all heads of a feed
+type Heads interface {
+	// Roots of head with given nonce
+	Roots(nonce uint64) (rs Roots, err error)
+	// List all heads
+	List() (heads []uint64, err error)
+	// Len returns number of heads
+	Len() int
 }
 
 // An IterateRootsFunc represents function for
