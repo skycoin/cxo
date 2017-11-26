@@ -15,7 +15,9 @@ var (
 	ErrNotFound       = errors.New("not found")
 	ErrStopIteration  = errors.New("stop iteration")
 	ErrFeedIsNotEmpty = errors.New("can't remove feed: feed is not empty")
+	ErrHeadIsNotEmpty = errors.New("can't remove head: head is not empty")
 	ErrNoSuchFeed     = errors.New("no such feed")
+	ErrNoSuchHead     = errors.New("no such head")
 
 	ErrInvalidSize = errors.New("invalid size of encoded data")
 )

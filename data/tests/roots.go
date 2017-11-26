@@ -70,7 +70,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -113,7 +113,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -149,7 +149,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -181,7 +181,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -214,7 +214,7 @@ func RootsAscend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -261,7 +261,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -305,7 +305,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -341,7 +341,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -371,7 +371,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -404,7 +404,7 @@ func RootsDescend(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			var called int
@@ -452,7 +452,7 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			if err = rs.Set(r); err != nil {
@@ -485,7 +485,7 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			if err = rs.Set(r); err != nil {
@@ -537,7 +537,7 @@ func RootsGet(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
 			_, err = rs.Get(0)
@@ -570,10 +570,13 @@ func RootsHas(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
-			if true == rs.Has(0) {
+			var ok bool
+			if ok, err = rs.Has(0); err != nil {
+				t.Error(err)
+			} else if ok == true {
 				t.Error("has unexisting root")
 			}
 			return
@@ -592,11 +595,14 @@ func RootsHas(t *testing.T, idx data.IdxDB) {
 				return
 			}
 			var rs data.Roots
-			if rs, err = hs.Roots(nonce); err != nil {
+			if rs, err = hs.Add(nonce); err != nil {
 				return
 			}
-			if true != rs.Has(0) {
-				t.Error("has not existing root")
+			var ok bool
+			if ok, err = rs.Has(0); err != nil {
+				t.Error(err)
+			} else if ok == false {
+				t.Error("missing root")
 			}
 			return
 		})

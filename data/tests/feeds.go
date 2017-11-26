@@ -8,6 +8,18 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
+func feedsHas(t *testing.T, feeds data.Feeds, pk cipher.PubKey, want bool) {
+	if ok, err := feeds.Has(pk); err != nil {
+		t.Error(err)
+	} else if ok != want {
+		if want == true {
+			t.Error("missing feed")
+		} else {
+			t.Error("has feed (but should not)")
+		}
+	}
+}
+
 // FeedsAdd is test case for Feeds.Add
 func FeedsAdd(t *testing.T, idx data.IdxDB) {
 
@@ -18,9 +30,7 @@ func FeedsAdd(t *testing.T, idx data.IdxDB) {
 			if err = feeds.Add(pk); err != nil {
 				return
 			}
-			if feeds.Has(pk) == false {
-				t.Error("missing feed")
-			}
+			feedsHas(t, feeds, pk, true)
 			return
 		})
 		if err != nil {
@@ -37,9 +47,7 @@ func FeedsAdd(t *testing.T, idx data.IdxDB) {
 			if err = feeds.Add(pk); err != nil {
 				return
 			}
-			if feeds.Has(pk) == false {
-				t.Error("missing feed")
-			}
+			feedsHas(t, feeds, pk, true)
 			return
 		})
 		if err != nil {
@@ -54,12 +62,17 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 
 	const nonce = 1
 
-	var pk, sk = cipher.GenerateKeyPair()
+	var pk, _ = cipher.GenerateKeyPair()
 
-	// not found (should not return NotFoundError)
+	// not found
 	t.Run("not found", func(t *testing.T) {
-		err := idx.Tx(func(feeds data.Feeds) error {
-			return feeds.Del(pk)
+		err := idx.Tx(func(feeds data.Feeds) (_ error) {
+			if err := feeds.Del(pk); err == nil {
+				t.Error("missing error")
+			} else if err != data.ErrNotFound {
+				t.Error("wrong error:", err)
+			}
+			return
 		})
 		if err != nil {
 			t.Error(err)
@@ -76,9 +89,7 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 			if err = feeds.Del(pk); err != nil {
 				return
 			}
-			if feeds.Has(pk) == true {
-				t.Error("feed was not deleted")
-			}
+			feedsHas(t, feeds, pk, false)
 			return
 		})
 		if err != nil {
@@ -89,18 +100,21 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 	if addFeed(t, idx, pk); t.Failed() {
 		return
 	}
-	if addRoot(t, idx, pk, nonce, newRoot("root", sk)); t.Failed() {
+	if addHead(t, idx, pk, nonce); t.Failed() {
 		return
 	}
 
 	t.Run("not empty", func(t *testing.T) {
-		err := idx.Tx(func(feeds data.Feeds) error {
-			return feeds.Del(pk)
+		err := idx.Tx(func(feeds data.Feeds) (_ error) {
+			if err := feeds.Del(pk); err == nil {
+				t.Error("missing error")
+			} else if err != data.ErrFeedIsNotEmpty {
+				t.Error("unexpected error:", err)
+			}
+			return
 		})
-		if err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrFeedIsNotEmpty {
-			t.Error("unexpected error:", err)
+		if err != nil {
+			t.Error(err)
 		}
 	})
 }
@@ -249,9 +263,7 @@ func FeedsHas(t *testing.T, idx data.IdxDB) {
 
 	t.Run("not exist", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (_ error) {
-			if feeds.Has(pk) == true {
-				t.Error("has unexisting feed")
-			}
+			feedsHas(t, feeds, pk, false)
 			return
 		})
 		if err != nil {
@@ -265,9 +277,7 @@ func FeedsHas(t *testing.T, idx data.IdxDB) {
 
 	t.Run("exists", func(t *testing.T) {
 		err := idx.Tx(func(feeds data.Feeds) (_ error) {
-			if feeds.Has(pk) == false {
-				t.Error("has not existing feed")
-			}
+			feedsHas(t, feeds, pk, true)
 			return
 		})
 		if err != nil {

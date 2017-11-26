@@ -119,12 +119,23 @@ func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 
 // Del deltes feed if the feed is empty
 func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
-	if f := d.bk.Bucket(pk[:]); f == nil {
-		return // not exists
-	} else if f.Stats().KeyN == 0 {
-		return d.bk.DeleteBucket(pk[:]) // empty
+
+	var fs *bolt.Bucket
+
+	if fs = d.bk.Bucket(pk[:]); fs == nil {
+
+		return data.ErrNotFound
+
+	} else if head, _ := fs.Cursor().First(); head != nil {
+
+		// the bucket should be empty, but we can't use bk.Stats().BucketsN
+		// because all buckets created in this transaction will not be in
+		// the stats
+		return data.ErrFeedIsNotEmpty // contains heads
+
 	}
-	return data.ErrFeedIsNotEmpty // can't remove non-empty feed
+
+	return d.bk.DeleteBucket(pk[:])
 }
 
 // Iterate over all feeds
@@ -159,17 +170,96 @@ func incSlice(b []byte) {
 }
 
 // Has performs presence check
-func (d *driveFeeds) Has(pk cipher.PubKey) bool {
-	return d.bk.Bucket(pk[:]) != nil
+func (d *driveFeeds) Has(pk cipher.PubKey) (ok bool, _ error) {
+	ok = d.bk.Bucket(pk[:]) != nil
+	return
 }
 
-// Roots returns bucket of Root object of given feed
-func (d *driveFeeds) Roots(pk cipher.PubKey) (rs data.Roots, err error) {
-	bk := d.bk.Bucket(pk[:])
+// Heads returns bucket of Heads of given feed
+func (d *driveFeeds) Heads(pk cipher.PubKey) (rs data.Heads, err error) {
+	var bk = d.bk.Bucket(pk[:])
 	if bk == nil {
 		return nil, data.ErrNoSuchFeed
 	}
+	return &driveHeads{bk}, nil
+}
+
+type driveHeads struct {
+	bk *bolt.Bucket
+}
+
+func nonceToBytes(nonce uint64) (b []byte) {
+	b = make([]byte, 8)
+	binary.BigEndian.PutUint64(b, nonce)
+	return
+}
+
+func nonceFromBytes(b []byte) (nonce uint64) {
+	nonce = binary.BigEndian.Uint64(b)
+	return
+}
+
+func (d *driveHeads) Roots(nonce uint64) (rs data.Roots, err error) {
+	var bk *bolt.Bucket
+	if bk = d.bk.Bucket(nonceToBytes(nonce)); bk == nil {
+		return nil, data.ErrNoSuchHead
+		return
+	}
 	return &driveRoots{bk}, nil
+}
+
+func (d *driveHeads) Add(nonce uint64) (rs data.Roots, err error) {
+	var bk *bolt.Bucket
+	bk, err = d.bk.CreateBucketIfNotExists(nonceToBytes(nonce))
+	if err != nil {
+		return
+	}
+	return &driveRoots{bk}, nil
+}
+
+// Del head with given nonce
+func (d *driveHeads) Del(nonce uint64) (err error) {
+
+	var nonceb = nonceToBytes(nonce)
+
+	if head := d.bk.Bucket(nonceb); head == nil {
+
+		return data.ErrNotFound
+
+	} else if k, _ := d.bk.Cursor().First(); k != nil {
+
+		// the bucket should be empty, but we can't use bk.Stats().BucketsN
+		// because all buckets created in this transaction will not be in
+		// the bucket
+		return data.ErrHeadIsNotEmpty // contains heads
+
+	}
+
+	return d.bk.DeleteBucket(nonceb)
+}
+
+// Has head with given nonce
+func (d *driveHeads) Has(nonce uint64) (ok bool, _ error) {
+	ok = d.bk.Bucket(nonceToBytes(nonce)) != nil
+	return
+}
+
+// Iterate over heads
+func (d *driveHeads) Iterate(iterateFunc data.IterateHeadsFunc) (err error) {
+
+	var c = d.bk.Cursor()
+
+	for nonceb, _ := c.First(); nonceb != nil; nonceb, _ = c.Next() {
+		if err = iterateFunc(nonceFromBytes(nonceb)); err != nil {
+			break
+		}
+	}
+
+	if err == data.ErrStopIteration {
+		err = nil
+	}
+
+	return
 }
 
 type driveRoots struct {
@@ -287,8 +377,9 @@ func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 }
 
 // Has performs precense check using seq
-func (d *driveRoots) Has(seq uint64) (yep bool) {
-	return len(d.bk.Get(utob(seq))) > 0
+func (d *driveRoots) Has(seq uint64) (yep bool, _ error) {
+	yep = len(d.bk.Get(utob(seq))) > 0
+	return
 }
 
 // Len returns amount of Root objects

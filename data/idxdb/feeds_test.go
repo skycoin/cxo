@@ -63,8 +63,8 @@ func TestFeeds_Has(t *testing.T) {
 
 }
 
-func TestFeeds_Roots(t *testing.T) {
-	// Roots(cipher.PubKey) (Roots, error)
+func TestFeeds_Heads(t *testing.T) {
+	// Heads(cipher.PubKey) (Roots, error)
 
 	// TODO (kostyarin): memory
 
@@ -72,7 +72,7 @@ func TestFeeds_Roots(t *testing.T) {
 		idx := testNewDriveIdxDB(t)
 		defer os.Remove(testFileName)
 		defer idx.Close()
-		tests.FeedsRoots(t, idx)
+		tests.FeedsHeads(t, idx)
 	})
 
 }

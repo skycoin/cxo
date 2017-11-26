@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-const Version = 1 // previous is 0
+const Version = 2 // previous is 0
 
 // common errors
 var (

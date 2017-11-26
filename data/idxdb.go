@@ -11,31 +11,28 @@ type IterateFeedsFunc func(cipher.PubKey) error
 // A Feeds represents bucket of feeds
 type Feeds interface {
 	// Add feed. Adding a feed twice or
-	// mote times does nothing
-	Add(cipher.PubKey) error
+	// more times does nothing
+	Add(pk cipher.PubKey) (err error)
 	// Del feed if its empty. It's impossible to
 	// delete non-empty feed. This restriction required
 	// for related objects. We need to decrement refs count
-	// of all related objects. Del never returns 'not found'
-	// error
-	Del(cipher.PubKey) error
+	// of all related objects. If feed doesn't exist
+	// then the Del returns ErrNotFound
+	Del(pk cipher.PubKey) (err error)
 
 	// Iterate all feeds. Use ErrStopRange to break
 	// it iteration. The Iterate passes any error
 	// returned from given function through. Except
 	// ErrStopIteration that turns nil. It's possible
 	// to mutate the IdxDB inside the Iterate
-	Iterate(IterateFeedsFunc) error
+	Iterate(iterateFunc IterateFeedsFunc) (err error)
 	// Has returns true if the IdxDB contains
 	// feed with given public key
-	Has(cipher.PubKey) bool
+	Has(pk cipher.PubKey) (ok bool, err error)
 
 	// Heads of feed. It returns ErrNoSuchFeed
 	// if given feed doesn't exist
-	Heads(cipher.PubKey) (hs Heads, err error)
-
-	// Len returns number of feeds
-	Len() int
+	Heads(pk cipher.PubKey) (hs Heads, err error)
 }
 
 // An IterateHeadsFunc used to iterate over
@@ -44,10 +41,10 @@ type IterateHeadsFunc func(nonce uint64) (err error)
 
 // A Heads represens all heads of a feed
 type Heads interface {
-	// Roots of head with given nonce
+	// Roots of head with given nonce. If given
+	// head doesn't exists then, this method
+	// returns ErrNoSuchHead
 	Roots(nonce uint64) (rs Roots, err error)
-	// List all heads
-	List() (heads []uint64, err error)
 	// Add new head with given nonce.
 	// If a head with given nonce already
 	// exists, then this method does nothing
@@ -61,14 +58,12 @@ type Heads interface {
 	// nonce exits in the CXDS
 	Has(nonce uint64) (ok bool, err error)
 	// Iterate over all heads
-	Iterate(IterateHeadsFunc) (err error)
-	// Len returns number of heads
-	Len() int
+	Iterate(iterateFunc IterateHeadsFunc) (err error)
 }
 
 // An IterateRootsFunc represents function for
 // iterating over all Root objects of a feed
-type IterateRootsFunc func(*Root) error
+type IterateRootsFunc func(r *Root) (err error)
 
 // A Roots represents bucket of Root objects.
 // All Root objects ordered by seq number
@@ -78,29 +73,25 @@ type Roots interface {
 	// Use ErrStopIteration to stop iteration. Any error
 	// (except the ErrStopIteration) returned by given
 	// IterateRootsFunc will be passed through
-	Ascend(IterateRootsFunc) error
+	Ascend(iterateFunc IterateRootsFunc) (err error)
 	// Descend is the same as the Ascend, but it iterates
 	// decending order. From lates Root objects to
 	// oldes
-	Descend(IterateRootsFunc) error
+	Descend(iterateFunc IterateRootsFunc) (err error)
 
 	// Set or update Root. Method modifies given Root
 	// setting AccessTime and CreateTime to appropriate
 	// values
-	Set(*Root) error
+	Set(r *Root) (err error)
 
 	// Del Root by seq number
-	Del(uint64) error
+	Del(seq uint64) (err error)
 
 	// Get Root by seq number
-	Get(uint64) (*Root, error)
+	Get(seq uint64) (r *Root, err error)
 
 	// Has the Roots Root with given seq?
-	Has(uint64) bool
-
-	// Len returns amount of saved Root
-	// objects of this feed
-	Len() int
+	Has(seq uint64) (ok bool, err error)
 }
 
 // An IdxDB repesents database that contains
