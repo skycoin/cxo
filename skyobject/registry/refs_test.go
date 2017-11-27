@@ -2426,8 +2426,7 @@ func TestRefs_Slice(t *testing.T) {
 
 		users []cipher.SHA256
 
-		r Refs
-		//slice *Refs
+		r   Refs
 		err error
 	)
 

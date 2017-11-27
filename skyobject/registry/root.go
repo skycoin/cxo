@@ -54,7 +54,7 @@ func (r *Root) Encode() []byte {
 // parts and for debugging
 func (r *Root) Short() string {
 
-	var short = strconv.FormatUint(u, 10) // short nonce
+	var short = strconv.FormatUint(r.Nonce, 10) // short nonce
 
 	if len(short) > 4 {
 		short = short[:4]
@@ -79,7 +79,7 @@ func (r *Root) String() string {
 }
 
 // DecodeRoot decodes and encoded Root obejct
-func DecodeRoot(p []byte) (r *Root, err error) {
+func DecodeRoot(val []byte) (r *Root, err error) {
 	r = new(Root)
 	if err = encoder.DeserializeRaw(val, r); err != nil {
 		r = nil
