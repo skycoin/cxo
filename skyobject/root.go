@@ -9,62 +9,6 @@ import (
 	"github.com/skycoin/cxo/data"
 )
 
-// A Root represents root object of a feed
-type Root struct {
-	Refs []Dynamic // main branches
-
-	Nonce      uint64 // head of the feed
-	Descriptor []byte // decriptor of the Root
-
-	Reg RegistryRef   // registry
-	Pub cipher.PubKey // feed
-
-	Seq  uint64 // seq number
-	Time int64  // timestamp (unix nano)
-
-	// sig and hash are not parts of the Root
-
-	Sig cipher.Sig `enc:"-"` // signature (not part of the Root)
-
-	Hash cipher.SHA256 `enc:"-"` // hash (not part of the Root)
-	Prev cipher.SHA256 // hash of previous root
-
-	// machine local fields, not parts of the Root
-
-	// IsFull set to true if DB contains all objects
-	// required by this Root
-	IsFull bool `enc:"-"`
-}
-
-// Encode the Root
-func (r *Root) Encode() []byte {
-	return encoder.Serialize(r)
-}
-
-// Short return string like "[1a2ef33:2]" ({pub_key:seq})
-func (r *Root) Short() string {
-	return fmt.Sprintf("{%s:%d}",
-		r.Pub.Hex()[:7],
-		r.Seq)
-}
-
-// String implements fmt.Stringer interface
-func (r *Root) String() string {
-	return fmt.Sprintf("Root{[%s:%d]:%d:%s}",
-		r.Pub.Hex()[:7],
-		r.Nonce,
-		r.Seq,
-		r.Hash.Hex()[:7])
-}
-
-func decodeRoot(val []byte) (r *Root, err error) {
-	r = new(Root)
-	if err = encoder.DeserializeRaw(val, r); err != nil {
-		r = nil
-	}
-	return
-}
-
 // AddEncodedRoot or not to add. The method checks given encoded Root
 // and returns full Root if DB aleady contains the Root and non full
 // Root (that is not stored in DB) if the Root is fresh. The node
