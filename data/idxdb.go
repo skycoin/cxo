@@ -106,4 +106,5 @@ type IdxDB interface {
 	Close() error               // close the IdxDB
 
 	// TODO: stat
+	// TODO: safe closing flag
 }

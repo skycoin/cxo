@@ -34,6 +34,7 @@ func (c CachePolicy) String() string {
 type item struct {
 	preview int // previews (not sync with DB)
 	fill    int // fillers  (not sync with DB)
+	short   int // short lived item
 
 	fwant []chan<- []byte // fillers wanters
 
@@ -60,6 +61,7 @@ type rootKey struct {
 //     - feed preview
 //     - filling new root objects
 //     - hold root objects (to send or use)
+//     - keep short lived items
 //
 // See, Config to look at configs of the cache.
 //
@@ -67,13 +69,15 @@ type rootKey struct {
 // skyobject.Container and it can't be created and used
 // outside
 //
+// There is ablility to keep short lived items (for
+// filling)
 type cache struct {
 	mx sync.RWMutex
 
 	db data.DB // database
 
 	// use cache or not
-	encable bool
+	enable bool
 
 	// configs
 	maxItems int // max items
@@ -90,6 +94,20 @@ type cache struct {
 
 // CXDS wrapper
 
+func (c *cache) touchItem(it *item) {
+
+	switch c.policy {
+	case LRU:
+		it.points = int(time.Now().Unix())
+	case LFU:
+		it.points++
+	default:
+		panic("cache with undefined CachePolicy:", c.policy.String())
+	}
+
+}
+
+// Get from CXDS or the cache
 func (c *cache) Get(
 	key cipher.SHA256, // :
 	inc int, //           :
@@ -102,11 +120,17 @@ func (c *cache) Get(
 	c.mx.RLock()
 	defer c.mx.RUnlock()
 
-	//
+	var it, ok = c.c[key]
+
+	if ok {
+		val, rc = it.val, it.rc
+		return
+	}
 
 	return
 }
 
+// Set to the cache
 func (c *cache) Set(
 	key cipher.SHA256, // :
 	val []byte, //        :
@@ -141,3 +165,27 @@ func (c *cache) Inc(
 	return
 
 }
+
+// filling
+
+// get and mark as short lived
+func (c *cache) getShort(key cipher.SHA256) (val []byte, err error) {
+	//
+}
+
+// del short lived item
+func (c *cache) delShort(key cipher.SHA256) {
+	//
+}
+
+// preview
+
+func (c *cache) setPreview(key cipher.SHA256) {
+	//
+}
+
+func (c *cache) delPreview(key cipher.SHA256) {
+	//
+}
+
+// fill

@@ -45,6 +45,8 @@ type CXDS interface {
 	// ErrStopIteration to stop an iteration
 	Iterate(func(key cipher.SHA256, rc uint32) error) error
 
+	Stat() (stat Stat)
+
 	// Close the CXDS
 	Close() (err error)
 }

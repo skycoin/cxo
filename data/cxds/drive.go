@@ -17,6 +17,7 @@ var (
 	objs    = []byte("o")       // objects bucket
 	meta    = []byte("m")       // meta information
 	version = []byte("version") // field with version in meta bucket
+	closed  = []byte("closed")  // closed wihtout errors using the Close method
 )
 
 type driveCXDS struct {
