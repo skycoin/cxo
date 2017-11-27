@@ -4,11 +4,39 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// A RefsWalkFunc used to walk through the Refs nodes and leafs
-type RefsWalkFunc func(hash cipher.SHA256, depth int) (deepper bool, err error)
+// A WalkFunc used to walk through Refs, Ref, Root or
+// Dynamic, decoding underlying values and walking from
+// them too. The WalkFunc walks through all hashes including
+// internal hashes of a Refs that does not represent a
+// end-user provided value but used for internals instead
+//
+// Any time the WalkFunc can return ErrStopIteration to
+// stop walking. And this error will not bubble from
+// caller. But any other error returned from the WalkFunc
+// will be returned from the caller
+//
+// The deepper erply used to walk deepper. Thus, giving
+// a hash the WalkFunc can choose, want it go deepper
+// (decode value  and explore its fields for example)
+// or not
+//
+// The depth argument is zero if the WalkFunc got hash
+// that points to non-internal value. E.g. if the depth is
+// zero, then hash represents some element provided by
+// end-user. Otherwise, the depth is level of Refs tree
+// (in the Refs tree root is above all)
+//
+// The hash, with which the WalkFunc called, can be not
+// found in DB, e.g. the caller calls the WalkFunc before
+// it requests the value. And the caller request the value
+// only if deepper is not false (and hash is not blank)
+//
+// A caller ignores the deepper reply if going deepper is
+// not possible
+type WalkFunc func(hash cipher.SHA256, depth int) (deepper bool, err error)
 
 // walk if the Refs is blank
-func (r *Refs) walkBlank(walkFunc RefsWalkFunc) (err error) {
+func (r *Refs) walkBlank(walkFunc WalkFunc) (err error) {
 	// the depth can't be zero
 	if _, err = walkFunc(r.Hash, 1); err == ErrStopIteration {
 		err = nil

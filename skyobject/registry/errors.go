@@ -29,6 +29,7 @@ var (
 	ErrRefsIterating      = errors.New("Refs is iterating")
 	ErrInvalidDegree      = errors.New("invalid degree")
 
-	ErrNotFound      = errors.New("not found")
-	ErrStopIteration = errors.New("stop iteration")
+	ErrNotFound        = errors.New("not found")
+	ErrStopIteration   = errors.New("stop iteration")
+	ErrMissingRegistry = errors.New("missing registry")
 )

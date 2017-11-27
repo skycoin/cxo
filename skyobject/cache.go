@@ -86,9 +86,6 @@ type cache struct {
 
 	c map[cipher.SHA256]*item    // values
 	r map[rootKey]*registry.Root // root objects (fill, preview, hold)
-
-	quit  chan struct{}
-	await sync.WaitGroup
 }
 
 // CXDS wrapper
@@ -105,6 +102,8 @@ func (c *cache) Get(
 	c.mx.RLock()
 	defer c.mx.RUnlock()
 
+	//
+
 	return
 }
 
@@ -116,6 +115,9 @@ func (c *cache) Set(
 	rc uint32, //         :
 	err error, //         :
 ) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
 
 	//
 
@@ -130,6 +132,9 @@ func (c *cache) Inc(
 	rc uint32, //         :
 	err error, //         :
 ) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
 
 	//
 

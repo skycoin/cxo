@@ -95,3 +95,55 @@ func (d *Dynamic) Clear() {
 	d.Hash = cipher.SHA256{}
 	d.Schema = SchemaRef{}
 }
+
+// Walk through the Dynamic. The walkFunc never be called with
+// SchemaRef. It receive only hash of object
+func (d *Dynamic) Walk(
+	pack Pack,
+	walkFunc WalkFunc,
+) (
+	err error,
+) {
+
+	if walkFunc == nil {
+		panic("walkFunc is nil") // for developers
+	}
+
+	if d.IsValid() == false {
+		return ErrInvalidDynamicReference
+	}
+
+	var deepper bool
+	if deepper, err = walkFunc(d.Hash, 0); err != nil {
+		if err == ErrStopIteration {
+			err = nil // suppress this error
+		}
+		return
+	}
+
+	if deepper == false {
+		return
+	}
+
+	if d.Hash == (cipher.SHA256{}) {
+		return
+	}
+
+	var reg *Registry
+	if reg = pack.Registry(); reg == nil {
+		return ErrMissingRegistry
+	}
+
+	var sch Schema
+	if sch, err = reg.SchemaByReference(d.Schema); err != nil {
+		return
+	}
+
+	err = walkSchemaHash(pack, sch, d.Hash, walkFunc)
+
+	if err == ErrStopIteration {
+		err = nil // suppress this error
+	}
+
+	return
+}
