@@ -13,7 +13,7 @@ import (
 type dummyPack struct {
 	reg    *Registry
 	flags  Flags
-	degree int
+	degree Degree
 	vals   map[cipher.SHA256][]byte
 }
 
@@ -40,12 +40,12 @@ func (d *dummyPack) Add(val []byte) (key cipher.SHA256, err error) {
 	return
 }
 
-func (d *dummyPack) Degree() int {
+func (d *dummyPack) Degree() Degree {
 	return d.degree
 }
 
-func (d *dummyPack) SetDegree(degree int) (err error) {
-	if err = validateDegree(degree); err != nil {
+func (d *dummyPack) SetDegree(degree Degree) (err error) {
+	if err = degree.Validate(); err != nil {
 		return
 	}
 	d.degree = degree
@@ -73,7 +73,7 @@ func testPackReg(reg *Registry) (dp *dummyPack) {
 	dp = new(dummyPack)
 	dp.vals = make(map[cipher.SHA256][]byte)
 	dp.reg = reg
-	dp.degree = Degree
+	dp.degree = 16 // use 16 for tests
 	return
 }
 

@@ -48,8 +48,8 @@ type Refs struct {
 	// blank then this Hash is blank too
 	Hash cipher.SHA256
 
-	depth  int `enc:"-"` // depth - 1
-	degree int `enc:"-"` // degree
+	depth  int    `enc:"-"` // depth - 1
+	degree Degree `enc:"-"` // degree
 
 	refsIndex `enc:"-"` // hash-table index
 	*refsNode `enc:"-"` // leafs, branches, mods and length (pointer)
@@ -90,8 +90,8 @@ func (r *Refs) initialize(pack Pack) (err error) {
 
 	r.degree = pack.Degree() // use default degree
 
-	if r.degree < 2 {
-		panic("invalid Degree of the Pack")
+	if err = r.degree.Validate(); err != nil {
+		panic("invalid Degree of the Pack") // test the Pack
 	}
 
 	if r.flags&HashTableIndex != 0 {
@@ -108,11 +108,11 @@ func (r *Refs) initialize(pack Pack) (err error) {
 	}
 
 	r.depth = int(er.Depth)
-	r.degree = int(er.Degree) // overwrite from saved
+	r.degree = Degree(er.Degree) // overwrite from saved
 
 	r.length = int(er.Length)
 
-	if r.length == 0 || r.degree < 2 {
+	if r.length == 0 || r.degree.Validate() != nil {
 		return ErrInvalidEncodedRefs // invalid state
 	}
 
@@ -153,7 +153,7 @@ func (r *Refs) Depth(pack Pack) (depth int, err error) {
 }
 
 // Degree returns degree of the Refs tree
-func (r *Refs) Degree(pack Pack) (degree int, err error) {
+func (r *Refs) Degree(pack Pack) (degree Degree, err error) {
 	if err = r.initialize(pack); err != nil {
 		return
 	}
@@ -161,17 +161,10 @@ func (r *Refs) Degree(pack Pack) (degree int, err error) {
 	return
 }
 
-func validateDegree(degree int) (err error) {
-	if degree < 2 {
-		err = ErrInvalidDegree
-	}
-	return
-}
-
 // SetDegree rebuild the Refs with given degree
-func (r *Refs) SetDegree(pack Pack, degree int) (err error) {
+func (r *Refs) SetDegree(pack Pack, degree Degree) (err error) {
 
-	if err = validateDegree(degree); err != nil {
+	if err = degree.Validate(); err != nil {
 		return
 	}
 
@@ -1118,14 +1111,14 @@ func pow(a, b int) (p int) {
 // so, both the start argumen and the reply of the function
 // are Refs.depth. E.g. Refs.depth = 'real depth'-1
 func depthToFit(
-	degree int, // : degree of the Refs
-	start int, //  : starting depth
-	fit int, //    : number of elements to fit
+	degree Degree, // : degree of the Refs
+	start int, //     : starting depth
+	fit int, //       : number of elements to fit
 ) (
-	depth int, //  : the needle
+	depth int, //     : the needle
 ) {
 
-	if fit <= degree {
+	if fit <= int(degree) {
 		return 0
 	}
 
@@ -1135,7 +1128,7 @@ func depthToFit(
 
 	// the start is 'real depth', but we need
 	// Refs' depth that is 'real depth' - 1
-	for ; pow(degree, start) < fit; start++ {
+	for ; pow(int(degree), start) < fit; start++ {
 	}
 
 	return start - 1 // found (-1 turns the start to be Refs.depth)
@@ -1194,11 +1187,11 @@ func (r *Refs) walkUpdatingSlice(
 // create new Refs using given degree, flags and amount of elements the
 // new Refs can fit. The fit argument used to set depth
 func newRefs(
-	degree int, //  : degree of the new Refs
-	flags Flags, // : flags of the new Refs
-	fit int, //     : fit elements
+	degree Degree, //  : degree of the new Refs
+	flags Flags, //    : flags of the new Refs
+	fit int, //        : fit elements
 ) (
-	nr *Refs, //    : the new Refs
+	nr *Refs, //       : the new Refs
 ) {
 
 	nr = new(Refs)
@@ -1206,7 +1199,7 @@ func newRefs(
 	nr.degree = degree
 	nr.flags = flags
 
-	if fit > degree {
+	if fit > int(degree) {
 		nr.depth = depthToFit(degree, 0, fit) // depth > 0
 	}
 

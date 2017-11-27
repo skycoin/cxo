@@ -12,7 +12,7 @@ func clearRefs(
 	t *testing.T,
 	r *Refs,
 	pack Pack,
-	degree int,
+	degree Degree,
 ) {
 
 	var err error
@@ -117,7 +117,7 @@ func TestRefs_AppendHashes(t *testing.T) {
 		users []cipher.SHA256 // hashes of the users
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -139,7 +139,7 @@ func TestRefs_AppendHashes(t *testing.T) {
 				}
 			})
 
-		var length = degree*degree + 1
+		var length = int(degree*degree) + 1
 
 		t.Logf("Refs with %d elements (degree %d)", length, degree)
 

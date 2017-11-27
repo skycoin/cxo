@@ -10,6 +10,7 @@ type Flags int
 
 // common Flags
 const (
+
 	// HashTableIndex is flag that enables hash-table index inside
 	// the Refs. The index speeds up accessing by hash. The index
 	// is not designed to be used with many elements with the same
@@ -65,10 +66,26 @@ const (
 
 )
 
-// common contants
+// A Degree represents degree of the Refs. The Degree represented
+// as int, but in database it saved as uint32, thus Degree can't be
+// less the 2 and bigger then max possible int32. The Degree is
+// configurable and it configured by skyobject package. See
+// skyobject.Config for details and skyobject.MerkleDegree constant
+type Degree int
+
 const (
-	Degree int = 16 // default degree of Refs
+	maxUint32 = ^uint32(0)
+	maxInt32  = int32(maxUint32 >> 1)
+	maxDegree = Degree(maxInt32)
 )
+
+// Validate the Degree
+func (d Degree) Validate() (err error) {
+	if d < 2 || d > maxDegree {
+		err = ErrInvalidDegree
+	}
+	return
+}
 
 // A Pack represents ...
 type Pack interface {
@@ -80,8 +97,8 @@ type Pack interface {
 
 	// A Refs will panic if the Pack returns invalid Degree
 
-	Degree() int                      // default degree for new Refs
-	SetDegree(degree int) (err error) // cahgne the default degree
+	Degree() Degree                      // default degree for new Refs
+	SetDegree(degree Degree) (err error) // chagne the default degree
 
 	Flags() Flags     // flags of the Pack
 	AddFlags(Flags)   // add given Flags to internal (OR)

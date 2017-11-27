@@ -894,7 +894,7 @@ func (r *Refs) appendCreatingSliceNodeGoUp(
 
 		// since we are using r.upper, then the depth is > 0
 		// and the rn.upper contains branches
-		if len(rn.branches) == r.degree { // if it's full
+		if len(rn.branches) == int(r.degree) { // if it's full
 			continue // go up
 		}
 
@@ -926,7 +926,7 @@ func (r *Refs) appendCreatingSliceNode(
 
 	if depth == 0 { // leafs
 
-		if len(rn.leafs) == r.degree { // full
+		if len(rn.leafs) == int(r.degree) { // full
 			return r.appendCreatingSliceNodeGoUp(rn, depth, hash) // go up
 		}
 
@@ -1023,7 +1023,7 @@ func (r *Refs) freeSpaceOnTailNode(
 
 	if depth == 0 {
 
-		fsotn = r.degree - len(rn.leafs)
+		fsotn = int(r.degree) - len(rn.leafs)
 		return
 
 	}
@@ -1033,7 +1033,7 @@ func (r *Refs) freeSpaceOnTailNode(
 	// the fsotn = (degree ^ (depth+1)) * (degree - len(rn.branches)) +
 	//         r.freeSpaceOnTailNode() of the last node in the branhces
 
-	fsotn = pow(r.degree, depth) * (r.degree - len(rn.branches))
+	fsotn = pow(int(r.degree), depth) * (int(r.degree) - len(rn.branches))
 
 	if fsotn >= fit {
 		return // at least
@@ -1107,7 +1107,7 @@ func (r *Refs) appendNodeGoUp(
 
 	// since we are using ap.rn.upper, then the ap.depth
 	// is > 0 and the ap.rn.upper contains branches
-	if len(ap.rn.branches) == r.degree {
+	if len(ap.rn.branches) == int(r.degree) {
 
 		// not increased (idle pass)
 		if ap.increase == 0 {
@@ -1161,7 +1161,7 @@ func (r *Refs) appendNode(
 
 	if ap.depth == 0 { // leafs
 
-		if len(ap.rn.leafs) == r.degree { // full
+		if len(ap.rn.leafs) == int(r.degree) { // full
 
 			// TODO (kostyarin): LazyUpdating
 			if err = ap.rn.updateHashIfNeed(pack, ap.depth, true); err != nil {

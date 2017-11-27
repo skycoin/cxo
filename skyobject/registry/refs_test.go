@@ -19,7 +19,7 @@ type testRefs struct {
 	flags Flags
 
 	depth  int
-	degree int
+	degree Degree
 
 	testNode
 }
@@ -230,9 +230,9 @@ func TestRefs_Init(t *testing.T) {
 	//   (3) branches with branches with leafs
 
 	for _, length := range []int{
-		pack.Degree(),                   // only leafs
-		pack.Degree() + 1,               // leafs and branches
-		pack.Degree()*pack.Degree() + 1, // branches with branches with leafs
+		int(pack.Degree()),                   // only leafs
+		int(pack.Degree()) + 1,               // leafs and branches
+		int(pack.Degree()*pack.Degree()) + 1, // branches with branches with leafs
 	} {
 
 		t.Logf("Refs with %d elements", length)
@@ -393,9 +393,9 @@ func TestRefs_Len(t *testing.T) {
 	//   (3) branches with branches with leafs
 
 	for _, length := range []int{
-		pack.Degree(),                   // only leafs
-		pack.Degree() + 1,               // leafs and branches
-		pack.Degree()*pack.Degree() + 1, // branches with branches with leafs
+		int(pack.Degree()),                   // only leafs
+		int(pack.Degree()) + 1,               // leafs and branches
+		int(pack.Degree()*pack.Degree()) + 1, // branches, branches, leafs
 	} {
 
 		t.Logf("Refs with %d elements", length)
@@ -560,9 +560,9 @@ func TestRefs_Depth(t *testing.T) {
 	//   (3) branches with branches with leafs
 
 	for _, length := range []int{
-		pack.Degree(),                   // only leafs
-		pack.Degree() + 1,               // leafs and branches
-		pack.Degree()*pack.Degree() + 1, // branches with branches with leafs
+		int(pack.Degree()),                   // only leafs
+		int(pack.Degree()) + 1,               // leafs and branches
+		int(pack.Degree()*pack.Degree()) + 1, // branches, branches, leafs
 	} {
 
 		var depth = depthToFit(pack.Degree(), 0, length)
@@ -696,10 +696,10 @@ func TestRefs_Degree(t *testing.T) {
 
 		refs Refs
 
-		dg  int // degree
+		dg  Degree // degree
 		err error
 
-		clear = func(t *testing.T, r *Refs, degree int) {
+		clear = func(t *testing.T, r *Refs, degree Degree) {
 			refs.Clear()                 // clear the Refs making it Refs{}
 			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
@@ -709,7 +709,7 @@ func TestRefs_Degree(t *testing.T) {
 		}
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -761,9 +761,9 @@ func TestRefs_Degree(t *testing.T) {
 		//   (3) branches with branches with leafs
 
 		for _, length := range []int{
-			degree,            // only leafs
-			degree + 1,        // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
+			int(degree),            // only leafs
+			int(degree) + 1,        // leafs and branches
+			int(degree*degree) + 1, // branches with branches with leafs
 		} {
 
 			t.Logf("Refs with %d elements (degree %d)", length, degree)
@@ -973,7 +973,7 @@ func TestRefs_HasHash(t *testing.T) {
 
 		users []interface{}
 
-		clear = func(t *testing.T, r *Refs, degree int) {
+		clear = func(t *testing.T, r *Refs, degree Degree) {
 			refs.Clear()                 // clear the Refs making it Refs{}
 			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
@@ -983,7 +983,7 @@ func TestRefs_HasHash(t *testing.T) {
 		}
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -1004,9 +1004,9 @@ func TestRefs_HasHash(t *testing.T) {
 		//   (3) branches with branches with leafs
 
 		for _, length := range []int{
-			degree,            // only leafs
-			degree + 1,        // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
+			int(degree),            // only leafs
+			int(degree) + 1,        // leafs and branches
+			int(degree*degree) + 1, // branches with branches with leafs
 		} {
 
 			t.Logf("Refs with %d elements (degree %d)", length, degree)
@@ -1150,7 +1150,7 @@ func TestRefs_ValueByHash(t *testing.T) {
 
 		users []interface{}
 
-		clear = func(t *testing.T, r *Refs, degree int) {
+		clear = func(t *testing.T, r *Refs, degree Degree) {
 			refs.Clear()                 // clear the Refs making it Refs{}
 			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
@@ -1160,7 +1160,7 @@ func TestRefs_ValueByHash(t *testing.T) {
 		}
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -1181,9 +1181,9 @@ func TestRefs_ValueByHash(t *testing.T) {
 		//   (3) branches with branches with leafs
 
 		for _, length := range []int{
-			degree,            // only leafs
-			degree + 1,        // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
+			int(degree),            // only leafs
+			int(degree) + 1,        // leafs and branches
+			int(degree*degree) + 1, // branches with branches with leafs
 		} {
 
 			t.Logf("Refs with %d elements (degree %d)", length, degree)
@@ -1318,7 +1318,7 @@ func TestRefs_IndexOfHash(t *testing.T) {
 
 		users []interface{}
 
-		clear = func(t *testing.T, r *Refs, degree int) {
+		clear = func(t *testing.T, r *Refs, degree Degree) {
 			refs.Clear()                 // clear the Refs making it Refs{}
 			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
@@ -1328,7 +1328,7 @@ func TestRefs_IndexOfHash(t *testing.T) {
 		}
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -1349,9 +1349,9 @@ func TestRefs_IndexOfHash(t *testing.T) {
 		//   (3) branches with branches with leafs
 
 		for _, length := range []int{
-			degree,            // only leafs
-			degree + 1,        // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
+			int(degree),            // only leafs
+			int(degree) + 1,        // leafs and branches
+			int(degree*degree) + 1, // branches with branches with leafs
 		} {
 
 			t.Logf("Refs with %d elements (degree %d)", length, degree)
@@ -1526,7 +1526,7 @@ func TestRefs_IndicesByHash(t *testing.T) {
 
 		users []interface{}
 
-		clear = func(t *testing.T, r *Refs, degree int) {
+		clear = func(t *testing.T, r *Refs, degree Degree) {
 			refs.Clear()                 // clear the Refs making it Refs{}
 			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
@@ -1536,7 +1536,7 @@ func TestRefs_IndicesByHash(t *testing.T) {
 		}
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -1560,9 +1560,9 @@ func TestRefs_IndicesByHash(t *testing.T) {
 		// redue the length to test only leafs and so on
 
 		for _, length := range []int{
-			degree / 2,        // only leafs
-			degree,            // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
+			int(degree / 2),        // only leafs
+			int(degree),            // leafs and branches
+			int(degree*degree) + 1, // branches with branches with leafs
 		} {
 
 			t.Logf("Refs with %d elements (degree %d)", length, degree)
@@ -1722,7 +1722,7 @@ func TestRefs_HashByIndex(t *testing.T) {
 
 		users []cipher.SHA256 // the users
 
-		clear = func(t *testing.T, r *Refs, degree int) {
+		clear = func(t *testing.T, r *Refs, degree Degree) {
 			refs.Clear()                 // clear the Refs making it Refs{}
 			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
@@ -1732,7 +1732,7 @@ func TestRefs_HashByIndex(t *testing.T) {
 		}
 	)
 
-	for _, degree := range []int{
+	for _, degree := range []Degree{
 		pack.Degree(),     // default
 		pack.Degree() + 7, // changed
 	} {
@@ -1753,9 +1753,9 @@ func TestRefs_HashByIndex(t *testing.T) {
 		//   (3) branches with branches with leafs
 
 		for _, length := range []int{
-			degree,            // only leafs
-			degree + 1,        // leafs and branches
-			degree*degree + 1, // branches with branches with leafs
+			int(degree),            // only leafs
+			int(degree) + 1,        // leafs and branches
+			int(degree*degree) + 1, // branches with branches with leafs
 		} {
 
 			t.Logf("Refs with %d elements (degree %d)", length, degree)
@@ -1905,17 +1905,18 @@ func testRefsSetHashByIndex(
 
 }
 
-func testRefsDegrees(pack Pack) []int {
-	return []int{2, pack.Degree(), pack.Degree() + 7}
+func testRefsDegrees(pack Pack) []Degree {
+	return []Degree{2, pack.Degree(), pack.Degree() + 7}
 }
 
-func testRefsLengths(degree int) []int {
+func testRefsLengths(degree Degree) []int {
+	var dg = int(degree)
 	return []int{
-		degree - 1,
-		degree,
-		degree + 1,
-		degree * degree,
-		degree*degree + 1,
+		dg - 1,    // only leafs
+		dg,        // full root leafs
+		dg + 1,    // branches (full leaf + 1)
+		dg * dg,   // branches with full leafs
+		dg*dg + 1, // + 1
 	}
 }
 
