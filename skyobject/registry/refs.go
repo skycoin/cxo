@@ -88,7 +88,11 @@ func (r *Refs) initialize(pack Pack) (err error) {
 	r.mods = loadedMod     // mark as loaded
 	r.flags = pack.Flags() // keep current flags
 
-	r.degree = Degree // use default degree
+	r.degree = pack.Degree() // use default degree
+
+	if r.degree < 2 {
+		panic("invalid Degree of the Pack")
+	}
 
 	if r.flags&HashTableIndex != 0 {
 		r.refsIndex = make(refsIndex)

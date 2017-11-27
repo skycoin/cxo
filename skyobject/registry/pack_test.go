@@ -11,9 +11,10 @@ import (
 // dummy pack
 
 type dummyPack struct {
-	reg   *Registry
-	flags Flags
-	vals  map[cipher.SHA256][]byte
+	reg    *Registry
+	flags  Flags
+	degree int
+	vals   map[cipher.SHA256][]byte
 }
 
 func (d *dummyPack) Registry() *Registry {
@@ -39,6 +40,18 @@ func (d *dummyPack) Add(val []byte) (key cipher.SHA256, err error) {
 	return
 }
 
+func (d *dummyPack) Degree() int {
+	return d.degree
+}
+
+func (d *dummyPack) SetDegree(degree int) (err error) {
+	if err = validateDegree(degree); err != nil {
+		return
+	}
+	d.degree = degree
+	return
+}
+
 func (d *dummyPack) Flags() Flags {
 	return d.flags
 }
@@ -60,6 +73,7 @@ func testPackReg(reg *Registry) (dp *dummyPack) {
 	dp = new(dummyPack)
 	dp.vals = make(map[cipher.SHA256][]byte)
 	dp.reg = reg
+	dp.degree = Degree
 	return
 }
 

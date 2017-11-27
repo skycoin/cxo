@@ -19,7 +19,7 @@ func clearRefs(
 
 	r.Clear() // clear the Refs making it Refs{}
 
-	if degree != Degree { // if it's not default
+	if degree != pack.Degree() { // if it's not default
 		if err = r.SetDegree(pack, degree); err != nil { // change it
 			t.Fatal(err)
 		}
@@ -118,8 +118,8 @@ func TestRefs_AppendHashes(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		//Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		pack.ClearFlags(^0) // all
@@ -270,7 +270,7 @@ func TestRefs_AppendHashes(t *testing.T) {
 
 	t.Run("blank hash", func(t *testing.T) {
 
-		clearRefs(t, &refs, pack, Degree)
+		clearRefs(t, &refs, pack, pack.Degree())
 
 		var hashes = []cipher.SHA256{
 			{}, // the blank one

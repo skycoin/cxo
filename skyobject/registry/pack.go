@@ -78,6 +78,11 @@ type Pack interface {
 	Set(key cipher.SHA256, val []byte) (err error) // set k-v pair
 	Add(val []byte) (key cipher.SHA256, err error) // set+calculate hash
 
+	// A Refs will panic if the Pack returns invalid Degree
+
+	Degree() int                      // default degree for new Refs
+	SetDegree(degree int) (err error) // cahgne the default degree
+
 	Flags() Flags     // flags of the Pack
 	AddFlags(Flags)   // add given Flags to internal (OR)
 	ClearFlags(Flags) // clear given Flags from internal (AND NOT)

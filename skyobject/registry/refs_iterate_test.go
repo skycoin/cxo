@@ -50,9 +50,9 @@ func TestRefs_Ascend(t *testing.T) {
 		users []cipher.SHA256
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			pack.ClearFlags(^0)   // clear flags of pack
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			pack.ClearFlags(^0)          // clear flags of pack
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -61,8 +61,8 @@ func TestRefs_Ascend(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -264,9 +264,9 @@ func TestRefs_AscendFrom(t *testing.T) {
 		users []cipher.SHA256
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			pack.ClearFlags(^0)   // clear flags of pack
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			pack.ClearFlags(^0)          // clear flags of pack
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -275,8 +275,8 @@ func TestRefs_AscendFrom(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -469,9 +469,9 @@ func TestRefs_Descend(t *testing.T) {
 		users []cipher.SHA256
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			pack.ClearFlags(^0)   // clear flags of pack
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			pack.ClearFlags(^0)          // clear flags of pack
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -480,8 +480,8 @@ func TestRefs_Descend(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -694,9 +694,9 @@ func TestRefs_DescendFrom(t *testing.T) {
 		users []cipher.SHA256
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			pack.ClearFlags(^0)   // clear flags of pack
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			pack.ClearFlags(^0)          // clear flags of pack
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -705,8 +705,8 @@ func TestRefs_DescendFrom(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {

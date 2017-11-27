@@ -28,7 +28,7 @@ func TestRefs_Walk(t *testing.T) {
 
 		t.Logf("flags %08b", flags)
 
-		for _, degree := range testRefsDegrees() {
+		for _, degree := range testRefsDegrees(pack) {
 
 			t.Log("degree", degree)
 

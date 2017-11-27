@@ -217,7 +217,7 @@ func TestRefs_Init(t *testing.T) {
 		testRefsTest(t, &refs, &testRefs{
 			testNode: testNode{mods: loadedMod},
 			flags:    testNoMeaninFlag,
-			degree:   Degree,
+			degree:   pack.Degree(),
 		})
 
 		logRefsTree(t, &refs, pack, false)
@@ -230,9 +230,9 @@ func TestRefs_Init(t *testing.T) {
 	//   (3) branches with branches with leafs
 
 	for _, length := range []int{
-		Degree,            // only leafs
-		Degree + 1,        // leafs and branches
-		Degree*Degree + 1, // branches with branches with leafs
+		pack.Degree(),                   // only leafs
+		pack.Degree() + 1,               // leafs and branches
+		pack.Degree()*pack.Degree() + 1, // branches with branches with leafs
 	} {
 
 		t.Logf("Refs with %d elements", length)
@@ -272,7 +272,7 @@ func TestRefs_Init(t *testing.T) {
 			tr.length = length
 			tr.mods = loadedMod
 			tr.flags = pack.Flags()
-			tr.degree = Degree
+			tr.degree = pack.Degree()
 
 		}
 
@@ -380,7 +380,7 @@ func TestRefs_Len(t *testing.T) {
 		testRefsTest(t, &refs, &testRefs{
 			testNode: testNode{mods: loadedMod},
 			flags:    testNoMeaninFlag,
-			degree:   Degree,
+			degree:   pack.Degree(),
 		})
 
 		logRefsTree(t, &refs, pack, false)
@@ -393,9 +393,9 @@ func TestRefs_Len(t *testing.T) {
 	//   (3) branches with branches with leafs
 
 	for _, length := range []int{
-		Degree,            // only leafs
-		Degree + 1,        // leafs and branches
-		Degree*Degree + 1, // branches with branches with leafs
+		pack.Degree(),                   // only leafs
+		pack.Degree() + 1,               // leafs and branches
+		pack.Degree()*pack.Degree() + 1, // branches with branches with leafs
 	} {
 
 		t.Logf("Refs with %d elements", length)
@@ -435,7 +435,7 @@ func TestRefs_Len(t *testing.T) {
 			tr.length = length
 			tr.mods = loadedMod
 			tr.flags = pack.Flags()
-			tr.degree = Degree
+			tr.degree = pack.Degree()
 
 		}
 
@@ -547,7 +547,7 @@ func TestRefs_Depth(t *testing.T) {
 		testRefsTest(t, &refs, &testRefs{
 			testNode: testNode{mods: loadedMod},
 			flags:    testNoMeaninFlag,
-			degree:   Degree,
+			degree:   pack.Degree(),
 		})
 
 		logRefsTree(t, &refs, pack, false)
@@ -560,12 +560,12 @@ func TestRefs_Depth(t *testing.T) {
 	//   (3) branches with branches with leafs
 
 	for _, length := range []int{
-		Degree,            // only leafs
-		Degree + 1,        // leafs and branches
-		Degree*Degree + 1, // branches with branches with leafs
+		pack.Degree(),                   // only leafs
+		pack.Degree() + 1,               // leafs and branches
+		pack.Degree()*pack.Degree() + 1, // branches with branches with leafs
 	} {
 
-		var depth = depthToFit(Degree, 0, length)
+		var depth = depthToFit(pack.Degree(), 0, length)
 
 		t.Logf("Refs with %d elements (depth %d)", length, depth)
 
@@ -604,7 +604,7 @@ func TestRefs_Depth(t *testing.T) {
 			tr.length = length
 			tr.mods = loadedMod
 			tr.flags = pack.Flags()
-			tr.degree = Degree
+			tr.degree = pack.Degree()
 
 		}
 
@@ -700,8 +700,8 @@ func TestRefs_Degree(t *testing.T) {
 		err error
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -710,8 +710,8 @@ func TestRefs_Degree(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -749,7 +749,7 @@ func TestRefs_Degree(t *testing.T) {
 
 				if dg, err = refs.Degree(pack); err != nil {
 					t.Error(err)
-				} else if dg != Degree {
+				} else if dg != pack.Degree() {
 					t.Error("saved degree", dg)
 				}
 
@@ -974,8 +974,8 @@ func TestRefs_HasHash(t *testing.T) {
 		users []interface{}
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -984,8 +984,8 @@ func TestRefs_HasHash(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1151,8 +1151,8 @@ func TestRefs_ValueByHash(t *testing.T) {
 		users []interface{}
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -1161,8 +1161,8 @@ func TestRefs_ValueByHash(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1319,8 +1319,8 @@ func TestRefs_IndexOfHash(t *testing.T) {
 		users []interface{}
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -1329,8 +1329,8 @@ func TestRefs_IndexOfHash(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1527,8 +1527,8 @@ func TestRefs_IndicesByHash(t *testing.T) {
 		users []interface{}
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -1537,8 +1537,8 @@ func TestRefs_IndicesByHash(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1723,8 +1723,8 @@ func TestRefs_HashByIndex(t *testing.T) {
 		users []cipher.SHA256 // the users
 
 		clear = func(t *testing.T, r *Refs, degree int) {
-			refs.Clear()          // clear the Refs making it Refs{}
-			if degree != Degree { // if it's not default
+			refs.Clear()                 // clear the Refs making it Refs{}
+			if degree != pack.Degree() { // if it's not default
 				if err = refs.SetDegree(pack, degree); err != nil { // change it
 					t.Fatal(err)
 				}
@@ -1733,8 +1733,8 @@ func TestRefs_HashByIndex(t *testing.T) {
 	)
 
 	for _, degree := range []int{
-		Degree,     // default
-		Degree + 7, // changed
+		pack.Degree(),     // default
+		pack.Degree() + 7, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1905,8 +1905,8 @@ func testRefsSetHashByIndex(
 
 }
 
-func testRefsDegrees() []int {
-	return []int{2, Degree, Degree + 7}
+func testRefsDegrees(pack Pack) []int {
+	return []int{2, pack.Degree(), pack.Degree() + 7}
 }
 
 func testRefsLengths(degree int) []int {
@@ -1962,7 +1962,7 @@ func TestRefs_SetHashByIndex(t *testing.T) {
 
 		t.Logf("flags %08b", flags)
 
-		for _, degree := range testRefsDegrees() {
+		for _, degree := range testRefsDegrees(pack) {
 
 			t.Log("degree", degree)
 
@@ -2094,7 +2094,7 @@ func TestRefs_DeleteByIndex(t *testing.T) {
 
 		t.Logf("flags %08b", flags)
 
-		for _, degree := range testRefsDegrees() {
+		for _, degree := range testRefsDegrees(pack) {
 
 			t.Log("degree", degree)
 
@@ -2271,7 +2271,7 @@ func TestRefs_DeleteByHash(t *testing.T) {
 
 		t.Logf("flags %08b", flags)
 
-		for _, degree := range testRefsDegrees() {
+		for _, degree := range testRefsDegrees(pack) {
 
 			t.Log("degree", degree)
 
@@ -2437,7 +2437,7 @@ func TestRefs_Slice(t *testing.T) {
 
 		t.Logf("flags %08b", flags)
 
-		for _, degree := range testRefsDegrees() {
+		for _, degree := range testRefsDegrees(pack) {
 
 			t.Log("degree", degree)
 
@@ -2532,7 +2532,7 @@ func TestRefs_Rebuild(t *testing.T) {
 
 		t.Logf("flags %08b", flags)
 
-		for _, degree := range testRefsDegrees() {
+		for _, degree := range testRefsDegrees(pack) {
 
 			t.Log("degree", degree)
 
