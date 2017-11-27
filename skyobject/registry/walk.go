@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -34,7 +35,7 @@ func walkSchemaHash(
 	// get object
 
 	var val []byte
-	if val, err = pack.Get(d.Hash); err != nil {
+	if val, err = pack.Get(hash); err != nil {
 		return
 	}
 
@@ -83,19 +84,31 @@ func walkSchemaReference(
 
 	case ReferenceTypeSingle: // Ref
 
+		var el Schema
+		if el = sch.Elem(); el == nil {
+			return fmt.Errorf("sSchema of Ref with nil element: %s", sch)
+		}
+
 		var ref Ref
 		if err = encoder.DeserializeRaw(val, &ref); err != nil {
 			return
 		}
-		return ref.Walk(pack, walkFunc)
+
+		return ref.Walk(pack, el, walkFunc)
 
 	case ReferenceTypeSlice: // Refs
+
+		var el Schema
+		if el = sch.Elem(); el == nil {
+			return fmt.Errorf("sSchema of Ref with nil element: %s", sch)
+		}
 
 		var refs Refs
 		if err = encoder.DeserializeRaw(val, &refs); err != nil {
 			return
 		}
-		return refs.Walk(pack, walkFunc)
+
+		return refs.Walk(pack, el, walkFunc)
 
 	case ReferenceTypeDynamic: // Dynamic
 

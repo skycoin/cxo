@@ -88,3 +88,35 @@ func isNil(obj interface{}) bool {
 
 	return val.Kind() == reflect.Ptr && val.IsNil()
 }
+
+// Walk through the Ref. See WalkFunc for details. The
+// Schema is used only if the walkFunc goes deepper.
+// Otherwise, the sch argument can be nil. The Schema
+// must be schema of element of the Ref, not schema of
+// the Ref
+func (r *Ref) Walk(
+	pack Pack, //         :
+	sch Schema, //        :
+	walkFunc WalkFunc, // :
+) (
+	err error,
+) {
+
+	var deepper bool
+	if deepper, err = walkFunc(r.Hash, 0); err != nil || deepper == false {
+		return
+	}
+
+	if r.Hash == (cipher.SHA256{}) {
+		return // ignore the deepper
+	}
+
+	err = walkSchemaHash(pack, sch, r.Hash, walkFunc)
+
+	if err == ErrStopIteration {
+		err = nil
+	}
+
+	return
+
+}

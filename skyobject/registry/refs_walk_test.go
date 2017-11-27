@@ -45,6 +45,7 @@ func TestRefs_Walk(t *testing.T) {
 					var called int
 
 					err = r.Walk(pack,
+						nil,
 						func(
 							hash cipher.SHA256,
 							depth int,
@@ -58,7 +59,7 @@ func TestRefs_Walk(t *testing.T) {
 								t.Error("unexpected hash given")
 							}
 
-							deepper = true
+							deepper = depth != 0
 							return
 
 						})
@@ -90,6 +91,7 @@ func TestRefs_Walk(t *testing.T) {
 				var tree []cipher.SHA256 // the tree
 
 				err = r.Walk(pack,
+					nil,
 					func(hash cipher.SHA256, depth int) (bool, error) {
 						if depth == 0 {
 							if _, ok := usersMap[hash]; !ok {
@@ -97,7 +99,7 @@ func TestRefs_Walk(t *testing.T) {
 							}
 						}
 						tree = append(tree, hash)
-						return true, nil
+						return depth != 0, nil
 					})
 
 				if err != nil {
@@ -108,6 +110,7 @@ func TestRefs_Walk(t *testing.T) {
 					var i int
 					r.Reset()
 					err = r.Walk(pack,
+						nil,
 						func(hash cipher.SHA256, depth int) (bool, error) {
 							if depth == 0 {
 								if _, ok := usersMap[hash]; !ok {
@@ -118,7 +121,7 @@ func TestRefs_Walk(t *testing.T) {
 								t.Error("unexpected hash")
 							}
 							i++
-							return true, nil
+							return depth != 0, nil
 						})
 
 					if err != nil {

@@ -97,7 +97,8 @@ func (d *Dynamic) Clear() {
 }
 
 // Walk through the Dynamic. The walkFunc never be called with
-// SchemaRef. It receive only hash of object
+// SchemaRef. It receive only hash of object. See WalkFunc for
+// details
 func (d *Dynamic) Walk(
 	pack Pack,
 	walkFunc WalkFunc,

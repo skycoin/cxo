@@ -47,30 +47,42 @@ func (r *Refs) walkBlank(walkFunc WalkFunc) (err error) {
 // Walk is service method and used for filling, updating and similar.
 // The Walk walks through the Refs tree invoking given function for every
 // node (e.g. for elements and nodes) starting from root of the tree.
+// It's possble to walk through elements of the Refs too, providing
+// Schema of the elements. It's important. Not Schema of the Refs, but
+// Schema of elements of the Refs
+//
 // The depth argument starts from depth of the Refs and reduces to zero
 // step by step, wlking down from root to leafs. If the depth is zero, then
 // the hash is hash of element (not a node). The Walk updates hashes of the
-// Refs tree (if LazyUpdating flag set, for example). If given RefsWalkFunc
+// Refs tree (if LazyUpdating flag set, for example). If given WalkFunc
 // returns deeper == true, then the Walk goes deeper, otherwise, subtree will
-// be skipped. It's impossible to walks deepper for elements, and in this
-// case the deepper reply will be ignored. The Walk never load branches
-// if they are not loaded (and the deepper is false). But the Walk initializes
-// the Refs and if the Refs is not initialized and your Pack contains flags like
-// HashTableIndex or EntireRefs, the initialization loads entire refs tree
-// (that can cost to much for DB and memeory, and can be unnecessary).
+// be skipped.
+//
+// The Walk never load branches if they are not loaded and the deepper reply
+// is false. But the Walk initializes the Refs and if the Refs is not
+// initialized and your Pack contains flags like HashTableIndex or
+// EntireRefs, the initialization loads entire refs tree (that can cost to
+// much for DB and memeory, and can be unnecessary).
 //
 // The first hash, with which the RefsWlkFunc will be called, is hash of
 // the Refs (e.g. Refs.Hash). And if the hash is blank the Walk does not
 // initialize the Refs. More then that if the Refs is not initialized, but
 // the Refs.Hash is not blank, then after the initialization the Refs will
-// be reset. This wa, end-user will not have a Refs with flags he don't want
+// be reset. This way, end-user will not have a Refs with flags he don't want
 // (becuase, the initialization saves flags inside the Refs).
 //
 // Feel free to use ErrStopIteration to break the Walk. Any error returned
-// by the RefsWalkFunc (excepth the ErrStopIteratio) will be passed through
+// by the WalkFunc (excepth the ErrStopIteration) will be passed through
+//
+// The Scehma used only if the walkFunc goes deepper for elements with
+// depth 0 (e.g. for leafs, end-user provided values). Otherwise,
+// the sch argument can be nil safely. But if you want  walk throuth the
+// elements too, then the Schema must not be nil, otherwise it can
+// panics or produces an undefined result
 func (r *Refs) Walk(
 	pack Pack, //             : pack to save and load
-	walkFunc RefsWalkFunc, // : the function
+	sch Schema, //            : schema of alements of the Refs
+	walkFunc WalkFunc, // : the function
 ) (
 	err error, //             : an error
 ) {
@@ -146,7 +158,7 @@ func (r *Refs) Walk(
 	}
 
 	// walk from nodes
-	err = r.walkNode(pack, r.refsNode, r.depth, walkFunc)
+	err = r.walkNode(pack, sch, r.refsNode, r.depth, walkFunc)
 
 	if err == ErrStopIteration {
 		err = nil
@@ -158,31 +170,47 @@ func (r *Refs) Walk(
 
 func (r *Refs) walkNode(
 	pack Pack, //             : pack to load
+	sch Schema, //            : schema of elements
 	rn *refsNode, //          : the node
 	depth int, //             : depth of the node
-	walkFunc RefsWalkFunc, // : the function
+	walkFunc WalkFunc, // : the function
 ) (
 	err error, //             : an error
 ) {
+
+	var deepper bool
 
 	if depth == 0 {
 
 		// the deepper ignored
 
 		for _, leaf := range rn.leafs {
-			if _, err = walkFunc(leaf.Hash, depth); err != nil {
+
+			if deepper, err = walkFunc(leaf.Hash, depth); err != nil {
+
 				if err == ErrStopIteration {
 					err = nil
 				}
 				return
+
+			} else if deepper == true {
+
+				err = walkSchemaHash(pack, sch, leaf.Hash, walkFunc)
+
+				if err != nil {
+					if err == ErrStopIteration {
+						err = nil
+					}
+					return
+				}
+
 			}
+
 		}
 
 	}
 
 	// else if depth > 0 -> { branches }
-
-	var deepper bool
 
 	for _, br := range rn.branches {
 
@@ -206,7 +234,7 @@ func (r *Refs) walkNode(
 			return
 		}
 
-		if err = r.walkNode(pack, br, depth-1, walkFunc); err != nil {
+		if err = r.walkNode(pack, sch, br, depth-1, walkFunc); err != nil {
 			if err == ErrStopIteration {
 				err = nil
 			}
