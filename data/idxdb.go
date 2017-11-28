@@ -99,12 +99,34 @@ type Roots interface {
 // about Root objects. There is data/idxdb
 // package that implements the IdxDB. The
 // IdxDB returns and uses errors ErrNotFound,
-// ErrNoSuchFeed, ErrStopIteration and
-// ErrFeedIsNotEmpty from this package
+// ErrNoSuchFeed, ErrNoSuchHead,
+// ErrStopIteration, ErrFeedIsNotEmpty and
+// ErrHeadIsNotEmpty from this package.
+//
+// Also, the IdxDB contains safe-closing flag.
+// Since, the skyobejct package uses cache for
+// the CXDS, it keeps some information in memory
+// wihtout syncing to speed up the CXO. And while
+// a CXO application closes safely, the flag set
+// to true. And using this flag on next start the
+// CXO (the skyobejct package), can detemine state
+// of the last closing. And if it has been closed
+// using any unsafe way (panic or similar), then
+// the skyobject walks through all feeds, heads and
+// root objects to make CXDS values actual. This
+// way we can rid out of this initialization (this
+// walking) every time. But if something is wrong,
+// then we can fix it automatically. This is
+// shadowed from end-user protection from unexpected
+// power off. But keep in mind, that in this cases
+// a CXO application can starts slower then usual
+// if DB is big. The flag set by the Close method
+//
 type IdxDB interface {
 	Tx(func(Feeds) error) error // transaction
 	Close() error               // close the IdxDB
 
+	IsClosedSafely() bool // true if DB is ok
+
 	// TODO: stat
-	// TODO: safe closing flag
 }

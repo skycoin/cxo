@@ -3,6 +3,7 @@ package idxdb
 import (
 	"encoding/binary"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -13,13 +14,17 @@ import (
 )
 
 var (
-	feedsBucket = []byte("f")       // feeds
-	metaBucket  = []byte("m")       // meta information
-	versionKey  = []byte("version") // encoded version in the meta bucket
+	feedsBucket  = []byte("f")             // feeds
+	metaBucket   = []byte("m")             // meta information
+	versionKey   = []byte("version")       // encoded version in the meta bucket
+	closedSafely = []byte("closed safely") // safe closing flag
 )
 
 type driveDB struct {
-	b *bolt.DB
+	b  *bolt.DB
+	cs bool // sclosed safely
+
+	closeo sync.Once
 }
 
 // NewDriveIdxDB creates data.IdxDB instance that
@@ -40,6 +45,8 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 	if err != nil {
 		return
 	}
+
+	var cs bool // closed safely flag
 
 	err = b.Update(func(tx *bolt.Tx) (err error) {
 
@@ -81,6 +88,11 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 				return ErrNewVersion
 			}
 
+			// check out the 'closed safely' flag
+			if csb := info.Get(closedSafely); len(csb) == 1 && csb[0] > 0 {
+				cs = true
+			}
+
 		}
 
 		_, err = tx.CreateBucketIfNotExists(feedsBucket)
@@ -91,7 +103,7 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 		return
 	}
 
-	idx = &driveDB{b}
+	idx = &driveDB{b: b, cs: cs}
 	return
 }
 
@@ -102,9 +114,33 @@ func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	})
 }
 
+// IsClosedSafely
+func (d *driveDB) IsClosedSafely() bool {
+	return d.cs
+}
+
 // Close the DB
 func (d *driveDB) Close() (err error) {
-	return d.b.Close()
+
+	// set the 'closed safely' flag
+
+	d.closeo.Do(func() {
+
+		err = d.b.Update(func(tx *bolt.Tx) (err error) {
+			var info = tx.Bucket(metaBucket)
+
+			return info.Put(closedSafely, []byte{1})
+		})
+
+		if err != nil {
+			d.b.Close() // ignore this error
+		} else {
+			err = d.b.Close()
+		}
+
+	})
+
+	return
 }
 
 type driveFeeds struct {
