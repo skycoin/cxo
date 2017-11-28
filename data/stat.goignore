@@ -1,0 +1,200 @@
+package data
+
+import (
+	"sync"
+	"time"
+
+	"github.com/skycoin/cxo/skyobject/statutil"
+)
+
+// A CXDSStatGroup is group of objects
+type CXDSStatGroup struct {
+	Amount int    // amount of the objects
+	Volume Volume // volumen of the objects
+}
+
+// A CXDSStat represents statistics of CXDS
+type CXDSStat struct {
+	RPS float64
+	WPS float64
+
+	Used, Idle CXDSStatGroup
+}
+
+func (c *CXDSStat) Total() (total CXDSStatGroup) {
+	total.Amount = c.Used.Amount + c.Idle.Amount
+	total.Volume = c.Used.Volume + c.Idle.Volume
+	return
+}
+
+// CXDSStatCollector used to track statistics
+// of the CXDS
+type CXDSStatCollector struct {
+	rps *statutil.Float
+	wps *statutil.Float
+
+	mx sync.Mutex
+
+	secr uint32 // for a second
+	secw uint32
+
+	useda int
+	usedv Volume
+
+	idlea int
+	idlev Volume
+
+	quit chan struct{}
+}
+
+func NewCXDSStatCollector() (cs *CXDSStatCollector) {
+
+	cs = new(CXDSStatCollector)
+
+	cs.rps = statutil.NewFloat(60)
+	cs.rps = statutil.NewFloat(60)
+
+	cs.quit = make(chan struct{})
+
+	go cs.secondLoop()
+
+	return
+
+}
+
+func (c *CXDSStatCollector) Stat() (stat CXDSStat) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	stat.RPS = c.RPS()
+	stat.WPS = c.WPS()
+
+	stat.Used.Amount = c.useda
+	stat.Used.Volume = c.usedv
+
+	stat.Idle.Amount = c.idlea
+	stat.Idle.Volume = c.idlev
+
+	return
+}
+
+func (c *CXDSStatCollector) Stop() {
+	close(c.quit)
+}
+
+// AddReadingRequest add reading request
+func (c *CXDSStatCollector) AddReadingRequest() {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.secr++
+}
+
+// AddWritingRequest adds writing request
+func (c *CXDSStatCollector) AddWritingRequest() {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.secw++
+}
+
+// AddUsed adds used obejcts
+func (c *CXDSStatCollector) AddUsed(vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.useda++
+	c.usedv += vol
+}
+
+// DelUsed deletes used obejct
+func (c *CXDSStatCollector) DelUser(vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.useda--
+	c.usedv -= vol
+}
+
+// AddIdle adds idle obejct
+func (c *CXDSStatCollector) AddIdle(vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.idlea++
+	c.idlev += vol
+}
+
+// DelIdle deleted idle obejct
+func (c *CXDSStatCollector) DelIdle(vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.idlea--
+	c.idlev -= vol
+}
+
+// Used objects
+func (c *CXDSStatCollector) Used() (amount int, vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	return c.useda, c.usedv
+}
+
+// Idle obejcts
+func (c *CXDSStatCollector) Idle() (amount int, vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	return c.idlea, c.idlev
+}
+
+// Total objects
+func (c *CXDSStatCollector) Total() (amount int, vol Volume) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	return c.useda + c.idlea, c.usedv + c.idlev
+}
+
+// Reads per second
+func (c *CXDSStatCollector) RPS() float64 {
+	return c.rps.Value()
+}
+
+// Writes per second
+func (c *CXDSStatCollector) WPS() float64 {
+	return c.wps.Value()
+}
+
+func (c *CXDSStatCollector) secondLoop() {
+
+	var (
+		tk  = time.NewTicker(time.Second)
+		tkc = tk.C
+	)
+
+	defer tk.Stop()
+
+	for {
+		select {
+		case <-tkc:
+			c.second()
+		case <-c.quit:
+			return
+		}
+	}
+
+}
+
+func (c *CXDSStatCollector) second() {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.rps.Add(float64(c.secr))
+	c.secr = 0
+	c.wps.Add(float64(c.secw))
+	c.secw = 0
+
+}

@@ -16,9 +16,23 @@ import (
 //     key -> {rc, val}
 //
 // Where key is hash, and rc is greater then zero. The
-// CXDS can keep or can remove values with the rc equal
-// to zero. E.g. a value with zero rc is removed, but
-// CXDS can keep it if it has enough free space
+// CXDS doesn't remove objects with even if the rc is
+// zero. The skyobejct package track this. The CXDS has
+// max possible volume. The volume is total length of
+// all values. And when the CXDS comes to this limit,
+// the skyobject package removes this zero-rc objects
+// to free soma space. But if the CXDS doesn't have
+// obejcts with zero-rc and reaches this limit, it
+// keeps growing. E.g. the limit is not strict. More
+// then that, small values fit more space (because of
+// key and database index). E.g. the limit is very
+// approximate.
+//
+// It's impossible to decrement the rc to negative
+// value. If the rc is zero, and the Inc or Get
+// method called with inc = -1, then the rc of the
+// value will not be changed
+//
 type CXDS interface {
 
 	// Get and change references counter (rc). If the
@@ -28,11 +42,14 @@ type CXDS interface {
 	// Use negative inc argument to reduce the rc and
 	// positive to increase it
 	Get(key cipher.SHA256, inc int) (val []byte, rc uint32, err error)
+
 	// Set and change references counter (rc). If the inc
 	// argument is negative or zero, then the Set method
-	// panics. Other words, the Set method used to create,
-	// increase the rc, or create and increase the rc
+	// panics. Other words, the Set method used to create
+	// and increase the rc (increase at least by one). E.g.
+	// it's impossible to set vlaue with zero-rc
 	Set(key cipher.SHA256, val []byte, inc int) (rc uint32, err error)
+
 	// Inc increments or decrements (if given inc is negative)
 	// references count for value with given key. If given
 	// inc argument is zero, then the Inc method checks
@@ -40,12 +57,15 @@ type CXDS interface {
 	// then value doesn't exist. The Inc returns new rc
 	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
 
+	// Del deletes object unconditionally. If object with
+	// given key doen't exist in the CCXDS, then the Del
+	// returns ErrNotFound
+	Del(key cipher.SHA256) (err error)
+
 	// Iterate all keys in CXDS. The rc is refs count.
 	// Given function must not mutate database. Use
 	// ErrStopIteration to stop an iteration
 	Iterate(func(key cipher.SHA256, rc uint32) error) error
-
-	Stat() (stat Stat)
 
 	// Close the CXDS
 	Close() (err error)
