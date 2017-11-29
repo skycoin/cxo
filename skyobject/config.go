@@ -12,12 +12,12 @@ const (
 	Prefix         string = "[skyobject] " // default log prefix
 	RollAvgSamples int    = 5              // rolling average samples
 
-	CacheMaxItems int     = 1024 * 1024 // binary million
-	CacheMaxSize  int     = 1024 * 1024 // 1M
-	CacheCleaning float64 = 0.8         // down to 80%
+	CacheMaxAmount int     = 1024 * 1024 // binary million
+	CacheMaxVolume int     = 1024 * 1024 // 1M
+	CacheCleaning  float64 = 0.8         // down to 80%
 
 	// CacheMaxItemSize is around 100K
-	CacheMaxItemSize int = int(float64(CacheMaxSize)*(1.0-CacheCleaning)) / 2
+	CacheMaxItemSize int = int(float64(CacheMaxVolume)*(1.0-CacheCleaning)) / 2
 
 	// default CachePolicy is LRU
 
@@ -41,23 +41,23 @@ type Config struct {
 	// changes existsing registry.Refs
 	MerkleDegree int
 
-	// Cache configs. Set the CacheMaxItems or the CacheMaxSize to
+	// Cache configs. Set the CacheMaxAmount or the CacheMaxVolume to
 	// zero to switch the cache off
 
-	// CacheMaxItems is maximum number of items the cache can fit.
+	// CacheMaxAmount is maximum number of items the cache can fit.
 	// See also, CacheCleaning field
-	CacheMaxItems int
-	// CacheMaxSize is maximum total length of all elements of the caceh.
+	CacheMaxAmount int
+	// CacheMaxVolume is maximum total length of all elements of the caceh.
 	// See also CacheCleaning field
-	CacheMaxSize int
+	CacheMaxVolume int
 	// CachePolicy is policy of the Cache. By default it's LRU,
 	// but it's possible to choose LFU if you want
 	CachePolicy CachePolicy
 	// CacheCleaning is a flaot point number from 0.5 to 0.9.
 	// The number is percent. If the Cache is full, then the
 	// will be cleaned down to this percent of fullness. E.g.
-	// the cache never exceeds the CacheMaxItems and the
-	// CacheMaxSize boundaries. Reaching them, the Cache
+	// the cache never exceeds the CacheMaxAmount and the
+	// CacheMaxVolume boundaries. Reaching them, the Cache
 	// cleans itself down to the percent using given
 	// CachePolicy
 	CacheCleaning float64
@@ -66,7 +66,7 @@ type Config struct {
 	// This required to don't keep very big items in the cache.
 	// This items can will break caching algorithms. The
 	// CacheMaxItemSize can't be bigger then
-	// CacheMaxSize*(1.0 - CacheCleaning)
+	// CacheMaxVolume*(1.0 - CacheCleaning)
 	CacheMaxItemSize int
 
 	// Log configs
@@ -85,8 +85,8 @@ func NewConfig() (conf *Config) {
 
 	// cache configs
 
-	conf.CacheMaxItems = CacheMaxItems
-	conf.CacheMaxSize = CacheMaxSize
+	conf.CacheMaxAmount = CacheMaxAmount
+	conf.CacheMaxVolume = CacheMaxVolume
 	conf.CachePolicy = LRU
 	conf.CacheCleaning = CacheCleaning
 	conf.CacheMaxItemSize = CacheMaxItemSize
@@ -112,14 +112,14 @@ func (c *Config) Validate() error {
 			c.RollAvgSamples)
 	}
 
-	if c.CacheMaxItems < 0 {
-		return fmt.Errorf("skyobject.Config.CacheMaxItems is negaive: %d",
-			c.CacheMaxItems)
+	if c.CacheMaxAmount < 0 {
+		return fmt.Errorf("skyobject.Config.CacheMaxAmount is negaive: %d",
+			c.CacheMaxAmount)
 	}
 
-	if c.CacheMaxSize < 0 {
-		return fmt.Errorf("skyobject.Config.CacheMaxSize is negaive: %d",
-			c.CacheMaxSize)
+	if c.CacheMaxVolume < 0 {
+		return fmt.Errorf("skyobject.Config.CacheMaxVolume is negaive: %d",
+			c.CacheMaxVolume)
 	}
 
 	if c.CachePolicy != LRU && c.CachePolicy != LFU {
@@ -140,7 +140,7 @@ func (c *Config) Validate() error {
 			c.CacheCleaning)
 	}
 
-	var cacheMaxItemSize = int(float64(CacheMaxSize) * (1.0 - CacheCleaning))
+	var cacheMaxItemSize = int(float64(CacheMaxVolume) * (1.0 - CacheCleaning))
 
 	if c.CacheMaxItemSize > cacheMaxItemSize {
 		return fmt.Errorf(

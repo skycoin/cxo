@@ -1,133 +1,63 @@
 package statutil
 
 import (
-	"sync"
-	"time"
+	"fmt"
+	"strings"
 )
 
-// Duration represents rolling (moving) average of time.Duration
-type Duration struct {
-	mx sync.Mutex
+// A Volume represents size of an
+// object or many objects in bytes.
+// The Volume based on uint32
+type Volume uint32
 
-	last time.Duration
-	roll func(time.Duration) time.Duration
+var units = [...]string{
+	"", "k", "M", "G", "T", "P", "E", "Z", "Y",
 }
 
-// Value returns current average Duration
-func (d *Duration) Value() time.Duration {
-	d.mx.Lock()
-	defer d.mx.Unlock()
+// String implements fmt.String interface
+// and returns human-readable string
+// represents the Volume. Prefixes for
+// the Volume means 1024 (instad of 1000).
+// E.g. 1kB is 1024B
+func (v Volume) String() (s string) {
 
-	return d.last
-}
+	fv := float64(v)
 
-// Add a time.Duration to the Duration. And get new
-// average value back
-func (d *Duration) Add(dur time.Duration) (avg time.Duration) {
-	avg = d.roll(dur)
-	return
-}
-
-// AddStartTime is Add(time.Now().Sub(tp))
-func (d *Duration) AddStartTime(tp time.Time) (avg time.Duration) {
-	return d.Add(time.Now().Sub(tp))
-}
-
-// NewDuration creates new Duration using
-// given amount of samples. It panics if
-// the amount is zero or less
-func NewDuration(n int) (d *Duration) {
-
-	if n <= 0 {
-		panic("number of samples is too small")
+	var i int
+	for ; fv >= 1024.0; i++ {
+		fv /= 1024.0
 	}
 
-	d = new(Duration)
-
-	var (
-		bins    = make([]float64, n)
-		average float64
-		i, c    int
-	)
-
-	d.roll = func(dur time.Duration) time.Duration {
-		d.mx.Lock()
-		defer d.mx.Unlock()
-
-		if c < n {
-			c++
-		}
-
-		var x = float64(dur)
-
-		average += (x - bins[i]) / float64(c)
-		bins[i] = x
-		i = (i + 1) % n
-
-		d.last = time.Duration(average)
-		return d.last
-	}
+	s = fmt.Sprintf("%.2f", fv)
+	s = strings.TrimRight(s, "0") // remove trailing zeroes (x.10, x.00)
+	s = strings.TrimRight(s, ".") // remove trailing dot (x.)
+	s += units[i] + "B"           //
 
 	return
 }
 
-// Float represents rolling (moving) average of float64
-type Float struct {
-	mx sync.Mutex
+// An Amount represents amount of
+// items. The Amount based on uint32
+type Amount uint32
 
-	last float64
-	roll func(float64) float64
-}
+// String implements fmt.String interface
+// and returns human-readable string
+// represents the Amount. Prefixes for
+// the Amount means 1000. E.g. 1k is
+// 1000 items
+func (a Amount) String() (s string) {
 
-// Value returns current average flaot64
-func (f *Float) Value() float64 {
-	f.mx.Lock()
-	defer f.mx.Unlock()
+	fa := float64(a)
 
-	return f.last
-}
-
-// Add a float64 to the Float. And get new
-// average value back
-func (f *Float) Add(val float64) (avg float64) {
-	avg = f.roll(val)
-	return
-}
-
-// NewFloat creates new Float using
-// given amount of samples. It panics if
-// the amount is zero or less
-func NewFloat(n int) (f *Float) {
-
-	if n <= 0 {
-		panic("number of samples is too small")
+	var i int
+	for ; fa >= 1000.0; i++ {
+		fa /= 1000.0
 	}
 
-	f = new(Float)
-
-	var (
-		bins    = make([]float64, n)
-		average float64
-		i, c    int
-	)
-
-	f.roll = func(dur float64) float64 {
-		f.mx.Lock()
-		defer f.mx.Unlock()
-
-		if c < n {
-			c++
-		}
-
-		var x = float64(dur)
-
-		average += (x - bins[i]) / float64(c)
-		bins[i] = x
-		i = (i + 1) % n
-
-		f.last = average
-		return average
-	}
+	s = fmt.Sprintf("%.2f", fa)
+	s = strings.TrimRight(s, "0") // remove trailing zeroes (x.10, x.00)
+	s = strings.TrimRight(s, ".") // remove trailing dot (x.)
+	s += units[i]                 //
 
 	return
 }
