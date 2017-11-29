@@ -15,24 +15,7 @@ import (
 //
 //     key -> {rc, val}
 //
-// Where key is hash, and rc is greater then zero. The
-// CXDS doesn't remove objects with even if the rc is
-// zero. The skyobejct package track this. The CXDS has
-// max possible volume. The volume is total length of
-// all values. And when the CXDS comes to this limit,
-// the skyobject package removes this zero-rc objects
-// to free soma space. But if the CXDS doesn't have
-// obejcts with zero-rc and reaches this limit, it
-// keeps growing. E.g. the limit is not strict. More
-// then that, small values fit more space (because of
-// key and database index). E.g. the limit is very
-// approximate.
-//
-// It's impossible to decrement the rc to negative
-// value. If the rc is zero, and the Inc or Get
-// method called with inc = -1, then the rc of the
-// value will not be changed
-//
+// The CXDS removes all elements with zero-rc
 type CXDS interface {
 
 	// Get and change references counter (rc). If the
@@ -56,11 +39,6 @@ type CXDS interface {
 	// presence of the value. E.g. if it returns ErrNotFound
 	// then value doesn't exist. The Inc returns new rc
 	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
-
-	// Del deletes object unconditionally. If object with
-	// given key doen't exist in the CCXDS, then the Del
-	// returns ErrNotFound
-	Del(key cipher.SHA256) (err error)
 
 	// Iterate all keys in CXDS. The rc is refs count.
 	// Given function must not mutate database. Use

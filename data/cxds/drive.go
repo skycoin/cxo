@@ -111,13 +111,12 @@ func incr(
 	err error, //      : an error
 ) {
 
-	if inc == 0 {
-		// all done (no changes required)
-		nrc = rc
-		return
-	}
-
 	switch {
+
+	case inc == 0:
+
+		// all done (no changes)
+		nrc = rc
 
 	case inc < 0:
 
@@ -125,13 +124,17 @@ func incr(
 
 		if uinc := uint32(inc); uinc >= rc {
 
-			// set the nrc to zero
-			nrc = 0
+			// delete value (rc <= 0), nrc = 0
+			err = o.Delete(key[:])
 
 		} else {
 
-			// reduce (> 0)
+			// reduce (rc > 0), keep value
+			var repl = make([]byte, 4, 4+len(val))
 			nrc = rc - uinc // reduced
+			setRefsCount(repl, nrc)
+			repl = append(repl, val...)
+			err = o.Put(key[:], repl)
 
 		}
 
@@ -139,13 +142,12 @@ func incr(
 
 		// increase the rc
 		nrc = rc + uint32(inc)
+		var repl = make([]byte, 4, 4+len(val))
+		setRefsCount(repl, nrc)
+		repl = append(repl, val...)
+		err = o.Put(key[:], repl)
 
 	}
-
-	var repl = make([]byte, 4, 4+len(val))
-	setRefsCount(repl, nrc)
-	repl = append(repl, val...)
-	err = o.Put(key[:], repl)
 
 	return
 }
@@ -178,7 +180,6 @@ func (d *driveCXDS) Get(
 
 		rc, err = incr(o, key[:], val, rc, inc)
 		return
-
 	}
 
 	if inc == 0 {
@@ -188,7 +189,6 @@ func (d *driveCXDS) Get(
 	}
 
 	return
-
 }
 
 func panicf(format string, args ...interface{}) {
@@ -270,21 +270,6 @@ func (d *driveCXDS) Inc(
 	}
 
 	return
-}
-
-// Del the value unconditionally
-func (d *driveCXDS) Del(key cipher.SHA256) (err error) {
-
-	return d.b.Update(func(tx *bolt.Tx) (err error) {
-		var o = tx.Bucket(objs)
-
-		if len(o.Get(key[:])) == 0 {
-			return data.ErrNotFound
-		}
-
-		return o.Delete(key[:])
-	})
-
 }
 
 // Iterate all keys

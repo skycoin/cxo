@@ -83,21 +83,6 @@ func TestCXDS_Inc(t *testing.T) {
 	})
 }
 
-func TestCXDS_Del(t *testing.T) {
-	// Inc(key cipher.SHA256) (rc uint32, err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSDel(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSDel(t, ds)
-	})
-}
-
 func TestCXDS_Close(t *testing.T) {
 	// Close() (err error)
 

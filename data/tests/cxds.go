@@ -108,7 +108,7 @@ func CXDSGet(t *testing.T, ds data.CXDS) {
 			}
 		})
 
-		t.Run("dec 1", func(t *testing.T) {
+		t.Run("remove", func(t *testing.T) {
 			if val, rc, err := ds.Get(key, -1); err != nil {
 				t.Error(err)
 			} else if rc != 0 {
@@ -116,18 +116,7 @@ func CXDSGet(t *testing.T, ds data.CXDS) {
 			} else if want, got := string(value), string(val); want != got {
 				t.Errorf("wrong value: want %q, got %q", want, got)
 			}
-			shouldExistInCXDS(t, ds, key, 0, value)
-		})
-
-		t.Run("dec 1 (zero)", func(t *testing.T) {
-			if val, rc, err := ds.Get(key, -1); err != nil {
-				t.Error(err)
-			} else if rc != 0 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(value), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-			shouldExistInCXDS(t, ds, key, 0, value)
+			shouldNotExistInCXDS(t, ds, key)
 		})
 
 	})
@@ -246,56 +235,13 @@ func CXDSInc(t *testing.T, ds data.CXDS) {
 		shouldExistInCXDS(t, ds, key, 1, value)
 	})
 
-	t.Run("dec 1 (zero)", func(t *testing.T) {
+	t.Run("remove", func(t *testing.T) {
 		if rc, err := ds.Inc(key, -1); err != nil {
 			t.Error(err)
 		} else if rc != 0 {
 			t.Error("wrong rc", rc)
 		}
-		shouldExistInCXDS(t, ds, key, 0, value)
-	})
-
-}
-
-func CXDSDel(t *testing.T, ds data.CXDS) {
-
-	var key, value = testKeyValue("something")
-
-	t.Run("not exist", func(t *testing.T) {
-		if err := ds.Del(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		}
 		shouldNotExistInCXDS(t, ds, key)
-	})
-
-	if _, err := ds.Set(key, value, 1); err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("one", func(t *testing.T) {
-		if err := ds.Del(key); err != nil {
-			t.Error(err)
-		}
-		shouldNotExistInCXDS(t, ds, key)
-	})
-
-	if _, err := ds.Set(key, value, 1); err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("zero", func(t *testing.T) {
-		if rc, err := ds.Inc(key, -1); err != nil {
-			t.Error(err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		}
-		if err := ds.Del(key); err != nil {
-			t.Error(err)
-		}
 	})
 
 }

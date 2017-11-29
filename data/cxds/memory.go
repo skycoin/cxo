@@ -35,26 +35,25 @@ func mincr(
 	nrc uint32,
 ) {
 
-	if inc == 0 {
-		nrc = rc
-		return
-	}
-
 	switch {
-
+	case inc == 0:
+		nrc = rc
 	case inc < 0:
 		inc = -inc // change the sign
+
 		if uinc := uint32(inc); uinc >= rc {
 			nrc = 0
+			delete(m.kvs, key) // remove
 		} else {
 			nrc = rc - uinc
+			mo.rc = nrc
+			m.kvs[key] = mo
 		}
 	case inc > 0:
 		nrc = rc + uint32(inc)
+		mo.rc = nrc
+		m.kvs[key] = mo
 	}
-
-	mo.rc = nrc
-	m.kvs[key] = mo
 
 	return
 
@@ -144,23 +143,6 @@ func (m *memoryCXDS) Inc(
 
 	err = data.ErrNotFound
 	return
-}
-func (m *memoryCXDS) Del(
-	key cipher.SHA256,
-) (
-	err error,
-) {
-
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if _, ok := m.kvs[key]; ok {
-		delete(m.kvs, key)
-		return
-	}
-
-	return data.ErrNotFound // not found error
-
 }
 
 // Iterate all keys
