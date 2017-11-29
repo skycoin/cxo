@@ -105,6 +105,9 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 
 	if err != nil {
 		b.Close() // finialize
+		if created == true {
+			os.Remove(fileName) // clean up
+		}
 		return
 	}
 
