@@ -40,8 +40,16 @@ func getHash(val []byte) (key cipher.SHA256) {
 
 // version
 
-func versionBytes() (vb []byte) {
-	vb = make([]byte, 4)
-	binary.BigEndian.PutUint32(vb, uint32(Version))
+func versionBytes() []byte {
+	return encodeUint32(uint32(Version))
+}
+
+func encodeUint32(u uint32) (ub []byte) {
+	ub = make([]byte, 4)
+	binary.BigEndian.PutUint32(ub, uint32(Version))
 	return
+}
+
+func decodeUint32(ub []byte) uint32 {
+	return binary.BigEndian.Uint32(ub)
 }

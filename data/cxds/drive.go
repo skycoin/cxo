@@ -14,10 +14,12 @@ import (
 )
 
 var (
-	objs    = []byte("o")       // objects bucket
-	meta    = []byte("m")       // meta information
-	version = []byte("version") // field with version in meta bucket
-	closed  = []byte("closed")  // closed wihtout errors using the Close method
+	objsBucket = []byte("o") // objects bucket
+	metaBucket = []byte("m") // meta information
+
+	versionKey = []byte("version") // version
+	amountKey  = []byte("amount")  // amount
+	volumeKey  = []byte("volume")  // volume
 )
 
 type driveCXDS struct {
@@ -47,7 +49,7 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 	err = b.Update(func(tx *bolt.Tx) (err error) {
 
 		// first of all, take a look the meta bucket
-		var info = tx.Bucket(meta)
+		var info = tx.Bucket(metaBucket)
 
 		if info == nil {
 
@@ -58,12 +60,22 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 			}
 
 			// create the bucket and put meta information
-			if info, err = tx.CreateBucket(meta); err != nil {
+			if info, err = tx.CreateBucket(metaBucket); err != nil {
 				return
 			}
 
 			// put version
-			if err = info.Put(version, versionBytes()); err != nil {
+			if err = info.Put(versionKey, versionBytes()); err != nil {
+				return
+			}
+
+			// put amount
+			if err = info.Put(amountKey, encodeUint32(0)); err != nil {
+				return
+			}
+
+			// put volume
+			if err = info.Put(volumeKey, encodeUint32(0)); err != nil {
 				return
 			}
 
@@ -72,7 +84,7 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 			// check out the version
 
 			var vb []byte
-			if vb = info.Get(version); len(vb) == 0 {
+			if vb = info.Get(versionKey); len(vb) == 0 {
 				return ErrMissingVersion
 			}
 
@@ -86,7 +98,7 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 
 		}
 
-		_, err = tx.CreateBucketIfNotExists(objs)
+		_, err = tx.CreateBucketIfNotExists(objsBucket)
 		return
 
 	})
@@ -166,7 +178,7 @@ func (d *driveCXDS) Get(
 	var tx = func(tx *bolt.Tx) (err error) {
 
 		var (
-			o   = tx.Bucket(objs)
+			o   = tx.Bucket(objsBucket)
 			got = o.Get(key[:])
 		)
 
@@ -217,7 +229,7 @@ func (d *driveCXDS) Set(
 	err = d.b.Update(func(tx *bolt.Tx) (err error) {
 
 		var (
-			o   = tx.Bucket(objs)
+			o   = tx.Bucket(objsBucket)
 			got = o.Get(key[:])
 		)
 
@@ -245,7 +257,7 @@ func (d *driveCXDS) Inc(
 	var tx = func(tx *bolt.Tx) (_ error) {
 
 		var (
-			o   = tx.Bucket(objs)
+			o   = tx.Bucket(objsBucket)
 			got = o.Get(key[:])
 		)
 
@@ -280,7 +292,7 @@ func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 
 		var (
 			key cipher.SHA256
-			c   = tx.Bucket(objs).Cursor()
+			c   = tx.Bucket(objsBucket).Cursor()
 		)
 
 		for k, v := c.First(); k != nil; k, v = c.Next() {
@@ -294,6 +306,36 @@ func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 		}
 		return
 	})
+	return
+}
+
+// Stat returns last time updated statistics
+func (d *driveCXDS) Stat() (amount, volume uint32, err error) {
+
+	err = d.b.View(func(tx *bolt.Tx) (err error) {
+		var info = tx.Bucket(metaBucket)
+		amount = decodeUint32(info.Get(amountKey)) // can panic
+		volume = decodeUint32(info.Get(volumeKey)) // can panic
+		return
+	})
+
+	return
+}
+
+// SetStat
+func (d *driveCXDS) SetStat(amount, volume uint32) (err error) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (err error) {
+
+		var info = tx.Bucket(metaBucket)
+
+		if err = info.Put(amountKey, encodeUint32(amount)); err != nil {
+			return
+		}
+
+		return info.Put(amountKey, encodeUint32(amount))
+	})
+
 	return
 }
 

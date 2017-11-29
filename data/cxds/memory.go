@@ -164,6 +164,16 @@ func (m *memoryCXDS) Iterate(iterateFunc func(cipher.SHA256,
 	return
 }
 
+// Stat is just a stub
+func (m *memoryCXDS) Stat() (_, _ uint32, _ error) {
+	return
+}
+
+// SetStat is just a stub
+func (m *memoryCXDS) SetStat(_, _ uint32) (_ error) {
+	return
+}
+
 // Close DB
 func (m *memoryCXDS) Close() (_ error) {
 	m.mx.Lock()

@@ -45,6 +45,16 @@ type CXDS interface {
 	// ErrStopIteration to stop an iteration
 	Iterate(func(key cipher.SHA256, rc uint32) error) error
 
+	// Stat returns amount and volume of all obejcts.
+	// The Stat is not live. It saved by the skyobject
+	// packcage before closing and loaded next time. The
+	// skyobject keeps live statistics. Keeping the stat
+	// avoid walking through a whole CXDS on start
+	Stat() (amount, volume uint32, err error)
+
+	// SetStat saves current statistic inside the CXDS
+	SetStat(amount, volume uint32) (err error)
+
 	// Close the CXDS
 	Close() (err error)
 }
