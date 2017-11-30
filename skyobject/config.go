@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject/registry"
@@ -12,14 +13,20 @@ const (
 	Prefix         string = "[skyobject] " // default log prefix
 	RollAvgSamples int    = 5              // rolling average samples
 
+	Degree registry.Degree = 16 // default dgree of registry.Refs
+
 	CacheMaxAmount int     = 1024 * 1024 // binary million
 	CacheMaxVolume int     = 1024 * 1024 // 1M
 	CacheCleaning  float64 = 0.8         // down to 80%
 
-	// CacheMaxItemSize is around 100K
-	CacheMaxItemSize int = int(float64(CacheMaxVolume)*(1.0-CacheCleaning)) / 2
+	// CacheMaxItemSize is around 100K (CacheMaxVolume*(1.0-CacheCleaning) / 2)
+	CacheMaxItemSize int = 104857
 
 	// default CachePolicy is LRU
+
+	// DB related constants
+	CXDS  string = "cxds.db" // default CXDS file name
+	IdxDB string = "idx.db"  // default IdxDB file name
 
 	PackSavePin       log.Pin = 1 << iota // show time of (*Pack).Save in logs
 	CleanUpVerbosePin                     // show collecting and removing times
@@ -29,26 +36,52 @@ const (
 	VerbosePin // too many logs to show
 )
 
+// internal constants
+const (
+	// default tree is
+	//   server: ~/.skycoin/cxo/{cxds.db, idx.db}
+	skycoinDataDir = ".skycoin"
+	cxoSubDir      = "cxo"
+)
+
+// DataDir returns path to default data directory
+func DataDir() string {
+	usr, err := user.Current()
+	if err != nil {
+		panic(err) // fatal
+	}
+	if usr.HomeDir == "" {
+		panic("empty home dir")
+	}
+	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir)
+}
+
+// mkdir -p dir
+func mkdirp(dir string) error {
+	return os.MkdirAll(dir, 0700)
+}
+
 // A Config represents configurations
 // and options of Container
 type Config struct {
-	// Registry that will be used as "core registry".
-	// Can be nil
-	Registry *registry.Registry
-
-	// MerkleDegree of References' Merkle trees.
+	// Degree of registry.Refs' Merkle-trees.
 	// The option affects new trees onyl and not
 	// changes existsing registry.Refs
-	MerkleDegree int
+	Degree registry.Degree
 
-	// Cache configs. Set the CacheMaxAmount or the CacheMaxVolume to
-	// zero to switch the cache off
+	// RollAvgSamples is number of samples used
+	// for rolling (moving) average values for
+	// statistic
+	RollAvgSamples int
 
-	// CacheMaxAmount is maximum number of items the cache can fit.
-	// See also, CacheCleaning field
+	// Cache configs. Set the CacheMaxAmount or the
+	// CacheMaxVolume to zero to switch the cache off
+
+	// CacheMaxAmount is maximum number of items the cache can
+	// fit. See also, CacheCleaning field
 	CacheMaxAmount int
-	// CacheMaxVolume is maximum total length of all elements of the caceh.
-	// See also CacheCleaning field
+	// CacheMaxVolume is maximum total length of all elements of
+	// the caceh. See also CacheCleaning field
 	CacheMaxVolume int
 	// CachePolicy is policy of the Cache. By default it's LRU,
 	// but it's possible to choose LFU if you want
@@ -69,19 +102,40 @@ type Config struct {
 	// CacheMaxVolume*(1.0 - CacheCleaning)
 	CacheMaxItemSize int
 
-	// Log configs
-	Log log.Config // logging
+	// DB configs
 
-	RollAvgSamples int // calculate rolling average for stat
+	// InMemoryDB uses database in memory. The option is
+	// usability trick for test. If DB field (see blow) is
+	// nil and this field is treu, then default database in
+	// memory will be created and used
+	InMemoryDB bool
+	// DBPath is path to database file. Because DB consist of
+	// two files, the DBPath will be concated with extensions
+	// ".cxds" and ".idx". See also DB field. E.g. for path
+	// "~/.skycoin/cxo/db" Container creates or opens files
+	// "~/.skycoin/cxo/db.cxds" and "~/.skycoin/cxo/db.idxdb".
+	// The DBpath doesn't create directories. Use DataDir to
+	// be sure that path created. The DBPath used for tests
+	// and examples. But it can be used for other
+	DBPath string
+	// DataDir will be created if it's not empty. If DB field
+	// of the config is nil, InMemoryDB is false and DBPath
+	// is empty, then database will be created under the
+	// DataDir (even if it's empty). In this case, names of
+	// the files will be "db.cxds" and "db.idxdb"
+	DataDir string
+
+	// DB is *data.DB you can provide. If the field is not nil
+	// nil, then DPPath and InMemoryDB fields ignored.
+	DB *data.DB
 }
 
 // NewConfig returns pointer to Config with default values
 func NewConfig() (conf *Config) {
 	conf = new(Config)
 
-	// core configs
-
-	conf.MerkleDegree = registry.Degree
+	conf.Degree = Degree
+	conf.RollAvgSamples = RollAvgSamples
 
 	// cache configs
 
@@ -91,21 +145,32 @@ func NewConfig() (conf *Config) {
 	conf.CacheCleaning = CacheCleaning
 	conf.CacheMaxItemSize = CacheMaxItemSize
 
-	// logger
+	// data dir
+	conf.DataDir = DataDir()
 
-	conf.Log = log.NewConfig()
-	conf.Log.Prefix = Prefix
-	conf.Log.Pins = PackSavePin
-	conf.RollAvgSamples = RollAvgSamples
 	return
+}
+
+func (c *Config) FromFlags() {
+	flag.BoolVar(&s.InMemoryDB,
+		"mem-db",
+		s.InMemoryDB,
+		"use in-memory database")
+	flag.StringVar(&s.DataDir,
+		"data-dir",
+		s.DataDir,
+		"directory with data")
+	flag.StringVar(&s.DBPath,
+		"db-path",
+		s.DBPath,
+		"path to database")
 }
 
 // Validate the Config
 func (c *Config) Validate() error {
 
-	if c.MerkleDegree <= 2 {
-		return fmt.Errorf("skyobject.Config.MerkleDegree too small: %d",
-			c.MerkleDegree)
+	if err := c.Degree.Validate(); err != nil {
+		return err
 	}
 	if c.RollAvgSamples < 1 {
 		return fmt.Errorf("skyobject.Config.RollAvgSampels too small: %d",

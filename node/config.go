@@ -23,13 +23,12 @@ import (
 const (
 
 	// server defaults
+	Listen         string = ""   // default listening address
+	EnableListener bool   = true // listen by default
 
-	EnableRPC      bool   = true        // default RPC pin
-	Listen         string = ""          // default listening address
-	EnableListener bool   = true        // listen by default
-	RemoteClose    bool   = false       // default remote-closing pin
-	RPCAddress     string = "[::]:8878" // default RPC address
-	InMemoryDB     bool   = false       // default database placement pin
+	EnableRPC   bool   = true        // default RPC pin
+	RemoteClose bool   = false       // default remote-closing pin
+	RPCAddress  string = "[::]:8878" // default RPC address
 
 	// PingInterval is default interval by which server send pings
 	// to connections that doesn't communicate. Actually, the
@@ -37,12 +36,6 @@ const (
 	PingInterval    time.Duration = 2 * time.Second
 	ResponseTimeout time.Duration = 5 * time.Second // default
 	PublicServer    bool          = false           // default
-
-	// default tree is
-	//   server: ~/.skycoin/cxo/{cxds.db, idx.db}
-
-	skycoinDataDir = ".skycoin"
-	cxoSubDir      = "cxo"
 )
 
 // log pins
@@ -55,28 +48,6 @@ const (
 	HandlePin                        // handle a message
 	DiscoveryPin                     // discovery
 )
-
-// default DB file names
-const (
-	CXDS  string = "cxds.db"
-	IdxDB string = "idx.db"
-)
-
-// DataDir returns path to default data directory
-func DataDir() string {
-	usr, err := user.Current()
-	if err != nil {
-		panic(err) // fatal
-	}
-	if usr.HomeDir == "" {
-		panic("empty home dir")
-	}
-	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir)
-}
-
-func initDataDir(dir string) error {
-	return os.MkdirAll(dir, 0700)
-}
 
 // Addresses are discovery addresses
 type Addresses []string
@@ -105,54 +76,37 @@ type Config struct {
 	// Skyobject configuration
 	Skyobject *skyobject.Config
 
+	// RPC
+
 	// EnableRPC server
 	EnableRPC bool
 	// RPCAddress if enabled
 	RPCAddress string
+	// RemoteClose allows closing the
+	// server using RPC
+	RemoteClose bool
+
+	// Listener
+
 	// Listen on address (empty for
 	// arbitrary assignment)
 	Listen string
 	// EnableListener turns on/off listening
 	EnableListener bool
 
-	// RemoteClose allows closing the
-	// server using RPC
-	RemoteClose bool
+	// conenction configs
 
 	// PingInterval used to ping clients
 	// Set to 0 to disable pings
 	PingInterval time.Duration
-
 	// ResponseTimeout used by methods that requires response.
 	// Zero timeout means infinity. Negative timeout causes panic
 	ResponseTimeout time.Duration
 
-	// InMemoryDB uses database in memory.
-	// See also DB field
-	InMemoryDB bool
-	// DBPath is path to database file.
-	// Because DB consist of two files,
-	// the DBPath will be concated with
-	// extensions ".cxds" and ".idx".
-	// See also DB field. If it's
-	DBPath string
-	// DataDir is directory with data files
-	// this directory contains default DB
-	// and if it's not blank string, then
-	// node creates the diretory if it does
-	// not exist. If the DBPath is blank
-	// then and database is not in memory
-	// then the Node will use (or create and
-	// use) databases under the DataDir. Even
-	// if the DataDir is blank string (e.g.
-	// current work directory). They named
-	// "cxds.db" and "idx.db". See also
-	// DB field
-	DataDir string
+	// node configs
 
 	// PublicServer never keeps secret feeds it share
 	PublicServer bool
-
 	// ServiceDiscovery addresses
 	DiscoveryAddresses Addresses
 
@@ -208,35 +162,27 @@ type Config struct {
 	// callback should not block because it performs
 	// in handling goroutine
 	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
-
-	// database
-
-	// DB is database you can provide to use instead of
-	// default. If this argument is nil (default) then
-	// default DB will be created. Otherwise this
-	// DB will be used. But node closes this DB on
-	// close anyway
-	DB *data.DB
 }
 
 // NewConfig returns Config
 // filled with default values
 func NewConfig() (sc Config) {
+
 	sc.Config = gnet.NewConfig()
 	sc.Log = log.NewConfig()
 	sc.Skyobject = skyobject.NewConfig()
-	sc.EnableRPC = EnableRPC
-	sc.RPCAddress = RPCAddress
+
 	sc.Listen = Listen
 	sc.EnableListener = EnableListener
+
+	sc.EnableRPC = EnableRPC
+	sc.RPCAddress = RPCAddress
 	sc.RemoteClose = RemoteClose
+
 	sc.PingInterval = PingInterval
-	sc.InMemoryDB = InMemoryDB
-	sc.DataDir = DataDir()
-	sc.DBPath = ""
 	sc.ResponseTimeout = ResponseTimeout
+
 	sc.PublicServer = PublicServer
-	sc.Config.OnDial = OnDialFilter
 	return
 }
 
@@ -251,6 +197,10 @@ func (s *Config) FromFlags() {
 	s.Config.FromFlags()
 	s.Log.FromFlags()
 
+	if s.Skyobject != nil {
+		s.Skyobject.FromFlags()
+	}
+
 	flag.BoolVar(&s.EnableRPC,
 		"rpc",
 		s.EnableRPC,
@@ -259,6 +209,11 @@ func (s *Config) FromFlags() {
 		"rpc-address",
 		s.RPCAddress,
 		"address of RPC server")
+	flag.BoolVar(&s.RemoteClose,
+		"remote-close",
+		s.RemoteClose,
+		"allow closing the server using RPC")
+
 	flag.StringVar(&s.Listen,
 		"address",
 		s.Listen,
@@ -267,30 +222,16 @@ func (s *Config) FromFlags() {
 		"enable-listening",
 		s.EnableListener,
 		"enable listening pin")
-	flag.BoolVar(&s.RemoteClose,
-		"remote-close",
-		s.RemoteClose,
-		"allow closing the server using RPC")
+
 	flag.DurationVar(&s.PingInterval,
 		"ping",
 		s.PingInterval,
 		"interval to send pings (0 = disable)")
-	flag.BoolVar(&s.InMemoryDB,
-		"mem-db",
-		s.InMemoryDB,
-		"use in-memory database")
-	flag.StringVar(&s.DataDir,
-		"data-dir",
-		s.DataDir,
-		"directory with data")
-	flag.StringVar(&s.DBPath,
-		"db-path",
-		s.DBPath,
-		"path to database")
 	flag.DurationVar(&s.ResponseTimeout,
 		"response-tm",
 		s.ResponseTimeout,
 		"response timeout (0 = infinity)")
+
 	flag.BoolVar(&s.PublicServer,
 		"public-server",
 		s.PublicServer,
@@ -299,32 +240,5 @@ func (s *Config) FromFlags() {
 		"discovery-address",
 		"address of service discovery")
 
-	// TODO: skyobject.Configs from flags
-
 	return
-}
-
-// OnDialFilter is gnet.OnDial callback that rejects redialing if
-// remote peer closes connection
-func OnDialFilter(c *gnet.Conn, err error) (reject error) {
-	if ne, ok := err.(net.Error); ok {
-		if ne.Temporary() {
-			return // nil
-		}
-		if oe, ok := err.(*net.OpError); ok {
-			// reading fails with EOF if remote peer closes connection,
-			// but writing ...
-			if se, ok := oe.Err.(*os.SyscallError); ok {
-				if errno, ok := se.Err.(syscall.Errno); ok {
-					if errno == 0x68 {
-						// "connection reset by peer"
-						return err // reject
-					}
-				}
-			}
-		}
-	} else if err == io.EOF { // connection has been closed by peer
-		return err // reject
-	}
-	return // nil (unknowm case)
 }

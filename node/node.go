@@ -121,59 +121,10 @@ type Node struct {
 //
 func NewNode(sc Config) (s *Node, err error) {
 
-	// data dir
-
-	if sc.DataDir != "" {
-		if err = initDataDir(sc.DataDir); err != nil {
-			return
-		}
-	}
-
-	// database
-
-	var db *data.DB
-	var cxPath, idxPath string
-
-	if sc.DB != nil {
-
-		cxPath, idxPath = "<used provided DB>", "<used provided DB>"
-		db = sc.DB
-
-	} else if sc.InMemoryDB == true {
-
-		cxPath, idxPath = "<in memory>", "<in memory>"
-		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
-
-	} else {
-
-		if sc.DBPath == "" {
-			cxPath = filepath.Join(sc.DataDir, CXDS)
-			idxPath = filepath.Join(sc.DataDir, IdxDB)
-		} else {
-			cxPath = sc.DBPath + ".cxds"
-			idxPath = sc.DBPath + ".idx"
-		}
-
-		var cx data.CXDS
-		var idx data.IdxDB
-
-		if cx, err = cxds.NewDriveCXDS(cxPath); err != nil {
-			return
-		}
-
-		if idx, err = idxdb.NewDriveIdxDB(idxPath); err != nil {
-			cx.Close()
-			return
-		}
-
-		db = data.NewDB(cx, idx)
-
-	}
-
 	// container
 
 	var so *skyobject.Container
-	if so, err = skyobject.NewContainer(db, sc.Skyobject); err != nil {
+	if so, err = skyobject.NewContainer(sc.Skyobject); err != nil {
 		db.Close()
 		return
 	}
