@@ -86,3 +86,24 @@ func DecodeRoot(val []byte) (r *Root, err error) {
 	}
 	return
 }
+
+// Walk through elements of the Root. Given WlkFunc will not
+// be called with hash of the Root and with hash of Registry of
+// the Root. The pack argument must have related registry.
+// E.g. this preparation should be done before. Short wrods
+// the Walk calls (*Dynamic).Walk for every Dynamic refernece
+// of the Root (see Refs field)
+func (r *Root) Walk(pack Pack, walkFunc WalkFunc) (err error) {
+
+	for _, dr := range r.Refs {
+		if err = dr.Walk(pack, walkFunc); err != nil {
+			if err == ErrStopIteration {
+				err = nil
+			}
+			return
+		}
+	}
+
+	return
+
+}
