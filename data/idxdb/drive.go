@@ -91,6 +91,10 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 			// check out the 'closed safely' flag
 			if csb := info.Get(closedSafely); len(csb) == 1 && csb[0] > 0 {
 				cs = true
+				// mark unsafe
+				if err = info.Put(closedSafely, []byte{0}); err != nil {
+					return
+				}
 			}
 
 		}
