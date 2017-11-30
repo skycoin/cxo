@@ -39,6 +39,9 @@ type item struct {
 	// the cache policy
 	points int
 
+	// not sync with DB
+	cc uint32 // changed rc (cached value)
+
 	// sync with DB
 	rc  uint32 // references counter
 	val []byte // value
@@ -69,8 +72,9 @@ type rootKey struct {
 	seq   uint64
 }
 
-// TODO
-type cache struct {
+// A Cache is internal and used by Container.
+// The Cache can't be created and used outside
+type Cache struct {
 	mx sync.Mutex
 
 	db data.CXDS // database
@@ -100,9 +104,10 @@ type cache struct {
 	closeo sync.Once
 }
 
-// conf should be valid
-func newCache(db data.CXDS, conf *Config, amount, volume int) (c *cache) {
-	c = new(cache)
+// conf should be valid, the amount and volume are values of DB
+// and used by cxdsStat, the Cache fields amount and volume are
+// amount and volume of the Cache (not DB)
+func (c *Cache) init(db data.CXDS, conf *Config, amount, volume int) {
 
 	c.db = db
 
@@ -115,13 +120,13 @@ func newCache(db data.CXDS, conf *Config, amount, volume int) (c *cache) {
 	c.cleanAmount = int(float64(c.maxAmount) * (1.0 - conf.CacheCleaning))
 	c.cleanVolume = int(float64(c.maxVolume) * (1.0 - conf.CacheCleaning))
 
-	c.amount = amount
-	c.volume = volume
+	c.amount = 0 // cache amount
+	c.volume = 0 // cache volume
 
 	c.c = make(map[cipher.SHA256]*item)
 	c.r = make(map[rootKey]int)
 
-	c.stat = newCxdsStat(conf.RollAvgSamples)
+	c.stat = newCxdsStat(conf.RollAvgSamples, amount, volume)
 
 	c.enable = !(c.maxAmount == 0 || c.maxVolume == 0)
 
@@ -129,25 +134,108 @@ func newCache(db data.CXDS, conf *Config, amount, volume int) (c *cache) {
 }
 
 // Close cache releasing associated resuorces
-// and closing CXDS saving statistics
-func (c *cache) Close() (err error) {
+// and closing CXDS saving statistics. The Close
+// method syncs cached values with saved in DB
+func (c *Cache) Close() (err error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	if err = c.db.SetStat(uint32(c.amount), uint32(c.volume)); err != nil {
-		c.db.Close() // ignore error
-	} else {
-		err = c.db.Close()
+	// sync items
+	for k, it := range c.c {
+		if _, err = c.sync(it); err != nil {
+			break // break on first error
+		}
 	}
 
-	c.stat.Close()
+	// save stat only if no errors
+	if err == nil {
+		err = c.db.SetStat(uint32(c.amount), uint32(c.volume))
+	}
+
+	if err == nil {
+		err = c.db.Close()
+	} else {
+		c.db.Close() // ignore error
+	}
+
+	c.stat.Close() // release associated resources
+	return
+}
+
+// sync with DB removing item from cache if it is removed from DB
+func (c *Cache) sync(key cipher.SHA256, it *item) (removed bool, err error) {
+
+	if it.cc == it.rc {
+		return // already synchronized
+	}
+
+	var inc = int(cc) - int(rc) // 20 - 19 = 1, 19 - 20 = -1
+
+	if err = c.db.Inc(key, inc); err != nil {
+		c.stat.addWritingDBRequest() // just request
+		return                       // failure
+	}
+
+	it.rc = it.cc // synchronized
+
+	// if the item has been removed from DB
+	if it.cc == 0 {
+		c.amount--
+		c.volume -= len(it.val)
+		delete(c.c, key)
+		removed = true // has been removed
+
+		c.stat.delFromDB(len(it.val)) // delete
+	} else {
+		c.stat.addWritingDBRequest() // update
+	}
+
+	return
+}
+
+// change rc in the cache (cc), removing item if rc turns to be 0
+func (c *Cache) incr(
+	key cipher.SHA256,
+	it *item,
+	inc int,
+) (
+	removed bool,
+	err error,
+) {
+
+	switch {
+
+	case inc == 0:
+
+		// leave as is
+
+	case inc < 0:
+
+		inc = -inc             // make it positive
+		var uinc = uint32(inc) // to uint32
+
+		if uinc < i.cc {
+			i.cc -= uinc // reduce
+		} else {
+			// else ->  reduce to zero (sync to remove)
+			if removed, err = c.sync(key, it); err == nil {
+				i.cc = 0 // sync is sync
+			}
+		}
+
+	case inc > 0:
+
+		i.cc += uint32(inc) // increase
+
+	}
+
 	return
 }
 
 // clean the cache down, the vol is size of item to insert to the cache
 // the items can't be inserted, because the cache is full; we are using
 // this vol to clean the cache down
-func (c *cache) cleanDown(vol int) {
+func (c *Cache) cleanDown(vol int) (err error) {
 
 	type rankItem struct {
 		key cipher.SHA256
@@ -176,8 +264,9 @@ func (c *cache) cleanDown(vol int) {
 	// celan by amount of items only if c.amount == c.maxAmount
 
 	var (
-		i  int // last removed element
-		ri *rankItem
+		i       int       // last removed element
+		ri      *rankItem // key->item
+		removed bool      // removed by sync
 	)
 
 	// clean by amount first (if need)
@@ -187,9 +276,15 @@ func (c *cache) cleanDown(vol int) {
 			if c.amount <= c.cleanAmount { // actually, ==
 				break // done
 			}
-			delete(c.c, ri.key)
-			c.amount--
-			c.volume -= len(ri.it.val)
+
+			if removed, err = c.sync(ri.key, ri.it); err != nil {
+				return // fail on first error
+			} else if removed == false {
+				delete(c.c, ri.key)        // delete from cache
+				c.amount--                 // cache amount
+				c.volume -= len(ri.it.val) // cache volume
+			}
+
 			rank[i] = nil // GC for the item
 		}
 
@@ -215,44 +310,60 @@ func (c *cache) cleanDown(vol int) {
 
 		ri = rank[i]
 
-		delete(c.c, ri.key)
-		c.amount--
-		c.volume -= len(ri.it.val)
-		rank[i] = nil // GC for the item
+		if removed, err = c.sync(ri.key, ri.it); err != nil {
+			return // fail on first error
+		} else if removed == false {
+			delete(c.c, ri.key)
+			c.amount--
+			c.volume -= len(ri.it.val)
+		}
 
+		rank[i] = nil // GC for the item
 	}
 
-	// ok
-
+	return // ok
 }
 
 // put item to the cache
-func (c *cache) putItem(key cipher.SHA256, val []byte, rc uint32) {
+func (c *Cache) putItem(key cipher.SHA256, val []byte, rc uint32) (err error) {
 
 	if len(val) > c.maxItemSize {
 		return // can't put, the item is too big
 	}
 
 	if c.amount+1 >= c.maxAmount || c.volume+len(val) >= c.maxVolume {
-		c.cleanDown(len(val)) // clean the cache first
+		if err = c.cleanDown(len(val)); err != nil { // clean the cache first
+			return
+		}
 	}
 
 	var it = &item{
+		cc:  rc, // synchronized
 		rc:  rc,
 		val: val,
 	}
 
 	it.touch(c.policy)
 
-	c.c[key] = it
+	c.c[key] = it // add to cache
 	return
 
 }
 
 // CXDS wrapper
 
-// Get from CXDS or the cache
-func (c *cache) Get(
+// Get from cache or DB, increasing, leaving as is, or reducing
+// references counter. For most reading cases the inc argument should
+// be zero. If value doesn't exist the Get returns data.ErrNotFound.
+// It's possible to get and remove value using the inc argument. The
+// Get returns value and new references counter. The Get can returns
+// an error that doen'r relate to given element. Putting element to
+// the Cache the Get can clean up cache to free space, syncing
+// wiht DB. In this case if the synching fails, the Get can returns
+// valid value and rc and some error. Anyway, any DB failure should be
+// fatal. E.g. all errors except data.ErrNotFound means that data
+// in the DB can be lost
+func (c *Cache) Get(
 	key cipher.SHA256, // :
 	inc int, //           :
 ) (
@@ -261,44 +372,61 @@ func (c *cache) Get(
 	err error, //         :
 ) {
 
-	if c.enable == false {
-		return c.db.Get(key, inc) // cache disabled
-	}
-
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
 	var it, ok = c.c[key]
 
-	if ok {
+	if c.enable == false {
+
+		// if cache disabled then an item can be wanted,
+		// and looking cache for wanted items, we can avoid
+		// DB lookup (disck access); here is cache is distabled
+		// then c.c map used for wanted items only, and we
+		// can avoid it.isWanted() call
+		if ok == true {
+			return data.ErrNotFound // if it wanted, then it not found
+		}
+
+		val, rc, err = c.db.Get(key, inc)
+		c.stat.addDBGet(inc, rc, val, err) // stat
+		return
+	}
+
+	if ok == true {
 
 		// if item is wanted, then the CXDS
 		// doesn't contains the item
 
 		if it.isWanted() == true {
-			return // not found
+			return data.ErrNotFound // not found
 		}
 
-		// change rc in db (sync)
-		if inc != 0 {
-			if _, rc, err = c.db.Get(key, inc); err != nil {
-				return // an error
-			}
-			it.rc = rc // update cached value
+		// change cc (cached rc)
+		var removed bool
+		if removed, err = c.incr(key, it, inc); err != nil {
+			return
 		}
 
-		it.touch(c.policy)      // touch
-		val, rc = it.val, it.rc // found in the cache
+		if removed == false {
+			c.stat.addCacheGet(inc)
+			it.touch(c.policy) // touch item
+		}
+
+		val, rc = it.val, it.cc
 		return
 	}
 
 	// not found in the cache, let's look DB
-	if val, rc, err = c.db.Get(key, inc); err != nil {
+	val, rc, err = c.db.Get(key, inc)
+	c.stat.addDBGet(inc, rc, val, err)
+
+	if err != nil {
 		return
 	}
 
 	// put to cache
-	c.putItem(key, val, rc)
+	err = c.putItem(key, val, rc)
 	return
 }
 
@@ -310,9 +438,10 @@ func sendWanted(gc chan<- []byte, val []byte) {
 	}
 }
 
-// Set to CXDS. Don't put to cache. But
-// touch if it already cached
-func (c *cache) Set(
+// Set to DB, increasing references counter. The inc argument must
+// be 1 or greater, otherwise the Set panics. Owerwriting incareases
+// references counter of existing value
+func (c *Cache) Set(
 	key cipher.SHA256, // : key
 	val []byte, //        : value
 	inc int, //           : >= 0
@@ -321,52 +450,76 @@ func (c *cache) Set(
 	err error, //         : an error
 ) {
 
+	if inc <= 0 {
+		panic("invalid inc argument of Set method: " + fmt.Sprint(inc))
+	}
+
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// TODO (kostyarin): avoid write to DB if value alreaady exist, or
-	//                   reduce number of writes in this case
-
-	// the item can be wanted, but we have to save it first anyway
-	if rc, err = c.db.Set(key, val, inc); err != nil {
-		return
-	}
-
-	// check out wanted items first, even if the cache is disabled
-	// it used for the wanted items
+	// check out cache first
 	var it, ok = c.c[key]
 
-	// does not exist
-	if ok == false {
-		return // don't put to cache
-	}
+	if ok == true {
 
-	// ok == true (exist)
+		if it.isWanted() == true {
 
-	// wanted item
-	if it.isWanted() == true {
-		for _, gc := range it.fwant {
-			sendWanted(gc, val)
+			// we have to save the item first to guarantee
+			// that the element will exist in DB
+			if rc, err = c.db.Set(key, val, inc); err != nil {
+				c.stat.addWritingDBRequest() // just request
+				return                       // an error
+			}
+
+			c.stat.addToDB(len(val)) // stat
+
+			// send to wanters
+			for _, gc := range it.fwant {
+				sendWanted(gc, val)
+			}
+
+			delete(c.c, key) // remove from wanted
+
+			if c.enable == false {
+				return // done
+			}
+
+			// put to cache (replace the wanted)
+			err = c.putItem(key, val, rc)
+			return
+
 		}
 
-		// don't put to cache
+		// not wanted, just chagne the rc
+		// (here the Cache is enabled), we
+		// don't update DB value
 
-		delete(c.c, key)
+		it.cc += uint32(inc) // increase
+		c.stat.addWritingCacheRequest()
+		it.touch(c.policy) // touch item
+
+		return
+
+	}
+
+	// not found in the Cache
+	if rc, err = c.db.Set(key, val, inc); err != nil || c.enable == false {
+		c.stat.addWritingDBRequest() // just request
 		return
 	}
 
-	// item already in the cache, let's touch it
-	it.rc = rc
-	it.touch(c.policy)
-
+	// cache enabled and err is nil
+	err = c.putItem(key, val, rc)
 	return
 
 }
 
-// Inc increase or reduce references counter.
-// Touch appropriate item, only if the item
-// already in cache
-func (c *cache) Inc(
+// Inc used to increase or reduce references counter. The Inc with
+// zero inc argument can be used to check presence of a value. If
+// value doesn't exists the Inc returns data.ErrNotFound. If the
+// Inc reduce references counter to zero or less, then value will
+// be deleted
+func (c *Cache) Inc(
 	key cipher.SHA256, // :
 	inc int, //           :
 ) (
@@ -374,48 +527,60 @@ func (c *cache) Inc(
 	err error, //         :
 ) {
 
-	// avoid unneccessary lock
-	if c.enable == false {
-		return c.db.Inc(key, inc)
-	}
-
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// undex lock
-	if rc, err = c.db.Inc(key, inc); err != nil {
-		return
-	}
-
+	// check out cache first
 	var it, ok = c.c[key]
 
-	if ok == false {
-		return // doesn't exist in cache
+	if ok == true {
+		// found
+
+		if it.isWanted() == true {
+			err = data.ErrNotFound // wanted item
+			return
+		}
+
+		// here the c.enable is true
+		var removed bool
+		if removed, err = c.incr(key, it, inc); err != nil {
+			return
+		}
+
+		if removed == false {
+			c.stat.addCacheGet(inc) // Inc not Get, but who fucking cares
+			it.touch(c.policy)      // touch item
+		}
+
+		val, rc = it.val, it.cc
+		return
+
 	}
 
-	// ok == true (exist)
+	// not found in cache
 
-	if rc == 0 {
-		delete(c.c, key) // removed from DB
+	// use Get instead of the Inc, to get val;
+	// the val required for stat to track DB
+	// volume
+	var val []byte
+	val, rc, err = c.db.Get(key, inc)
+	c.stat.addDBGet(inc, rc, val, err)
+
+	if err != nil {
 		return
 	}
 
-	it.rc = rc         // update
-	it.touch(c.policy) // and touch
+	// put to cache
+	err = c.putItem(key, val, rc)
 
 	return
 
 }
 
-// Want requests value from the cache or from DB and if it
-// doesn't exist, it makes it wanted. And next Set with given
-// key sends value to given channel. The cahnnel should reads
-// (e.g. it's better to use buffered channel to be able to
-// call the Want from any goroutine). The Want used by the
-// node package for filling and for preview. If the value
-// exists in the cache or in the DB, the Want sends it through
-// the channel
-func (c *cache) Want(
+// Want is service method. It used by the node package for filling.
+// If wanted value exists in DB, it will eb sent through given
+// channel. Otherwise, it will be sent when it comes
+func (c *Cache) Want(
 	key cipher.SHA256, // : requested value
 	gc chan<- []byte, //  : channel to receive value
 ) (
@@ -437,7 +602,9 @@ func (c *cache) Want(
 		// exist (not wanted)
 
 		sendWanted(gc, val) // never block
-		it.touch(c.policy)  // touch the item
+
+		c.stat.addReadingCacheRequest() // got from cache
+		it.touch(c.policy)              // touch the item
 		return
 
 	}
@@ -449,20 +616,20 @@ func (c *cache) Want(
 		rc  uint32
 	)
 
-	if val, rc, err = c.db.Get(key, 0); err != nil {
-		if err == data.ErrNotFound {
-			c.c[key] = &item{fwant: []chan<- []byte{gc}} // add to wanted
-			return nil                                   // no errors
-		}
-		return // database error
+	val, rc, err = c.db.Get(key, 0)
+	c.stat.addDBGet(inc, rc, val, err)
+
+	if err == data.ErrNotFound {
+		c.c[key] = &item{fwant: []chan<- []byte{gc}} // add to wanted
+		return nil                                   // no errors
+	} else if err != nil {
+		return // database failure
 	}
 
-	// so, since the Want is the same as Get, then
-	// we put the item to the cache; and since
-	// the item doesn't exist in the cache, we are
-	// creating it here
-	c.putItem(key, val, rc)
+	// found
+	sendWanted(gc, val)
 
+	err = c.putItem(key, val, rc)
 	return
 }
 
@@ -472,7 +639,7 @@ func (c *cache) Want(
 // and also to share it with other nodes.
 // Thus, in some cases a Root can't be
 // removed, and should be held
-func (c *cache) HoldRoot(
+func (c *Cache) HoldRoot(
 	pk cipher.PubKey, // :
 	nonce uint64, //     :
 	seq uint64, //       :
@@ -488,7 +655,7 @@ func (c *cache) HoldRoot(
 
 // UnholdRoot used to unhold
 // previously held Root object
-func (c *cache) UnholdRoot(
+func (c *Cache) UnholdRoot(
 	pk cipher.PubKey, // :
 	nonce uint64, //     :
 	seq uint64, //       :
@@ -515,7 +682,7 @@ func (c *cache) UnholdRoot(
 
 // IsRootHeld returns true if Root with
 // given feed, head, seq is held
-func (c *cache) IsRootHeld(
+func (c *Cache) IsRootHeld(
 	pk cipher.PubKey, // :
 	nonce uint64, //     :
 	seq uint64, //       :
@@ -532,32 +699,6 @@ func (c *cache) IsRootHeld(
 
 	return
 }
-
-/*
-
-	// Get from cache or DB, increasing, leaving as is, or reducing
-	// references counter. For most reading cases the inc argument should
-	// be zero. If value doesn't exist the Get returns data.ErrNotFound
-	Get(key cipher.SHA256, inc int) (val []byte, rc uint32, err error)
-
-	// Set to DB, increasing references counter. The inc argument must
-	// be 1 or greater, otherwise the Set panics. Owerwriting incareases
-	// references counter of existing value
-	Set(key cipher.SHA256, val []byte, inc int) (rc uint32, err error)
-
-	// Inc used to increase or reduce references counter. The Inc with
-	// zero inc argument can be used to check presence of a value. If
-	// value doesn't exists the Inc returns data.ErrNotFound. If the
-	// Inc reduce references counter to zero or less, then value will
-	// be deleted
-	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
-
-	// Want is service method. It used by the node package for filling.
-	// If wanted value exists in DB, it will eb sent through given
-	// channel. Otherwise, it will be sent when it comes
-	Want(key cipher.SHA256, gc chan<- []byte) (err error)
-
-*/
 
 /*
 
