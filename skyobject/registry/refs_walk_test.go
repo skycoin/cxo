@@ -49,6 +49,7 @@ func TestRefs_Walk(t *testing.T) {
 						func(
 							hash cipher.SHA256,
 							depth int,
+							prefetch ...cipher.SHA256,
 						) (
 							deepper bool,
 							err error,
@@ -92,7 +93,14 @@ func TestRefs_Walk(t *testing.T) {
 
 				err = r.Walk(pack,
 					nil,
-					func(hash cipher.SHA256, depth int) (bool, error) {
+					func(
+						hash cipher.SHA256,
+						depth int,
+						prefetch ...cipher.SHA256,
+					) (
+						bool,
+						error,
+					) {
 						if depth == 0 {
 							if _, ok := usersMap[hash]; !ok {
 								t.Error("unexpected hash in leaf")
@@ -111,7 +119,14 @@ func TestRefs_Walk(t *testing.T) {
 					r.Reset()
 					err = r.Walk(pack,
 						nil,
-						func(hash cipher.SHA256, depth int) (bool, error) {
+						func(
+							hash cipher.SHA256,
+							depth int,
+							prefetch ...cipher.SHA256,
+						) (
+							bool,
+							error,
+						) {
 							if depth == 0 {
 								if _, ok := usersMap[hash]; !ok {
 									t.Error("unexpected hash in leaf")
