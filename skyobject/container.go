@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	ErrRootIsHeld = errors.New("Root is held")
+	ErrRootIsHeld    = errors.New("Root is held")
+	ErrRootIsNotHeld = errors.New("Root is not held")
 )
 
 // A Container represents

@@ -65,13 +65,6 @@ func (i *item) touch(cp CachePolicy) {
 
 }
 
-// a rootKey used to select a Root object
-type rootKey struct {
-	pk    cipher.PubKey
-	nonce uint64
-	seq   uint64
-}
-
 // A Cache is internal and used by Container.
 // The Cache can't be created and used outside
 type Cache struct {
@@ -97,7 +90,6 @@ type Cache struct {
 	volume int // total volume of items in DB
 
 	c map[cipher.SHA256]*item // values
-	r map[rootKey]int         // root objects (fill, preview, hold)
 
 	stat *cxdsStat
 
@@ -124,7 +116,6 @@ func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
 	c.volume = 0 // cache volume
 
 	c.c = make(map[cipher.SHA256]*item)
-	c.r = make(map[rootKey]int)
 
 	c.stat = newCxdsStat(conf.RollAvgSamples, amount, volume)
 
@@ -637,78 +628,5 @@ func (c *Cache) Want(
 	sendWanted(gc, val)
 
 	err = c.putItem(key, val, rc)
-	return
-}
-
-// HoldRoot used to avoid removing of a
-// Root object with all related objects.
-// A Root can be used for end-user needs
-// and also to share it with other nodes.
-// Thus, in some cases a Root can't be
-// removed, and should be held. The method
-// doesn't look DB and it's possible to
-// hold a Root that doesn't exist. But if
-// a Root is held, then it can't be
-// remvoed. It's possible to hold a Root
-// many times. E.g. for two holds, two
-// unholds required
-func (c *Cache) HoldRoot(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
-) {
-
-	var rk = rootKey{pk, nonce, seq}
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	c.r[rk]++
-}
-
-// UnholdRoot used to unhold
-// previously held Root object
-func (c *Cache) UnholdRoot(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
-) {
-
-	var rk = rootKey{pk, nonce, seq}
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	var hc, ok = c.r[rk]
-
-	if ok == false {
-		return
-	}
-
-	if hc <= 1 {
-		delete(c.r, rk)
-		return
-	}
-
-	c.r[rk]--
-}
-
-// IsRootHeld returns true if Root with
-// given feed, head, seq is held
-func (c *Cache) IsRootHeld(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
-) (
-	held bool, //        :
-) {
-
-	var rk = rootKey{pk, nonce, seq}
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	_, held = c.r[rk]
-
 	return
 }
