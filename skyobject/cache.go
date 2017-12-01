@@ -107,7 +107,7 @@ type Cache struct {
 // conf should be valid, the amount and volume are values of DB
 // and used by cxdsStat, the Cache fields amount and volume are
 // amount and volume of the Cache (not DB)
-func (c *Cache) init(db data.CXDS, conf *Config, amount, volume int) {
+func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
 
 	c.db = db
 
@@ -131,6 +131,13 @@ func (c *Cache) init(db data.CXDS, conf *Config, amount, volume int) {
 	c.enable = !(c.maxAmount == 0 || c.maxVolume == 0)
 
 	return
+}
+
+func (c *Cache) reset() {
+	c.c = nil
+	c.r = nil
+	c.stat.Close()
+	c.stat = nil
 }
 
 // Close cache releasing associated resuorces
@@ -638,7 +645,13 @@ func (c *Cache) Want(
 // A Root can be used for end-user needs
 // and also to share it with other nodes.
 // Thus, in some cases a Root can't be
-// removed, and should be held
+// removed, and should be held. The method
+// doesn't look DB and it's possible to
+// hold a Root that doesn't exist. But if
+// a Root is held, then it can't be
+// remvoed. It's possible to hold a Root
+// many times. E.g. for two holds, two
+// unholds required
 func (c *Cache) HoldRoot(
 	pk cipher.PubKey, // :
 	nonce uint64, //     :
@@ -699,14 +712,3 @@ func (c *Cache) IsRootHeld(
 
 	return
 }
-
-/*
-
-	AddFeed(pk cipher.PubKey) (err error)
-	AddHead(pk cipher.PubKey, nonce uint64) (err error)
-
-	DelFeed(pk cipher.PubKey) (err error)
-	DelHead(pk cipher.PubKey, nonce uint64) (err error)
-	DelRoot(pk cipher.PubKey, nonce, seq uint64) (err error)
-
-*/
