@@ -7,7 +7,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // common errors
@@ -47,34 +47,20 @@ func (s *Src) ID() (id ID) {
 	return
 }
 
-// Ping creates new Ping message
-func (s *Src) Ping() (ping *Ping) {
-	ping = new(Ping)
-	ping.ID = s.ID()
-	return
-}
-
-// Pong creates new Pong message
-func (s *Src) Pong(ping *Ping) (pong *Pong) {
-	pong = new(Pong)
-	pong.ResponseFor = ping.ID
-	return
-}
-
 // Hello creates new Hello message
-func (s *Src) Hello() (hello *Hello) {
+func (s *Src) Hello(nodeID cipher.PubKey) (hello *Hello) {
 	hello = new(Hello)
 	hello.ID = s.ID()
 	hello.Protocol = Version
-	// hello.Address (reserved)
+	hello.NodeID = nodeID
 	return
 }
 
 // Accept creates new Accept message
-func (s *Src) Accept(hello *Hello) (accept *Accept) {
+func (s *Src) Accept(hello *Hello, nodeID cipher.PubKey) (accept *Accept) {
 	accept = new(Accept)
 	accept.ResponseFor = hello.ID
-	// accept.Address (reserved)
+	accept.NodeID = nodeID
 	return
 }
 
@@ -83,7 +69,6 @@ func (s *Src) Reject(hello *Hello, err string) (reject *Reject) {
 	reject = new(Reject)
 	reject.ResponseFor = hello.ID
 	reject.Err = err
-	// reject.Address (reserved)
 	return
 }
 
@@ -144,9 +129,10 @@ func (s *Src) NonPublicServer(rls *RequestListOfFeeds) (nps *NonPublicServer) {
 }
 
 // Root creates new Root message
-func (s *Src) Root(r *skyobject.Root) (root *Root) {
+func (s *Src) Root(r *registry.Root) (root *Root) {
 	root = new(Root)
 	root.Feed = r.Pub
+	root.Nonce = r.Nonce
 	root.Seq = r.Seq
 	root.Value = r.Encode()
 	root.Sig = r.Sig
@@ -154,23 +140,31 @@ func (s *Src) Root(r *skyobject.Root) (root *Root) {
 }
 
 // RootDone creates new RootDone message
-func (s *Src) RootDone(pk cipher.PubKey, seq uint64) (rd *RootDone) {
+func (s *Src) RootDone(pk cipher.PubKey, nonce, seq uint64) (rd *RootDone) {
 	rd = new(RootDone)
 	rd.Feed = pk
+	rd.Nonce = nonce
 	rd.Seq = seq
 	return
 }
 
 // RequestObject creates new RequestObject message
-func (s *Src) RequestObject(key cipher.SHA256) (ro *RequestObject) {
+func (s *Src) RequestObject(
+	key cipher.SHA256,
+	prefetch []cipher.SHA256,
+) (
+	ro *RequestObject,
+) {
 	ro = new(RequestObject)
 	ro.Key = key
+	ro.Prefetch = prefetch
 	return
 }
 
 // Object creates new Object message
-func (s *Src) Object(val []byte) (o *Object) {
+func (s *Src) Object(val []byte, prefetch [][]byte) (o *Object) {
 	o = new(Object)
 	o.Value = val
+	o.Prefetch = prefetch
 	return
 }

@@ -11,44 +11,39 @@ import (
 )
 
 // Version is current protocol version
-const Version uint16 = 2
+const Version uint16 = 3
 
 // be sure that all messages implements Msg interface compiler time
 var (
-	// ping-, pongs
-
-	_ Msg = &Ping{} // <- Ping
-	_ Msg = &Pong{} // -> Pong
-
 	// handshake
 
-	_ Msg = &Hello{}  // <- Hello  (address, protocol version)
-	_ Msg = &Accept{} // -> Accept (address)
-	_ Msg = &Reject{} // -> Reject (address, error message)
+	_ Msg = &Hello{}  // <- Hello  (id, protocol version)
+	_ Msg = &Accept{} // -> Accept (id)
+	_ Msg = &Reject{} // -> Reject (error message)
 
 	// subscriptions
 
-	_ Msg = &Subscribe{}   // <- S
-	_ Msg = &Unsubscribe{} // <- U
+	_ Msg = &Subscribe{}   // <- Subscribe (feed)
+	_ Msg = &Unsubscribe{} // <- Unsubscribe (feed)
 
 	// subscriptions reply
 
-	_ Msg = &AcceptSubscription{} // -> AS
-	_ Msg = &RejectSubscription{} // -> RS (error)
+	_ Msg = &AcceptSubscription{} // -> AS (feed)
+	_ Msg = &RejectSubscription{} // -> RS (feed)
 
 	// public server features
 
 	_ Msg = &RequestListOfFeeds{} // <- RLoF
-	_ Msg = &ListOfFeeds{}        // -> LoF
+	_ Msg = &ListOfFeeds{}        // -> LoF (feeds)
 	_ Msg = &NonPublicServer{}    // -> NPS
 
 	// root, registry, data and requests
 
-	_ Msg = &Root{}     // <- Root
-	_ Msg = &RootDone{} // ->
+	_ Msg = &Root{}     // <- Root (Root)
+	_ Msg = &RootDone{} // -> Root (feed, nonce, seq)
 
-	_ Msg = &RequestObject{} // <- RqO
-	_ Msg = &Object{}        // -> O
+	_ Msg = &RequestObject{} // <- RqO (hash, prefetch)
+	_ Msg = &Object{}        // -> O   (val, vals)
 )
 
 //
@@ -60,29 +55,11 @@ type Msg interface {
 	Type() Type // type of the message to encode
 }
 
-// A Ping is service message and used
-// by server to ping clients
-type Ping struct {
-	ID ID
-}
-
-// Type implements Msg interface
-func (*Ping) Type() Type { return PingType }
-
-// Pong is service message and used
-// by client to reply for PingMsg
-type Pong struct {
-	ResponseFor ID
-}
-
-// Type implements Msg interface
-func (*Pong) Type() Type { return PongType }
-
 // A Hello is handshake initiator message
 type Hello struct {
 	ID       ID
 	Protocol uint16
-	Address  cipher.Address // reserved for future
+	NodeID   cipher.PubKey
 }
 
 // Type implements Msg interface
@@ -92,7 +69,7 @@ func (*Hello) Type() Type { return HelloType }
 // if handshake has been accepted
 type Accept struct {
 	ResponseFor ID
-	Address     cipher.Address // reserved for future
+	NodeID      cipher.PubKey
 }
 
 // Type implements Msg interface
@@ -102,8 +79,7 @@ func (*Accept) Type() Type { return AcceptType }
 // if subscription has not been accepted
 type Reject struct {
 	ResponseFor ID
-	Address     cipher.Address // reserved for future
-	Err         string         // reason
+	Err         string // reason
 }
 
 // Type implements Msg interface
@@ -182,10 +158,11 @@ func (*NonPublicServer) Type() Type { return NonPublicServerType }
 // to update root object of feed described in
 // Feed field of the message
 type Root struct {
-	Feed  cipher.PubKey
-	Seq   uint64     // for node internals
-	Value []byte     // encoded Root in person
-	Sig   cipher.Sig // signature
+	Feed  cipher.PubKey // feed
+	Nonce uint64        // head
+	Seq   uint64        // seq
+	Sig   cipher.Sig    // signature
+	Value []byte        // encoded Root in person
 }
 
 // Type implements Msg interface
@@ -201,8 +178,9 @@ func (*Root) Type() Type { return RootType }
 // node have to know when peer fills this
 // root or drops it.
 type RootDone struct {
-	Feed cipher.PubKey // feed
-	Seq  uint64        // seq of the Root
+	Feed  cipher.PubKey // feed
+	Nonce uint64        // head
+	Seq   uint64        // seq of the Root
 }
 
 // Type implements Msg interface
@@ -210,7 +188,8 @@ func (*RootDone) Type() Type { return RootDoneType }
 
 // A RequestObject represents a Msg that request a data by hash
 type RequestObject struct {
-	Key cipher.SHA256
+	Key      cipher.SHA256   // object
+	Prefetch []cipher.SHA256 // prefetch objects
 }
 
 // Type implements Msg interface
@@ -218,7 +197,8 @@ func (*RequestObject) Type() Type { return RequestObjectType }
 
 // An Object reperesents encoded object
 type Object struct {
-	Value []byte // encoded object in person
+	Value    []byte   // encoded object in person
+	Prefetch [][]byte // prefetch
 }
 
 // Type implements Msg interface
@@ -233,33 +213,28 @@ type Type uint8
 
 // Types
 const (
-	PingType Type = 1 + iota // Ping 1
-	PongType                 // Pong 2
+	HelloType  = 1 + iota // Hello  1
+	AcceptType            // Accept 2
+	RejectType            // Reject 3
 
-	HelloType  // Hello  3
-	AcceptType // Accept 4
-	RejectType // Reject 5
+	SubscribeType          // Subscribe           4
+	UnsubscribeType        // Unsubscribe         5
+	AcceptSubscriptionType // AcceptSubscription  6
+	RejectSubscriptionType // RejectSubscription  7
 
-	SubscribeType          // Subscribe           6
-	UnsubscribeType        // Unsubscribe         7
-	AcceptSubscriptionType // AcceptSubscription  8
-	RejectSubscriptionType // RejectSubscription  9
+	RequestListOfFeedsType // RequestListOfFeeds  8
+	ListOfFeedsType        // ListOfFeeds         9
+	NonPublicServerType    // NonPublicServer    10
 
-	RequestListOfFeedsType // RequestListOfFeeds  10
-	ListOfFeedsType        // ListOfFeeds         11
-	NonPublicServerType    // NonPublicServer     12
+	RootType     // Root           11
+	RootDoneType // RootDone       12
 
-	RootType          // Root           10
-	RootDoneType      // RootDone       11
-	RequestObjectType // RequestObject  12
-	ObjectType        // Object         13
+	RequestObjectType // RequestObject  13
+	ObjectType        // Object         14
 )
 
 // Type to string mapping
 var msgTypeString = [...]string{
-	PingType: "Ping",
-	PongType: "Pong",
-
 	HelloType:  "Hello",
 	AcceptType: "Accept",
 	RejectType: "Reject",
@@ -273,8 +248,9 @@ var msgTypeString = [...]string{
 	ListOfFeedsType:        "ListOfFeeds",
 	NonPublicServerType:    "NonPublicServer",
 
-	RootType:          "Root",
-	RootDoneType:      "RootDone",
+	RootType:     "Root",
+	RootDoneType: "RootDone",
+
 	RequestObjectType: "RequestObject",
 	ObjectType:        "Object",
 }
@@ -288,9 +264,6 @@ func (m Type) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
-	PingType: reflect.TypeOf(Ping{}),
-	PongType: reflect.TypeOf(Pong{}),
-
 	HelloType:  reflect.TypeOf(Hello{}),
 	AcceptType: reflect.TypeOf(Accept{}),
 	RejectType: reflect.TypeOf(Reject{}),
