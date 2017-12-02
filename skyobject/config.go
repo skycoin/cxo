@@ -15,9 +15,10 @@ const (
 
 	Degree registry.Degree = 16 // default dgree of registry.Refs
 
-	CacheMaxAmount int     = 1024 * 1024 // binary million
-	CacheMaxVolume int     = 1024 * 1024 // 1M
-	CacheCleaning  float64 = 0.8         // down to 80%
+	CacheMaxAmount  int     = 1024 * 1024 // binary million
+	CacheMaxVolume  int     = 1024 * 1024 // 1M
+	CacheRegistries int     = 5           // 5
+	CacheCleaning   float64 = 0.8         // down to 80%
 
 	// CacheMaxItemSize is around 100K (CacheMaxVolume*(1.0-CacheCleaning) / 2)
 	CacheMaxItemSize int = 104857
@@ -86,6 +87,16 @@ type Config struct {
 	// CachePolicy is policy of the Cache. By default it's LRU,
 	// but it's possible to choose LFU if you want
 	CachePolicy CachePolicy
+	// CacheRegistries is number of Registries the Cache
+	// will keep unpacked. A Registry is fast for access
+	// but decoding is slow. And to increase performace
+	// the Cache keeps some Registries unpacked. Set this
+	// field to zero to turn off caching of Registries.
+	// This number should not be too big. Becuse the
+	// CacheCleaning field and strategy doesn't affect
+	// the Registries. If the caceh of the Registries is
+	// full then one removed and one appended
+	CacheRegistries int
 	// CacheCleaning is a flaot point number from 0.5 to 0.9.
 	// The number is percent. If the Cache is full, then the
 	// will be cleaned down to this percent of fullness. E.g.

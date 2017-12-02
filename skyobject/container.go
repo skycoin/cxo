@@ -19,9 +19,9 @@ var (
 // A Container represents
 type Container struct {
 	Cache // cache of the Container
+	Index // memory mapped IdxDB
 
-	db  *data.DB // database
-	idx          // memory mapped IdxDB
+	db *data.DB // database
 
 	conf Config // ccopy of given
 
@@ -60,10 +60,19 @@ func NewContainer(conf *Config) (c *Container, err error) {
 		return
 	}
 
+	defer func() {
+		if err != nil {
+			c.db.Close()         // ignore error
+			c.Cache.stat.Close() // release resources
+		}
+	}()
+
 	// init DB, repair if need, get stat, and initialize cache
 	if err = c.initDB(); err != nil {
-		c.db.Close()         // ignore error
-		c.Cache.stat.Close() // release resources
+		return
+	}
+
+	if err = c.Index.load(c.db.IdxDB()); err != nil {
 		return
 	}
 
@@ -164,6 +173,21 @@ func (c *Container) getPack(reg *registry.Registry) (pack *Pack) {
 	pack.deg = c.conf.Degree
 	pack.reg = reg
 	pack.c = c
+
+	return
+}
+
+// WalkRoot walks through given Root calling given WalkFunc with
+// hash of the Root and hash of Registry of the Root. After that
+// the WalkRoot is the same as (*registry.Root).Walk
+func (c *Container) WalkRoot(
+	r *registry.Root,
+	walkFunc registry.WalkFunc,
+) (
+	err error,
+) {
+
+	//
 
 	return
 }
@@ -307,6 +331,52 @@ func (c *Container) initDB() (err error) {
 	return
 }
 
+func (c *Container) walkRoot(
+	pack registry.Pack,
+	r *registry.Root,
+	walkFunc registry.WalkFunc,
+) (
+	err error,
+) {
+
+	defer func() {
+		if err == registry.ErrStopIteration {
+			err = nil
+		}
+	}()
+
+	// hash of the Root is first (ignore deepper)
+	if _, err = walkFunc(r.Hash, 0); err != nil {
+		return
+	}
+
+	// registry is second (ignore deepper)
+	if _, err = walkFunc(cipher.SHA256(r.Reg), 0); err != nil {
+		return
+	}
+
+	return r.Walk(pack, walkFunc)
+}
+
+// RootByHash returns Root by its hash, that is
+// obvious. Errors the method can returns are
+// data.ErrNotfound or decoding error
+func (c *Container) RootByHash(
+	hash cipher.SHA256,
+) (
+	r *registry.Root,
+	err error,
+) {
+
+	var val []byte
+	if val, _, err = c.Get(hash, 0); err != nil {
+		return
+	}
+
+	r, err = registry.DecodeRoot(val)
+	return
+}
+
 // Close the Container and related DB. The DB
 // will be closed, even if the Container created
 // with user-provided DB.
@@ -320,143 +390,5 @@ func (c *Container) Close() (err error) {
 	}
 
 	return
-
-}
-
-//
-//
-//
-
-// AddFeed adds feed
-func (c *Container) AddFeed(pk cipher.PubKey) (err error) {
-	return c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		return feeds.Add(pk)
-	})
-}
-
-// AddHead adds head
-func (c *Container) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
-	return c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		var hs data.Heads
-		if hs, err = feeds.Heads(pk); err != nil {
-			return
-		}
-		_, err = hs.Add(nonce)
-		return
-	})
-}
-
-// ReceivedRoot called by the node package to
-// check a recived root. The method verify hash
-// and signature of the Root. The method also
-// check database, may be DB already has this
-// root
-func (c *Container) ReceivedRoot(
-	sig cipher.Sig,
-	val []byte,
-) (
-	r *registry.Root,
-	err error,
-) {
-
-	var hash = cipher.SumSHA256(val)
-	if err = cipher.VerifySignature(r.Pub, sig, hash); err != nil {
-		return
-	}
-
-	if r, err = registry.DecodeRoot(val); err != nil {
-		return
-	}
-
-	r.Hash = hash // set the hash
-	r.Sig = sig   // set the signature
-
-	var alreadyHave bool
-
-	err = c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		var hs data.Heads
-		if hs, err = feeds.Heads(r.Pub); err != nil {
-			return
-		}
-		var rs data.Roots
-		if rs, err = hs.Add(r.Nonce); err != nil {
-			return
-		}
-		alreadyHave, err = rs.Has(r.Seq)
-		return
-	})
-
-	r.IsFull = alreadyHave
-	return
-}
-
-// AddRoot to DB. The method doesn;t create feed of the root
-// but if head of the root doesn't exist, then the method
-// creates the head. The method never return already have error
-// and the method never save the Root inside CXDS. E.g. the
-// method adds the Root to index (that is necessary)
-func (c *Container) AddRoot(r *registry.Root) (err error) {
-
-	if r.IsFull == false {
-		return errors.New("can't add non-full Root: " + r.Short())
-	}
-
-	if r.Pub == (cipher.PubKey{}) {
-		return errors.New("blank public key of Root: " + r.Short())
-	}
-
-	if r.Hash == (cipher.SHA256{}) {
-		return errors.New("blank hash of Root: " + r.Short())
-	}
-
-	if r.Sig == (cipher.Sig{}) {
-		return errors.New("blank signature of Root: " + r.Short())
-	}
-
-	err = c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		var hs data.Heads
-		if hs, err = feeds.Heads(r.Pub); err != nil {
-			return
-		}
-		var rs data.Roots
-		if rs, err = hs.Add(r.Nonce); err != nil {
-			return
-		}
-		var dr = new(data.Root)
-		dr.Seq = r.Seq
-		dr.Prev = r.Prev
-		dr.Hash = r.Hash
-		dr.Sig = r.Sig
-		return rs.Set(dr)
-	})
-
-	return
-}
-
-// LastRoot
-func (c *Container) LastRoot(pk cipher.PubKey) (r *registry.Root, err error) {
-
-}
-
-// DelFeed deletes feed. If one or more Root objects of the feed
-// are held, then the method removes all Root obejcts before and
-// returns error
-func (c *Container) DelFeed(pk cipher.PubKey) (err error) {
-	//
-}
-
-// DelHead deletes given head. It can't remove a held Root
-func (c *Container) DelHead(pk cipher.PubKey, nonce uint64) (err error) {
-	//
-}
-
-// DelRoot deletes Root. It's can't remove held Root
-func (c *Container) DelRoot(pk cipher.PubKey, nonce, seq uint64) (err error) {
-
-	if c.IsRootHeld(pk, nonce, seq) == true {
-		return ErrRootIsHeld
-	}
-
-	// so, a Root can be held here, but removed, so fucking stupid
 
 }

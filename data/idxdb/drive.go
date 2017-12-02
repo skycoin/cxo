@@ -271,7 +271,7 @@ func (d *driveHeads) Del(nonce uint64) (err error) {
 		// the bucket should be empty, but we can't use bk.Stats().BucketsN
 		// because all buckets created in this transaction will not be in
 		// the bucket
-		return data.ErrHeadIsNotEmpty // contains heads
+		return data.ErrHeadIsNotEmpty // contains roots
 
 	}
 

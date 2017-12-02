@@ -87,7 +87,7 @@ func DecodeRoot(val []byte) (r *Root, err error) {
 	return
 }
 
-// Walk through elements of the Root. Given WlkFunc will not
+// Walk through elements of the Root. Given WalkFunc will not
 // be called with hash of the Root and with hash of Registry of
 // the Root. The pack argument must have related registry.
 // E.g. this preparation should be done before. Short wrods

@@ -9,6 +9,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // A CachePolicy represents cache policy
@@ -65,6 +66,25 @@ func (i *item) touch(cp CachePolicy) {
 
 }
 
+// itemRegistry
+type itemRegistry struct {
+	r      *registry.Registry // the Registry
+	points int                // LRU or LFU points
+}
+
+func (i *itemRegistry) touch(cp CachePolicy) {
+
+	switch cp {
+	case LRU:
+		i.points = int(time.Now().Unix()) // last access
+	case LFU:
+		i.points++ // access
+	default:
+		panic("cache with undefined CachePolicy:", cp.String())
+	}
+
+}
+
 // A Cache is internal and used by Container.
 // The Cache can't be created and used outside
 type Cache struct {
@@ -76,8 +96,9 @@ type Cache struct {
 	enable bool
 
 	// configs
-	maxAmount int // max amount of items
-	maxVolume int // max volume in bytes of all items
+	maxAmount     int // max amount of items
+	maxVolume     int // max volume in bytes of all items
+	maxRegistries int // max registries
 
 	maxItemSize int // don't cache items bigger
 
@@ -89,7 +110,8 @@ type Cache struct {
 	amount int // number of items in DB
 	volume int // total volume of items in DB
 
-	c map[cipher.SHA256]*item // values
+	c map[cipher.SHA256]*item                // values
+	r map[registry.RegistryRef]*itemRegistry // cached registries
 
 	stat *cxdsStat
 
@@ -106,6 +128,7 @@ func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
 	c.maxAmount = conf.CacheMaxAmount
 	c.maxVolume = conf.CacheMaxVolume
 	c.maxItemSize = conf.CacheMaxItemSize
+	c.maxRegistries = conf.CacheRegistries
 
 	c.policy = conf.CachePolicy
 
@@ -116,6 +139,7 @@ func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
 	c.volume = 0 // cache volume
 
 	c.c = make(map[cipher.SHA256]*item)
+	c.r = make(map[registry.RegistryRef]*itemRegistry)
 
 	c.stat = newCxdsStat(conf.RollAvgSamples, amount, volume)
 
@@ -129,6 +153,100 @@ func (c *Cache) reset() {
 	c.r = nil
 	c.stat.Close()
 	c.stat = nil
+}
+
+// call it under lock
+func (c *Cache) addRegistryToCache(r *registry.Registry) {
+
+	// if it already exists
+
+	if ir, ok := c.r[r.Reference()]; ok == true {
+		ir.touch(c.policy)
+		return
+	}
+
+	// clean if need
+
+	if len(c.r) == c.maxRegistries {
+
+		var (
+			tormr registry.RegistryRef // reference
+			tormp int                  // points
+		)
+
+		for rr, ir := range c.r {
+			if ir.points > tormp {
+				tormr = rr
+				tormp = ir.points
+			}
+		}
+
+		delete(c.r, tormr)
+
+	}
+
+	// add
+
+	var ir = &itemRegistry{r: r}
+
+	ir.touch(c.policy)
+	c.r[r.Reference()] = ir
+}
+
+// AddRegistryToCache adds given registry to Cache
+func (c *Cache) AddRegistryToCache(r *registry.Registry) {
+
+	if c.maxRegistries <= 0 {
+		return
+	}
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	c.addRegistryToCache(r)
+
+}
+
+// Registry returns Registry by reference. The
+// Registry looks the Cache first. If it gets Registry
+// from DB, then it put the Registry to the Cache
+func (c *Cache) Registry(
+	rr registry.RegistryRef, // : the reference
+) (
+	r *registry.Registry, //    : registry
+	err error, //               : an error
+) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	// check out cache first
+
+	if ir, ok := c.r[rr]; ok == true {
+		r = ir.r
+		ir.touch(c.policy)
+		return
+	}
+
+	// get from DB and add to cache after
+
+	var val []byte
+	if val, _, err = c.get(cipher.SHA256(rr), 0); err != nil {
+		return
+	}
+
+	if r, err = registry.DecodeRegistry(val); err != nil {
+		return
+	}
+
+	// TOTH (kostyarin): to add or not to add? That is the fucking question
+
+	if c.maxRegistries >= 0 {
+		c.addRegistryToCache(r)
+	}
+
+	return
+
 }
 
 // Close cache releasing associated resuorces
@@ -348,20 +466,10 @@ func (c *Cache) putItem(key cipher.SHA256, val []byte, rc uint32) (err error) {
 
 }
 
-// CXDS wrapper
+// CXDS wrappers
 
-// Get from cache or DB, increasing, leaving as is, or reducing
-// references counter. For most reading cases the inc argument should
-// be zero. If value doesn't exist the Get returns data.ErrNotFound.
-// It's possible to get and remove value using the inc argument. The
-// Get returns value and new references counter. The Get can returns
-// an error that doen'r relate to given element. Putting element to
-// the Cache the Get can clean up cache to free space, syncing
-// wiht DB. In this case if the synching fails, the Get can returns
-// valid value and rc and some error. Anyway, any DB failure should be
-// fatal. E.g. all errors except data.ErrNotFound means that data
-// in the DB can be lost
-func (c *Cache) Get(
+// call it under lock
+func (c *Cache) get(
 	key cipher.SHA256, // :
 	inc int, //           :
 ) (
@@ -369,9 +477,6 @@ func (c *Cache) Get(
 	rc uint32, //         :
 	err error, //         :
 ) {
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
 
 	var it, ok = c.c[key]
 
@@ -426,6 +531,32 @@ func (c *Cache) Get(
 	// put to cache
 	err = c.putItem(key, val, rc)
 	return
+}
+
+// Get from cache or DB, increasing, leaving as is, or reducing
+// references counter. For most reading cases the inc argument should
+// be zero. If value doesn't exist the Get returns data.ErrNotFound.
+// It's possible to get and remove value using the inc argument. The
+// Get returns value and new references counter. The Get can returns
+// an error that doen'r relate to given element. Putting element to
+// the Cache the Get can clean up cache to free space, syncing
+// wiht DB. In this case if the synching fails, the Get can returns
+// valid value and rc and some error. Anyway, any DB failure should be
+// fatal. E.g. all errors except data.ErrNotFound means that data
+// in the DB can be lost
+func (c *Cache) Get(
+	key cipher.SHA256, // :
+	inc int, //           :
+) (
+	val []byte, //        :
+	rc uint32, //         :
+	err error, //         :
+) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	return c.get(key, inc)
 }
 
 // never block
