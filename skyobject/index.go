@@ -1,6 +1,7 @@
 package skyobject
 
 import (
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -123,17 +124,17 @@ func searchRootInSortedSlice(
 ) {
 
 	if len(rs) == 0 {
-		return nil, data.ErrNotFound
+		return nil, 0, data.ErrNotFound
 	}
 
 	k = sort.Search(len(rs), func(i int) bool {
-		rs[i].Seq >= seq
+		return rs[i].Seq >= seq
 	})
 
 	ir = rs[k]
 
-	if ir.Seq != sqe {
-		return nil, data.ErrNotFound
+	if ir.Seq != seq {
+		return nil, 0, data.ErrNotFound
 	}
 
 	return
@@ -154,7 +155,7 @@ func (i *Index) selectRoot(
 		return
 	}
 
-	ri, _, err = searchRootInSortedSlice(rs, seq)
+	ir, _, err = searchRootInSortedSlice(rs, seq)
 	return
 }
 
@@ -397,7 +398,7 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 		i.feeds[r.Pub] = hs
 	}
 
-	rs = hs[r.Nonce]
+	var rs = hs[r.Nonce]
 
 	rs = append(rs, &indexRoot{
 		Root: *dr,
@@ -415,8 +416,9 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 }
 
 // Heads returns list of heads of given feed.
-// The list is list of nonces
-func (i *Index) Heads(pk cipher.PubKey) (heads []uint64) {
+// The list is list of nonces. One possible
+// error is data.ErrNoSuchFeed
+func (i *Index) Heads(pk cipher.PubKey) (heads []uint64, err error) {
 
 	i.mx.Lock()
 	defer i.mx.Unlock()
@@ -424,7 +426,7 @@ func (i *Index) Heads(pk cipher.PubKey) (heads []uint64) {
 	var hs, ok = i.feeds[pk]
 
 	if ok == false {
-		return data.ErrNoSuchFeed
+		return nil, data.ErrNoSuchFeed
 	}
 
 	heads = make([]uint64, 0, len(hs))
@@ -469,7 +471,7 @@ func (i *Index) LastRoot(
 
 // delFeedFromIndex deletes head from IdxDB and from the Index
 func (i *Index) delFeedFromIndex(
-	pk cipher.SHA256,
+	pk cipher.PubKey,
 ) (
 	rss [][]*indexRoot,
 	err error,
@@ -478,7 +480,7 @@ func (i *Index) delFeedFromIndex(
 	var hs, ok = i.feeds[pk]
 
 	if ok == false {
-		return data.ErrNoSuchFeed
+		return nil, data.ErrNoSuchFeed
 	}
 
 	// a Root can be held
@@ -489,7 +491,7 @@ func (i *Index) delFeedFromIndex(
 
 		for _, ir := range rs {
 			if ir.hold > 0 {
-				return ErrRootIsHeld
+				return nil, ErrRootIsHeld
 			}
 		}
 
@@ -506,7 +508,7 @@ func (i *Index) delFeedFromIndex(
 			return
 		}
 
-		for nonce := range hs {
+		for nonce, rs := range hs {
 
 			var roots data.Roots
 			if roots, err = heads.Roots(nonce); err != nil {
@@ -519,7 +521,7 @@ func (i *Index) delFeedFromIndex(
 				}
 			}
 
-			if err = hs.Del(nonce); err != nil {
+			if err = heads.Del(nonce); err != nil {
 				return
 			}
 
@@ -529,7 +531,7 @@ func (i *Index) delFeedFromIndex(
 	})
 
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	// delete from the Index
@@ -541,7 +543,7 @@ func (i *Index) delFeedFromIndex(
 
 // with lock
 func (i *Index) delFeedFromIndexLock(
-	pk cipher.SHA256,
+	pk cipher.PubKey,
 ) (
 	rss [][]*indexRoot,
 	err error,
@@ -577,7 +579,7 @@ func (i *Index) DelFeed(pk cipher.PubKey) (err error) {
 
 // delHeadFromIndex deletes head from IdxDB and from the Index
 func (i *Index) delHeadFromIndex(
-	pk cipher.SHA256,
+	pk cipher.PubKey,
 	nonce uint64,
 ) (
 	rs []*indexRoot,
@@ -587,18 +589,18 @@ func (i *Index) delHeadFromIndex(
 	var hs, ok = i.feeds[pk]
 
 	if ok == false {
-		return data.ErrNoSuchFeed
+		return nil, data.ErrNoSuchFeed
 	}
 
 	if rs, ok = hs[nonce]; ok == false {
-		return data.ErrNoSuchHead
+		return nil, data.ErrNoSuchHead
 	}
 
 	// a Root can be held
 
 	for _, ir := range rs {
 		if ir.hold > 0 {
-			return ErrRootIsHeld
+			return nil, ErrRootIsHeld
 		}
 	}
 
@@ -626,7 +628,7 @@ func (i *Index) delHeadFromIndex(
 	})
 
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	// delete from the Index
@@ -639,7 +641,7 @@ func (i *Index) delHeadFromIndex(
 
 // with lock
 func (i *Index) delHeadFromIndexLock(
-	pk cipher.SHA256,
+	pk cipher.PubKey,
 	nonce uint64,
 ) (
 	rs []*indexRoot,
@@ -691,7 +693,8 @@ func (i *Index) delRootFromIndex(
 	// don't remove if the Root is held
 
 	if i.isRootHeld(pk, nonce, seq) == true {
-		return ErrRootIsHeld
+		err = ErrRootIsHeld
+		return
 	}
 
 	// find the Root in the Index first
@@ -699,12 +702,14 @@ func (i *Index) delRootFromIndex(
 	var hs, ok = i.feeds[pk]
 
 	if ok == false {
-		return data.ErrNoSuchFeed
+		err = data.ErrNoSuchFeed
+		return
 	}
 
 	var rs []*indexRoot
 	if rs, ok = hs[nonce]; ok == false {
-		return data.ErrNoSuchHead
+		err = data.ErrNoSuchHead
+		return
 	}
 
 	var (
@@ -786,7 +791,7 @@ func (i *Index) delPackWalkFunc(
 		_ int, //              : never used
 		_ ...cipher.SHA256, // : never used
 	) (
-		deepper int, //        : go deepper
+		deepper bool, //       : go deepper
 		err error, //          : a DB error
 	) {
 

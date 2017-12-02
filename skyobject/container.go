@@ -2,6 +2,7 @@ package skyobject
 
 import (
 	"errors"
+	"path/filepath"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -72,7 +73,7 @@ func NewContainer(conf *Config) (c *Container, err error) {
 		return
 	}
 
-	if err = c.Index.load(c.db.IdxDB()); err != nil {
+	if err = c.Index.load(c); err != nil {
 		return
 	}
 
@@ -112,11 +113,11 @@ func (c *Container) createDB(conf *Config) (err error) {
 		var cx data.CXDS
 		var idx data.IdxDB
 
-		if cx, err = cxds.NewDriveCXDS(cxPath); err != nil {
+		if cx, err = cxds.NewDriveCXDS(c.cxPath); err != nil {
 			return
 		}
 
-		if idx, err = idxdb.NewDriveIdxDB(idxPath); err != nil {
+		if idx, err = idxdb.NewDriveIdxDB(c.idxPath); err != nil {
 			cx.Close()
 			return
 		}
@@ -192,10 +193,10 @@ func (c *Container) WalkRoot(
 	return
 }
 
-func (c *Container) initRoot(cr *cxdsRCs, hash cipher.SHA256) (err error) {
+func (c *Container) initRoot(cr *cxdsRCs, rootHash cipher.SHA256) (err error) {
 
 	var val []byte
-	if val, err = c.Get(rootHash, 0); err != nil {
+	if val, _, err = c.Get(rootHash, 0); err != nil {
 		return
 	}
 
@@ -204,7 +205,7 @@ func (c *Container) initRoot(cr *cxdsRCs, hash cipher.SHA256) (err error) {
 		return
 	}
 
-	if val, err = c.Get(cipher.SHA256(r.Reg), 0); err != nil {
+	if val, _, err = c.Get(cipher.SHA256(r.Reg), 0); err != nil {
 		return
 	}
 
@@ -252,7 +253,7 @@ func (c *Container) initDB() (err error) {
 		}
 
 		// create cache
-		c.Cache.initialize(c.db.CXDS(), &c.conf, amount, volume)
+		c.Cache.initialize(c.db.CXDS(), &c.conf, int(amount), int(volume))
 
 		return // everything is ok
 	}
@@ -308,7 +309,7 @@ func (c *Container) initDB() (err error) {
 	})
 
 	// correct rcs in DB
-	for key, rc := range hrcs {
+	for key, rc := range cr.hr {
 		if rc.rc == rc.cc {
 			continue // actual value
 		}
@@ -329,6 +330,27 @@ func (c *Container) initDB() (err error) {
 	c.Cache.initialize(c.db.CXDS(), &c.conf, int(cr.amount), int(cr.volume))
 
 	return
+}
+
+// Walk walks throug given Root calling given
+// walkFunc for every obejct of the Root including
+// hash of the Root and Regsitry (depending on the
+// deepper reply of the WalkFunc)
+func (c *Container) Walk(
+	r *registry.Root,
+	walkFunc registry.WalkFunc,
+) (
+	err error,
+) {
+
+	var reg *registry.Registry
+	if reg, err = c.Registry(r.Reg); err != nil {
+		return
+	}
+
+	var pack = c.getPack(reg)
+
+	return c.walkRoot(pack, r, walkFunc)
 }
 
 func (c *Container) walkRoot(

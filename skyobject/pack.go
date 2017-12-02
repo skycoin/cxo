@@ -27,7 +27,7 @@ func (p *Pack) Get(key cipher.SHA256) (val []byte, err error) {
 
 // Set key-value pair
 func (p *Pack) Set(key cipher.SHA256, val []byte) (err error) {
-	err = p.c.Set(key, val, 1)
+	_, err = p.c.Set(key, val, 1)
 	return
 }
 
@@ -57,11 +57,11 @@ func (p *Pack) Flags() registry.Flags {
 }
 
 // AddFlags adds given flags to flags of the Pack (|)
-func (p *Pack) AddFlags(flags Flags) {
+func (p *Pack) AddFlags(flags registry.Flags) {
 	p.flags |= flags
 }
 
 // ClearFlags isclears given flags from flags of the Pack (&^)
-func (p *Pack) ClearFlags(flags Flags) {
+func (p *Pack) ClearFlags(flags registry.Flags) {
 	p.flags &^= flags
 }

@@ -14,10 +14,10 @@ type delPack struct {
 }
 
 func (c *Container) getDelPack(
-	r *registry.Root, //   :
+	r *registry.Root, // :
 ) (
-	pack registry.Pack, // :
-	err error, //          :
+	pack *delPack, //    :
+	err error, //        :
 ) {
 
 	var reg *registry.Registry
@@ -27,7 +27,7 @@ func (c *Container) getDelPack(
 
 	var originPack = c.getPack(reg)
 
-	return &delPack{Pack: originPack}
+	return &delPack{Pack: originPack}, nil
 }
 
 func (d *delPack) Get(key cipher.SHA256) (val []byte, err error) {

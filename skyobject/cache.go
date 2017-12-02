@@ -61,7 +61,7 @@ func (i *item) touch(cp CachePolicy) {
 	case LFU:
 		i.points++ // access
 	default:
-		panic("cache with undefined CachePolicy:", cp.String())
+		panic("cache with undefined CachePolicy: " + cp.String())
 	}
 
 }
@@ -80,7 +80,7 @@ func (i *itemRegistry) touch(cp CachePolicy) {
 	case LFU:
 		i.points++ // access
 	default:
-		panic("cache with undefined CachePolicy:", cp.String())
+		panic("cache with undefined CachePolicy: " + cp.String())
 	}
 
 }
@@ -141,7 +141,7 @@ func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
 	c.c = make(map[cipher.SHA256]*item)
 	c.r = make(map[registry.RegistryRef]*itemRegistry)
 
-	c.stat = newCxdsStat(conf.RollAvgSamples, amount, volume)
+	c.stat = newCxdsStat(conf.RollAvgSamples, uint32(amount), uint32(volume))
 
 	c.enable = !(c.maxAmount == 0 || c.maxVolume == 0)
 
@@ -258,7 +258,7 @@ func (c *Cache) Close() (err error) {
 
 	// sync items
 	for k, it := range c.c {
-		if _, err = c.sync(it); err != nil {
+		if _, err = c.sync(k, it); err != nil {
 			break // break on first error
 		}
 	}
@@ -285,9 +285,9 @@ func (c *Cache) sync(key cipher.SHA256, it *item) (removed bool, err error) {
 		return // already synchronized
 	}
 
-	var inc = int(cc) - int(rc) // 20 - 19 = 1, 19 - 20 = -1
+	var inc = int(it.cc) - int(it.rc) // 20 - 19 = 1, 19 - 20 = -1
 
-	if err = c.db.Inc(key, inc); err != nil {
+	if _, err = c.db.Inc(key, inc); err != nil {
 		c.stat.addWritingDBRequest() // just request
 		return                       // failure
 	}
@@ -330,18 +330,18 @@ func (c *Cache) incr(
 		inc = -inc             // make it positive
 		var uinc = uint32(inc) // to uint32
 
-		if uinc < i.cc {
-			i.cc -= uinc // reduce
+		if uinc < it.cc {
+			it.cc -= uinc // reduce
 		} else {
 			// else ->  reduce to zero (sync to remove)
 			if removed, err = c.sync(key, it); err == nil {
-				i.cc = 0 // sync is sync
+				it.cc = 0 // sync is sync
 			}
 		}
 
 	case inc > 0:
 
-		i.cc += uint32(inc) // increase
+		it.cc += uint32(inc) // increase
 
 	}
 
@@ -372,7 +372,7 @@ func (c *Cache) cleanDown(vol int) (err error) {
 	// sort the rank by points
 
 	sort.Slice(rank, func(i, j int) bool {
-		rank[i].it.points < rank[j].it.points
+		return rank[i].it.points < rank[j].it.points
 	})
 
 	// clean down
@@ -488,7 +488,7 @@ func (c *Cache) get(
 		// then c.c map used for wanted items only, and we
 		// can avoid it.isWanted() call
 		if ok == true {
-			return data.ErrNotFound // if it wanted, then it not found
+			return nil, 0, data.ErrNotFound // if it wanted, then it not found
 		}
 
 		val, rc, err = c.db.Get(key, inc)
@@ -502,7 +502,7 @@ func (c *Cache) get(
 		// doesn't contains the item
 
 		if it.isWanted() == true {
-			return data.ErrNotFound // not found
+			return nil, 0, data.ErrNotFound // not found
 		}
 
 		// change cc (cached rc)
@@ -681,7 +681,7 @@ func (c *Cache) Inc(
 			it.touch(c.policy)      // touch item
 		}
 
-		val, rc = it.val, it.cc
+		rc = it.cc
 		return
 
 	}
@@ -730,7 +730,7 @@ func (c *Cache) Want(
 
 		// exist (not wanted)
 
-		sendWanted(gc, val) // never block
+		sendWanted(gc, it.val) // never block
 
 		c.stat.addReadingCacheRequest() // got from cache
 		it.touch(c.policy)              // touch the item
@@ -746,7 +746,7 @@ func (c *Cache) Want(
 	)
 
 	val, rc, err = c.db.Get(key, 0)
-	c.stat.addDBGet(inc, rc, val, err)
+	c.stat.addDBGet(0, rc, val, err)
 
 	if err == data.ErrNotFound {
 		c.c[key] = &item{fwant: []chan<- []byte{gc}} // add to wanted

@@ -1,9 +1,13 @@
 package skyobject
 
 import (
+	"flag"
 	"fmt"
+	"os"
+	"os/user"
 	"path/filepath"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
@@ -163,17 +167,17 @@ func NewConfig() (conf *Config) {
 }
 
 func (c *Config) FromFlags() {
-	flag.BoolVar(&s.InMemoryDB,
+	flag.BoolVar(&c.InMemoryDB,
 		"mem-db",
-		s.InMemoryDB,
+		c.InMemoryDB,
 		"use in-memory database")
-	flag.StringVar(&s.DataDir,
+	flag.StringVar(&c.DataDir,
 		"data-dir",
-		s.DataDir,
+		c.DataDir,
 		"directory with data")
-	flag.StringVar(&s.DBPath,
+	flag.StringVar(&c.DBPath,
 		"db-path",
-		s.DBPath,
+		c.DBPath,
 		"path to database")
 }
 
@@ -216,7 +220,8 @@ func (c *Config) Validate() error {
 			c.CacheCleaning)
 	}
 
-	var cacheMaxItemSize = int(float64(CacheMaxVolume) * (1.0 - CacheCleaning))
+	var cacheMaxItemSize = int(float64(c.CacheMaxVolume) *
+		(1.0 - c.CacheCleaning))
 
 	if c.CacheMaxItemSize > cacheMaxItemSize {
 		return fmt.Errorf(
