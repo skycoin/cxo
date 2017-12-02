@@ -69,7 +69,7 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 		err := idx.Tx(func(feeds data.Feeds) (_ error) {
 			if err := feeds.Del(pk); err == nil {
 				t.Error("missing error")
-			} else if err != data.ErrNotFound {
+			} else if err != data.ErrNoSuchFeed {
 				t.Error("wrong error:", err)
 			}
 			return

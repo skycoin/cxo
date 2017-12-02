@@ -17,7 +17,7 @@ type Feeds interface {
 	// delete non-empty feed. This restriction required
 	// for related objects. We need to decrement refs count
 	// of all related objects. If feed doesn't exist
-	// then the Del returns ErrNotFound
+	// then the Del returns ErrNoSuchFeed
 	Del(pk cipher.PubKey) (err error)
 
 	// Iterate all feeds. Use ErrStopRange to break
@@ -51,7 +51,7 @@ type Heads interface {
 	Add(nonce uint64) (rs Roots, err error)
 	// Del deletes head with given nonce and
 	// all its Root objects. The method returns
-	// ErrNotFound if a head with given nonce
+	// ErrNoSuchHead if a head with given nonce
 	// doesn't exist
 	Del(nonce uint64) (err error)
 	// Has returns true if a head with given
@@ -84,7 +84,8 @@ type Roots interface {
 	// values
 	Set(r *Root) (err error)
 
-	// Del Root by seq number
+	// Del Root by seq number. The Del never returns
+	// ErrNotFound if Root doesn't exist
 	Del(seq uint64) (err error)
 
 	// Get Root by seq number

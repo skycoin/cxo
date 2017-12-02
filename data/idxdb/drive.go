@@ -164,7 +164,7 @@ func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 
 	if fs = d.bk.Bucket(pk[:]); fs == nil {
 
-		return data.ErrNotFound
+		return data.ErrNoSuchFeed
 
 	} else if head, _ := fs.Cursor().First(); head != nil {
 
@@ -264,7 +264,7 @@ func (d *driveHeads) Del(nonce uint64) (err error) {
 
 	if head := d.bk.Bucket(nonceb); head == nil {
 
-		return data.ErrNotFound
+		return data.ErrNoSuchHead
 
 	} else if k, _ := d.bk.Cursor().First(); k != nil {
 
