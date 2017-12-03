@@ -73,15 +73,23 @@ const (
 // skyobject.Config for details and skyobject.MerkleDegree constant
 type Degree int
 
-const (
-	maxUint32 = ^uint32(0)
-	maxInt32  = int32(maxUint32 >> 1)
-	maxDegree = Degree(maxInt32)
-)
+// MaxDegree is limit of degree. The Degree should have
+// some limit to protect nodes from very-big-degree
+// attacks. E.g. a node with bi amount of RAM can generate
+// Refs with very big degree and publish it. This way,
+// nodes that receive this Refs can drain theirs RAM
+const MaxDegree Degree = 1024
+
+// Developer note: the MaxDegree must not be greater than max int32
+//
+// const (
+//	maxUint32 = ^uint32(0)
+//	maxInt32  = int32(maxUint32 >> 1)
+// )
 
 // Validate the Degree
 func (d Degree) Validate() (err error) {
-	if d < 2 || d > maxDegree {
+	if d < 2 || d > MaxDegree {
 		err = ErrInvalidDegree
 	}
 	return

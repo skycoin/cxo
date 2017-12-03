@@ -1655,7 +1655,7 @@ func (r *Refs) Rebuild(
 		return
 	}
 
-	// can we reduce lenght of the Refs?
+	// can we reduce depth of the Refs?
 
 	// TODO (kostyarin): improve the algorithm
 	var dif = depthToFit(r.degree, 0, r.length)
