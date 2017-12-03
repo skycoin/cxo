@@ -245,7 +245,7 @@ func (r *referenceSchema) String() string {
 	case ReferenceTypeSlice:
 		return fmt.Sprintf("[]*%s", r.Elem().String())
 	case ReferenceTypeDynamic:
-		return "*<dynamic>"
+		return "*(dynamic)"
 	}
 	return "<invalid>"
 }

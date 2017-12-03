@@ -96,8 +96,8 @@ func (r *Refs) walkBlank(walkFunc WalkFunc) (err error) {
 // panics or produces an undefined result
 func (r *Refs) Walk(
 	pack Pack, //             : pack to save and load
-	sch Schema, //            : schema of alements of the Refs
-	walkFunc WalkFunc, // : the function
+	sch Schema, //            : schema of elements of the Refs
+	walkFunc WalkFunc, //     : the function
 ) (
 	err error, //             : an error
 ) {
