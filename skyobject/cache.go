@@ -567,6 +567,41 @@ func sendWanted(gc chan<- []byte, val []byte) {
 	}
 }
 
+func (c *Cache) setWanted(
+	it *item,
+	key cipher.SHA256,
+	val []byte,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
+
+	// we have to save the item first to guarantee
+	// that the element will exist in DB
+	if rc, err = c.db.Set(key, val, inc); err != nil {
+		c.stat.addWritingDBRequest() // just request
+		return                       // an error
+	}
+
+	c.stat.addToDB(len(val)) // stat
+
+	// send to wanters
+	for _, gc := range it.fwant {
+		sendWanted(gc, val)
+	}
+
+	delete(c.c, key) // remove from wanted
+
+	if c.enable == false {
+		return // done
+	}
+
+	// put to cache (replace the wanted)
+	err = c.putItem(key, val, rc)
+	return
+}
+
 // Set to DB, increasing references counter. The inc argument must
 // be 1 or greater, otherwise the Set panics. Owerwriting incareases
 // references counter of existing value
@@ -592,31 +627,7 @@ func (c *Cache) Set(
 	if ok == true {
 
 		if it.isWanted() == true {
-
-			// we have to save the item first to guarantee
-			// that the element will exist in DB
-			if rc, err = c.db.Set(key, val, inc); err != nil {
-				c.stat.addWritingDBRequest() // just request
-				return                       // an error
-			}
-
-			c.stat.addToDB(len(val)) // stat
-
-			// send to wanters
-			for _, gc := range it.fwant {
-				sendWanted(gc, val)
-			}
-
-			delete(c.c, key) // remove from wanted
-
-			if c.enable == false {
-				return // done
-			}
-
-			// put to cache (replace the wanted)
-			err = c.putItem(key, val, rc)
-			return
-
+			return c.setWanted(it, key, val, inc)
 		}
 
 		// not wanted, just chagne the rc
@@ -760,4 +771,32 @@ func (c *Cache) Want(
 
 	err = c.putItem(key, val, rc)
 	return
+}
+
+// SetIfWanted perfroms Set if vlaue with
+// given key is wanted. The SetIfWanted used
+// by node for filling
+func (c *Cache) SetIfWanted(
+	key cipher.SHA256, // : hash
+	val []byte, //        : value
+	inc int, //           : increase or reduce
+) (
+	set bool, //          : is set
+	err error, //         : an error
+) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	var it, ok = c.c[key]
+
+	if ok == false {
+		return // is not wnated
+	}
+
+	if it.isWanted() == false {
+		return // is not wanted
+	}
+
+	return c.setWanted(it, key, val, inc)
 }
