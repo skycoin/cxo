@@ -23,8 +23,9 @@ type indexRoot struct {
 type Index struct {
 	mx sync.Mutex
 
-	c     *Container // back reference (for db.IdxDB and for the Cache)
-	feeds map[cipher.PubKey]map[uint64][]*indexRoot
+	c      *Container // back reference (for db.IdxDB and for the Cache)
+	feeds  map[cipher.PubKey]map[uint64][]*indexRoot
+	feedsl []cipher.PubKey // change on write
 }
 
 func (i *Index) load(c *Container) (err error) {
@@ -277,6 +278,8 @@ func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
 	if err != nil {
 		return
 	}
+
+	i.feedsl = i.feedsl[:0]
 
 	if _, ok := i.feeds[pk]; ok == false {
 		i.feeds[pk] = make(map[uint64][]*indexRoot) // add to Index
@@ -537,6 +540,7 @@ func (i *Index) delFeedFromIndex(
 	// delete from the Index
 
 	delete(i.feeds, pk)
+	i.feedsl = i.feedsl[:0] // clear the list
 
 	return
 }
@@ -749,7 +753,7 @@ func (i *Index) delRootFromIndex(
 	rs = rs[:len(rs)-1]
 
 	if len(rs) == 0 {
-		delete(hs, nonce) // delete slice (GC)
+		hs[nonce] = nil // delete slice (GC)
 	} else {
 		hs[nonce] = rs
 	}
@@ -857,4 +861,92 @@ func (i *Index) DelRoot(pk cipher.PubKey, nonce, seq uint64) (err error) {
 
 	// without lock
 	return i.delRootRelatedValues(rootHash)
+}
+
+// Feeds returns list of feeds
+func (i *Index) Feeds() (feeds []cipher.PubKey) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	if len(i.feedsl) != len(i.feeds) {
+		for pk := range i.feeds {
+			i.feedsl = append(i.feedsl, pk)
+		}
+	}
+
+	return i.feedsl
+
+}
+
+// HasFeed returns true if feed exists
+func (i *Index) HasFeed(pk cipher.PubKey) (yep bool) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	_, yep = i.feeds[pk]
+	return
+}
+
+// HasHead returns true if head exists. It
+// returns false if given feed doesn't exist
+func (i *Index) HasHead(pk cipher.PubKey, nonce uint64) (yep bool) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	var hs map[uint64][]*indexRoot
+
+	if hs, yep = i.feeds[pk]; yep == false {
+		return
+	}
+
+	_, yep = hs[nonce]
+	return
+}
+
+// AddHead adds head. A head will be added automatically if
+// AddRoot called and head of the Root doesn't exist. But
+// it's possible to add an empty head to save it in DB.
+// It has no practical value. The head will be saved in DB
+// and the Heads method will return it even if it empty
+func (i *Index) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	// check out Index first
+
+	var hs, ok = i.feeds[pk]
+
+	if ok == false {
+		return data.ErrNoSuchFeed
+	}
+
+	if _, ok = hs[nonce]; ok {
+		return // already exists
+	}
+
+	// add to DB
+
+	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var heads data.Heads
+		if heads, err = feeds.Heads(pk); err != nil {
+			return
+		}
+
+		_, err = heads.Add(nonce)
+		return
+	})
+
+	if err != nil {
+		return
+	}
+
+	// add to the Index
+
+	hs[nonce] = nil
+	return
+
 }

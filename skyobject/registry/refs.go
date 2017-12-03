@@ -1631,12 +1631,8 @@ func (r *Refs) Clear() {
 // The Rebuild can't be called insisde an iterator.
 // It returns ErrRefsIterating in this case.
 //
-// The Rebuild called by *skyobject.Pack inside
-// Save method. Thus in most cases you should not
-// to call it manually. But in some cases, for
-// example if LazyUpdatingFlag is set, and you want
-// to get hash of the Refs, you should call the
-// Rebuild to make the hash actual.
+// If LazyUpdatingFlag is set, then you have to
+// call the Rebuild to make the hash actual.
 //
 //
 // The Rebuild does nothing if the Refs in actual
@@ -1654,6 +1650,8 @@ func (r *Refs) Rebuild(
 	if err = r.initialize(pack); err != nil {
 		return
 	}
+
+	// TOOD (kostyarin): origin mod
 
 	// can we reduce depth of the Refs?
 

@@ -54,7 +54,8 @@ const (
 	// So, if you want Hash field of the Refs to be actual
 	// then you need to turn this flag off (just don't set it)
 	// or call the Rebuild method to get real value of the
-	// field
+	// field. If you are using this flag, then you have to call
+	// (*Refs).Rebuild() after to update hash of the Refs.
 	LazyUpdating
 
 	//  /\

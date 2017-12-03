@@ -798,5 +798,10 @@ func (c *Cache) SetIfWanted(
 		return // is not wanted
 	}
 
-	return c.setWanted(it, key, val, inc)
+	if _, err = c.setWanted(it, key, val, inc); err != nil {
+		return
+	}
+
+	set = true
+	return
 }
