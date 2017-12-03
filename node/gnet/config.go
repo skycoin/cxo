@@ -12,7 +12,7 @@ import (
 // defaults
 const (
 	MaxConnections int = 10 * 1000 // default connections limit
-	MaxMessageSize int = 16 * 1024 // default message size
+	MaxMessageSize int = 16 * 1024 // default max message size
 
 	DialTimeout  time.Duration = 5 * time.Second     // default timeout
 	ReadTimeout  time.Duration = 0 * 5 * time.Second // default timeout

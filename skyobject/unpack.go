@@ -83,6 +83,7 @@ func (c *Container) Unpack(
 
 	up = &Unpack{
 		sk:   sk,
+		c:    c,
 		m:    make(map[cipher.SHA256]*unpackItem),
 		Pack: c.getPack(reg),
 	}

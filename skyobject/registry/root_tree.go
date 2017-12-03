@@ -582,7 +582,7 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it gotree.GTStructure) {
 		return
 	}
 
-	it.Name = fmt.Sprintf("[]*(%s) %s length: %d", el.String(), refs.String(),
+	it.Name = fmt.Sprintf("[]*(%s) %s length: %d", el.String(), refs.Short(),
 		ln)
 
 	it.Items = make([]gotree.GTStructure, 0, ln)
@@ -597,7 +597,7 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it gotree.GTStructure) {
 	) {
 
 		if depth != 0 {
-			return
+			return true, nil
 		}
 
 		it.Items = append(it.Items, rootTreeHash(pack, el, hash))

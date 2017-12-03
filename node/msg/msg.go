@@ -11,7 +11,7 @@ import (
 )
 
 // Version is current protocol version
-const Version uint16 = 2
+const Version uint16 = 3
 
 // be sure that all messages implements Msg interface compiler time
 var (
@@ -22,33 +22,33 @@ var (
 
 	// handshake
 
-	_ Msg = &Hello{}  // <- Hello  (address, protocol version)
-	_ Msg = &Accept{} // -> Accept (address)
-	_ Msg = &Reject{} // -> Reject (address, error message)
+	_ Msg = &Hello{}  // <- Hello  (id, protocol version)
+	_ Msg = &Accept{} // -> Accept (id)
+	_ Msg = &Reject{} // -> Reject (id, error message)
 
 	// subscriptions
 
-	_ Msg = &Subscribe{}   // <- S
-	_ Msg = &Unsubscribe{} // <- U
+	_ Msg = &Subscribe{}   // <- Subcribe (feed)
+	_ Msg = &Unsubscribe{} // <- Unsubscribe (feed)
 
 	// subscriptions reply
 
-	_ Msg = &AcceptSubscription{} // -> AS
-	_ Msg = &RejectSubscription{} // -> RS (error)
+	_ Msg = &AcceptSubscription{} // -> AS (feed)
+	_ Msg = &RejectSubscription{} // -> RS (feed, error)
 
 	// public server features
 
-	_ Msg = &RequestListOfFeeds{} // <- RLoF
-	_ Msg = &ListOfFeeds{}        // -> LoF
-	_ Msg = &NonPublicServer{}    // -> NPS
+	_ Msg = &RequestListOfFeeds{} // <- RLoF ()
+	_ Msg = &ListOfFeeds{}        // -> LoF  (feeds)
+	_ Msg = &NonPublicServer{}    // -> NPS  ()
 
 	// root, registry, data and requests
 
-	_ Msg = &Root{}     // <- Root
-	_ Msg = &RootDone{} // ->
+	_ Msg = &Root{}     // <- Root (feed, nonce, seq, sig, val)
+	_ Msg = &RootDone{} // -> RD   (feed, nonce, seq)
 
-	_ Msg = &RequestObject{} // <- RqO
-	_ Msg = &Object{}        // -> O
+	_ Msg = &RequestObject{} // <- RqO (key, prefetch)
+	_ Msg = &Object{}        // -> O   (val, vals)
 )
 
 //
@@ -82,7 +82,7 @@ func (*Pong) Type() Type { return PongType }
 type Hello struct {
 	ID       ID
 	Protocol uint16
-	Address  cipher.Address // reserved for future
+	Address  cipher.PubKey // nodeID
 }
 
 // Type implements Msg interface
@@ -92,7 +92,7 @@ func (*Hello) Type() Type { return HelloType }
 // if handshake has been accepted
 type Accept struct {
 	ResponseFor ID
-	Address     cipher.Address // reserved for future
+	Address     cipher.PubKey // nodeID
 }
 
 // Type implements Msg interface
@@ -102,8 +102,8 @@ func (*Accept) Type() Type { return AcceptType }
 // if subscription has not been accepted
 type Reject struct {
 	ResponseFor ID
-	Address     cipher.Address // reserved for future
-	Err         string         // reason
+	Address     cipher.PubKey // nodeID
+	Err         string        // reason
 }
 
 // Type implements Msg interface
@@ -142,6 +142,7 @@ func (*AcceptSubscription) Type() Type {
 type RejectSubscription struct {
 	ResponseFor ID
 	Feed        cipher.PubKey
+	Err         string // reason (optional)
 }
 
 // Type implements Msg interface
@@ -182,10 +183,13 @@ func (*NonPublicServer) Type() Type { return NonPublicServerType }
 // to update root object of feed described in
 // Feed field of the message
 type Root struct {
-	Feed  cipher.PubKey
-	Seq   uint64     // for node internals
-	Value []byte     // encoded Root in person
-	Sig   cipher.Sig // signature
+	Feed  cipher.PubKey // feed }
+	Nonce uint64        // head } Root selector
+	Seq   uint64        // seq  }
+
+	Value []byte // encoded Root in person
+
+	Sig cipher.Sig // signature
 }
 
 // Type implements Msg interface
@@ -201,8 +205,9 @@ func (*Root) Type() Type { return RootType }
 // node have to know when peer fills this
 // root or drops it.
 type RootDone struct {
-	Feed cipher.PubKey // feed
-	Seq  uint64        // seq of the Root
+	Feed  cipher.PubKey // feed
+	Nonce uitn64        // head
+	Seq   uint64        // seq of the Root
 }
 
 // Type implements Msg interface
@@ -210,7 +215,8 @@ func (*RootDone) Type() Type { return RootDoneType }
 
 // A RequestObject represents a Msg that request a data by hash
 type RequestObject struct {
-	Key cipher.SHA256
+	Key      cipher.SHA256   // request
+	Prefetch []cipher.SHA256 // prefetch objects
 }
 
 // Type implements Msg interface
@@ -218,7 +224,8 @@ func (*RequestObject) Type() Type { return RequestObjectType }
 
 // An Object reperesents encoded object
 type Object struct {
-	Value []byte // encoded object in person
+	Value    []byte   // encoded object in person
+	Prefetch [][]byte // prefetch obejcts or nil
 }
 
 // Type implements Msg interface
@@ -249,8 +256,9 @@ const (
 	ListOfFeedsType        // ListOfFeeds         11
 	NonPublicServerType    // NonPublicServer     12
 
-	RootType          // Root           10
-	RootDoneType      // RootDone       11
+	RootType     // Root           10
+	RootDoneType // RootDone       11
+
 	RequestObjectType // RequestObject  12
 	ObjectType        // Object         13
 )
