@@ -100,7 +100,7 @@ func (c *Container) Unpack(
 // timestamp of the Root. The Root should have correct
 // Pub, and Nonce fields. The Seq field will be set
 // to next inside the Save. The Save also set Hash and
-// Prev fields to the Root, and signs the Root
+// Prev fields of the Root, and signs the Root
 func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 
 	// save the Root recursive

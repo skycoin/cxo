@@ -353,6 +353,10 @@ func (c *Cache) incr(
 // this vol to clean the cache down
 func (c *Cache) cleanDown(vol int) (err error) {
 
+	// stat
+	var tp = time.Now()
+	defer func() { c.stat.addCacheCleaning(time.Now().Sub(tp)) }()
+
 	type rankItem struct {
 		key cipher.SHA256
 		it  *item

@@ -14,8 +14,44 @@ import (
 
 type indexRoot struct {
 	data.Root
-	sync bool // sync with DB (AccessTime)
+	sync bool // sync with DB (Access)
 	hold int  // holds
+}
+
+type indexHeads struct {
+	h       map[uint64][]*indexRoot //
+	activen uint64                  // head with latest root (nonce)
+	activet int64                   // timestamp of the last root
+}
+
+func newIndexHeads() (hs *indexHeads) {
+	hs = new(indexHeads)
+	hs.h = make(map[uint64][]*indexRoot)
+	return
+}
+
+// under lock
+func (i *indexHeads) setActive() {
+
+	// reset first
+	i.activet = 0
+	i.activen = 0
+
+	for nonce, rs := range i.h {
+
+		if len(rs) == 0 {
+			continue // skip empty heads
+		}
+
+		if t := rs[len(rs)-1].Time; i.activet < t {
+
+			i.activet = t
+			i.activen = nonce
+
+		}
+
+	}
+
 }
 
 // Index is internal and used by Container.
@@ -25,13 +61,13 @@ type Index struct {
 
 	c *Container // back reference (for db.IdxDB and for the Cache)
 
-	feeds  map[cipher.PubKey]map[uint64][]*indexRoot
+	feeds  map[cipher.PubKey]*indexHeads
 	feedsl []cipher.PubKey // change on write
 }
 
 func (i *Index) load(c *Container) (err error) {
 
-	i.feeds = make(map[cipher.PubKey]map[uint64][]*indexRoot)
+	i.feeds = make(map[cipher.PubKey]*indexHeads)
 	i.c = c
 
 	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
@@ -47,7 +83,7 @@ func (i *Index) load(c *Container) (err error) {
 
 			// range heads
 
-			var feedMap = make(map[uint64][]*indexRoot)
+			var feedMap = newIndexHeads()
 
 			err = hs.Iterate(func(nonce uint64) (err error) {
 
@@ -58,7 +94,10 @@ func (i *Index) load(c *Container) (err error) {
 
 				// range roots
 
-				var headSlice = make([]*indexRoot, 0)
+				var (
+					headSlice = make([]*indexRoot, 0)
+					lastTime  int64
+				)
 
 				err = rs.Ascend(func(dr *data.Root) (err error) {
 
@@ -68,6 +107,12 @@ func (i *Index) load(c *Container) (err error) {
 						hold: 0,    // not held
 					})
 
+					// we look time of last Root in the sequence;
+					// e.g. active head is head that contains
+					// the most new last root
+
+					lastTime = dr.Time // timestamp of the Root
+
 					return
 				})
 
@@ -75,7 +120,14 @@ func (i *Index) load(c *Container) (err error) {
 					return
 				}
 
-				feedMap[nonce] = headSlice
+				feedMap.h[nonce] = headSlice // head
+
+				if feedMap.activet < lastTime {
+
+					feedMap.activet = lastTime // last timestamp of active feed
+					feedMap.activen = nonce    // active head (nonce)
+
+				}
 
 				return
 			})
@@ -96,11 +148,11 @@ func (i *Index) load(c *Container) (err error) {
 
 // call under lock
 func (i *Index) selectRoots(
-	pk cipher.PubKey,
-	nonce uint64,
+	pk cipher.PubKey, // :
+	nonce uint64, //     :
 ) (
-	rs []*indexRoot,
-	err error,
+	rs []*indexRoot, //  :
+	err error, //        :
 ) {
 
 	var hs, ok = i.feeds[pk]
@@ -109,7 +161,7 @@ func (i *Index) selectRoots(
 		return nil, data.ErrNoSuchFeed
 	}
 
-	if rs, ok = hs[nonce]; ok == false {
+	if rs, ok = hs.h[nonce]; ok == false {
 		return nil, data.ErrNoSuchHead
 	}
 
@@ -144,12 +196,12 @@ func searchRootInSortedSlice(
 
 // call under lock
 func (i *Index) selectRoot(
-	pk cipher.PubKey,
-	nonce uint64,
-	seq uint64,
+	pk cipher.PubKey, // :
+	nonce uint64, //     :
+	seq uint64, //       :
 ) (
-	ir *indexRoot,
-	err error,
+	ir *indexRoot, //    :
+	err error, //        :
 ) {
 
 	var rs []*indexRoot
@@ -195,11 +247,11 @@ func (i *Index) HoldRoot(
 // returns error if Root doesn't exist
 // or was not held
 func (i *Index) UnholdRoot(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
+	pk cipher.PubKey, // : feed
+	nonce uint64, //     : head
+	seq uint64, //       : seq
 ) (
-	err error,
+	err error, //        : not found or not held
 ) {
 
 	i.mx.Lock()
@@ -221,11 +273,11 @@ func (i *Index) UnholdRoot(
 
 // call it under lock
 func (i *Index) isRootHeld(
-	pk cipher.PubKey, //
-	nonce uint64, //
-	seq uint64, //
+	pk cipher.PubKey, // :
+	nonce uint64, //     :
+	seq uint64, //       :
 ) (
-	held bool, //
+	held bool, //        :
 ) {
 
 	var (
@@ -245,11 +297,11 @@ func (i *Index) isRootHeld(
 // IsRootHeld method doesn't returns
 // error if the Root doesn't exist
 func (i *Index) IsRootHeld(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
+	pk cipher.PubKey, // : feed
+	nonce uint64, //     : head
+	seq uint64, //       : seq number
 ) (
-	held bool, //        :
+	held bool, //        : held or not
 ) {
 
 	i.mx.Lock()
@@ -280,10 +332,10 @@ func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
 		return
 	}
 
-	i.feedsl = i.feedsl[:0]
+	i.feedsl = i.feedsl[:0] // reset the list
 
 	if _, ok := i.feeds[pk]; ok == false {
-		i.feeds[pk] = make(map[uint64][]*indexRoot) // add to Index
+		i.feeds[pk] = newIndexHeads() // add to Index
 	}
 
 	return
@@ -293,7 +345,8 @@ func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
 // check a recived root. The method verify hash
 // and signature of the Root. The method also
 // check database, may be DB already has this
-// root
+// root. The method changes nothing in DB, it
+// only checks the Root
 func (i *Index) ReceivedRoot(
 	sig cipher.Sig,
 	val []byte,
@@ -388,7 +441,7 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 	// if the Root already exist
 
 	if ir, _ := i.selectRoot(r.Pub, r.Nonce, r.Seq); ir != nil {
-		ir.AccessTime = time.Now().UnixNano()
+		ir.Access = time.Now().UnixNano()
 		ir.sync = false
 		return
 	}
@@ -398,11 +451,11 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 	var hs, ok = i.feeds[r.Pub]
 
 	if ok == false {
-		hs = make(map[uint64][]*indexRoot)
+		hs = newIndexHeads()
 		i.feeds[r.Pub] = hs
 	}
 
-	var rs = hs[r.Nonce]
+	var rs = hs.h[r.Nonce]
 
 	rs = append(rs, &indexRoot{
 		Root: *dr,
@@ -414,9 +467,44 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 		return rs[i].Seq < rs[j].Seq
 	})
 
-	hs[r.Nonce] = rs
+	hs.h[r.Nonce] = rs
+
+	if hs.activet < r.Time {
+		hs.activet = r.Time
+		hs.activen = r.Nonce
+	}
 
 	return
+}
+
+// ActiveHead returns nonce of head that contains
+// newest Root object of given feed. If the feed
+// doesn't have Root obejcts, then reply will be
+// zero. The ActiveHead method looks for timestamps
+// of last Root obejcts only. E.g. the newest is
+// the newest of last. For exmaple if there are
+// three heads with 100 Root oebjcts, then only
+// timestamps of three last Root obejcts will
+// be compared. If given feed doesn't exist in DB
+// then reply will be zero too.
+//
+// Every new Root object can change the ActiveHead
+// value if its head is different. And it's impossible
+// to change the ActiveHead value other ways neither
+// than inserting Root
+func (i *Index) ActiveHead(pk cipher.PubKey) (nonce uint64) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	var hs, ok = i.feeds[pk]
+
+	if ok == false {
+		return
+	}
+
+	return hs.activen
+
 }
 
 // Heads returns list of heads of given feed.
@@ -433,9 +521,9 @@ func (i *Index) Heads(pk cipher.PubKey) (heads []uint64, err error) {
 		return nil, data.ErrNoSuchFeed
 	}
 
-	heads = make([]uint64, 0, len(hs))
+	heads = make([]uint64, 0, len(hs.h))
 
-	for nonce := range hs {
+	for nonce := range hs.h {
 		heads = append(heads, nonce)
 	}
 
@@ -446,7 +534,13 @@ func (i *Index) Heads(pk cipher.PubKey) (heads []uint64, err error) {
 // The last Root is Root with the greatest seq number. If
 // given head of the feed is blank, then the LastRoot
 // returns data.ErrNotFound. If the head does not exist
-// then the LastRoot returns data.ErrNoSuchFeed
+// then the LastRoot returns data.ErrNoSuchFeed.
+//
+// See also ActiveHead method. To get really last Root
+// of a feed combine the methods
+//
+//     r, err = c.LastRoot(pk, c.ActiveHead())
+//
 func (i *Index) LastRoot(
 	pk cipher.PubKey, // : feed
 	nonce uint64, //     : head
@@ -489,9 +583,9 @@ func (i *Index) delFeedFromIndex(
 
 	// a Root can be held
 
-	rss = make([][]*indexRoot, 0, len(hs))
+	rss = make([][]*indexRoot, 0, len(hs.h))
 
-	for _, rs := range hs {
+	for _, rs := range hs.h {
 
 		for _, ir := range rs {
 			if ir.hold > 0 {
@@ -512,7 +606,7 @@ func (i *Index) delFeedFromIndex(
 			return
 		}
 
-		for nonce, rs := range hs {
+		for nonce, rs := range hs.h {
 
 			var roots data.Roots
 			if roots, err = heads.Roots(nonce); err != nil {
@@ -597,7 +691,7 @@ func (i *Index) delHeadFromIndex(
 		return nil, data.ErrNoSuchFeed
 	}
 
-	if rs, ok = hs[nonce]; ok == false {
+	if rs, ok = hs.h[nonce]; ok == false {
 		return nil, data.ErrNoSuchHead
 	}
 
@@ -638,7 +732,7 @@ func (i *Index) delHeadFromIndex(
 
 	// delete from the Index
 
-	delete(hs, nonce)
+	delete(hs.h, nonce)
 
 	return
 
@@ -712,7 +806,7 @@ func (i *Index) delRootFromIndex(
 	}
 
 	var rs []*indexRoot
-	if rs, ok = hs[nonce]; ok == false {
+	if rs, ok = hs.h[nonce]; ok == false {
 		err = data.ErrNoSuchHead
 		return
 	}
@@ -754,9 +848,14 @@ func (i *Index) delRootFromIndex(
 	rs = rs[:len(rs)-1]
 
 	if len(rs) == 0 {
-		hs[nonce] = nil // delete slice (GC)
+		hs.h[nonce] = nil // delete slice (GC)
 	} else {
-		hs[nonce] = rs
+		hs.h[nonce] = rs
+	}
+
+	// cahnge active head if the Root is last fo active head
+	if ir.Time == hs.activet {
+		hs.setActive()
 	}
 
 	return ir.Hash, nil
@@ -897,13 +996,13 @@ func (i *Index) HasHead(pk cipher.PubKey, nonce uint64) (yep bool) {
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	var hs map[uint64][]*indexRoot
+	var hs *indexHeads
 
 	if hs, yep = i.feeds[pk]; yep == false {
 		return
 	}
 
-	_, yep = hs[nonce]
+	_, yep = hs.h[nonce]
 	return
 }
 
@@ -925,7 +1024,7 @@ func (i *Index) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
 		return data.ErrNoSuchFeed
 	}
 
-	if _, ok = hs[nonce]; ok {
+	if _, ok = hs.h[nonce]; ok {
 		return // already exists
 	}
 
@@ -947,7 +1046,68 @@ func (i *Index) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
 
 	// add to the Index
 
-	hs[nonce] = nil
+	i.feeds[pk] = newIndexHeads()
+	return
+
+}
+
+// Close Index syncing it with DB. Access time
+// of Root obejcts is not saved in DB and should
+// be synchronised with the Index
+func (i *Index) Close() (err error) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+
+		// range feeds
+
+		for pk, hs := range i.feeds {
+
+			// get heads
+
+			var heads data.Heads
+			if heads, err = feeds.Heads(pk); err != nil {
+				return
+			}
+
+			// range heads
+
+			for nonce, rs := range hs.h {
+
+				// get roots
+
+				var roots data.Roots
+				if roots, err = heads.Roots(nonce); err != nil {
+					return
+				}
+
+				// range roots
+
+				for _, ir := range rs {
+
+					if ir.sync == true {
+						continue // up to date
+					}
+
+					// if the sync is false then we have to
+					// touch the Root to update access time,
+					// nothing more
+					if _, err = roots.Has(ir.Seq); err != nil {
+						return
+					}
+
+				}
+
+			}
+
+		}
+
+		return
+
+	})
+
 	return
 
 }

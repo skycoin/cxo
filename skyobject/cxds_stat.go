@@ -20,6 +20,9 @@ type cxdsStat struct {
 	cwps    *statutil.Float // writes per second (cache)
 	cwrites int             // cache writes for current second
 
+	// cache cleaning pause
+	ccp *statutil.Duration
+
 	amount int // amount of items in DB
 	volume int // volume of items in DB
 
@@ -36,6 +39,8 @@ func newCxdsStat(rollAvgSamples int, amount, volume uint32) (c *cxdsStat) {
 	c.dwps = statutil.NewFloat(rollAvgSamples)
 	c.crps = statutil.NewFloat(rollAvgSamples)
 	c.cwps = statutil.NewFloat(rollAvgSamples)
+
+	c.ccp = statutil.NewDuration(rollAvgSamples)
 
 	c.amount = int(amount)
 	c.volume = int(volume)
@@ -142,6 +147,15 @@ func (c *cxdsStat) cRPS() float64 {
 
 func (c *cxdsStat) cWPS() float64 {
 	return c.cwps.Value()
+}
+
+func (c *cxdsStat) addCacheCleaning(pause time.Duration) {
+	c.ccp.Add(pause)
+}
+
+// avg of the pause
+func (c *cxdsStat) cacheCleaning() time.Duration {
+	return c.ccp.Value()
 }
 
 func (c *cxdsStat) secondLoop() {
