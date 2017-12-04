@@ -235,6 +235,7 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 		dr.Prev = r.Prev
 		dr.Hash = r.Hash
 		dr.Sig = r.Sig
+		dr.Time = r.Time
 
 		return roots.Set(dr) // save
 

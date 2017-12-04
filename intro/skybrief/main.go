@@ -11,6 +11,10 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
+func init() {
+	log.SetFlags(log.Lshortfile)
+}
+
 type User struct {
 	Name   string
 	Age    uint32
