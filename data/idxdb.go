@@ -72,16 +72,24 @@ type Roots interface {
 	// Ascend iterates all Root object ascending order.
 	// Use ErrStopIteration to stop iteration. Any error
 	// (except the ErrStopIteration) returned by given
-	// IterateRootsFunc will be passed through
+	// IterateRootsFunc will be passed through. The
+	// Ascend doesn't update access time
 	Ascend(iterateFunc IterateRootsFunc) (err error)
 	// Descend is the same as the Ascend, but it iterates
-	// decending order. From lates Root objects to
-	// oldes
+	// decending order. Use ErrStopIteration to stop
+	// iteration. The Descend doesn't update access time
 	Descend(iterateFunc IterateRootsFunc) (err error)
 
-	// Set or update Root. Method modifies given Root
-	// setting AccessTime and CreateTime to appropriate
-	// values
+	// Set adds new Root obejct to the DB. If an
+	// obejct already exists, then the Set touch
+	// it updating acess time. In this case, the
+	// set changes Access field of the gvien Root.
+	// If Root doesn't exist, then the Set sets
+	// Create field too. Thus, the method modifies
+	// given Root in any case. E.g. if Root exists
+	// then fields Create and Acess of given Root
+	// will be changed to saved. But Access field
+	// of saved Roto will be changed to now
 	Set(r *Root) (err error)
 
 	// Del Root by seq number. The Del never returns

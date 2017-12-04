@@ -3,7 +3,6 @@ package data
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -14,8 +13,9 @@ func testRoot(s string) (r *Root) {
 	_, sk := cipher.GenerateDeterministicKeyPair([]byte("test"))
 
 	r = new(Root)
-	r.AccessTime = 996
-	r.CreateTime = 998
+	r.Access = 996
+	r.Create = 998
+	r.Time = 995
 
 	r.Seq = 0
 	r.Prev = cipher.SHA256{}
@@ -56,20 +56,6 @@ func TestRoot_Decode(t *testing.T) {
 
 }
 
-func TestRoot_UpdateAccessTime(t *testing.T) {
-	// UpdateAccessTime()
-
-	r := testRoot("r1")
-	start := time.Now().UnixNano()
-	r.UpdateAccessTime()
-	end := time.Now().UnixNano()
-	if r.AccessTime < start {
-		t.Error("not updated")
-	} else if r.AccessTime > end {
-		t.Error("wrong time", r.AccessTime, end)
-	}
-}
-
 func TestRoot_Validate(t *testing.T) {
 
 	r := testRoot("seed")
@@ -104,6 +90,20 @@ func TestRoot_Validate(t *testing.T) {
 
 	if err := r.Validate(); err == nil {
 		t.Error("missing error")
+	}
+
+	// zero Time
+	r.Time = 0
+	if err := r.Validate(); err == nil {
+		t.Error("missing error")
+	}
+
+	// valid
+
+	r = testRoot("seed")
+
+	if err := r.Validate(); err != nil {
+		t.Error(err)
 	}
 
 }

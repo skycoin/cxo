@@ -19,8 +19,9 @@ func addFeed(t *testing.T, idx data.IdxDB, pk cipher.PubKey) {
 
 func newRoot(seed string, sk cipher.SecKey) (r *data.Root) {
 	r = new(data.Root)
-	r.CreateTime = 111
-	r.AccessTime = 222
+	r.Create = 111
+	r.Access = 222
+	r.Time = 789
 
 	r.Seq = 0
 	r.Prev = cipher.SHA256{}
@@ -458,10 +459,10 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 			if err = rs.Set(r); err != nil {
 				return
 			}
-			if r.CreateTime == 111 {
+			if r.Create == 111 {
 				t.Error("CreateTime not updated")
 			}
-			if r.AccessTime != r.CreateTime {
+			if r.Access != r.Create {
 				t.Error("access time not set")
 			}
 			var x *data.Root
@@ -495,7 +496,7 @@ func RootsSet(t *testing.T, idx data.IdxDB) {
 			if x, err = rs.Get(r.Seq); err != nil {
 				return
 			}
-			r.AccessTime = x.AccessTime
+			r.Access = x.Access
 			if *x != *r {
 				t.Error("wrong")
 			}

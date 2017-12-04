@@ -309,11 +309,13 @@ type driveRoots struct {
 // Ascend iterates over all Root objects ascending order
 func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
-	var seq uint64
-	var r = new(data.Root)
-	var sb = make([]byte, 8)
+	var (
+		seq uint64
+		r   = new(data.Root)
+		sb  = make([]byte, 8)
 
-	c := d.bk.Cursor()
+		c = d.bk.Cursor()
+	)
 
 	for seqb, er := c.First(); seqb != nil; seqb, er = c.Seek(seqb) {
 
@@ -340,9 +342,10 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 // Descend iterates over all Root objects descending order
 func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
-	var r = new(data.Root)
-
-	c := d.bk.Cursor()
+	var (
+		r = new(data.Root)
+		c = d.bk.Cursor()
+	)
 
 	for seqb, er := c.Last(); seqb != nil; {
 
@@ -360,6 +363,7 @@ func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 		c.Seek(seqb)        // rewind
 		seqb, er = c.Prev() // prev
 	}
+
 	return
 }
 
@@ -376,23 +380,27 @@ func (d *driveRoots) Set(r *data.Root) (err error) {
 	seqb = utob(r.Seq)
 
 	if val = d.bk.Get(seqb); len(val) == 0 {
+
 		// not found
-		r.UpdateAccessTime()
-		r.CreateTime = r.AccessTime
+		r.Access = time.Now().UnixNano()
+		r.Create = r.Access
+
 		return d.bk.Put(seqb, r.Encode())
 	}
 
 	// found
-	nr := new(data.Root)
+	var nr = new(data.Root)
 
 	if err = nr.Decode(val); err != nil {
 		panic(err)
 	}
 
-	r.AccessTime = nr.AccessTime
-	r.CreateTime = nr.CreateTime
+	r.Create = nr.Create // "reply"
+	r.Access = r.Access  // "reply"
 
-	nr.UpdateAccessTime()
+	// touch
+	nr.Access = time.Now().UnixNano()
+
 	return d.bk.Put(seqb, nr.Encode())
 }
 
@@ -403,22 +411,43 @@ func (d *driveRoots) Del(seq uint64) (err error) {
 
 // Get Root object by seq
 func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
-	seqb := utob(seq)
-	val := d.bk.Get(seqb)
+
+	var (
+		seqb = utob(seq)
+		val  = d.bk.Get(seqb)
+	)
+
 	if len(val) == 0 {
 		err = data.ErrNotFound
 		return
 	}
+
 	r = new(data.Root)
-	if err := r.Decode(val); err != nil {
+
+	if err = r.Decode(val); err != nil {
 		panic(err)
 	}
+
+	var access = r.Access // keep
+
+	r.Access = time.Now().UnixNano()
+
+	if err = d.bk.Put(seqb, r.Encode()); err != nil {
+		return
+	}
+
+	r.Access = access // set previous access time instead of current
+
 	return
 }
 
 // Has performs precense check using seq
-func (d *driveRoots) Has(seq uint64) (yep bool, _ error) {
-	yep = len(d.bk.Get(utob(seq))) > 0
+func (d *driveRoots) Has(seq uint64) (yep bool, err error) {
+	if _, err = d.Get(seq); err == data.ErrNotFound {
+		err = nil
+	} else if err == nil {
+		yep = true
+	}
 	return
 }
 
