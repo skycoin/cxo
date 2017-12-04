@@ -23,7 +23,8 @@ type indexRoot struct {
 type Index struct {
 	mx sync.Mutex
 
-	c      *Container // back reference (for db.IdxDB and for the Cache)
+	c *Container // back reference (for db.IdxDB and for the Cache)
+
 	feeds  map[cipher.PubKey]map[uint64][]*indexRoot
 	feedsl []cipher.PubKey // change on write
 }

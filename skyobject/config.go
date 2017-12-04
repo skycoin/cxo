@@ -29,6 +29,8 @@ const (
 
 	// default CachePolicy is LRU
 
+	MaxObjectSize int = 16 * 1024 * 1024 // default is 16M
+
 	// DB related constants
 	CXDS  string = "cxds.db" // default CXDS file name
 	IdxDB string = "idx.db"  // default IdxDB file name
@@ -117,8 +119,45 @@ type Config struct {
 	// CacheMaxVolume*(1.0 - CacheCleaning)
 	CacheMaxItemSize int
 
+	// limits
+
+	// MaxObjectSize is max size of obejct the CXO can
+	// manipulate. The size is size of encoded vlaue. The
+	// limit is required to protect against intentional
+	// DoS attacks. Because, CXO manipulate with objects
+	// in RAM a very big object can break a node.
+	//
+	// So, reducing this size be sure that database doesn't
+	// contain obejct large then this limit. Otherwise CXO
+	// falls. To check DB after reducing set the CheckSizes
+	// config to true. If DB contains obejcts large then
+	// this limit the NewContiner returns error. And this
+	// error can't be solved by CXO, e.g. you should
+	// resolve it yourself. But DB doesn't have any limits
+	// and it will wroks (separetly) fine.
+	//
+	// The MaxObjectSize can't be less then 1024
+	MaxObjectSize int
+
 	// DB configs
 
+	// CheckSizes force Container to check sizes of obejcts
+	// in database. The option can be useful if MaxObjectSize
+	// was reduced after last start and you not sure that
+	// DB contians valid objects. If this option is true then
+	// Container check DB and returns an error if there are
+	// obejcts alrge then MaxObejctSize limit. But, the
+	// checking stops on first error.
+	CheckSizes bool
+	// ReinitDB forces to reinitialize database. A database
+	// can be broken if previous time the CXO application
+	// was closed by panic, log.Fatal, unexpected os.Exit
+	// or similar. The CXO uses Write-Behind cache and this
+	// cache synchronizes wiht DB during closing. In this
+	// "fatal" cases DB will be reinitialized automatically.
+	// This option forces the reinit even if DB closed
+	// safetly
+	ReinitDB bool
 	// InMemoryDB uses database in memory. The option is
 	// usability trick for test. If DB field (see blow) is
 	// nil and this field is treu, then default database in
@@ -159,6 +198,8 @@ func NewConfig() (conf *Config) {
 	conf.CachePolicy = LRU
 	conf.CacheCleaning = CacheCleaning
 	conf.CacheMaxItemSize = CacheMaxItemSize
+
+	conf.MaxObjectSize = MaxObjectSize
 
 	// data dir
 	conf.DataDir = DataDir()
@@ -227,6 +268,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"skyobject.Config.CacheaxItemSize is too big: %f (> %f)",
 			c.CacheMaxItemSize, cacheMaxItemSize)
+	}
+
+	if c.MaxObjectSize < 1024 {
+		return fmt.Errorf("skyobject.Config.MAxObejctSize is too small: %d",
+			c.MaxObjectSize)
 	}
 
 	return nil

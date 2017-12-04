@@ -27,6 +27,11 @@ func (p *Pack) Get(key cipher.SHA256) (val []byte, err error) {
 
 // Set key-value pair
 func (p *Pack) Set(key cipher.SHA256, val []byte) (err error) {
+
+	if len(val) > p.c.conf.MaxObjectSize {
+		return &ObjectIsTooLargeError{key}
+	}
+
 	_, err = p.c.Set(key, val, 1)
 	return
 }

@@ -34,6 +34,10 @@ func (u *Unpack) reset() {
 // Set value
 func (u *Unpack) Set(key cipher.SHA256, val []byte) (err error) {
 
+	if len(val) > u.c.conf.MaxObjectSize {
+		return &ObjectIsTooLargeError{key}
+	}
+
 	var rc uint32
 	if rc, err = u.c.Set(key, val, 1); err != nil {
 		return

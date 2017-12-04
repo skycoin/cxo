@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	ErrRootIsHeld    = errors.New("Root is held")
-	ErrRootIsNotHeld = errors.New("Root is not held")
+	ErrRootIsHeld       = errors.New("Root is held")
+	ErrRootIsNotHeld    = errors.New("Root is not held")
+	ErrObjectIsTooLarge = errors.New("object is too large (see MaxObjectSize)")
 )
 
 // A Container represents
@@ -67,6 +68,11 @@ func NewContainer(conf *Config) (c *Container, err error) {
 			c.Cache.stat.Close() // release resources
 		}
 	}()
+
+	// check size of obejcts
+	if err = c.checkSize(); err != nil {
+		return
+	}
 
 	// init DB, repair if need, get stat, and initialize cache
 	if err = c.initDB(); err != nil {
@@ -178,21 +184,6 @@ func (c *Container) getPack(reg *registry.Registry) (pack *Pack) {
 	return
 }
 
-// WalkRoot walks through given Root calling given WalkFunc with
-// hash of the Root and hash of Registry of the Root. After that
-// the WalkRoot is the same as (*registry.Root).Walk
-func (c *Container) WalkRoot(
-	r *registry.Root,
-	walkFunc registry.WalkFunc,
-) (
-	err error,
-) {
-
-	//
-
-	return
-}
-
 func (c *Container) initRoot(cr *cxdsRCs, rootHash cipher.SHA256) (err error) {
 
 	var val []byte
@@ -242,9 +233,31 @@ func (c *Container) initRoot(cr *cxdsRCs, rootHash cipher.SHA256) (err error) {
 
 }
 
+func (c *Container) checkSize() (err error) {
+
+	if c.conf.CheckSizes == false {
+		return
+	}
+
+	err = c.db.CXDS().Iterate(
+		func(key cipher.SHA256, _ uint32) (err error) {
+			var val []byte
+			if val, _, err = c.db.CXDS().Get(key, 0); err != nil {
+				return
+			}
+			if len(val) > c.conf.MaxObjectSize {
+				return &ObjectIsTooLargeError{key}
+			}
+			return
+		})
+
+	return
+
+}
+
 func (c *Container) initDB() (err error) {
 
-	if c.db.IdxDB().IsClosedSafely() == true {
+	if c.db.IdxDB().IsClosedSafely() == true && c.conf.ReinitDB == false {
 
 		// get stat from the CXDS
 		var amount, volume uint32
@@ -378,6 +391,12 @@ func (c *Container) walkRoot(
 	}
 
 	return r.Walk(pack, walkFunc)
+}
+
+// Config returns configs of the Container
+func (c *Container) Config() (conf Config) {
+	conf = c.conf // copy
+	return
 }
 
 // RootByHash returns Root by its hash, that is
