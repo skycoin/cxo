@@ -46,12 +46,8 @@ cover.html
 
 cmd/cxocli/cxocli
 cmd/cxod/cxod
-cmd/cxodbfix/cxodbfix
 
-intro/pass_through/server/server
-intro/pass_through/pipe/pipe
-intro/pass_through/client/client
-intro/cxtweet/cxtweet
+intro/skybrief/skybrief
 
 # tests directory
 
