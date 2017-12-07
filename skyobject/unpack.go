@@ -272,6 +272,9 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 
 	}
 
+	// add the Root to statistic of the Index
+	c.Index.stat.addRoot()
+
 	return
 
 }

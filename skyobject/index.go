@@ -63,9 +63,15 @@ type Index struct {
 
 	feeds  map[cipher.PubKey]*indexHeads
 	feedsl []cipher.PubKey // change on write
+
+	stat   *indexStat
+	clsoeo sync.Once // close once
 }
 
 func (i *Index) load(c *Container) (err error) {
+
+	// create statistic
+	i.stat = newIndexStat(c.conf.RollAvgSamples)
 
 	i.feeds = make(map[cipher.PubKey]*indexHeads)
 	i.c = c
@@ -332,7 +338,11 @@ func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
 		return
 	}
 
-	i.feedsl = i.feedsl[:0] // reset the list
+	// reset the change-on-write list;
+	// we can't use i.feedsl[:0], because
+	// next call rewrite list that can be
+	// used by end-user
+	i.feedsl = nil
 
 	if _, ok := i.feeds[pk]; ok == false {
 		i.feeds[pk] = newIndexHeads() // add to Index
@@ -473,6 +483,9 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 		hs.activet = r.Time
 		hs.activen = r.Nonce
 	}
+
+	// add to stat
+	i.stat.addRoot()
 
 	return
 }
@@ -635,7 +648,7 @@ func (i *Index) delFeedFromIndex(
 	// delete from the Index
 
 	delete(i.feeds, pk)
-	i.feedsl = i.feedsl[:0] // clear the list
+	i.feedsl = nil // clear the list
 
 	return
 }
@@ -963,7 +976,10 @@ func (i *Index) DelRoot(pk cipher.PubKey, nonce, seq uint64) (err error) {
 	return i.delRootRelatedValues(rootHash)
 }
 
-// Feeds returns list of feeds
+// Feeds returns list of feeds. For performance
+// the list built once until changes (add/remove
+// feed), thus it's unsafe to modify the list.
+// Copy the list if you want to modify it
 func (i *Index) Feeds() (feeds []cipher.PubKey) {
 
 	i.mx.Lock()
@@ -1055,6 +1071,8 @@ func (i *Index) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
 // of Root obejcts is not saved in DB and should
 // be synchronised with the Index
 func (i *Index) Close() (err error) {
+
+	i.stat.Clsoe() // close statistic first
 
 	i.mx.Lock()
 	defer i.mx.Unlock()
