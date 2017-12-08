@@ -22,6 +22,11 @@ const Version uint16 = 3
 // be sure that all messages implements Msg interface compiler time
 var (
 
+	// pings
+
+	_ Msg = &Ping{} // -> Ping
+	_ Msg = &Pong{} // <- Pong
+
 	// handshake
 
 	_ Msg = &Syn{} // <- Syn (protocol version)
@@ -65,6 +70,36 @@ var (
 type Msg interface {
 	Type() Type     // type of the message to encode
 	Encode() []byte // encode the message to []byte prefixed with the Type
+}
+
+//
+// pings
+//
+
+// A Ping messege
+type Ping struct{}
+
+// Type implements Msg interface
+func (*Ping) Type() Type { return PingType }
+
+// Ecnode the Ping
+func (*Ping) Encode() []byte {
+	return []byte{
+		byte(PingType),
+	}
+}
+
+// A Pong messege
+type Pong struct{}
+
+// Type implements Msg interface
+func (*Pong) Type() Type { return PongType }
+
+// Ecnode the Pong
+func (*Pong) Encode() []byte {
+	return []byte{
+		byte(PongType),
+	}
 }
 
 //
@@ -288,29 +323,35 @@ type Type uint8
 
 // Types
 const (
-	SynType = 1 + iota // 1
-	AckType            // 2
+	PingType = 1 + iota // 1
+	PongType            // 2
 
-	OkType  // 3
-	ErrType // 4
+	SynType // 3
+	AckType // 4
 
-	SubType   // 5
-	UnsubType // 6
+	OkType  // 5
+	ErrType // 6
 
-	RqListType // 7
-	ListType   // 8
+	SubType   // 7
+	UnsubType // 8
 
-	RootType     // 9
-	RootDoneType // 10
+	RqListType // 9
+	ListType   // 10
 
-	RqObjectType // 11
-	ObjectType   // 12
+	RootType     // 11
+	RootDoneType // 12
 
-	RqPreviewType // 13 (sic!)
+	RqObjectType // 13
+	ObjectType   // 14
+
+	RqPreviewType // 15
 )
 
 // Type to string mapping
 var msgTypeString = [...]string{
+	PingType: "Ping",
+	PongType: "Pong",
+
 	SynType: "Syn",
 	AckType: "Ack",
 
@@ -341,6 +382,9 @@ func (m Type) String() string {
 }
 
 var forwardRegistry = [...]reflect.Type{
+	PingType: reflect.TypeOf(Ping{}),
+	PongType: reflect.TypeOf(Pong{}),
+
 	SynType: reflect.TypeOf(Syn{}),
 	AckType: reflect.TypeOf(Ack{}),
 

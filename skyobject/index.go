@@ -219,6 +219,24 @@ func (i *Index) selectRoot(
 	return
 }
 
+func (i *Index) holdRoot(
+	pk cipher.PubKey,
+	nonce uint64,
+	seq uint64,
+) (
+	err error,
+) {
+
+	var ir *indexRoot
+	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
+		return
+	}
+
+	ir.hold++
+	return
+
+}
+
 // HoldRoot used to avoid removing of a
 // Root object with all related objects.
 // A Root can be used for end-user needs
@@ -238,13 +256,7 @@ func (i *Index) HoldRoot(
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	var ir *indexRoot
-	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
-		return
-	}
-
-	ir.hold++
-	return
+	return i.holdRoot(pk, nonce, seq)
 
 }
 
@@ -391,15 +403,7 @@ func (i *Index) ReceivedRoot(
 	return // data.ErrNoSuchFeed
 }
 
-// AddRoot to DB. The method doesn't create feed of the root
-// but if head of the root doesn't exist, then the method
-// creates the head. The method never return already have error
-// and the method never save the Root inside CXDS. E.g. the
-// method adds the Root to index (that is necessary)
-func (i *Index) AddRoot(r *registry.Root) (err error) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
+func (i *Index) addRoot(r *registry.Root) (err error) {
 
 	if r.IsFull == false {
 		return errors.New("can't add non-full Root: " + r.Short())
@@ -488,6 +492,36 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 	i.stat.addRoot()
 
 	return
+
+}
+
+// AddRoot to DB. The method doesn't create feed of the root
+// but if head of the root doesn't exist, then the method
+// creates the head. The method never return already have error
+// and the method never save the Root inside CXDS. E.g. the
+// method adds the Root to index (that is necessary)
+func (i *Index) AddRoot(r *registry.Root) (err error) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	return i.addRoot(r)
+}
+
+// AddHoldRoot is AddRoot that holds given Root. Use
+// this mehtod instead of sequential calls of AddRoot
+// and HoldRoot
+func (i *Index) AddHoldRoot(r *registry.Root) (err error) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	if err = i.addRoot(r); err != nil {
+		return
+	}
+
+	return i.holdRoot(r.Pub, r.Nonce, r.Seq)
+
 }
 
 // ActiveHead returns nonce of head that contains
