@@ -403,23 +403,35 @@ func (i *Index) ReceivedRoot(
 	return // data.ErrNoSuchFeed
 }
 
-func (i *Index) addRoot(r *registry.Root) (err error) {
+func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 	if r.IsFull == false {
-		return errors.New("can't add non-full Root: " + r.Short())
+		return false, errors.New("can't add non-full Root: " + r.Short())
 	}
 
 	if r.Pub == (cipher.PubKey{}) {
-		return errors.New("blank public key of Root: " + r.Short())
+		return false, errors.New("blank public key of Root: " + r.Short())
 	}
 
 	if r.Hash == (cipher.SHA256{}) {
-		return errors.New("blank hash of Root: " + r.Short())
+		return false, errors.New("blank hash of Root: " + r.Short())
 	}
 
 	if r.Sig == (cipher.Sig{}) {
-		return errors.New("blank signature of Root: " + r.Short())
+		return false, errors.New("blank signature of Root: " + r.Short())
 	}
+
+	// if the Root already exist
+
+	if ir, _ := i.selectRoot(r.Pub, r.Nonce, r.Seq); ir != nil {
+		ir.Access = time.Now().UnixNano()
+		ir.sync = false
+
+		alreadyHave = true // already have
+		return
+	}
+
+	// save in the IdxDB
 
 	var dr *data.Root
 
@@ -449,14 +461,6 @@ func (i *Index) addRoot(r *registry.Root) (err error) {
 	})
 
 	if err != nil {
-		return
-	}
-
-	// if the Root already exist
-
-	if ir, _ := i.selectRoot(r.Pub, r.Nonce, r.Seq); ir != nil {
-		ir.Access = time.Now().UnixNano()
-		ir.sync = false
 		return
 	}
 
@@ -497,10 +501,12 @@ func (i *Index) addRoot(r *registry.Root) (err error) {
 
 // AddRoot to DB. The method doesn't create feed of the root
 // but if head of the root doesn't exist, then the method
-// creates the head. The method never return already have error
-// and the method never save the Root inside CXDS. E.g. the
+// creates the head. The method never return already have error,
+// it returns alreadyHave reply instead. E.g. if the Container
+// already have this Root, then the alreadyHave reply will be
+// true. The method never save the Root inside CXDS. E.g. the
 // method adds the Root to index (that is necessary)
-func (i *Index) AddRoot(r *registry.Root) (err error) {
+func (i *Index) AddRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 	i.mx.Lock()
 	defer i.mx.Unlock()
@@ -510,17 +516,20 @@ func (i *Index) AddRoot(r *registry.Root) (err error) {
 
 // AddHoldRoot is AddRoot that holds given Root. Use
 // this mehtod instead of sequential calls of AddRoot
-// and HoldRoot
-func (i *Index) AddHoldRoot(r *registry.Root) (err error) {
+// and HoldRoot. The method never hold Root if it
+// already exist in DB. E.g. if the alradyHave reply
+// is true, then the Root was not held
+func (i *Index) AddHoldRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	if err = i.addRoot(r); err != nil {
+	if alreadyHave, err = i.addRoot(r); err != nil || alreadyHave == true {
 		return
 	}
 
-	return i.holdRoot(r.Pub, r.Nonce, r.Seq)
+	err = i.holdRoot(r.Pub, r.Nonce, r.Seq)
+	return
 
 }
 

@@ -45,13 +45,15 @@ func (a *Addresses) Set(addr string) error {
 // called many times for different connections,
 // e.g. a Root object can be received from many
 // connections. The callback is first filter on
-// on the path of the Root object. But the
-// callback never called if a Root obejct
-// received but already exist in DB of the node
-// (e.g. the callback called for new Root obejcts
-// for this node). The Root object can't be used
+// the path of the Root object. But the callback
+// never called if a Root obejct received but
+// already exist in DB of the node (e.g. the
+// callback called for new Root objects for this
+// node). The Root object can't be used
 // since it is not full yet. See OnRootFilledFunc
-// for Root you can use.
+// for Root you can use. The callback can be
+// called for Root objects that never be filled
+// for some reasons.
 type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 
 // OnRootFilledFunc represents callback that
@@ -59,7 +61,7 @@ type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 // The Root is held by Container and can't be
 // removed inside this function. After the
 // call the Root will be unheld and you should
-// to held it if you want to use it after. The
+// to hold it if you want to use it after. The
 // callback called once per Root.
 type OnRootFilledFunc func(c *Conn, r *registry.Root)
 
@@ -93,7 +95,7 @@ type OnConnectFunc func(c *Conn) (terminate error)
 // when a conenction closed. The callback called
 // with closing reason. The reason is nil if the
 // connection closed manually. The Conn argument
-// is closed conenction that can't be used (e.g.
+// is closed connection that can't be used (e.g.
 // is can be used partially).
 type OnDisconnectFunc func(c *Conn, reason error)
 
@@ -210,7 +212,7 @@ type Config struct {
 
 	// All callbacks called from goroutine of
 	// connection and should not block executing,
-	// because it can slow down of block handling
+	// because it can slow down or block handling
 	// incoming messeges from the connection.
 
 	// OnRootReceived is a callback that called

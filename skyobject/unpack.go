@@ -17,7 +17,7 @@ type unpackItem struct {
 }
 
 // An Unpack implements registry.Pack
-// and used to cahnge or cerate a Roots
+// and used to change or cerate a Root
 type Unpack struct {
 	m     map[cipher.SHA256]*unpackItem // hash -> rc
 	c     *Container                    // Set method

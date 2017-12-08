@@ -1,7 +1,6 @@
 package node
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -18,8 +17,8 @@ import (
 // unique id that consist of cipher.PubKey
 // and related cipher.SecKey. The NodeID
 // used to protect nodes against cross
-// conenctions (simultaneous conenctions,
-// A to B and B to A). Because, a conenction
+// connections (simultaneous connections,
+// A to B and B to A). Because, a connection
 // is a duplex
 type NodeID struct {
 	Pk cipher.PubKey
@@ -28,6 +27,11 @@ type NodeID struct {
 
 func (n *NodeID) generate() {
 	n.Pk, n.Sk = cipher.GenerateKeyPair()
+}
+
+type addr struct {
+	net  string // tcp or udp
+	addr string // remote addr
 }
 
 // A Node represents network P2P transport
@@ -42,20 +46,46 @@ type Node struct {
 	id NodeID
 
 	// lock
-	fmx sync.Mutex
+	mx sync.Mutex
 
 	// related Container
 	c *skyobject.Container
 
+	// feeds -> []*Conn
+	fc map[cipher.PubKey]map[*Conn]struct{}
+	// no fl, because Container Feeds method used
+
+	// node id -> connection
+	ic map[cipher.PubKey]*Conn
+
 	// listen and connect
-	tcp *TCPFactory
-	udp *UDPFactory
+	tcp *TCP
+	udp *UDP
 
 	// discovery
 	discovery *discovery.MessengerFactory
 
 	// keep config
 	config *Config
+
+	// pending conenctions
+	pc map[*Conn]struct{}
+
+	//
+	// closing
+	//
+
+	// quiting
+	quiting chan struct{}
+
+	// clsoed
+	clsoeq chan struct{}
+
+	// wait for goroutines
+	await sync.WaitGroup
+
+	// close once
+	closeo sync.Once
 }
 
 // ID retursn ID of the Node. See NodeID
@@ -94,76 +124,243 @@ func (n *Node) Publish(r *registry.Root) {
 
 }
 
-// Listen starts listener. The network argument can be "tcp" or "udp".
-// IP type will be selected by address (e.g. "127.0.0.1" or "[::1]").
-// Provide blank string to listen on all available interfaces with
-// arbitrary port asignment. Or use ":0" for the same. The Node
-// starts listener inside NewNode using Config. But, it's possible
-// to start listening manually using this method
-func (n *Node) Listen(network string, address string) (err error) {
+// Connections returns list of connections of given feed.
+// Use blank public key to get all connections that not share
+// a feed
+func (n *Node) Connections(pk cipher.PubKey) (cf []*Conn) {
 
-	switch network {
-	case "tcp":
-		return n.listenTCP(address)
-	case "udp":
-		return n.listenUDP(address)
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	var cs = n.fc[pk]
+
+	cf = make([]*Conn, 0, len(cs))
+
+	for c := range cs {
+		cf = append(cf, c)
 	}
 
-	return fmt.Errorf("unknown network type %q", network)
+	return
+}
+
+// TCP returns TCP transport of the Node
+func (n *Node) TCP() (tcp *TCP) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	n.createTCP()
+
+	return n.tcp
+}
+
+// UDP returns UDP transport of the Node
+func (n *Node) UDP() (tcp *UDP) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	n.createUDP()
+
+	return n.udp
+}
+
+// add to pending
+func (n *Node) addPendingConn(c *Conn) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	n.pc[c] = struct{}{}
+}
+
+// without lock
+func (n *Node) addConnection(c *Conn) (err error) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if _, ok := n.ic[c.peerID.Pk]; ok == true {
+		return ErrAlreadyHaveConnection
+	}
+
+	delete(n.pc, c) // remove from pending
+
+	n.fc[cipher.PubKey{}][c] = struct{}{}
+	n.ic[c.peerID.Pk] = c
+
+	return
 
 }
 
-// LsitenTCP starts TCP listener.
-func (n *Node) ListenTCP(address string) (err error) {
-	return n.Listen("tcp", address)
+// under lock
+func (n *Node) delConnection(c *Conn) {
+
+	delete(n.ic, c.peerID.Pk)
+
+	// use range over the map instead of
+	// c.Feeds() to avoid slice building
+	for pk := range c.feeds {
+		delete(n.fc[pk], c)
+	}
+
+	delete(n.fc[cipher.PubKey{}], c)
+
 }
 
-// ListenUDP starts UDP listener.
-func (n *Node) ListenUDP(address string) (err error) {
-	return n.Listen("udp", address)
+// under lock
+func (n *Node) addConnFeed(c *Conn, pk cipher.PubKey) {
+
+	delete(n.fc[cipher.PubKey{}], c)
+
+	var cf, ok = n.fc[pk]
+
+	if ok == false {
+		cf = make(map[*Conn]struct{})
+		n.fc[pk] = cf
+	}
+
+	cf[c] = struct{}{}
+
 }
 
-// call under lock of the fmx
-func (n *Node) createTCPFactory() {
+// under lock
+func (n *Node) delConnFeed(c *Conn, pk cipher.PubKey) {
+
+	delete(n.fc[pk], c)
+
+	if len(c.feeds) == 0 {
+		n.fc[cipher.PubKey{}][c] = struct{}{}
+	}
+
+}
+
+// call under lock of the mx
+func (n *Node) createTCP() {
 
 	if n.tcp != nil {
 		return // already created
 	}
 
-	n.tcp = newTCPFactory(n.acceptedConnectionCallback)
+	n.tcp = newTCP(n)
 
 }
 
-func (n *Node) listenTCP(address string) (err error) {
-	n.fmx.Lock()
-	defer n.fmx.Unlock()
-
-	n.createTCPFactory()
-
-	return n.tcp.Listen(address)
-
-}
-
-// call under lock of the fmx
-func (n *Node) createUDPFactory() {
+// call under lock of the mx
+func (n *Node) createUDP() {
 
 	if n.udp != nil {
 		return // alrady created
 	}
 
-	n.udp = newUDPFactory(n.acceptedConnectionCallback)
+	n.udp = newUDP(n)
 
 }
 
-func (n *Node) listenUDP(address string) (err error) {
-	n.fmx.Lock()
-	defer n.fmx.Unlock()
+func (n *Node) onConnect(c *Conn) {
 
-	n.createUDPFactory()
+	var occ = n.config.OnConnect
 
-	return n.udp.Listen(address)
+	if occ == nil {
+		return
+	}
+
+	var terminate error
+
+	if terminate = occ(c); terminate != nil {
+		c.closeWithError(terminate)
+	}
+
 }
 
-func (n *Node) acceptedConnectionCallback(c *factory.Connection) {
-	// TODO
+func (n *Node) onDisconenct(c *Conn, reason error) {
+
+	var odc = n.config.OnDisconnect
+
+	if odc == nil {
+		return
+	}
+
+	odc(c, reason)
+
+}
+
+// callback
+func (n *Node) acceptTCPConnection(fc *factory.Connection) {
+
+	var c, err = n.wrapConnection(fc, true, true)
+
+	if err != nil {
+
+		n.Printf("[ERR] [%s] error: %v",
+			connString(true, true, fc.GetRemoteAddr().String()),
+			err)
+
+	} else if n.Pins()&NewConnPin != 0 {
+
+		n.Debug(NewConnPin, "[%s] accept", c.String())
+
+	}
+
+}
+
+// callback
+func (n *Node) acceptUDPConnection(fc *factory.Connection) {
+
+	var c, err = n.wrapConnection(fc, true, false)
+
+	if err != nil {
+
+		n.Printf("[ERR] [%s] error: %v",
+			connString(true, true, fc.GetRemoteAddr().String()),
+			err)
+
+	} else if n.Pins()&NewConnPin != 0 {
+
+		n.Debug(NewConnPin, "[%s] accept", c.String())
+
+	}
+
+}
+
+// delete from pending and close underlying
+// factory.Connection
+func (n *Node) delPendingConnClose(c *Conn) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	delete(n.pc, c)
+	c.Connection.Close()
+
+}
+
+func (n *Node) wrapConnection(
+	fc *factory.Connection, // :
+	isIncoming bool, //        :
+	isTCP bool, //             :
+) (
+	c *Conn, //                :
+	err error, //              :
+) {
+
+	c = n.newConnection(fc, true, true)
+
+	// handshake
+	if err = c.handshake(n.quiting); err != nil {
+		n.delPendingConnClose(c)
+		return
+	}
+
+	// check out peer id
+
+	if err = n.addConnection(c); err != nil {
+		n.delPendingConnClose(c)
+		return
+	}
+
+	c.run()
+	n.onConnect(c)
+
+	return
+
 }

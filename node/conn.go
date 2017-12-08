@@ -10,7 +10,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/net/conn"
+	"github.com/skycoin/net/factory"
 
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject/registry"
@@ -19,7 +19,12 @@ import (
 // feed of a connection
 type connFeed struct {
 
-	// currently filling Root object
+	// lock
+	sync.Mutex
+
+	// currently filling Root object;
+	// the Root is held by this node
+	// and by remote peer too
 	fill *registry.Root
 
 	// a Root that waits to be filled;
@@ -30,16 +35,27 @@ type connFeed struct {
 	// because the node worries about
 	// latest Root only, and the node
 	// fills one Root per connection-
-	// -feed at the same time
-	pending *registry.Root
+	// -feed at the same time; the
+	// Root is held by this node and
+	// by remote peer too
+	fillPending *registry.Root
 
-	//
+	// a Root that sent to peer and held
+	// by this node waiting for response
+	sent *registry.Root
 
+	// if new Root obejct published and
+	// the 'sent' Root is not filled by
+	// peer yet, then the new Root waits;
+	// only one waiting Root per connection-
+	// -feed allowed; a Root newer then the
+	// sentPending replaces the sentPending
+	sentPending *registry.Root
 }
 
 // A Conn represent connection of the Node
 type Conn struct {
-	conn.Connection
+	*factory.Connection
 
 	// lock
 	mx sync.Mutex
@@ -47,8 +63,14 @@ type Conn struct {
 	// is incoming or not
 	incoming bool
 
+	// is tcp or udp
+	tcp bool
+
 	// back reference
 	n *Node
+
+	// peer id
+	peerID NodeID
 
 	// feeds this connection share with peer
 	feeds map[cipher.PubKey]*connFeed
@@ -61,15 +83,93 @@ type Conn struct {
 	seq uint32
 
 	// requests
-	reqs map[uint32]<-chan msg.Msg
+	reqs map[uint32]chan<- msg.Msg
 
 	// channels (from factory.Connection)
-	sendq    chan<- []byte
-	receiveq <-chan []byte
-	closeq   <-chan struct{}
+	sendq  chan<- []byte
+	closeq <-chan struct{}
+
+	// wait for receiving loop
+	await sync.WaitGroup
 
 	// close once
 	closeo sync.Once
+}
+
+func (n *Node) newConnection(
+	fc *factory.Connection,
+	isIncoming bool,
+	isTCP bool,
+) (
+	c *Conn,
+) {
+
+	c = new(Conn)
+
+	c.Connection = fc
+	c.incoming = isIncoming
+	c.tcp = isTCP
+
+	c.n = n
+
+	c.feeds = make(map[cipher.PubKey]*connFeed)
+	c.reqs = make(map[uint32]chan<- msg.Msg)
+
+	c.sendq = fc.GetChanOut()
+	c.closeq = make(chan struct{})
+
+	n.addPendingConn(c)
+
+	//
+	// the next step is c.handshake() and c.run()
+	//
+
+	return
+}
+
+// start handling
+func (c *Conn) run() {
+	c.await.Add(1)
+	go c.receiving()
+}
+
+func (c *Conn) decodeRaw(raw []byte) (seq, rseq uint32, m msg.Msg, err error) {
+
+	if len(raw) < 9 {
+		err = errors.New("invlaid messege received: too short")
+		return
+	}
+
+	seq = binary.LittleEndian.Uint32(raw)
+	raw = raw[4:]
+
+	rseq = binary.LittleEndian.Uint32(raw)
+	raw = raw[4:]
+
+	m, err = msg.Decode(raw)
+	return
+}
+
+//
+// info
+//
+
+// IsTCP returns true if this conenctions
+// is tcp connection
+func (c *Conn) IsTCP() (tcp bool) {
+	return c.tcp
+}
+
+// IsUDP retursn true if this conenctions
+// si udp conenction
+func (c *Conn) IsUDP() (udp bool) {
+	return c.tcp == false
+}
+
+// PeerID is ID of remote peer that used
+// for internals and unique
+func (c *Conn) PeerID() (id NodeID) {
+	return c.peerID
 }
 
 // IsIncoming returns true if this Conn is
@@ -82,10 +182,6 @@ func (c *Conn) IsIncomig() (ok bool) {
 func (c *Conn) IsOutgoing() (ok bool) {
 	return c.incoming == false
 }
-
-//
-// info
-//
 
 // Node returns related Node
 func (c *Conn) Node() (node *Node) {
@@ -104,16 +200,39 @@ func (c *Conn) Feeds() (feeds []cipher.PubKey) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	feeds = make([]cipher.PubKey, len(c.feeds))
+	feeds = make([]cipher.PubKey, 0, len(c.feeds))
 
-	//// TODO ///////////////
-	//
-	copy(feeds, c.feeds)
-	//
-	/////////////////////////
+	for pk := range c.feeds {
+		feeds = append(feeds, pk)
+	}
 
 	return
 
+}
+
+func connString(isIncoming, isTCP bool, addr string) (s string) {
+
+	if isIncoming == true {
+		s = "-> "
+	} else {
+		s = "<- "
+	}
+
+	if isTCP == true {
+		s += "tcp://"
+	} else {
+		s += "udp://"
+	}
+
+	return s + addr
+}
+
+// String returns string "-> network://remote_address"
+// for example: "-> tcp://127.0.0.1:8887". Where the
+// arrow is "->" for incoming connections and is "<-"
+// for outgoing
+func (c *Conn) String() (s string) {
+	return connString(c.incoming, c.tcp, c.Address())
 }
 
 //
@@ -167,26 +286,35 @@ func (c *Conn) Close() (err error) {
 }
 
 func (c *Conn) nextSeq() uint32 {
-	return atomic.AddUint32(c.seq, 1)
+	return atomic.AddUint32(&c.seq, 1)
+}
+
+func (c *Conn) encodeMsg(seq, rseq uint32, m msg.Msg) (raw []byte) {
+
+	var em = m.Encode()
+
+	raw = make([]byte, 8, 8+len(em))
+
+	binary.LittleEndian.PutUint32(raw, seq)
+	binary.LittleEndian.PutUint32(raw[:4], rseq)
+
+	raw = append(raw, em...)
+
+	return
+
 }
 
 func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) {
-	c.send(seq, rseq, m.Encode())
+	c.sendRaw(c.encodeMsg(seq, rseq, m))
 }
 
-func (c *Conn) sendRaw(seq, rseq uint32, raw []byte) {
-
-	var raws = make([]byte, 8, 8+len(raw))
-
-	binary.LittleEndian.PutUint32(raws, seq)
-	binary.LittleEndian.PutUint32(raws[:4], rseq)
-
-	raws = append(raws, raw)
+func (c *Conn) sendRaw(raw []byte) {
 
 	select {
-	case c.sendq <- raws:
+	case c.sendq <- raw:
 	case <-c.closeq:
 	}
+
 }
 
 func (c *Conn) closeWithError(err error) {
@@ -205,64 +333,79 @@ func (c *Conn) fatality(args ...interface{}) {
 
 func (c *Conn) receiving() {
 
+	defer c.await.Done()
+
 	var (
+		receiveq = c.GetChanIn()
+		closeq   = c.closeq
+
 		seq, rseq uint32
 		m         msg.Msg
 		err       error
+
+		raw []byte
+		ok  bool
 	)
 
-	for raw := range c.receiveq {
+	for {
 
-		// the connection can be closed
 		select {
-		case <-c.closeq:
+
+		case raw, ok = <-receiveq:
+
+			if ok == false {
+				return
+			}
+
+			// [ 4 seq ][ 4 rseq ][ 1 msg type ]
+
+			if len(raw) < 9 {
+				c.fatality("invalid messege received: samll size")
+				return
+			}
+
+			// seq of the Msg
+			seq = binary.LittleEndian.Uint32(raw)
+			raw = raw[4:]
+
+			// response for a seq or zero
+			rseq = binary.LittleEndian.Uint32(raw)
+			raw = raw[4:]
+
+			if m, err = msg.Decode(raw); err != nil {
+				c.fatality("can't decode received messege: ", err)
+				return
+			}
+
+			// the messege can be a response for a request
+			if rq, ok := c.isResponse(rseq); ok == true {
+				rq <- m
+				continue
+			}
+
+			if err = c.handle(seq, m); err != nil {
+				c.fatality("error handling messege: ", err)
+				return
+			}
+
+		case <-closeq:
 			return
-		default:
-		}
 
-		// [ 4 seq ][ 4 rseq ][ 1 msg type ]
-
-		if len(raw) < 9 {
-			c.fatality("invalid messege received: samll size")
-			return
-		}
-
-		// seq of the Msg
-		seq = binary.LittleEndian.Uint32(raw)
-		raw = raw[4:]
-
-		// response for a seq or zero
-		rseq = binary.LittleEndian.Uint32(raw)
-		raw = raw[4:]
-
-		if m, err = msg.Decode(raw); err != nil {
-			c.fatality("can't decode received messege: ", err)
-			return
-		}
-
-		// the messege can be a response for a request
-		if rq, ok := c.isResponse(rseq); ok == true {
-			rq <- m
-			continue
-		}
-
-		if err = c.handle(seq, m); err != nil {
-			c.fatality("error handling messege: ", err)
-			return
 		}
 
 	}
 
 }
 
-func (c *Conn) isResponse(rseq uint32) (rq <-chan msg.Msg, ok bool) {
+func (c *Conn) isResponse(rseq uint32) (rq chan<- msg.Msg, ok bool) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	return c.reqs[rseq]
+	rq, ok = c.reqs[rseq]
+	return
 }
 
-func (c *Conn) addRequest(seq uint32, rq <-chan msg.Msg) {
+func (c *Conn) addRequest(seq uint32, rq chan<- msg.Msg) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
@@ -301,7 +444,7 @@ func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
 	c.sendMsg(seq, 0, m)
 
 	select {
-	case reply <- rq:
+	case rq <- reply:
 
 		return
 
@@ -331,17 +474,17 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 	// subscriptions
 
-	case *Sub: // <- Sub (feed)
+	case *msg.Sub: // <- Sub (feed)
 
 		return c.handleSub(seq, x)
 
-	case *Unsub: // <- Unsub (feed)
+	case *msg.Unsub: // <- Unsub (feed)
 
 		return c.handleUnsub(seq, x)
 
 	// public server features
 
-	case *RqList: // <- RqList ()
+	case *msg.RqList: // <- RqList ()
 
 		return c.handleRqList(seq, x)
 
@@ -349,29 +492,33 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 	// root (push and done)
 
-	case *Root: // <- Root (feed, nonce, seq, sig, val)
+	case *msg.Root: // <- Root (feed, nonce, seq, sig, val)
 
 		return c.handleRoot(seq, x)
 
-	case *RootDone: // -> RD   (feed, nonce, seq)
+	case *msg.RootDone: // -> RD   (feed, nonce, seq)
 
 		return c.handleRootDone(seq, x)
 
 	// obejcts
 
-	case *RqObject: // <- RqO (key, prefetch)
+	case *msg.RqObject: // <- RqO (key, prefetch)
 
 		return c.handleRqObject(seq, x)
 
-	case *Object: // -> O   (val, vals)
+	case *msg.Object: // -> O   (val, vals)
 
 		return c.handleObject(seq, x)
 
 	// preview
 
-	case *RqPreview: // -> RqPreview (feed)
+	case *msg.RqPreview: // -> RqPreview (feed)
 
 		return c.handleRqPreview(seq, x)
+
+	default:
+
+		return fmt.Errorf("invalid messege type %T", m)
 
 	}
 
@@ -396,7 +543,7 @@ func (c *Conn) handleUnsub(seq uint32, sub *msg.Unsub) (err error) {
 // request list of feeds
 func (c *Conn) handleRqList(seq uint32, sub *msg.RqList) (err error) {
 
-	if c.n.config.Pings == false {
+	if c.n.config.Public == false {
 		c.sendErr(seq, ErrNotPublic)
 		return
 	}
