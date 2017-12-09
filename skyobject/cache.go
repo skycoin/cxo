@@ -722,8 +722,8 @@ func (c *Cache) Inc(
 }
 
 // Want is service method. It used by the node package for filling.
-// If wanted value exists in DB, it will eb sent through given
-// channel. Otherwise, it will be sent when it comes
+// If wanted value exists in DB, it will be sent through given
+// channel. Otherwise, it will be sent when it comes.
 func (c *Cache) Want(
 	key cipher.SHA256, // : requested value
 	gc chan<- []byte, //  : channel to receive value
@@ -775,6 +775,45 @@ func (c *Cache) Want(
 
 	err = c.putItem(key, val, rc)
 	return
+}
+
+// Unwant is opposite to the want. It removes the channel
+func (c *Cache) Unwant(
+	key cipher.SHA256,
+	gc chan<- []byte,
+) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	var it, ok = c.c[key]
+
+	if ok == false {
+		return
+	}
+
+	if it.isWanted() == false {
+		return
+	}
+
+	var fwant = it.fwant
+
+	for i, gg := range fwant {
+
+		if gg == gc {
+
+			// delete from the list
+			copy(fwant[i:], fwant[i+1:])
+			fwant[len(fwant)-1] = nil
+			fwant = fwant[:len(fwant)-1]
+
+			break
+		}
+
+	}
+
+	it.fwant = fwant
+
 }
 
 // SetIfWanted perfroms Set if vlaue with
