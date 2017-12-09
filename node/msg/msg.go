@@ -51,6 +51,7 @@ var (
 
 	_ Msg = &Root{}     // <- Root (feed, nonce, seq, sig, val)
 	_ Msg = &RootDone{} // -> RD   (feed, nonce, seq)
+	_ Msg = &RootErr{}  // -> RE (feed, nonce, seq)
 
 	// obejcts
 
@@ -221,7 +222,7 @@ func (*RqList) Encode() []byte {
 
 // A List is reply for RqList
 type List struct {
-	List []cipher.PubKey
+	Feeds []cipher.PubKey
 }
 
 // Type implements Msg interface
@@ -274,14 +275,30 @@ func (*RootDone) Type() Type { return RootDoneType }
 // Ecnode the RootDone
 func (r *RootDone) Encode() []byte { return encode(r) }
 
+// A RootErr represents error that sender
+// of a Root sends to receiver to notify
+// the receiver that Root can't be replicated
+// because of some error
+type RootErr struct {
+	Feed  cipher.PubKey // feed
+	Nonce uint64        // head
+	Seq   uint64        // seq of the Root
+	Err   string        // reason
+}
+
+// Type implements Msg interface
+func (*RootErr) Type() Type { return RootErrType }
+
+// Ecnode the RootErr
+func (r *RootErr) Encode() []byte { return encode(r) }
+
 //
 // objects
 //
 
 // A RqObject represents a Msg that request a data by hash
 type RqObject struct {
-	Key      cipher.SHA256   // request
-	Prefetch []cipher.SHA256 // prefetch objects
+	Key cipher.SHA256 // request
 }
 
 // Type implements Msg interface
@@ -292,8 +309,7 @@ func (r *RqObject) Encode() []byte { return encode(r) }
 
 // An Object reperesents encoded object
 type Object struct {
-	Value    []byte   // encoded object in person
-	Prefetch [][]byte // prefetch obejcts or nil
+	Value []byte // encoded object in person
 }
 
 // Type implements Msg interface
@@ -343,11 +359,12 @@ const (
 
 	RootType     // 11
 	RootDoneType // 12
+	RootErrType  // 13
 
-	RqObjectType // 13
-	ObjectType   // 14
+	RqObjectType // 14
+	ObjectType   // 15
 
-	RqPreviewType // 15
+	RqPreviewType // 16
 )
 
 // Type to string mapping
@@ -369,6 +386,7 @@ var msgTypeString = [...]string{
 
 	RootType:     "Root",
 	RootDoneType: "RootDone",
+	RootErrType:  "RootErr",
 
 	RqObjectType: "RqObject",
 	ObjectType:   "Object",
@@ -402,6 +420,7 @@ var forwardRegistry = [...]reflect.Type{
 
 	RootType:     reflect.TypeOf(Root{}),
 	RootDoneType: reflect.TypeOf(RootDone{}),
+	RootErrType:  reflect.TypeOf(RootErr{}),
 
 	RqObjectType: reflect.TypeOf(RqObject{}),
 	ObjectType:   reflect.TypeOf(Object{}),
