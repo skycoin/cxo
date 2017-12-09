@@ -11,7 +11,9 @@ import (
 
 // A Getter represents interface used
 // to get an object if it doesn't exist
-// in DB. The Getter used by the Preview
+// in DB. The Getter used by the Preview.
+// The Getter _must_ care about hash-value
+// compliance
 type Getter interface {
 	Get(key cipher.SHA256) (val []byte, err error)
 }

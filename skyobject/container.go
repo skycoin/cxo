@@ -1,7 +1,7 @@
 package skyobject
 
 import (
-	"errors"
+	"log"
 	"path/filepath"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -12,11 +12,9 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-var (
-	ErrRootIsHeld       = errors.New("Root is held")
-	ErrRootIsNotHeld    = errors.New("Root is not held")
-	ErrObjectIsTooLarge = errors.New("object is too large (see MaxObjectSize)")
-)
+func init() {
+	log.SetFlags(log.Lshortfile)
+}
 
 // A Container represents
 type Container struct {
@@ -432,4 +430,12 @@ func (c *Container) Close() (err error) {
 
 	return
 
+}
+
+func fatal(args ...interface{}) {
+	log.Fatalln(arg...)
+}
+
+func fatalf(format string, args ...interface{}) {
+	log.Fatalf(format, args...)
 }

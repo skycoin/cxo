@@ -33,6 +33,9 @@ func (c CachePolicy) String() string {
 }
 
 type item struct {
+
+	// TODO (kostyarin): turn the fwant to be a map
+
 	fwant []chan<- []byte // fillers wanters
 
 	// the points is time.Now().Unix() or number of acesses;
@@ -779,8 +782,8 @@ func (c *Cache) Want(
 
 // Unwant is opposite to the want. It removes the channel
 func (c *Cache) Unwant(
-	key cipher.SHA256,
-	gc chan<- []byte,
+	key cipher.SHA256, // :
+	gc chan<- []byte, //  :
 ) {
 
 	c.mx.Lock()

@@ -1,7 +1,17 @@
 package skyobject
 
 import (
+	"errors"
+
 	"github.com/skycoin/skycoin/src/cipher"
+)
+
+// common errors
+var (
+	ErrRootIsHeld       = errors.New("Root is held")
+	ErrRootIsNotHeld    = errors.New("Root is not held")
+	ErrObjectIsTooLarge = errors.New("object is too large (see MaxObjectSize)")
+	ErrTerminated       = errors.New("terminated")
 )
 
 // ObejctIsTooLargeError represents error that

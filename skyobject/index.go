@@ -368,7 +368,9 @@ func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
 // and signature of the Root. The method also
 // check database, may be DB already has this
 // root. The method changes nothing in DB, it
-// only checks the Root
+// only checks the Root. The method set IsFull
+// field of the Root to true if DB already have
+// this Root
 func (i *Index) ReceivedRoot(
 	sig cipher.Sig,
 	val []byte,
