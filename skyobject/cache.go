@@ -32,11 +32,20 @@ func (c CachePolicy) String() string {
 	return fmt.Sprintf("CachePolicy<%d>", c)
 }
 
+// An obejct represents DB object
+// that is []byte, its hash and
+// references counter
+type Object struct {
+	Key cipher.SHA256 // hash of the Val
+	Val []byte        // vlaue
+	RC  uint32        // references count
+}
+
 type item struct {
 
 	// TODO (kostyarin): turn the fwant to be a map
 
-	fwant []chan<- []byte // fillers wanters
+	fwant []chan<- Object // fillers wanters
 
 	// the points is time.Now().Unix() or number of acesses;
 	// e.g. the points is LRU or LFU number and depends on
@@ -567,9 +576,9 @@ func (c *Cache) Get(
 }
 
 // never block
-func sendWanted(gc chan<- []byte, val []byte) {
+func sendWanted(gc chan<- Object, obj Object) {
 	select {
-	case gc <- val:
+	case gc <- obj:
 	default:
 	}
 }
@@ -595,7 +604,7 @@ func (c *Cache) setWanted(
 
 	// send to wanters
 	for _, gc := range it.fwant {
-		sendWanted(gc, val)
+		sendWanted(gc, Object{key, val, rc})
 	}
 
 	delete(c.c, key) // remove from wanted
@@ -729,7 +738,7 @@ func (c *Cache) Inc(
 // channel. Otherwise, it will be sent when it comes.
 func (c *Cache) Want(
 	key cipher.SHA256, // : requested value
-	gc chan<- []byte, //  : channel to receive value
+	gc chan<- Object, //  : channel to receive value
 ) (
 	err error, //         : the err never be data.ErrNotFound
 ) {
@@ -748,7 +757,7 @@ func (c *Cache) Want(
 
 		// exist (not wanted)
 
-		sendWanted(gc, it.val) // never block
+		sendWanted(gc, Object{key, it.val, it.cc}) // never block
 
 		c.stat.addReadingCacheRequest() // got from cache
 		it.touch(c.policy)              // touch the item
@@ -767,14 +776,14 @@ func (c *Cache) Want(
 	c.stat.addDBGet(0, rc, val, err)
 
 	if err == data.ErrNotFound {
-		c.c[key] = &item{fwant: []chan<- []byte{gc}} // add to wanted
+		c.c[key] = &item{fwant: []chan<- Object{gc}} // add to wanted
 		return nil                                   // no errors
 	} else if err != nil {
 		return // database failure
 	}
 
 	// found
-	sendWanted(gc, val)
+	sendWanted(gc, Object{key, val, rc})
 
 	err = c.putItem(key, val, rc)
 	return
@@ -783,7 +792,7 @@ func (c *Cache) Want(
 // Unwant is opposite to the want. It removes the channel
 func (c *Cache) Unwant(
 	key cipher.SHA256, // :
-	gc chan<- []byte, //  :
+	gc chan<- Object, //  :
 ) {
 
 	c.mx.Lock()

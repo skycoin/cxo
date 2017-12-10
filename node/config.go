@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/skycoin/skycoin/src/cipher"
+
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
@@ -54,6 +56,12 @@ func (a *Addresses) Set(addr string) error {
 // for Root you can use. The callback can be
 // called for Root objects that never be filled
 // for some reasons.
+//
+// If a Root received, then it doesn't mean that
+// the Root will be filled. A newer Root can
+// replace the received one in some cases. In
+// this cases the OnFillingBreaks callback does
+// not called.
 type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 
 // OnRootFilledFunc represents callback that
@@ -72,11 +80,13 @@ type OnRootFilledFunc func(c *Conn, r *registry.Root)
 // There is no way to resume the filling. If
 // a remote peer push this Root obejct again,
 // then it can be filled (or can be not). The
-// callback called once per Root if all connections
-// that fill this Root can't fill it. In the case
-// with filling from many connections the callback
-// will be called after last connections breaks the
-// filling.
+// callback can be called many times if many
+// connections fill a Root and breaks the
+// filling. The callback ever called if connection
+// or node closed
+//
+// The Conn argument is locked and can be used
+// read only.
 type OnFillingBreaksFunc func(c *Conn, r *registry.Root, err error)
 
 // OnconnectFunc represents callback that called
@@ -98,6 +108,22 @@ type OnConnectFunc func(c *Conn) (terminate error)
 // is closed connection that can't be used (e.g.
 // is can be used partially).
 type OnDisconnectFunc func(c *Conn, reason error)
+
+// OnsubscribeRemoteFunc represents callback that
+// called when a remote peer subscribes to some
+// feed of the Node. The Node accepts the subscription
+// if the Node share the feed. You can add the feed
+// to the Node inside the callback to allow the
+// subscription even if the Node doesn't share the
+// feed. Also, you can reject this subscription
+// returning error
+type OnSubscribeRemoteFunc func(c *Conn, feed cipher.PubKey) (reject error)
+
+// OnUnsubscribeRemoteFunc represent callback that
+// called when a remote peer unsubscribes from
+// some feed. The callback have informative role
+// only
+type OnUnsubscribeRemoteFunc func(c *Conn, feed cipher.PubKey)
 
 // A Config represents configurations
 // of the Node. To create Config filled
@@ -207,7 +233,21 @@ type Config struct {
 	Discovery Addresses
 
 	//
-	// Callbacks
+	// Subscription related callbacks
+	//
+
+	// OnSubscribeRemote is callback for remote
+	// subscriptions. See OnSubscribeRemote for
+	// details
+	OnSubscribeRemote OnSubscribeRemoteFunc
+
+	// OnUnsubscribeRemote is callback for remote
+	// unsubscriptions. See OnUnsubscribeRemote for
+	// details
+	OnUnsubscribeRemote OnUnsubscribeRemoteFunc
+
+	//
+	// Root related callbacks
 	//
 
 	// All callbacks called from goroutine of

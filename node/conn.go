@@ -12,45 +12,20 @@ import (
 
 	"github.com/skycoin/net/factory"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
+type fillSent struct {
+	f *filler
+	s *sender
+}
+
 // feed of a connection
 type connFeed struct {
-
-	// lock
 	sync.Mutex
-
-	// currently filling Root object;
-	// the Root is held by this node
-	// and by remote peer too
-	fill *registry.Root
-
-	// a Root that waits to be filled;
-	// only one pending Root allowed,
-	// if remote peer send new Root to
-	// fill, then this pending Root
-	// will be repalced with new one,
-	// because the node worries about
-	// latest Root only, and the node
-	// fills one Root per connection-
-	// -feed at the same time; the
-	// Root is held by this node and
-	// by remote peer too
-	fillPending *registry.Root
-
-	// a Root that sent to peer and held
-	// by this node waiting for response
-	sent *registry.Root
-
-	// if new Root obejct published and
-	// the 'sent' Root is not filled by
-	// peer yet, then the new Root waits;
-	// only one waiting Root per connection-
-	// -feed allowed; a Root newer then the
-	// sentPending replaces the sentPending
-	sentPending *registry.Root
+	heads map[uint64]fillSent
 }
 
 // A Conn represent connection of the Node
@@ -84,6 +59,16 @@ type Conn struct {
 
 	// requests
 	reqs map[uint32]chan<- msg.Msg
+
+	// stat
+
+	// TODO (kostyarin): RPS, WPS
+
+	// collecting
+
+	// rank of the connection; every conneciton has
+	// its rank (filling rank), the rank is ...
+	// _ or not to do _
 
 	// channels (from factory.Connection)
 	sendq  chan<- []byte
@@ -245,24 +230,106 @@ func (c *Conn) String() (s string) {
 // timeout configured by Config
 func (c *Conn) RemoteFeeds() (feeds []cipher.PubKey, err error) {
 
-	// TODO
+	var reply msg.Msg
+
+	if reply, err = c.sendRequest(&msg.RqList{}); err != nil {
+		return
+	}
+
+	switch x := reply.(type) {
+
+	case *msg.List:
+
+		feeds = x.List
+
+	case *msg.Err:
+
+		err = errors.New(x.Err)
+
+	default:
+
+		err = fmt.Errorf("invalid response type %T", reply)
+
+	}
 
 	return
 }
 
-// Subscribe to gievn feed of remote peer
+// Subscribe to gievn feed of remote peer. The Subscribe adds
+// feed to the Node if the Node doesn't have the feed calling
+// the (*Node).Share method. The feed will not be removed from
+// the Node
 func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
 
-	// TODO
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	// already subscribed ?
+
+	if _, ok := c.feeds[feed]; ok == true {
+		return
+	}
+
+	// add the feed to node
+
+	if err = c.n.Share(feed); err != nil {
+		return
+	}
+
+	var reply msg.Msg
+
+	if reply, err = c.sendRequest(&msg.Sub{Feed: feed}); err != nil {
+		return
+	}
+
+	switch x := reply.(type) {
+
+	case *msg.Ok:
+
+		// success
+
+	case *msg.Err:
+
+		err = errors.New(x.Err)
+
+	default:
+
+		err = fmt.Errorf("invalid response type %T", reply)
+
+	}
+
+	if err != nil {
+		reutrn
+	}
+
+	c.feeds[feed] = new(connFeed)
 
 	return
-
 }
 
 // Unsubscribe from given feed of remote peer
-func (c *Conn) Unsubscribe(feed cipher.PubKey) (err error) {
+func (c *Conn) Unsubscribe(feed cipher.PubKey) {
 
-	// TODO
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	var cf, ok = c.feeds[feed]
+
+	// not subscribed
+
+	if ok == false {
+		return
+	}
+
+	cf.Lock()
+	defer cf.Unlock()
+
+	cf.unholdSent(c.n)
+	delete(c.feeds, cf)
+
+	c.sendMsg(c.nextSeq(), 0, &msg.Unsub{
+		Feed: feed,
+	})
 
 	return
 
@@ -494,21 +561,25 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 	case *msg.Root: // <- Root (feed, nonce, seq, sig, val)
 
-		return c.handleRoot(seq, x)
+		return c.handleRoot(x)
 
 	case *msg.RootDone: // -> RD   (feed, nonce, seq)
 
-		return c.handleRootDone(seq, x)
+		return c.handleRootDone(x)
+
+	case *msg.RootErr: // RE -> (feed, nonce, seq, reason)
+
+		return c.handleRootErr(x)
 
 	// obejcts
 
 	case *msg.RqObject: // <- RqO (key, prefetch)
 
-		return c.handleRqObject(seq, x)
+		return c.handleRqObject(x)
 
 	case *msg.Object: // -> O   (val, vals)
 
-		return c.handleObject(seq, x)
+		return c.handleObject(x)
 
 	// preview
 
@@ -524,38 +595,161 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 }
 
-// subscribe
-func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (err error) {
+// subscribe (with reply)
+func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 
-	//
+	var err error // not fatal error
+
+	// don't allow blank
+
+	if sub.Feed == (cipher.PubKey{}) {
+
+		err = errors.New("blank public key")
+		c.sendErr(seq, err)
+
+		return
+	}
+
+	// already subscribed
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	if _, ok = c.feeds[sub.Feed]; ok == true {
+		c.sendOk(seq)
+		return
+	}
+
+	// callback
+	var reject = c.n.onSubscribeRemote(c, feed)
+
+	// reject subscription by callback
+	if reject != nil {
+		c.sendErr(seq, reject)
+		return
+	}
+
+	// has feed ?
+
+	c.n.mx.Lock()
+	defer c.n.mx.Unlock()
+
+	var cs, ok = c.n.fc[sub.Feed]
+
+	if ok == false {
+
+		err = errors.New("not share the feed")
+		c.sendErr(seq, err)
+
+		return
+	}
+
+	// ok
+
+	c.n.addConnFeed(c, sub.Feed)
+
+	c.feeds[sub.Feed] = new(connFeed)
+
+	c.sendOk(seq)
 
 	return
 }
 
-// unsubscribe
-func (c *Conn) handleUnsub(seq uint32, sub *msg.Unsub) (err error) {
+// unsubscribe (no reply)
+func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (_ error) {
 
-	//
+	var err error // not fatal error
+
+	if unsub.Feed == (cipher.PubKey{}) {
+		//
+		return
+	}
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	// don't have the feed
+
+	var cf, ok = c.feeds[unsub.Feed]
+
+	if ok == false {
+		return // not subscribed (do nothing)
+	}
+
+	// TODO: terminate subscription
 
 	return
 }
 
 // request list of feeds
-func (c *Conn) handleRqList(seq uint32, sub *msg.RqList) (err error) {
+func (c *Conn) handleRqList(seq uint32, rq *msg.RqList) (_ error) {
 
 	if c.n.config.Public == false {
 		c.sendErr(seq, ErrNotPublic)
 		return
 	}
 
-	// TODO
+	c.sendMsg(c.nextSeq(), seq, &msg.List{
+		Feeds: c.n.Feeds(),
+	})
 
 	return
 }
 
-func (c *Conn) handleRoot(seq uint32, sub *msg.Root) (err error) {
+// got Root (preview Root objects are handled by request-responnse, not here)
+func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 
-	//
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	// do we share the feed
+
+	var cf, ok = c.feeds[root.Feed]
+
+	if ok == false {
+		return // not subscribed to the feed
+	}
+
+	var (
+		r   *registry.Root //
+		err error          // not fatal
+	)
+
+	if r, err = c.n.c.ReceivedRoot(root.Sig, root.Value); err != nil {
+		c.n.Printf("[ERR] [%s] received Root error: %s", c.String(), err)
+		return // keep connection ?
+	}
+
+	// does nothing, because the Node already have this Root
+	if r.IsFull == true {
+		return
+	}
+
+	// so, let's check seq number, may be the Root is too old
+	var last *registry.Root
+	if last, err = c.n.c.LastRoot(r.Pub, r.Nonce); err != nil {
+
+		if err != data.ErrNotFound {
+
+			c.n.Printf("[ERR] [%s] %s, can't get last root",
+				c.String(), r.Short())
+
+			return
+
+		}
+
+	}
+
+	// the received Root is older then we have
+	if last != nil && r.Seq <= last.Seq {
+		return
+	}
+
+	// if the last is nil, then DB doesn't have any Root of the feed-head
+
+	// let's fill the Root, checking callback first
+
+	c.addToFiller(cf, r)
 
 	return
 }
@@ -567,9 +761,33 @@ func (c *Conn) handleRootDone(seq uint32, sub *msg.RootDone) (err error) {
 	return
 }
 
-func (c *Conn) handleRqObject(seq uint32, sub *msg.RqObject) (err error) {
+func (c *Conn) handleRootErr(seq uint32, sub *msg.RootDone) (err error) {
 
 	//
+
+	return
+}
+
+func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) (_ error) {
+
+	var (
+		object   []byte
+		prefetch []cipher.SHA256
+
+		err error
+	)
+
+	if val, _, err = c.n.c.Get(rq.Key, 0); err != nil {
+
+		if err != data.ErrNotFound {
+			c.n.Fatal("[ERR] CXDS DB failure:", err)
+			return
+		}
+
+		// TODO (add to waiting to push)
+
+		return // not found
+	}
 
 	return
 }

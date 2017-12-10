@@ -9,6 +9,7 @@ import (
 	discovery "github.com/skycoin/net/skycoin-messenger/factory"
 
 	"github.com/skycoin/cxo/node/log"
+	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
@@ -27,11 +28,6 @@ type NodeID struct {
 
 func (n *NodeID) generate() {
 	n.Pk, n.Sk = cipher.GenerateKeyPair()
-}
-
-type addr struct {
-	net  string // tcp or udp
-	addr string // remote addr
 }
 
 // A Node represents network P2P transport
@@ -53,7 +49,7 @@ type Node struct {
 
 	// feeds -> []*Conn
 	fc map[cipher.PubKey]map[*Conn]struct{}
-	// no fl, because Container Feeds method used
+	fl []cipher.PubKey // clear-on-write
 
 	// node id -> connection
 	ic map[cipher.PubKey]*Conn
@@ -68,7 +64,7 @@ type Node struct {
 	// keep config
 	config *Config
 
-	// pending conenctions
+	// pending connections
 	pc map[*Conn]struct{}
 
 	//
@@ -362,5 +358,172 @@ func (n *Node) wrapConnection(
 	n.onConnect(c)
 
 	return
+
+}
+
+// Share given feed. By default the Node dousn't share
+// a feed. Even if underlying Container have any. To
+// start sharing a feed, call this method. Thus, you can
+// keep some feeds locally. To share all feeds of the
+// Container use following code
+//
+//     for _, pk := range n.Container().Feeds() {
+//         n.Share(pk)
+//      }
+//
+// The Share method adds given feed to underlying
+// Container calling (*skyobjec.Container).AddFeed()
+// method. The method never return an error if given
+// feed is already shared. The share never associate
+// the feed with a conenction. You should to call
+// (*Conn).Subscribe to do that.
+func (n *Node) Share(feed cipher.PubKey) (err error) {
+
+	// alrady have
+
+	if _, ok := n.fc[pk]; ok == true {
+		return
+	}
+
+	// add to the Container
+
+	if err = n.c.AddFeed(feed); err != nil {
+		return
+	}
+
+	// add
+
+	n.fc[feed] = make(map[*Conn]struct{})
+	n.fl = nil // clear
+
+	return
+
+}
+
+// DontShare given feed. The method does't remove the
+// feed from underlying Container. The method calls
+// Unsubscribe() for all connections that share the feed.
+// The method does nothing if the Node doesn't share the
+// feed The Node never sync with Container automatically,
+// and before removing a feed from Container, call this
+// method to prevent sharing feed that does not exist
+func (n *Node) DontShare(feed cipher.PubKey) (err error) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	var cs, ok = n.fc[feed]
+
+	if ok == false {
+		return
+	}
+
+	for c := range cs {
+		if err = c.Unsubscribe(feed); err != nil {
+			return
+		}
+	}
+
+	delete(n.fc, feed)
+	n.fl = nil // clear
+
+	return
+
+}
+
+func (n *Node) onSubscribeRemote(c *Conn, feed cipher.PubKey) (reject error) {
+
+	var osr = n.config.OnSubscribeRemote
+
+	if osr == nil {
+		return
+	}
+
+	return osr(c, feed)
+}
+
+func (n *Node) onUnsubscribeRemote(c *Conn, feed cipher.PubKey) {
+
+	var ousr = n.config.OnUnsubscribeRemote
+
+	if ousr == nil {
+		return
+	}
+
+	ousr(c, feed)
+}
+
+// send to feed (call under lock)
+func (n *Node) send(pk cipher.PubKey, m msg.Msg) {
+
+	for c := range n.fc[pk] {
+		c.sendMsg(c.nextSeq(), 0, m)
+	}
+
+}
+
+// Feeds the Node share. The reply is read-only
+func (n *Node) Feeds() (feeds []cipher.PubKey) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if feeds = n.fl; feeds != nil {
+		return
+	}
+
+	// one for cipher.PubKey{} (blank)
+	feeds = make([]cipher.PubKey, 0, len(n.fc)-1)
+
+	for pk := range n.fc {
+
+		if pk == (cipher.PubKey{}) {
+			continue
+		}
+
+		feeds = append(feeds, pk)
+	}
+
+	n.fl = feeds
+
+	return
+}
+
+// HasFeed returns true if the Node share given feed
+func (n *Node) HasFeed(feed cipher.PubKey) (ok bool) {
+
+	if feed == (cipher.PubKey{}) {
+		return
+	}
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	_, ok = n.fc[feed]
+
+	return
+}
+
+func (n *Node) onRootReceived(c *Conn, r *registry.Root) (err error) {
+
+	var orr = n.config.OnRootReceived
+
+	if orr == nil {
+		return
+	}
+
+	return orr(c, r)
+
+}
+
+func (n *Node) OnFillingBreaks(c *Conn, r *registry.Root, reason error) {
+
+	var brk = n.config.OnFillingBreaks
+
+	if brk == nil {
+		return
+	}
+
+	brk(c, r, reason)
 
 }

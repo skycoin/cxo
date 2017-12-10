@@ -433,7 +433,7 @@ func (c *Container) Close() (err error) {
 }
 
 func fatal(args ...interface{}) {
-	log.Fatalln(arg...)
+	log.Fatalln(args...)
 }
 
 func fatalf(format string, args ...interface{}) {
