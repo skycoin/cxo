@@ -1,17 +1,10 @@
-package registry
+package skyobject
 
 import (
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
 )
-
-// An Incer represents represents
-// skyobejct.Container (only Inc)
-// method used
-type Incer interface {
-	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
-}
 
 // An Incs used to keep all changes of
 // references counter of object of filling
@@ -23,6 +16,36 @@ type Incs struct {
 	mx   sync.Mutex
 	incs map[cipher.SHA256]map[interface{}]int
 }
+
+//
+// Developer note about the Incs
+//
+//
+// if rc is greater then 1, then this obejct used
+// by another Root and probably has all its childs,
+// and in this case we should not go deepper to subtree,
+// but the object can be an object of a filling Root
+// that is not full yet and fails later; thus we have
+// to check all objets to be sure that subtree of
+// this objects present in DB; so, that is slow,
+// a very slow, for big objects; and the rc is not
+// a guarantee
+// ---
+// a way to avoid this unnecessary walking
+// ---
+// may be there is a better way, but for now we are
+// using provided Incs, that used by fillers; thus
+// we can get 'real rc'
+//
+//     'real rc' = rc - (all inc)
+//
+// and if the 'real rc' is greater the 1, the we
+// can skip walking deepper, because object with
+// it's subtree in DB and it's guarantee
+//
+// so, but the looking uses mutex and can slow down
+// the filling, but we can avoid many disk acesses
+//
 
 // Inc increment given key
 func (i *Incs) Inc(p interface{}, key cipher.SHA256) {
@@ -41,7 +64,7 @@ func (i *Incs) Inc(p interface{}, key cipher.SHA256) {
 
 // Remove from DB (decrement) all objects related
 // to given interface
-func (i *Incs) Remove(c Incer, p interface{}) (err error) {
+func (i *Incs) Remove(c *Container, p interface{}) (err error) {
 	i.mx.Lock()
 	defer i.mx.Unlock()
 

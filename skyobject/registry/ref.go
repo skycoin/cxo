@@ -120,3 +120,12 @@ func (r *Ref) Walk(
 	return
 
 }
+
+// Split used by the node package to fill the Ref.
+// At the end the Split method calls s.Done, thus
+// before the Split call s.Add(1)
+func (r *Ref) Split(s Splitter, el Schema) {
+	defer s.Done()
+
+	splitSchemaHash(s, el, r.Hash)
+}

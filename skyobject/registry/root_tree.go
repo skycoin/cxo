@@ -590,7 +590,6 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it gotree.GTStructure) {
 	err = refs.Walk(pack, el, func(
 		hash cipher.SHA256,
 		depth int,
-		_ ...cipher.SHA256,
 	) (
 		deepper bool,
 		err error,

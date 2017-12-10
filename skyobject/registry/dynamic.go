@@ -2,7 +2,6 @@ package registry
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -150,11 +149,30 @@ func (d *Dynamic) Walk(
 	return
 }
 
-//
-func (d *Dynamic) Split(pack Pack) {
+// Split used by the node package to fill the Dynamic.
+// At the end the Split method calls s.Done, thus
+// before the Split call s.Add(1)
+func (d *Dynamic) Split(s Splitter) {
+	defer s.Done()
 
-}
+	if d.IsValid() == false {
+		s.Fail(ErrInvalidDynamicReference)
+		return
+	}
 
-func (d *Dynamic) split(pack Pack) {
-	//
+	if d.IsBlank() == true {
+		return // nothing to split
+	}
+
+	var (
+		sch Schema
+		err error
+	)
+
+	if sch, err = s.Registry().SchemaByReference(d.Schema); err != nil {
+		s.Fail(err)
+		return
+	}
+
+	splitSchemaHash(s, sch, d.Hash)
 }

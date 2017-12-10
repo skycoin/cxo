@@ -33,18 +33,9 @@ import (
 //
 // A caller ignores the deepper reply if going deepper is
 // not possible
-//
-// The WalkFunc has optional argument 'prefetch'. In some
-// cases walking tree, walker can determine sibling
-// elements of current. For example a node of Refs tree
-// has siblings. And for the node it called once with
-// prefetch argument. The prefetch used by node for
-// filling. It allows to prefetch many items using
-// one network request
 type WalkFunc func(
 	hash cipher.SHA256, //        : hash of current element (or Refs-node)
 	depth int, //                 : depth is zero for elements
-	prefetch ...cipher.SHA256, // : prefethc values
 ) (
 	deepper bool, //              : go deepper
 	err error, //                 : an error
@@ -161,10 +152,9 @@ func (r *Refs) Walk(
 
 	// ok, let's walk
 	var deepper bool
-	var prefetch = r.prefetch(r.depth)
 
 	// starting from Root (depth + 1 for the root)
-	if deepper, err = walkFunc(r.Hash, r.depth+1, prefetch...); err != nil {
+	if deepper, err = walkFunc(r.Hash, r.depth+1); err != nil {
 		if err == ErrStopIteration {
 			err = nil
 		}
@@ -178,31 +168,6 @@ func (r *Refs) Walk(
 
 	if err == ErrStopIteration {
 		err = nil
-	}
-
-	return
-
-}
-
-func (r *refsNode) prefetch(depth int) (prefetch []cipher.SHA256) {
-
-	if depth == 0 {
-
-		prefetch = make([]cipher.SHA256, 0, len(r.leafs))
-
-		for _, el := range r.leafs {
-			prefetch = append(prefetch, el.Hash)
-		}
-
-		return
-	}
-
-	// else -> { branches }
-
-	prefetch = make([]cipher.SHA256, 0, len(r.branches))
-
-	for _, br := range r.branches {
-		prefetch = append(prefetch, br.hash)
 	}
 
 	return

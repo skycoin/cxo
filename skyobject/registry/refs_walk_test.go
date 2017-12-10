@@ -49,7 +49,6 @@ func TestRefs_Walk(t *testing.T) {
 						func(
 							hash cipher.SHA256,
 							depth int,
-							prefetch ...cipher.SHA256,
 						) (
 							deepper bool,
 							err error,
@@ -96,7 +95,6 @@ func TestRefs_Walk(t *testing.T) {
 					func(
 						hash cipher.SHA256,
 						depth int,
-						prefetch ...cipher.SHA256,
 					) (
 						bool,
 						error,
@@ -122,7 +120,6 @@ func TestRefs_Walk(t *testing.T) {
 						func(
 							hash cipher.SHA256,
 							depth int,
-							prefetch ...cipher.SHA256,
 						) (
 							bool,
 							error,
