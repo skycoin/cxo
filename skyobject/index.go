@@ -14,8 +14,9 @@ import (
 
 type indexRoot struct {
 	data.Root
-	sync bool // sync with DB (Access)
-	hold int  // holds
+	sync   bool          // sync with DB (Access)
+	hold   int           // holds
+	notify chan struct{} // for force unhold
 }
 
 type indexHeads struct {
@@ -260,6 +261,62 @@ func (i *Index) HoldRoot(
 
 }
 
+func (i *Index) holdRootSubscribe(
+	pk cipher.PubKey,
+	nonce uint64,
+	seq uint64,
+) (
+	notify chan<- struct{},
+	err error,
+) {
+
+	var ir *indexRoot
+	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
+		return
+	}
+
+	ir.hold++
+
+	if ir.notify == nil {
+		ir.notify = make(chan struct{})
+	}
+
+	notify = ir.notify
+
+	return
+
+}
+
+// HoldRootSubscribe is like HoldRoot, but
+// it returns channel that closed when
+// someone calls ForceDelRoot. If the Root
+// unheld using UnholdRoot, then channel will
+// not be closed. Thus you have to know how
+// many times you hold a Root for own needs.
+// And if a Root is held, and you don't holds
+// it, then the Root held by the node package.
+// The node can hold a Root to sent it to peer
+// (to prevent removing). In this case, if you
+// want to remove a held Root (even if it's
+// held), then you can call the ForceDelRoot
+// method to break current replication and
+// remove the Root.
+func (i *Index) HoldRootSubscribe(
+	pk cipher.PubKey, //       : feed
+	nonce uint64, //           : head
+	seq uint64, //             : seq
+) (
+	notify chan<- struct{}, // : notify
+	err error, //              : an error
+) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	return i.holdRootSubscribe(pk, nonce, seq)
+
+}
+
 // UnholdRoot used to unhold previously
 // held Root object. The UnholdRoot
 // returns error if Root doesn't exist
@@ -286,6 +343,64 @@ func (i *Index) UnholdRoot(
 
 	ir.hold--
 	return
+
+}
+
+func (i *Index) forceDelRootFromIndex(
+	pk cipher.PubKey, //       :
+	nonce uint64, //           :
+	seq uint64, //             :
+) (
+	rootHash cipher.SHA256, // :
+	err error, //              :
+) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	// force unhold
+
+	var ir *indexRoot
+	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
+		return
+	}
+
+	if ir.hold > 0 {
+
+		ir.hold = 0 // force unhold
+
+		if ir.notify != nil {
+			close(ir.notify) // notify
+			ir.notify = nil
+		}
+
+	}
+
+	// delete
+
+	return i.delRootFromIndex(pk, nonce, seq)
+
+}
+
+// ForceDelRoot used to remove the Root
+// even if it held. See HoldRootSubscribe
+// for details
+func (i *Index) ForceDelRoot(
+	pk cipher.PubKey, // : feed
+	nonce uint64, //     : head
+	seq uint64, //       : seq
+) (
+	err error, //        : an error
+) {
+
+	// with lock
+	var rootHash cipher.SHA256
+	if rootHash, err = i.forceDelRootFromIndex(pk, nonce, seq); err != nil {
+		return
+	}
+
+	// without lock
+	return i.delRootRelatedValues(rootHash)
 
 }
 
