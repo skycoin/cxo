@@ -951,7 +951,6 @@ func (i *Index) delPackWalkFunc(
 	walkFunc = func(
 		hash cipher.SHA256, // : hash of obejct to decrement
 		_ int, //              : never used
-		_ ...cipher.SHA256, // : never used
 	) (
 		deepper bool, //       : go deepper
 		err error, //          : a DB error

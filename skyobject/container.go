@@ -209,7 +209,6 @@ func (c *Container) initRoot(cr *cxdsRCs, rootHash cipher.SHA256) (err error) {
 		func(
 			hash cipher.SHA256,
 			_ int,
-			_ ...cipher.SHA256,
 		) (
 			deepper bool,
 			err error,

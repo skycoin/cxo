@@ -41,7 +41,7 @@ type Splitter interface {
 	// Get value from DB or from related remote peers
 	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
 
-	// Fail the slitting
+	// Fail the splitting
 	Fail(err error)
 
 	//

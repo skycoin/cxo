@@ -136,7 +136,6 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 		err = dr.Walk(up, func(
 			hash cipher.SHA256, // :
 			_ int, //              :
-			_ ...cipher.SHA256, // :
 		) (
 			deepper bool, //       :
 			err error, //          :
