@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -147,4 +148,13 @@ func (d *Dynamic) Walk(
 	}
 
 	return
+}
+
+//
+func (d *Dynamic) Split(pack Pack) {
+
+}
+
+func (d *Dynamic) split(pack Pack) {
+	//
 }

@@ -1,4 +1,4 @@
-package skyobject
+package registry
 
 import (
 	"sync"
@@ -9,6 +9,32 @@ import (
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
+
+// A Splitter used by the node package
+// to fill a Root object uinsg multiply
+// connections. The Splitter provides
+// Get method that lookups DB and if obejct
+// doesn't exists, then it request the obejct
+// using connectiosn from free list.
+//
+// The Get method returns not a real rc from DB.
+// The rc is rc of obejcts that belongs to full
+// Root obejcts + 1 (of current Root). Thus, the
+// rc can be used to skip subtrees of the Root
+// tree that guaranteed in DB.
+//
+// The Splitter uses Add and Done methods from
+// sync.WaitGroupt to wait its goroutines
+type Splitter interface {
+	Registry() (reg *Registry)
+	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
+	Fail(err error)
+
+	// wait group
+
+	Add(delta int)
+	Done()
+}
 
 // Split ... TOOD ...
 //

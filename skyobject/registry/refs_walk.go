@@ -15,7 +15,7 @@ import (
 // caller. But any other error returned from the WalkFunc
 // will be returned from the caller
 //
-// The deepper erply used to walk deepper. Thus, giving
+// The deepper reply used to walk deepper. Thus, giving
 // a hash the WalkFunc can choose, want it go deepper
 // (decode value  and explore its fields for example)
 // or not
