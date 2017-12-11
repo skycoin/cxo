@@ -445,6 +445,29 @@ func (i *Index) Heads(pk cipher.PubKey) (heads []uint64, err error) {
 	return
 }
 
+// LastRootSeq returns seq of last Root of given head of
+// given feed. The last Root is Root with the greatest
+// seq number.
+func (i *Index) LastRootSeq(
+	pk cipher.PubKey, // : feed
+	nonce uint64, //     : head
+) (
+	seq uint64, //       : seq of the last Root
+	err error, //        : an error
+) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	var lr *data.Root
+	if lr, err = i.lastRoot(pk, nonce); err != nil {
+		return // no such feed, no such head, not found
+	}
+
+	seq = lr.Seq
+	return
+}
+
 // LastRoot returns last Root of given head of given feed.
 // The last Root is Root with the greatest seq number. If
 // given head of the feed is blank, then the LastRoot
