@@ -3,7 +3,6 @@ package idxdb
 import (
 	"encoding/binary"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -14,17 +13,13 @@ import (
 )
 
 var (
-	feedsBucket  = []byte("f")             // feeds
-	metaBucket   = []byte("m")             // meta information
-	versionKey   = []byte("version")       // encoded version in the meta bucket
-	closedSafely = []byte("closed safely") // safe closing flag
+	feedsBucket = []byte("f")       // feeds
+	metaBucket  = []byte("m")       // meta information
+	versionKey  = []byte("version") // encoded version in the meta bucket
 )
 
 type driveDB struct {
-	b  *bolt.DB
-	cs bool // sclosed safely
-
-	closeo sync.Once
+	b *bolt.DB
 }
 
 // NewDriveIdxDB creates data.IdxDB instance that
@@ -45,8 +40,6 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 	if err != nil {
 		return
 	}
-
-	var cs bool // closed safely flag
 
 	err = b.Update(func(tx *bolt.Tx) (err error) {
 
@@ -88,26 +81,18 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 				return ErrNewVersion
 			}
 
-			// check out the 'closed safely' flag
-			if csb := info.Get(closedSafely); len(csb) == 1 && csb[0] > 0 {
-				cs = true
-				// mark unsafe
-				if err = info.Put(closedSafely, []byte{0}); err != nil {
-					return
-				}
-			}
-
 		}
 
 		_, err = tx.CreateBucketIfNotExists(feedsBucket)
 		return
 	})
+
 	if err != nil {
 		b.Close()
 		return
 	}
 
-	idx = &driveDB{b: b, cs: cs}
+	idx = &driveDB{b}
 	return
 }
 
@@ -118,33 +103,9 @@ func (d *driveDB) Tx(txFunc func(feeds data.Feeds) (err error)) (err error) {
 	})
 }
 
-// IsClosedSafely
-func (d *driveDB) IsClosedSafely() bool {
-	return d.cs
-}
-
 // Close the DB
 func (d *driveDB) Close() (err error) {
-
-	// set the 'closed safely' flag
-
-	d.closeo.Do(func() {
-
-		err = d.b.Update(func(tx *bolt.Tx) (err error) {
-			var info = tx.Bucket(metaBucket)
-
-			return info.Put(closedSafely, []byte{1})
-		})
-
-		if err != nil {
-			d.b.Close() // ignore this error
-		} else {
-			err = d.b.Close()
-		}
-
-	})
-
-	return
+	return d.b.Close()
 }
 
 type driveFeeds struct {
@@ -217,6 +178,10 @@ func (d *driveFeeds) Heads(pk cipher.PubKey) (rs data.Heads, err error) {
 	return &driveHeads{bk}, nil
 }
 
+func (d *driveFeeds) Len() (length int) {
+	return d.bk.Stats().BucketN - 1
+}
+
 type driveHeads struct {
 	bk *bolt.Bucket
 }
@@ -284,6 +249,10 @@ func (d *driveHeads) Iterate(iterateFunc data.IterateHeadsFunc) (err error) {
 	}
 
 	return
+}
+
+func (d *driveHeads) Len() (length int) {
+	return d.bk.Stats().BucketN - 1
 }
 
 type driveRoots struct {

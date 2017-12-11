@@ -31,6 +31,9 @@ type Feeds interface {
 	// Heads of feed. It returns ErrNoSuchFeed
 	// if given feed doesn't exist
 	Heads(pk cipher.PubKey) (hs Heads, err error)
+
+	// Len is number of feeds stroed
+	Len() (length int)
 }
 
 // An IterateHeadsFunc used to iterate over
@@ -57,6 +60,9 @@ type Heads interface {
 	Has(nonce uint64) (ok bool, err error)
 	// Iterate over all heads
 	Iterate(iterateFunc IterateHeadsFunc) (err error)
+
+	// Len is number of heads stored
+	Len() (length int)
 }
 
 // An IterateRootsFunc represents function for
@@ -99,6 +105,9 @@ type Roots interface {
 
 	// Has the Roots Root with given seq?
 	Has(seq uint64) (ok bool, err error)
+
+	// Len is number of Root objects stored
+	Len() (length int)
 }
 
 // An IdxDB repesents database that contains
@@ -106,32 +115,9 @@ type Roots interface {
 // about Root objects. There is data/idxdb
 // package that implements the IdxDB. The
 // IdxDB returns and uses errors ErrNotFound,
-// ErrNoSuchFeed, ErrNoSuchHead,
-// ErrStopIteration, ErrFeedIsNotEmpty and
-// ErrHeadIsNotEmpty from this package.
-//
-// Also, the IdxDB contains safe-closing flag.
-// Since, the skyobejct package uses cache for
-// the CXDS, it keeps some information in memory
-// wihtout syncing to speed up the CXO. And while
-// a CXO application closes safely, the flag set
-// to true. And using this flag on next start the
-// CXO (the skyobejct package), can detemine state
-// of the last closing. And if it has been closed
-// using any unsafe way (panic or similar), then
-// the skyobject walks through all feeds, heads and
-// root objects to make CXDS values actual. This
-// way we can rid out of this initialization (this
-// walking) every time. But if something is wrong,
-// then we can fix it automatically. This is
-// shadowed from end-user protection from unexpected
-// power off. But keep in mind, that in this cases
-// a CXO application can starts slower then usual
-// if DB is big. The flag set by the Close method
-//
+// ErrNoSuchFeed, ErrNoSuchHead, and
+// ErrStopIteration, and from this package.
 type IdxDB interface {
 	Tx(func(Feeds) error) error // transaction
 	Close() error               // close the IdxDB
-
-	IsClosedSafely() bool // true if DB is ok
 }
