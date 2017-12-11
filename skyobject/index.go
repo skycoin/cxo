@@ -980,7 +980,7 @@ func (i *Index) dataRoot(
 
 	// the root can be last
 
-	var hs, ok = i.feeds[feed]
+	var hs, ok = i.feeds[pk]
 
 	if ok == false {
 		return nil, data.ErrNoSuchFeed
@@ -1003,7 +1003,7 @@ func (i *Index) dataRoot(
 
 	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 		var heads data.Heads
-		if heads, err = feeds.Heads(feed); err != nil {
+		if heads, err = feeds.Heads(pk); err != nil {
 			return
 		}
 		var roots data.Roots
@@ -1019,7 +1019,7 @@ func (i *Index) dataRoot(
 
 // Root of feed-head  by seq number
 func (i *Index) Root(
-	feed cipher.SHA256,
+	feed cipher.PubKey,
 	nonce uint64,
 	seq uint64,
 ) (
