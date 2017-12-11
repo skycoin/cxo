@@ -17,8 +17,10 @@ type Filler struct {
 
 	reg *registry.Registry
 
-	rq   chan<- cipher.SHA256
-	incs *Incs
+	rq chan<- cipher.SHA256
+
+	mx   sync.Mutex
+	incs map[cipher.SHA256]int
 
 	errq chan error
 
@@ -42,7 +44,6 @@ func (f *Filler) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	val, rc, err = f.c.Get(key, 1) // incrementing the rc to hold the object
 
 	if err == nil {
-		rc = f.realRC(key, rc) // real rc
 		f.inc(key)
 		return
 	}
@@ -65,7 +66,7 @@ func (f *Filler) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	select {
 	case obj := <-gc:
 		f.inc(key) // increment it first for the realRC
-		val, rc = obj.Val, f.realRC(key, obj.RC)
+		val, rc = obj.Val, obj.RC
 	case <-f.closeq:
 		err = ErrTerminated
 	}
@@ -85,7 +86,10 @@ func (f *Filler) Fail(err error) {
 //
 
 func (f *Filler) inc(key cipher.SHA256) {
-	f.incs.Inc(f, key)
+	f.mx.Lock()
+	defer f.mx.Unlock()
+
+	f.incs[key]++
 }
 
 func (f *Filler) requset(key cipher.SHA256) (ok bool) {
@@ -95,10 +99,6 @@ func (f *Filler) requset(key cipher.SHA256) (ok bool) {
 	case <-f.closeq:
 	}
 	return
-}
-
-func (f *Filler) realRC(key cipher.SHA256, rc uint32) (rr uint32) {
-	return rc - uint32(f.incs.Incs(key))
 }
 
 // Clsoe terminates the Split walking and waits for
@@ -118,7 +118,6 @@ func (f *Filler) Close() {
 func (c *Container) Fill(
 	r *registry.Root, //        : the Root to fill
 	rq chan<- cipher.SHA256, // : request object from peers
-	incs *Incs, //              : the Incs
 ) (
 	f *Filler, //               : the Filler
 	err error, //               : an error
@@ -130,7 +129,7 @@ func (c *Container) Fill(
 	f.r = r
 
 	f.rq = rq
-	f.incs = incs
+	f.incs = make(map[cipher.SHA256]int)
 
 	f.errq = make(chan error, 1)
 	f.closeq = make(chan struct{})
@@ -138,16 +137,20 @@ func (c *Container) Fill(
 	return
 }
 
+func (f *Filler) remove() {
+	for key, inc := range f.incs {
+		f.c.db.CXDS().Inc(key, -inc) // ignore error
+
+		// TOOD (kostyarin): handle error
+	}
+}
+
 // Run the Filler. The Run method blocks
 // until finish or first error
 func (f *Filler) Run() (err error) {
 
 	if err = f.getRegistry(); err != nil {
-
-		if err := f.incs.Remove(f.c, f); err != nil {
-			fatal("DB failure:", err)
-		}
-
+		f.remove()
 		return
 	}
 
@@ -167,11 +170,8 @@ func (f *Filler) Run() (err error) {
 	select {
 	case err = <-f.errq:
 		f.Close()
-		if err := f.incs.Remove(f.c, f); err != nil {
-			fatal("DB failure:", err)
-		}
+		f.remove()
 	case <-done:
-		f.incs.Save(f)
 	}
 
 	return

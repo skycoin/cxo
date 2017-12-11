@@ -2,7 +2,6 @@ package skyobject
 
 import (
 	"errors"
-	"sort"
 	"sync"
 	"time"
 
@@ -105,9 +104,9 @@ func (i *Index) load(c *Container) (err error) {
 					return
 				}
 
-				feedMap.h[nonce] = ir // head
+				feedMap.h[nonce] = ir // head (or nil)
 
-				if feedMap.activet < ir.Time {
+				if ir != nil && feedMap.activet < ir.Time {
 
 					feedMap.activet = ir.Time // last timestamp of active feeds
 					feedMap.activen = nonce   // active head (nonce)
@@ -127,6 +126,12 @@ func (i *Index) load(c *Container) (err error) {
 		})
 
 	})
+
+	if err != nil {
+		return
+	}
+
+	i.loadTime = time.Now().UnixNano()
 
 	return
 }
@@ -150,12 +155,12 @@ func (i *Index) lastRoot(
 		return nil, data.ErrNoSuchHead
 	}
 
+	if dr == nil {
+		return nil, data.ErrNotFound // blank head
+	}
+
 	return
 }
-
-//
-//
-//
 
 // AddFeed adds feed
 func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
@@ -206,12 +211,16 @@ func (i *Index) findRoot(
 		return nil, data.ErrNoSuchFeed
 	}
 
-	if dr, ok = hs[nonce]; ok == false {
+	if dr, ok = hs.h[nonce]; ok == false {
 		return nil, data.ErrNoSuchHead
 	}
 
+	if dr == nil {
+		return nil, data.ErrNotFound // blank head
+	}
+
 	if dr.Seq == seq {
-		return // found
+		return // found (the last)
 	}
 
 	// take a look the IdxDB
@@ -295,16 +304,16 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 	// if the Root already exist
 
-	var dr *data.Root
+	var ir, dr *data.Root
 
-	switch dr, err = i.findRoot(r.Pub, r.Nonce, r.Seq); {
+	switch ir, err = i.findRoot(r.Pub, r.Nonce, r.Seq); {
 	case err == nil:
-		dr.Access = time.Now().UnixNano()
+		ir.Access = time.Now().UnixNano()
 		alreadyHave = true
 		return
 	case err == data.ErrNotFound || err == data.ErrNoSuchHead:
 	default:
-		return // an error
+		return // an error (data.ErrNoSuchFeed or another)
 	}
 
 	// save in the IdxDB
@@ -342,7 +351,7 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 		return
 	}
 
-	if r.Seq < dr.Seq {
+	if r.Seq < ir.Seq {
 		// don't add to the Index the fucking, old,
 		// outdated, never need, nobody need Root
 		return
@@ -467,11 +476,11 @@ func (i *Index) LastRoot(
 	return
 }
 
-// delFeedFromIndex deletes head from IdxDB and from the Index
-func (i *Index) delFeedFromIndex(
+// delFeed deletes feed from IdxDB and from the Index
+func (i *Index) delFeed(
 	pk cipher.PubKey,
 ) (
-	rss [][]*indexRoot,
+	rhs []cipher.SHA256, // hashes of all roots
 	err error,
 ) {
 
@@ -483,8 +492,6 @@ func (i *Index) delFeedFromIndex(
 		return nil, data.ErrNoSuchFeed
 	}
 
-	var rootHashes []cipher.SHA256
-
 	// delete from IdxDB first
 
 	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
@@ -494,7 +501,7 @@ func (i *Index) delFeedFromIndex(
 			return
 		}
 
-		for nonce, rs := range hs.h {
+		for nonce := range hs.h {
 
 			var roots data.Roots
 			if roots, err = heads.Roots(nonce); err != nil {
@@ -502,13 +509,13 @@ func (i *Index) delFeedFromIndex(
 			}
 
 			err = roots.Ascend(func(dr *data.Root) (err error) {
-				rootHashes = append(rootHashes, dr.Hash)
+				rhs = append(rhs, dr.Hash)
 				return
 			})
 
 		}
 
-		return feeds.Del(pk)
+		return feeds.Del(pk) // remove the feed
 	})
 
 	if err != nil {
@@ -524,47 +531,44 @@ func (i *Index) delFeedFromIndex(
 }
 
 // with lock
-func (i *Index) delFeedFromIndexLock(
+func (i *Index) delFeedLock(
 	pk cipher.PubKey,
 ) (
-	rss [][]*indexRoot,
+	rhs []cipher.SHA256,
 	err error,
 ) {
 
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	return i.delFeedFromIndex(pk)
+	return i.delFeed(pk)
 }
 
-// DelFeed deletes feed. It can't remove feed if at least one
-// Root of the feed is held, returning ErrRootIsHeld error
+// DelFeed deletes feed with all heads and Root objects
 func (i *Index) DelFeed(pk cipher.PubKey) (err error) {
 
 	// with lock
-	var rss [][]*indexRoot
-	if rss, err = i.delFeedFromIndexLock(pk); err != nil {
+	var rhs []cipher.SHA256
+	if rhs, err = i.delFeedLock(pk); err != nil {
 		return
 	}
 
 	// without lock
-	for _, rs := range rss {
-		for _, ir := range rs {
-			if err = i.delRootRelatedValues(ir.Hash); err != nil {
-				return
-			}
+	for _, hash := range rhs {
+		if err = i.delRootRelatedValues(hash); err != nil {
+			return
 		}
 	}
 
 	return
 }
 
-// delHeadFromIndex deletes head from IdxDB and from the Index
-func (i *Index) delHeadFromIndex(
+// delHead deletes head from IdxDB and from the Index
+func (i *Index) delHead(
 	pk cipher.PubKey,
 	nonce uint64,
 ) (
-	rs []*indexRoot,
+	rhs []cipher.SHA256, // root hashes
 	err error,
 ) {
 
@@ -574,16 +578,8 @@ func (i *Index) delHeadFromIndex(
 		return nil, data.ErrNoSuchFeed
 	}
 
-	if rs, ok = hs.h[nonce]; ok == false {
+	if _, ok = hs.h[nonce]; ok == false {
 		return nil, data.ErrNoSuchHead
-	}
-
-	// a Root can be held
-
-	for _, ir := range rs {
-		if ir.hold > 0 {
-			return nil, ErrRootIsHeld
-		}
 	}
 
 	// delete from IdxDB first
@@ -600,13 +596,12 @@ func (i *Index) delHeadFromIndex(
 			return
 		}
 
-		for _, ir := range rs {
-			if err = roots.Del(ir.Seq); err != nil {
-				return
-			}
-		}
+		err = roots.Ascend(func(dr *data.Root) (err error) {
+			rhs = append(rhs, dr.Hash)
+			return
+		})
 
-		return hs.Del(nonce)
+		return hs.Del(nonce) // remove the head
 	})
 
 	if err != nil {
@@ -622,18 +617,18 @@ func (i *Index) delHeadFromIndex(
 }
 
 // with lock
-func (i *Index) delHeadFromIndexLock(
+func (i *Index) delHeadLock(
 	pk cipher.PubKey,
 	nonce uint64,
 ) (
-	rs []*indexRoot,
+	rhs []cipher.SHA256,
 	err error,
 ) {
 
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	return i.delHeadFromIndex(pk, nonce)
+	return i.delHead(pk, nonce)
 }
 
 // DelHead deletes given head. It can't remove head if at least one
@@ -642,15 +637,15 @@ func (i *Index) DelHead(pk cipher.PubKey, nonce uint64) (err error) {
 
 	// with lock
 
-	var rs []*indexRoot
-	if rs, err = i.delHeadFromIndexLock(pk, nonce); err != nil {
+	var rhs []cipher.SHA256
+	if rhs, err = i.delHeadLock(pk, nonce); err != nil {
 		return
 	}
 
 	// without lock
 
-	for _, ir := range rs {
-		if err = i.delRootRelatedValues(ir.Hash); err != nil {
+	for _, hash := range rhs {
+		if err = i.delRootRelatedValues(hash); err != nil {
 			return
 		}
 	}
@@ -663,7 +658,7 @@ func (i *Index) DelHead(pk cipher.PubKey, nonce uint64) (err error) {
 // the delRoot must be called undex lock; but decrementing
 // should be performed outside the lock to release the
 // Index
-func (i *Index) delRootFromIndex(
+func (i *Index) delRoot(
 	pk cipher.PubKey, //       : feed
 	nonce uint64, //           : head
 	seq uint64, //             : seq
@@ -671,13 +666,6 @@ func (i *Index) delRootFromIndex(
 	rootHash cipher.SHA256, // : hash of the Root
 	err error, //              : an error
 ) {
-
-	// don't remove if the Root is held
-
-	if i.isRootHeld(pk, nonce, seq) == true {
-		err = ErrRootIsHeld
-		return
-	}
 
 	// find the Root in the Index first
 
@@ -688,22 +676,18 @@ func (i *Index) delRootFromIndex(
 		return
 	}
 
-	var rs []*indexRoot
-	if rs, ok = hs.h[nonce]; ok == false {
+	var ir *data.Root
+	if ir, ok = hs.h[nonce]; ok == false {
 		err = data.ErrNoSuchHead
 		return
 	}
 
-	var (
-		ir *indexRoot
-		k  int
-	)
-
-	if ir, k, err = searchRootInSortedSlice(rs, seq); err != nil {
-		return // not found
-	}
-
 	// remove from IdxDB first
+
+	var (
+		replaced bool // last Root replaced with older
+		removed  bool // last Root removed and head is clean
+	)
 
 	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
@@ -717,23 +701,31 @@ func (i *Index) delRootFromIndex(
 			return
 		}
 
-		return rs.Del(seq)
+		if err = rs.Del(seq); err != nil || seq != ir.Seq {
+			return
+		}
+
+		removed, replaced = true, true
+
+		// we have to find last, since we delete it
+		err = rs.Descend(func(dr *data.Root) (err error) {
+			ir = dr
+			removed = false // replaced, not removed
+			return data.ErrStopIteration
+		})
+
+		return
+
 	})
 
 	if err != nil {
 		return // DB failure
 	}
 
-	// remove from the Index
-
-	copy(rs[k:], rs[k+1:])
-	rs[len(rs)-1] = nil // GC
-	rs = rs[:len(rs)-1]
-
-	if len(rs) == 0 {
-		hs.h[nonce] = nil // delete slice (GC)
-	} else {
-		hs.h[nonce] = rs
+	if removed == true {
+		hs.h[nonce] = nil // blank head
+	} else if replaced == true {
+		hs.h[nonce] = ir
 	}
 
 	// cahnge active head if the Root is last fo active head
@@ -744,8 +736,8 @@ func (i *Index) delRootFromIndex(
 	return ir.Hash, nil
 }
 
-// delRootFromIndexLock is delRootFromIndex with lock
-func (i *Index) delRootFromIndexLock(
+// delRootLock is delRoot with lock
+func (i *Index) delRootLock(
 	pk cipher.PubKey, //       : feed
 	nonce uint64, //           : head
 	seq uint64, //             : seq
@@ -757,7 +749,7 @@ func (i *Index) delRootFromIndexLock(
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	return i.delRootFromIndex(pk, nonce, seq)
+	return i.delRoot(pk, nonce, seq)
 }
 
 func (i *Index) delPackWalkFunc(
@@ -837,7 +829,7 @@ func (i *Index) DelRoot(pk cipher.PubKey, nonce, seq uint64) (err error) {
 
 	// with lock
 	var rootHash cipher.SHA256
-	if rootHash, err = i.delRootFromIndexLock(pk, nonce, seq); err != nil {
+	if rootHash, err = i.delRootLock(pk, nonce, seq); err != nil {
 		return
 	}
 
@@ -940,61 +932,12 @@ func (i *Index) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
 // of Root obejcts is not saved in DB and should
 // be synchronised with the Index
 func (i *Index) Close() (err error) {
-
-	i.stat.Clsoe() // close statistic first
-
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+	i.stat.Clsoe() // close statistic first
 
-		// range feeds
-
-		for pk, hs := range i.feeds {
-
-			// get heads
-
-			var heads data.Heads
-			if heads, err = feeds.Heads(pk); err != nil {
-				return
-			}
-
-			// range heads
-
-			for nonce, rs := range hs.h {
-
-				// get roots
-
-				var roots data.Roots
-				if roots, err = heads.Roots(nonce); err != nil {
-					return
-				}
-
-				// range roots
-
-				for _, ir := range rs {
-
-					if ir.sync == true {
-						continue // up to date
-					}
-
-					// if the sync is false then we have to
-					// touch the Root to update access time,
-					// nothing more
-					if _, err = roots.Has(ir.Seq); err != nil {
-						return
-					}
-
-				}
-
-			}
-
-		}
-
-		return
-
-	})
+	// TODO (kostyarin): access time
 
 	return
-
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/skyobject/statutil"
 )
 
@@ -20,12 +21,8 @@ type Stat struct {
 	// for cleaning
 	CacheCleaning time.Duration
 
-	// Amount is amount of obejcts in the CXDS
-	// key-value store
-	Amount statutil.Amount
-	// Volume is total volume of values (not keys,
-	// and values) in the CXDS key-vlaue store
-	Volume statutil.Volume
+	AllObjects  ObjectsStat
+	UsedObjects ObjectsStat
 
 	// RootsPerSecond is average vlaue of new
 	// Root obejcts per second
@@ -33,6 +30,11 @@ type Stat struct {
 
 	// Feeds contains statistic of feeds
 	Feeds map[cipher.PubKey]FeedStat
+}
+
+type ObjectsStat struct {
+	Amount statutil.Amount
+	Volume statutil.Volume
 }
 
 // A ReadWriteStat represents read-write statistic
@@ -51,16 +53,21 @@ type FeedStat struct {
 // A HeadStat represents statistic of
 // a head
 type HeadStat struct {
-	// Roots is total amount of Root
+	// Len is total amount of Root
 	// obejcts of this head
-	Roots int
+	Len int
 
-	// First is timestamp of first
-	// Root in the head
-	First time.Time
-	// Last is timestamp of last
-	// Root in the head
-	Last time.Time
+	// First Root of the head
+	First RootStat
+	// Last is Root of the head
+	Last RootStat
+}
+
+// A RootStat represetns brief informaion about a Root
+type RootStat struct {
+	Time time.Time     // timestamp
+	Seq  uint64        // seq number
+	Hash cipher.SHA256 // hash of the Root
 }
 
 // Stat retusn statistic of the Container
@@ -76,8 +83,15 @@ func (c *Container) Stat() (s *Stat) {
 
 	s.CacheCleaning = c.Cache.stat.cacheCleaning()
 
-	s.Amount = statutil.Amount(c.Cache.stat.amount)
-	s.Volume = statutil.Volume(c.Cache.stat.volume)
+	var all, used = c.db.CXDS().Amount()
+
+	s.AllObjects.Amount = statutil.Amount(all)
+	s.UsedObjects.Amount = statutil.Amount(used)
+
+	all, used = c.db.CXDS().Volume()
+
+	s.AllObjects.Volume = statutil.Volume(all)
+	s.UsedObjects.Volume = statutil.Volume(used)
 
 	s.RootsPerSecond = c.Index.stat.rootsPerSecond()
 
@@ -93,39 +107,86 @@ func (i *Index) feedsStat() (s map[cipher.PubKey]FeedStat) {
 
 	s = make(map[cipher.PubKey]FeedStat)
 
-	for pk, hs := range i.feeds {
+	// ignore error
+	i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
-		var sf FeedStat
+		//
+		// range feeds
+		//
 
-		sf.Heads = make(map[uint64]HeadStat)
+		for pk, hs := range i.feeds {
 
-		for nonce, rs := range hs.h {
+			var (
+				sf    FeedStat
+				heads data.Heads
+			)
 
-			var sh HeadStat
+			if heads, err = feeds.Heads(pk); err != nil {
+				continue // ignore error
+			}
 
-			for i, r := range rs {
+			sf.Heads = make(map[uint64]HeadStat)
 
-				sh.Roots++
+			//
+			// range heads
+			//
 
-				if i == 0 {
+			for nonce, last := range hs.h {
 
-					sh.First = time.Unix(0, r.Time)
+				var (
+					sh    HeadStat
+					roots data.Roots
+				)
 
-				} else if i == len(rs)-1 {
+				if last == nil {
+					sf.Heads[nonce] = sh // blank head
+				}
 
-					sh.Last = time.Unix(0, r.Time)
+				if roots, err = heads.Roots(nonce); err != nil {
+					continue // ignore error
+				}
+
+				sh.Len = roots.Len()
+
+				// first
+
+				if sh.Len > 1 {
+
+					roots.Ascend(func(dr *data.Root) (err error) {
+
+						sh.First.Seq = dr.Seq
+						sh.First.Time = time.Unix(0, dr.Time)
+						sh.First.Hash = dr.Hash
+
+						return data.ErrStopIteration
+					})
 
 				}
 
+				// last
+
+				sh.Last.Seq = last.Seq
+				sh.Last.Time = time.Unix(0, last.Time)
+				sh.Last.Hash = last.Hash
+
+				sf.Heads[nonce] = sh
+
 			}
 
-			sf.Heads[nonce] = sh
+			s[pk] = sf
+
+			//
+			// end
+			//
 
 		}
 
-		s[pk] = sf
+		//
+		// end
+		//
 
-	}
+		return
+	})
 
 	return
 

@@ -9,29 +9,26 @@ import (
 
 type cxdsStat struct {
 	drps  *statutil.Float // reads per second (DB)
-	reads int             // reads for current second
+	reads float64         // reads for current second
 
 	dwps   *statutil.Float // writes per second (DB)
-	writes int             // writes for current second
+	writes float64         // writes for current second
 
 	crps   *statutil.Float // reads per second (cache)
-	creads int             // cache reads for current second
+	creads float64         // cache reads for current second
 
 	cwps    *statutil.Float // writes per second (cache)
-	cwrites int             // cache writes for current second
+	cwrites float64         // cache writes for current second
 
 	// cache cleaning pause
 	ccp *statutil.Duration
-
-	amount int // amount of items in DB
-	volume int // volume of items in DB
 
 	mx     sync.Mutex
 	quit   chan struct{}
 	closeo sync.Once
 }
 
-func newCxdsStat(rollAvgSamples int, amount, volume uint32) (c *cxdsStat) {
+func newCxdsStat(rollAvgSamples int) (c *cxdsStat) {
 
 	c = new(cxdsStat)
 
@@ -42,9 +39,6 @@ func newCxdsStat(rollAvgSamples int, amount, volume uint32) (c *cxdsStat) {
 
 	c.ccp = statutil.NewDuration(rollAvgSamples)
 
-	c.amount = int(amount)
-	c.volume = int(volume)
-
 	c.quit = make(chan struct{})
 
 	go c.secondLoop()
@@ -52,41 +46,13 @@ func newCxdsStat(rollAvgSamples int, amount, volume uint32) (c *cxdsStat) {
 	return
 }
 
-func (c *cxdsStat) addToDB(vol int) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	c.amount++
-	c.volume += vol
-	c.writes++ // writing request
-}
-
-func (c *cxdsStat) delFromDB(vol int) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	c.amount--
-	c.volume -= vol
-	c.writes++ // writing request
-}
-
-func (c *cxdsStat) addDBGet(inc int, rc uint32, val []byte, err error) {
+func (c *cxdsStat) addDBGet(inc int) {
 	if inc == 0 {
 		c.addReadingDBRequest() // reading request
 		return
 	}
 
-	if err != nil {
-		c.addWritingDBRequest() // writing request failed
-		return
-	}
-
-	if rc == 0 {
-		c.delFromDB(len(val)) // removed
-	} else {
-		c.addWritingDBRequest() // just change
-	}
-
+	c.addWritingDBRequest()
 }
 
 func (c *cxdsStat) addCacheGet(inc int) {
@@ -95,14 +61,6 @@ func (c *cxdsStat) addCacheGet(inc int) {
 		return
 	}
 	c.addWritingCacheRequest()
-}
-
-// current amoutn and volume of DB
-func (c *cxdsStat) amountAndVolume() (amount, volume uint32) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	return uint32(c.amount), uint32(c.volume)
 }
 
 func (c *cxdsStat) addWritingDBRequest() {
@@ -183,19 +141,19 @@ func (c *cxdsStat) second() {
 	defer c.mx.Unlock()
 
 	// read DB
-	c.drps.Add(float64(c.reads))
+	c.drps.Add(c.reads)
 	c.reads = 0
 
 	// write DB
-	c.dwps.Add(float64(c.writes))
+	c.dwps.Add(c.writes)
 	c.writes = 0
 
 	// read cache
-	c.crps.Add(float64(c.creads))
+	c.crps.Add(c.creads)
 	c.creads = 0
 
 	// write cache
-	c.cwps.Add(float64(c.cwrites))
+	c.cwps.Add(c.cwrites)
 	c.cwrites = 0
 
 }

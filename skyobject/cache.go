@@ -133,7 +133,7 @@ type Cache struct {
 // conf should be valid, the amount and volume are values of DB
 // and used by cxdsStat, the Cache fields amount and volume are
 // amount and volume of the Cache (not DB)
-func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
+func (c *Cache) initialize(db data.CXDS, conf *Config) {
 
 	c.db = db
 
@@ -153,7 +153,7 @@ func (c *Cache) initialize(db data.CXDS, conf *Config, amount, volume int) {
 	c.c = make(map[cipher.SHA256]*item)
 	c.r = make(map[registry.RegistryRef]*itemRegistry)
 
-	c.stat = newCxdsStat(conf.RollAvgSamples, uint32(amount), uint32(volume))
+	c.stat = newCxdsStat(conf.RollAvgSamples)
 
 	c.enable = !(c.maxAmount == 0 || c.maxVolume == 0)
 
@@ -275,11 +275,6 @@ func (c *Cache) Close() (err error) {
 		}
 	}
 
-	// save stat only if no errors
-	if err == nil {
-		err = c.db.SetStat(uint32(c.amount), uint32(c.volume))
-	}
-
 	if err == nil {
 		err = c.db.Close()
 	} else {
@@ -312,8 +307,6 @@ func (c *Cache) sync(key cipher.SHA256, it *item) (removed bool, err error) {
 		c.volume -= len(it.val)
 		delete(c.c, key)
 		removed = true // has been removed
-
-		c.stat.delFromDB(len(it.val)) // delete
 	} else {
 		c.stat.addWritingDBRequest() // update
 	}
@@ -508,7 +501,7 @@ func (c *Cache) get(
 		}
 
 		val, rc, err = c.db.Get(key, inc)
-		c.stat.addDBGet(inc, rc, val, err) // stat
+		c.stat.addDBGet(inc) // stat
 		return
 	}
 
@@ -538,7 +531,7 @@ func (c *Cache) get(
 
 	// not found in the cache, let's look DB
 	val, rc, err = c.db.Get(key, inc)
-	c.stat.addDBGet(inc, rc, val, err)
+	c.stat.addDBGet(inc)
 
 	if err != nil {
 		return
@@ -599,8 +592,6 @@ func (c *Cache) setWanted(
 		c.stat.addWritingDBRequest() // just request
 		return                       // an error
 	}
-
-	c.stat.addToDB(len(val)) // stat
 
 	// send to wanters
 	for _, gc := range it.fwant {
@@ -720,7 +711,7 @@ func (c *Cache) Inc(
 	// volume
 	var val []byte
 	val, rc, err = c.db.Get(key, inc)
-	c.stat.addDBGet(inc, rc, val, err)
+	c.stat.addDBGet(inc)
 
 	if err != nil {
 		return
@@ -773,7 +764,7 @@ func (c *Cache) Want(
 	)
 
 	val, rc, err = c.db.Get(key, 0)
-	c.stat.addDBGet(0, rc, val, err)
+	c.stat.addDBGet(0)
 
 	if err == data.ErrNotFound {
 		c.c[key] = &item{fwant: []chan<- Object{gc}} // add to wanted

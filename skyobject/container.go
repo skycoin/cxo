@@ -72,10 +72,8 @@ func NewContainer(conf *Config) (c *Container, err error) {
 		return
 	}
 
-	// init DB, repair if need, get stat, and initialize cache
-	if err = c.initDB(); err != nil {
-		return
-	}
+	// initialize cache
+	c.Cache.initialize(c.db.CXDS(), &c.conf)
 
 	if err = c.Index.load(c); err != nil {
 		return
@@ -151,19 +149,15 @@ func (c *Container) getHashRCs() (cr *cxdsRCs, err error) {
 	cr = new(cxdsRCs)
 	cr.hr = make(map[cipher.SHA256]rcs)
 
-	err = c.db.CXDS().Iterate(func(hash cipher.SHA256, rc uint32) (err error) {
-		var val []byte
+	err = c.db.CXDS().Iterate(
+		func(hash cipher.SHA256, rc uint32, val []byte) (err error) {
 
-		if val, _, err = c.db.CXDS().Get(hash, 0); err != nil {
+			cr.amount++                   // stat
+			cr.volume += uint32(len(val)) // stat
+
+			cr.hr[hash] = rcs{rc: rc}
 			return
-		}
-
-		cr.amount++                   // stat
-		cr.volume += uint32(len(val)) // stat
-
-		cr.hr[hash] = rcs{rc: rc}
-		return
-	})
+		})
 
 	if err != nil {
 		return
@@ -237,7 +231,7 @@ func (c *Container) checkSize() (err error) {
 	}
 
 	err = c.db.CXDS().Iterate(
-		func(key cipher.SHA256, _ uint32) (err error) {
+		func(key cipher.SHA256, _ uint32, _ []byte) (err error) {
 			var val []byte
 			if val, _, err = c.db.CXDS().Get(key, 0); err != nil {
 				return
@@ -250,96 +244,6 @@ func (c *Container) checkSize() (err error) {
 
 	return
 
-}
-
-func (c *Container) initDB() (err error) {
-
-	if c.db.IdxDB().IsClosedSafely() == true && c.conf.ReinitDB == false {
-
-		// get stat from the CXDS
-		var amount, volume uint32
-		if amount, volume, err = c.db.CXDS().Stat(); err != nil {
-			return
-		}
-
-		// create cache
-		c.Cache.initialize(c.db.CXDS(), &c.conf, int(amount), int(volume))
-
-		return // everything is ok
-	}
-
-	// try to repair DB
-
-	// (pre-)create cache for the Pack(s)
-	c.Cache.initialize(c.db.CXDS(), &c.conf, 0, 0)
-	defer func() {
-		if err != nil {
-			c.Cache.stat.Close() // release resources
-		}
-	}()
-
-	// so, we have to walk through IdxDB and all
-	// Root obejcts setting correct rcs for CXDS
-
-	// collect hash->{existing rc, actual rc}
-	var cr *cxdsRCs
-
-	if cr, err = c.getHashRCs(); err != nil {
-		return
-	}
-
-	// determine actual rcs
-	err = c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
-
-		err = feeds.Iterate(func(pk cipher.PubKey) (err error) {
-
-			var hs data.Heads
-			if hs, err = feeds.Heads(pk); err != nil {
-				return
-			}
-
-			err = hs.Iterate(func(nonce uint64) (err error) {
-
-				var rs data.Roots
-				if rs, err = hs.Roots(nonce); err != nil {
-					return
-				}
-
-				err = rs.Ascend(func(r *data.Root) (err error) {
-					return c.initRoot(cr, r.Hash)
-				})
-
-				return
-			})
-
-			return
-		})
-
-		return
-	})
-
-	// correct rcs in DB
-	for key, rc := range cr.hr {
-		if rc.rc == rc.cc {
-			continue // actual value
-		}
-		var inc = int(rc.cc) - int(rc.rc)
-		// correct
-		if _, err = c.db.CXDS().Inc(key, inc); err != nil {
-			return
-		}
-	}
-
-	// save stat
-	if err = c.db.CXDS().SetStat(cr.amount, cr.volume); err != nil {
-		return
-	}
-
-	// and clear cache (recreate the cache with CXDS stat)
-	c.Cache.reset()
-	c.Cache.initialize(c.db.CXDS(), &c.conf, int(cr.amount), int(cr.volume))
-
-	return
 }
 
 // Walk walks throug given Root calling given

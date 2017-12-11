@@ -6,6 +6,8 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
+// speed up deleting, even if
+// cache doesn't used
 type delPack struct {
 	*Pack
 
