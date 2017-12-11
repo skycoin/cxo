@@ -479,6 +479,7 @@ func (i *Index) LastRootSeq(
 //
 //     r, err = c.LastRoot(pk, c.ActiveHead())
 //
+// The LastRoot returns Root with signature
 func (i *Index) LastRoot(
 	pk cipher.PubKey, // : feed
 	nonce uint64, //     : head
@@ -961,6 +962,83 @@ func (i *Index) Close() (err error) {
 	i.stat.Clsoe() // close statistic first
 
 	// TODO (kostyarin): access time
+
+	return
+}
+
+func (i *Index) dataRoot(
+	pk cipher.PubKey,
+	nonce uint64,
+	seq uint64,
+) (
+	dr *data.Root,
+	err error,
+) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	// the root can be last
+
+	var hs, ok = i.feeds[feed]
+
+	if ok == false {
+		return nil, data.ErrNoSuchFeed
+	}
+
+	var last *data.Root
+	if last, ok = hs.h[nonce]; ok == false {
+		return nil, data.ErrNoSuchHead
+	}
+
+	if last == nil {
+		return nil, data.ErrNotFound
+	}
+
+	if last.Seq == seq {
+		return last, nil
+	}
+
+	// take a look DB
+
+	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var heads data.Heads
+		if heads, err = feeds.Heads(feed); err != nil {
+			return
+		}
+		var roots data.Roots
+		if roots, err = heads.Roots(nonce); err != nil {
+			return
+		}
+		dr, err = roots.Get(seq)
+		return
+	})
+
+	return
+}
+
+// Root of feed-head  by seq number
+func (i *Index) Root(
+	feed cipher.SHA256,
+	nonce uint64,
+	seq uint64,
+) (
+	r *registry.Root,
+	err error,
+) {
+
+	var dr *data.Root
+
+	if dr, err = i.dataRoot(feed, nonce, seq); err != nil {
+		return
+	}
+
+	if r, err = i.c.rootByHash(dr.Hash); err != nil {
+		return
+	}
+
+	r.IsFull = true
+	r.Sig = dr.Sig
 
 	return
 }

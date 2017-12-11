@@ -300,6 +300,21 @@ func (c *Container) Config() (conf Config) {
 	return
 }
 
+func (c *Container) rootByHash(
+	hash cipher.SHA256,
+) (
+	r *registry.Root,
+	err error,
+) {
+	var val []byte
+	if val, _, err = c.Get(hash, 0); err != nil {
+		return
+	}
+
+	r, err = registry.DecodeRoot(val)
+	return
+}
+
 // RootByHash returns Root by its hash, that is
 // obvious. Errors the method can returns are
 // data.ErrNotfound or decoding error
@@ -310,12 +325,19 @@ func (c *Container) RootByHash(
 	err error,
 ) {
 
-	var val []byte
-	if val, _, err = c.Get(hash, 0); err != nil {
+	if r, err = c.rootByHash(hash); err != nil {
 		return
 	}
 
-	r, err = registry.DecodeRoot(val)
+	// signature
+
+	var dr *data.Root
+	if dr, err = c.dataRoot(r.Pub, r.Nonce, r.Seq); err != nil {
+		return
+	}
+
+	r.Sig = dr.Sig
+	r.IsFull = true
 	return
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/msg"
+	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
@@ -43,11 +44,8 @@ type Conn struct {
 	// peer id
 	peerID NodeID
 
-	sr      *registry.Root // sent Root
-	srBreak chan struct{}  // force del notification
-
-	sp      *registry.Root // waits the sent to be sent
-	spBreak chan struct{}  // force del notification
+	sr *registry.Root // sent Root
+	sp *registry.Root // waits the sent to be sent
 
 	// feeds this connection share with peer;
 	// the connection remembers last root received
@@ -92,7 +90,7 @@ func (n *Node) newConnection(
 
 	c.n = n
 
-	c.feeds = make(map[cipher.PubKey]struct{})
+	c.feeds = make(map[cipher.PubKey]map[uint64]root)
 	c.reqs = make(map[uint32]chan<- msg.Msg)
 
 	c.sendq = fc.GetChanOut()
@@ -558,29 +556,30 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 		return c.handleRoot(x)
 
-	case *msg.RootDone: // -> RD   (feed, nonce, seq)
-
-		return c.handleRootDone(x)
-
-	case *msg.RootErr: // RE -> (feed, nonce, seq, reason)
-
-		return c.handleRootErr(x)
-
 	// obejcts
 
 	case *msg.RqObject: // <- RqO (key, prefetch)
 
-		return c.handleRqObject(x)
-
-	case *msg.Object: // -> O   (val, vals)
-
-		return c.handleObject(x)
+		go c.handleRqObject(x)
+		return
 
 	// preview
 
 	case *msg.RqPreview: // -> RqPreview (feed)
 
 		return c.handleRqPreview(seq, x)
+
+	//
+	// delayed messeges (ignore them)
+	//
+	// the delayed messeges are responses that received
+	// after timeout, e.g. the requst is closed with
+	// ErrTimeout and noone waits them
+
+	case *msg.Object: // -> O (delayed)
+	case *msg.Err: // -> Err (delayed)
+	case *msg.Ok: // -> Ok (delayed)
+	case *msg.List: // -> List (delayed)
 
 	default:
 
@@ -663,15 +662,7 @@ func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (_ error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// don't have the feed
-
-	var cf, ok = c.feeds[unsub.Feed]
-
-	if ok == false {
-		return // not subscribed (do nothing)
-	}
-
-	// TODO: terminate subscription
+	c.unsubscribe(unsub.Feed)
 
 	return
 }
@@ -721,82 +712,95 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 	}
 
 	// so, let's check seq number, may be the Root is too old
-	var last *registry.Root
-	if last, err = c.n.c.LastRoot(r.Pub, r.Nonce); err != nil {
+	var last uint64
+	if last, err = c.n.c.LastRootSeq(r.Pub, r.Nonce); err != nil {
 
 		if err != data.ErrNotFound {
-
 			c.n.Printf("[ERR] [%s] %s, can't get last root",
 				c.String(), r.Short())
 
 			return
-
 		}
 
-	}
+		// just not found (OK)
 
-	// the received Root is older then we have
-	if last != nil && r.Seq <= last.Seq {
+	} else if last > r.Seq {
+		// old Root (don't care about it)
 		return
 	}
 
-	// if the last is nil, then DB doesn't have any Root of the feed-head
+	// the Root is not full and going to replace the last
 
-	// let's fill the Root, checking callback first
-
-	c.addToFiller(cf, r)
-
+	c.fill(r)
 	return
 }
 
-func (c *Conn) handleRootDone(seq uint32, sub *msg.RootDone) (err error) {
-
-	//
-
-	return
-}
-
-func (c *Conn) handleRootErr(seq uint32, sub *msg.RootDone) (err error) {
-
-	//
-
-	return
-}
-
-func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) (_ error) {
+// async
+func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 
 	var (
-		object   []byte
-		prefetch []cipher.SHA256
-
+		val []byte
 		err error
+
+		gc = make(chan skyobject.Object, 1)
+
+		tm *time.Timer
+		tc <-chan time.C
 	)
 
-	if val, _, err = c.n.c.Get(rq.Key, 0); err != nil {
+	// TODO (kostyarin): the request holds resources and in good case
+	//                   it's ok, but it's possible to DDoS the Node
+	//                   perfroming many trash request
 
-		if err != data.ErrNotFound {
-			c.n.Fatal("[ERR] CXDS DB failure:", err)
-			return
-		}
+	// TODO (kostyarin): get the object or subscribe for the object
+	//                   only if it is wanted (to think)
 
-		// TODO (add to waiting to push)
+	c.n.c.Want(rq.Key, gc)
+	defer c.n.c.Unwant(rq.Key, gc) // to be memory safe
 
-		return // not found
+	select {
+	case obj := <-gc:
+		// got
+		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
+		return
+	default:
+		// wait
+	}
+
+	if rt := c.n.config.ResponseTimeout; rt > 0 {
+		tm = time.NewTimer(rt)
+		tc = tm.C
+
+		defer tm.Stop()
+	}
+
+	select {
+	case obj := <-gc:
+		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
+	case <-tc:
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{}) // timeout
 	}
 
 	return
 }
 
-func (c *Conn) handleObject(seq uint32, sub *msg.Object) (err error) {
+func (c *Conn) handleRqPreview(seq uint32, rqp *msg.RqPreview) (_ error) {
 
-	//
+	var r, err = c.n.c.LastRoot(rqp.Feed, c.n.c.ActiveHead(rqp.Feed))
 
-	return
-}
+	if err != nil {
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{Err: err.Error()})
+		return
+	}
 
-func (c *Conn) handleRqPreview(seq uint32, sub *msg.RqPreview) (err error) {
+	c.sendMsg(c.nextSeq(), seq, &msg.Root{
+		Feed:  r.Pub,
+		Nonce: r.Nonce,
+		Seq:   r.Seq,
 
-	//
+		Value: r.Encode(),
+		Sig:   r.Sig,
+	})
 
 	return
 }
