@@ -166,13 +166,6 @@ func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 
 		return data.ErrNoSuchFeed
 
-	} else if head, _ := fs.Cursor().First(); head != nil {
-
-		// the bucket should be empty, but we can't use bk.Stats().BucketsN
-		// because all buckets created in this transaction will not be in
-		// the stats
-		return data.ErrFeedIsNotEmpty // contains heads
-
 	}
 
 	return d.bk.DeleteBucket(pk[:])
@@ -263,16 +256,7 @@ func (d *driveHeads) Del(nonce uint64) (err error) {
 	var nonceb = nonceToBytes(nonce)
 
 	if head := d.bk.Bucket(nonceb); head == nil {
-
 		return data.ErrNoSuchHead
-
-	} else if k, _ := d.bk.Cursor().First(); k != nil {
-
-		// the bucket should be empty, but we can't use bk.Stats().BucketsN
-		// because all buckets created in this transaction will not be in
-		// the bucket
-		return data.ErrHeadIsNotEmpty // contains roots
-
 	}
 
 	return d.bk.DeleteBucket(nonceb)
