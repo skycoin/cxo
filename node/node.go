@@ -48,8 +48,13 @@ type Node struct {
 	c *skyobject.Container
 
 	// feeds -> []*Conn
-	fc map[cipher.PubKey]map[*Conn]struct{}
+	fc map[cipher.PubKey]*feed
 	fl []cipher.PubKey // clear-on-write
+
+	// reference counters of filling Root
+	// obejcts and of Root obejct of preview;
+	// see (skyobject).Incs for details
+	incs *skyobject.Incs
 
 	// node id -> connection
 	ic map[cipher.PubKey]*Conn
@@ -82,6 +87,47 @@ type Node struct {
 
 	// close once
 	closeo sync.Once
+}
+
+// NewNode creates new Node instance using provided
+// Config. If the Config is nil, then default is used
+// (see NewConfig for defaults)
+func NewNode(conf *Config) (n *Node, err error) {
+
+	if conf == nil {
+		conf = NewConfig()
+	}
+
+	if err = conf.Validate(); err != nil {
+		return
+	}
+
+	// TODO
+
+	return
+}
+
+// NewNodeContainer use provided Container.
+// Configurations related to Container ignored.
+func NewNodeContainer(
+	conf *Config,
+	c skyobject.Container,
+) (
+	n *Node,
+	err error,
+) {
+
+	if conf == nil {
+		conf = NewConfig()
+	}
+
+	if err = conf.Validate(); err != nil {
+		return
+	}
+
+	// TOOD
+
+	return
 }
 
 // ID retursn ID of the Node. See NodeID

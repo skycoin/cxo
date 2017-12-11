@@ -8,7 +8,7 @@ import (
 	"github.com/skycoin/cxo/data/tests"
 )
 
-const testFileName = "test.db.goignore"
+const testFileName = "test.db.go.ignore"
 
 func testShouldNotPanic(t *testing.T) {
 	if pc := recover(); pc != nil {

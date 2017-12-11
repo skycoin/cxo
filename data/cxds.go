@@ -4,6 +4,12 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+// An IterateObjectsFunc sued to iterate over objects
+// of the CXDS. The cal argumen is read onyl can must
+// not be modified, the val can be used only inside the
+// function.
+type IterateObjectsFunc func(key cipher.SHA256, rc uint32, val []byte) error
+
 // A CXDS is interface of CX data store. The CXDS is
 // key-value store with references counters. There is
 // data/cxds implementation that contains boltdb based
@@ -41,19 +47,26 @@ type CXDS interface {
 	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
 
 	// Iterate all keys in CXDS. The rc is refs count.
-	// Given function must not mutate database. Use
-	// ErrStopIteration to stop an iteration
-	Iterate(func(key cipher.SHA256, rc uint32) error) error
+	// Use ErrStopIteration to stop an iteration
+	Iterate(iterateFunc IterateObjectsFunc) (err error)
 
-	// Stat returns amount and volume of all obejcts.
-	// The Stat is not live. It saved by the skyobject
-	// packcage before closing and loaded next time. The
-	// skyobject keeps live statistics. Keeping the stat
-	// avoid walking through a whole CXDS on start
-	Stat() (amount, volume uint32, err error)
+	// Del removes obejct with given key unconditionally.
+	// The Del method doesn't return an error if obejct
+	// doesn't exist
+	Del(key cipher.SHA256) (err error)
 
-	// SetStat saves current statistic inside the CXDS
-	SetStat(amount, volume uint32) (err error)
+	//
+	// Stat
+	//
+
+	// Amount of obejcts
+	Amount() (all, used int)
+	// Volume of objects
+	Volume() (all, used int)
+
+	//
+	// Close
+	//
 
 	// Close the CXDS
 	Close() (err error)

@@ -14,16 +14,15 @@ import (
 
 // default configurations
 const (
-	Prefix                       string        = "[node] "
-	MaxConnections               int           = 1000 * 1000
-	MaxFillingRootsPerConnection int           = 1000 * 1000
-	MaxFillingTime               time.Duration = 10 * time.Minute
-	ListenTCP                    string        = ":8870"
-	ListenUDP                    string        = "" // don't listen
-	RPC                          string        = ":8871"
-	ResponseTimeout              time.Duration = 59 * time.Second
-	Pings                        time.Duration = 118 * time.Second
-	Public                       bool          = false
+	Prefix          string        = "[node] "
+	MaxConnections  int           = 1000 * 1000
+	MaxFillingTime  time.Duration = 10 * time.Minute
+	ListenTCP       string        = ":8870"
+	ListenUDP       string        = "" // don't listen
+	RPC             string        = ":8871"
+	ResponseTimeout time.Duration = 59 * time.Second
+	Pings           time.Duration = 118 * time.Second
+	Public          bool          = false
 )
 
 // Addresses are discovery addresses
@@ -144,16 +143,6 @@ type Config struct {
 	// MaxConnections is limit of connections.
 	// Set it to zero to disable the limit.
 	MaxConnections int
-
-	// MaxFillingRootsPerConnection is limit of
-	// simultaneously filling Root object per
-	// connection. A connection receiving a Root
-	// object starts filling it. Only one filling
-	// Root per connection-feed pair allowed at the
-	// same time. New received Root objects over
-	// this limit will be dropped. Set it to zero
-	// to disable the limit.
-	MaxFillingRootsPerConnection int
 
 	// MaxFillingTime is time limit for filling of
 	// a Root object. If a Root object fills too
@@ -285,7 +274,6 @@ func NewConfig() (c *Config) {
 
 	// node
 	c.MaxConnections = MaxConnections
-	c.MaxFillingRootsPerConnection = MaxFillingRootsPerConnection
 	c.MaxFillingTime = MaxFillingTime
 	c.ListenTCP = ListenTCP
 	c.ListenUDP = ListenUDP
@@ -329,11 +317,6 @@ func (c *Config) FromFlags() {
 		"max-connections",
 		c.MaxConnections,
 		"max connections, incoming and outgoing, tcp and udp")
-
-	flag.IntVar(&c.MaxFillingRootsPerConnection,
-		"max-filling-roots-per-connection",
-		c.MaxFillingRootsPerConnection,
-		"max filling Root objects per connection")
 
 	flag.DurationVar(&c.MaxFillingTime,
 		"max-filling-time",

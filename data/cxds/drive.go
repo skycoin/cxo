@@ -18,11 +18,21 @@ var (
 	metaBucket = []byte("m") // meta information
 
 	versionKey = []byte("version") // version
-	amountKey  = []byte("amount")  // amount
-	volumeKey  = []byte("volume")  // volume
+
+	amountAllKey  = []byte("amount_all")  // amount all
+	amountUsedKey = []byte("amount_used") // amount used
+
+	volumeAllKey  = []byte("volume_all")  // volume all
+	volumeUsedKey = []byte("volume_used") // volume all
 )
 
 type driveCXDS struct {
+	amountAll  int // amount of all objects
+	amountUsed int // amount of used objects
+
+	volumeAll  int // volume of all obejcts
+	volumeUsed int // volume of used objects
+
 	b *bolt.DB
 }
 
@@ -45,6 +55,19 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 	if err != nil {
 		return
 	}
+
+	defer func() {
+
+		if err != nil {
+			b.Close() // close
+			if created == true {
+				os.Remove(fileName) // clean up
+			}
+		}
+
+	}()
+
+	var saveStat bool
 
 	err = b.Update(func(tx *bolt.Tx) (err error) {
 
@@ -69,15 +92,9 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 				return
 			}
 
-			// put amount
-			if err = info.Put(amountKey, encodeUint32(0)); err != nil {
-				return
-			}
+			// put stat
 
-			// put volume
-			if err = info.Put(volumeKey, encodeUint32(0)); err != nil {
-				return
-			}
+			saveStat = true // save zeroes
 
 		} else {
 
@@ -104,18 +121,133 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 	})
 
 	if err != nil {
-		b.Close() // finialize
-		if created == true {
-			os.Remove(fileName) // clean up
-		}
 		return
 	}
 
-	ds = &driveCXDS{b} // wrap
+	var dr = &driveCXDS{b: b} // wrap
+
+	// stat
+
+	if saveStat == true {
+		err = dr.saveStat()
+	} else {
+		err = dr.loadStat()
+	}
+
+	if err != nil {
+		return
+	}
+
+	ds = dr
 	return
 }
 
-func incr(
+func (d *driveCXDS) loadStat() (err error) {
+
+	return d.b.View(func(tx *bolt.Tx) (err error) {
+
+		var (
+			info = tx.Bucket(metaBucket)
+			val  []byte
+		)
+
+		// amount all
+
+		if val = info.Get(amountAllKey); len(val) != 4 {
+			return ErrWrongValueLength
+		}
+
+		d.amountAll = int(decodeUint32(val))
+
+		// amount used
+
+		if val = info.Get(amountUsedKey); len(val) != 4 {
+			return ErrWrongValueLength
+		}
+
+		d.amountUsed = int(decodeUint32(val))
+
+		// volume all
+
+		if val = info.Get(volumeAllKey); len(val) != 4 {
+			return ErrWrongValueLength
+		}
+
+		d.volumeAll = int(decodeUint32(val))
+
+		// volume used
+
+		if val = info.Get(volumeUsedKey); len(val) != 4 {
+			return ErrWrongValueLength
+		}
+
+		d.volumeUsed = int(decodeUint32(val))
+
+		return
+
+	})
+
+}
+
+func (d *driveCXDS) saveStat() (err error) {
+
+	return d.b.View(func(tx *bolt.Tx) (err error) {
+
+		var info = tx.Bucket(metaBucket)
+
+		// amount all
+
+		err = info.Put(amountAllKey, encodeUint32(uint32(d.amountAll)))
+
+		if err != nil {
+			return
+		}
+
+		// amount used
+
+		err = info.Put(amountUsedKey, encodeUint32(uint32(d.amountUsed)))
+
+		if err != nil {
+			return
+		}
+
+		// volume all
+
+		err = info.Put(volumeAllKey, encodeUint32(uint32(d.volumeAll)))
+
+		if err != nil {
+			return
+		}
+
+		// volume used
+
+		err = info.Put(volumeUsedKey, encodeUint32(uint32(d.volumeUsed)))
+		return
+
+	})
+
+}
+
+func (d *driveCXDS) av(rc, nrc uint32, vol int) {
+
+	if rc == 0 { // was dead
+		if nrc > 0 { // an be resurrected
+			d.amountUsed++
+			d.volumeUsed += vol
+		}
+		return // else -> as is
+	}
+
+	// rc > 0 (was alive)
+
+	if nrc == 0 { // an be killed
+		d.amountUsed--
+		d.volumeUsed -= vol
+	}
+
+}
+
+func (d *driveCXDS) incr(
 	o *bolt.Bucket, // : objects
 	key []byte, //     : key[:]
 	val []byte, //     : value without leading rc (4 bytes)
@@ -127,42 +259,26 @@ func incr(
 ) {
 
 	switch {
-
 	case inc == 0:
-
-		// all done (no changes)
-		nrc = rc
-
+		nrc = rc // all done (no changes)
+		return
 	case inc < 0:
-
 		inc = -inc // change its sign
-
 		if uinc := uint32(inc); uinc >= rc {
-
-			// delete value (rc <= 0), nrc = 0
-			err = o.Delete(key[:])
-
+			nrc = 0 // zero
 		} else {
-
-			// reduce (rc > 0), keep value
-			var repl = make([]byte, 4, 4+len(val))
-			nrc = rc - uinc // reduced
-			setRefsCount(repl, nrc)
-			repl = append(repl, val...)
-			err = o.Put(key[:], repl)
-
+			nrc = rc - uinc // reduce (rc > 0)
 		}
-
 	case inc > 0:
-
-		// increase the rc
-		nrc = rc + uint32(inc)
-		var repl = make([]byte, 4, 4+len(val))
-		setRefsCount(repl, nrc)
-		repl = append(repl, val...)
-		err = o.Put(key[:], repl)
-
+		nrc = rc + uint32(inc) // increase the rc
 	}
+
+	var repl = make([]byte, 4, 4+len(val))
+	setRefsCount(repl, nrc)
+	repl = append(repl, val...)
+	err = o.Put(key[:], repl)
+
+	d.av(rc, nrc, len(val))
 
 	return
 }
@@ -193,7 +309,7 @@ func (d *driveCXDS) Get(
 		val = make([]byte, len(got)-4)
 		copy(val, got[4:])
 
-		rc, err = incr(o, key[:], val, rc, inc)
+		rc, err = d.incr(o, key[:], val, rc, inc)
 		return
 	}
 
@@ -237,11 +353,16 @@ func (d *driveCXDS) Set(
 		)
 
 		if len(got) == 0 {
-			rc, err = incr(o, key[:], val, 0, 1)
+
+			// created
+			d.amountAll++
+			d.volumeAll += len(val)
+
+			rc, err = d.incr(o, key[:], val, 0, 1)
 			return
 		}
 
-		rc, err = incr(o, key[:], got[4:], getRefsCount(got), inc)
+		rc, err = d.incr(o, key[:], got[4:], getRefsCount(got), inc)
 		return
 	})
 
@@ -274,7 +395,7 @@ func (d *driveCXDS) Inc(
 			return // done
 		}
 
-		rc, err = incr(o, key[:], got[4:], rc, inc)
+		rc, err = d.incr(o, key[:], got[4:], rc, inc)
 		return
 	}
 
@@ -287,9 +408,42 @@ func (d *driveCXDS) Inc(
 	return
 }
 
+// Del deletes value unconditionally
+func (d *driveCXDS) Del(
+	key cipher.SHA256,
+) (
+	err error,
+) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (err error) {
+
+		var (
+			o   = tx.Bucket(objsBucket)
+			got = o.Get(key[:])
+		)
+
+		if len(got) == 0 {
+			return // not found
+		}
+
+		var rc, vol = getRefsCount(got), len(got) - 4
+
+		if rc > 0 {
+			d.amountUsed--
+			d.volumeUsed -= vol
+		}
+
+		d.amountAll--
+		d.amountAll -= vol
+
+		return o.Delete(key[:])
+	})
+
+	return
+}
+
 // Iterate all keys
-func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
-	uint32) error) (err error) {
+func (d *driveCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 
 	err = d.b.View(func(tx *bolt.Tx) (err error) {
 
@@ -298,52 +452,48 @@ func (d *driveCXDS) Iterate(iterateFunc func(cipher.SHA256,
 			c   = tx.Bucket(objsBucket).Cursor()
 		)
 
-		for k, v := c.First(); k != nil; k, v = c.Next() {
+		// Seek instead of the Next, beacuse we allows modifications
+		// and the BoltDB requires Seek after mutating
+
+		for k, v := c.First(); k != nil; k, v = c.Seek(key[:]) {
+
 			copy(key[:], k)
-			if err = iterateFunc(key, getRefsCount(v)); err != nil {
+
+			if err = iterateFunc(key, getRefsCount(v), v[4:]); err != nil {
 				if err == data.ErrStopIteration {
 					err = nil
 				}
 				return
 			}
+
+			incSlice(key[:]) // next
 		}
-		return
-	})
-	return
-}
 
-// Stat returns last time updated statistics
-func (d *driveCXDS) Stat() (amount, volume uint32, err error) {
-
-	err = d.b.View(func(tx *bolt.Tx) (err error) {
-		var info = tx.Bucket(metaBucket)
-		amount = decodeUint32(info.Get(amountKey)) // can panic
-		volume = decodeUint32(info.Get(volumeKey)) // can panic
 		return
+
 	})
 
 	return
 }
 
-// SetStat
-func (d *driveCXDS) SetStat(amount, volume uint32) (err error) {
+// Amount of objects
+func (d *driveCXDS) Amount() (all, used int) {
+	return d.amountAll, d.amountUsed
+}
 
-	err = d.b.Update(func(tx *bolt.Tx) (err error) {
-
-		var info = tx.Bucket(metaBucket)
-
-		if err = info.Put(amountKey, encodeUint32(amount)); err != nil {
-			return
-		}
-
-		return info.Put(amountKey, encodeUint32(amount))
-	})
-
-	return
+// Volume of objects (only values)
+func (d *driveCXDS) Volume() (all, used int) {
+	return d.volumeAll, d.volumeUsed
 }
 
 // Close DB
 func (d *driveCXDS) Close() (err error) {
+
+	if err = d.saveStat(); err != nil {
+		d.b.Close() // drop error
+		return
+	}
+
 	return d.b.Close()
 }
 

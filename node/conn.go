@@ -17,15 +17,11 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-type fillSent struct {
-	f *filler
-	s *sender
-}
-
-// feed of a connection
-type connFeed struct {
-	sync.Mutex
-	heads map[uint64]fillSent
+// root key
+type root struct {
+	pk    cipher.PubKey // feed
+	nonce uint64        // head
+	seq   uint64        // seq
 }
 
 // A Conn represent connection of the Node
@@ -47,12 +43,16 @@ type Conn struct {
 	// peer id
 	peerID NodeID
 
-	// feeds this connection share with peer
-	feeds map[cipher.PubKey]*connFeed
+	sr      *registry.Root // sent Root
+	srBreak chan struct{}  // force del notification
 
-	// amount of Root obejcts currently
-	// filling by the Conn
-	fillingRoots int
+	sp      *registry.Root // waits the sent to be sent
+	spBreak chan struct{}  // force del notification
+
+	// feeds this connection share with peer;
+	// the connection remembers last root received
+	// per head; e.g. feed -> head -> last received
+	feeds map[cipher.PubKey]map[uint64]root
 
 	// messege seq number (for request-response)
 	seq uint32
@@ -62,17 +62,12 @@ type Conn struct {
 
 	// stat
 
-	// TODO (kostyarin): RPS, WPS
+	//
+	// TODO (kostyarin): RPS, WPS, sent, received
+	//
 
-	// collecting
-
-	// rank of the connection; every conneciton has
-	// its rank (filling rank), the rank is ...
-	// _ or not to do _
-
-	// channels (from factory.Connection)
-	sendq  chan<- []byte
-	closeq <-chan struct{}
+	sendq  chan<- []byte   // channel from factory.Connection
+	closeq <-chan struct{} //
 
 	// wait for receiving loop
 	await sync.WaitGroup
@@ -97,7 +92,7 @@ func (n *Node) newConnection(
 
 	c.n = n
 
-	c.feeds = make(map[cipher.PubKey]*connFeed)
+	c.feeds = make(map[cipher.PubKey]struct{})
 	c.reqs = make(map[uint32]chan<- msg.Msg)
 
 	c.sendq = fc.GetChanOut()

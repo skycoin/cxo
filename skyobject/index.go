@@ -12,22 +12,17 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-type indexRoot struct {
-	data.Root
-	sync   bool          // sync with DB (Access)
-	hold   int           // holds
-	notify chan struct{} // for force unhold
-}
-
+// keep latest and tracked Root objects only
 type indexHeads struct {
-	h       map[uint64][]*indexRoot //
-	activen uint64                  // head with latest root (nonce)
-	activet int64                   // timestamp of the last root
+	h       map[uint64]*data.Root // last Root
+	activen uint64                // head with latest root (nonce)
+	activet int64                 // timestamp of the last root
 }
 
+// heads
 func newIndexHeads() (hs *indexHeads) {
 	hs = new(indexHeads)
-	hs.h = make(map[uint64][]*indexRoot)
+	hs.h = make(map[uint64]*data.Root)
 	return
 }
 
@@ -38,17 +33,11 @@ func (i *indexHeads) setActive() {
 	i.activet = 0
 	i.activen = 0
 
-	for nonce, rs := range i.h {
+	for nonce, dr := range i.h {
 
-		if len(rs) == 0 {
-			continue // skip empty heads
-		}
-
-		if t := rs[len(rs)-1].Time; i.activet < t {
-
-			i.activet = t
+		if i.activet < dr.Time {
+			i.activet = dr.Time
 			i.activen = nonce
-
 		}
 
 	}
@@ -56,11 +45,15 @@ func (i *indexHeads) setActive() {
 }
 
 // Index is internal and used by Container.
-// The Index can't be creaed and used outside
+// The Index can't be creaed and used outside.
+// The Index keeps information about last Root
+// objects for fast access
 type Index struct {
 	mx sync.Mutex
 
 	c *Container // back reference (for db.IdxDB and for the Cache)
+
+	loadTime int64 // load time
 
 	feeds  map[cipher.PubKey]*indexHeads
 	feedsl []cipher.PubKey // change on write
@@ -99,40 +92,25 @@ func (i *Index) load(c *Container) (err error) {
 					return
 				}
 
-				// range roots
+				// get last
 
-				var (
-					headSlice = make([]*indexRoot, 0)
-					lastTime  int64
-				)
+				var ir *data.Root
 
-				err = rs.Ascend(func(dr *data.Root) (err error) {
-
-					headSlice = append(headSlice, &indexRoot{
-						Root: *dr,  // copy
-						sync: true, // synchronous
-						hold: 0,    // not held
-					})
-
-					// we look time of last Root in the sequence;
-					// e.g. active head is head that contains
-					// the most new last root
-
-					lastTime = dr.Time // timestamp of the Root
-
-					return
+				err = rs.Descend(func(dr *data.Root) (err error) {
+					ir = dr
+					return data.ErrStopIteration // break
 				})
 
 				if err != nil {
 					return
 				}
 
-				feedMap.h[nonce] = headSlice // head
+				feedMap.h[nonce] = ir // head
 
-				if feedMap.activet < lastTime {
+				if feedMap.activet < ir.Time {
 
-					feedMap.activet = lastTime // last timestamp of active feed
-					feedMap.activen = nonce    // active head (nonce)
+					feedMap.activet = ir.Time // last timestamp of active feeds
+					feedMap.activen = nonce   // active head (nonce)
 
 				}
 
@@ -154,293 +132,25 @@ func (i *Index) load(c *Container) (err error) {
 }
 
 // call under lock
-func (i *Index) selectRoots(
+func (i *Index) lastRoot(
 	pk cipher.PubKey, // :
 	nonce uint64, //     :
 ) (
-	rs []*indexRoot, //  :
+	dr *data.Root, //    :
 	err error, //        :
 ) {
 
 	var hs, ok = i.feeds[pk]
 
-	if ok == true {
+	if ok == false {
 		return nil, data.ErrNoSuchFeed
 	}
 
-	if rs, ok = hs.h[nonce]; ok == false {
+	if dr, ok = hs.h[nonce]; ok == false {
 		return nil, data.ErrNoSuchHead
 	}
 
 	return
-}
-
-func searchRootInSortedSlice(
-	rs []*indexRoot, // : the slice
-	seq uint64, //      : seq of the wanted Root
-) (
-	ir *indexRoot, //   : found
-	k int, //           : index of the Root in the slice
-	err error, //       : not found
-) {
-
-	if len(rs) == 0 {
-		return nil, 0, data.ErrNotFound
-	}
-
-	k = sort.Search(len(rs), func(i int) bool {
-		return rs[i].Seq >= seq
-	})
-
-	ir = rs[k]
-
-	if ir.Seq != seq {
-		return nil, 0, data.ErrNotFound
-	}
-
-	return
-}
-
-// call under lock
-func (i *Index) selectRoot(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
-) (
-	ir *indexRoot, //    :
-	err error, //        :
-) {
-
-	var rs []*indexRoot
-	if rs, err = i.selectRoots(pk, nonce); err != nil {
-		return
-	}
-
-	ir, _, err = searchRootInSortedSlice(rs, seq)
-	return
-}
-
-func (i *Index) holdRoot(
-	pk cipher.PubKey,
-	nonce uint64,
-	seq uint64,
-) (
-	err error,
-) {
-
-	var ir *indexRoot
-	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
-		return
-	}
-
-	ir.hold++
-	return
-
-}
-
-// HoldRoot used to avoid removing of a
-// Root object with all related objects.
-// A Root can be used for end-user needs
-// and also to share it with other nodes.
-// Thus, in some cases a Root can't be
-// removed, and should be held. It's
-// impossible to hold a Root if it
-// doesn't exist in IdxDB
-func (i *Index) HoldRoot(
-	pk cipher.PubKey, // : feed of the Root
-	nonce uint64, //     : nonce of head of the Root
-	seq uint64, //       : seq of the Root to hold
-) (
-	err error, //        : an error
-) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
-
-	return i.holdRoot(pk, nonce, seq)
-
-}
-
-func (i *Index) holdRootSubscribe(
-	pk cipher.PubKey,
-	nonce uint64,
-	seq uint64,
-) (
-	notify chan<- struct{},
-	err error,
-) {
-
-	var ir *indexRoot
-	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
-		return
-	}
-
-	ir.hold++
-
-	if ir.notify == nil {
-		ir.notify = make(chan struct{})
-	}
-
-	notify = ir.notify
-
-	return
-
-}
-
-// HoldRootSubscribe is like HoldRoot, but
-// it returns channel that closed when
-// someone calls ForceDelRoot. If the Root
-// unheld using UnholdRoot, then channel will
-// not be closed. Thus you have to know how
-// many times you hold a Root for own needs.
-// And if a Root is held, and you don't holds
-// it, then the Root held by the node package.
-// The node can hold a Root to sent it to peer
-// (to prevent removing). In this case, if you
-// want to remove a held Root (even if it's
-// held), then you can call the ForceDelRoot
-// method to break current replication and
-// remove the Root.
-func (i *Index) HoldRootSubscribe(
-	pk cipher.PubKey, //       : feed
-	nonce uint64, //           : head
-	seq uint64, //             : seq
-) (
-	notify chan<- struct{}, // : notify
-	err error, //              : an error
-) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
-
-	return i.holdRootSubscribe(pk, nonce, seq)
-
-}
-
-// UnholdRoot used to unhold previously
-// held Root object. The UnholdRoot
-// returns error if Root doesn't exist
-// or was not held
-func (i *Index) UnholdRoot(
-	pk cipher.PubKey, // : feed
-	nonce uint64, //     : head
-	seq uint64, //       : seq
-) (
-	err error, //        : not found or not held
-) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
-
-	var ir *indexRoot
-	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
-		return
-	}
-
-	if ir.hold == 0 {
-		return ErrRootIsNotHeld
-	}
-
-	ir.hold--
-	return
-
-}
-
-func (i *Index) forceDelRootFromIndex(
-	pk cipher.PubKey, //       :
-	nonce uint64, //           :
-	seq uint64, //             :
-) (
-	rootHash cipher.SHA256, // :
-	err error, //              :
-) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
-
-	// force unhold
-
-	var ir *indexRoot
-	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
-		return
-	}
-
-	if ir.hold > 0 {
-
-		ir.hold = 0 // force unhold
-
-		if ir.notify != nil {
-			close(ir.notify) // notify
-			ir.notify = nil
-		}
-
-	}
-
-	// delete
-
-	return i.delRootFromIndex(pk, nonce, seq)
-
-}
-
-// ForceDelRoot used to remove the Root
-// even if it held. See HoldRootSubscribe
-// for details
-func (i *Index) ForceDelRoot(
-	pk cipher.PubKey, // : feed
-	nonce uint64, //     : head
-	seq uint64, //       : seq
-) (
-	err error, //        : an error
-) {
-
-	// with lock
-	var rootHash cipher.SHA256
-	if rootHash, err = i.forceDelRootFromIndex(pk, nonce, seq); err != nil {
-		return
-	}
-
-	// without lock
-	return i.delRootRelatedValues(rootHash)
-
-}
-
-// call it under lock
-func (i *Index) isRootHeld(
-	pk cipher.PubKey, // :
-	nonce uint64, //     :
-	seq uint64, //       :
-) (
-	held bool, //        :
-) {
-
-	var (
-		ir  *indexRoot
-		err error
-	)
-
-	if ir, err = i.selectRoot(pk, nonce, seq); err != nil {
-		return // false
-	}
-
-	return ir.hold > 0
-}
-
-// IsRootHeld returns true if Root with
-// given feed, head, seq is held. The
-// IsRootHeld method doesn't returns
-// error if the Root doesn't exist
-func (i *Index) IsRootHeld(
-	pk cipher.PubKey, // : feed
-	nonce uint64, //     : head
-	seq uint64, //       : seq number
-) (
-	held bool, //        : held or not
-) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
-
-	return i.isRootHeld(pk, nonce, seq)
 }
 
 //
@@ -478,6 +188,51 @@ func (i *Index) AddFeed(pk cipher.PubKey) (err error) {
 	return
 }
 
+// under lock
+func (i *Index) findRoot(
+	pk cipher.PubKey, // :
+	nonce uint64, //     :
+	seq uint64, //       :
+) (
+	dr *data.Root, //    :
+	err error, //        :
+) {
+
+	// check out index first
+
+	var hs, ok = i.feeds[pk]
+
+	if ok == false {
+		return nil, data.ErrNoSuchFeed
+	}
+
+	if dr, ok = hs[nonce]; ok == false {
+		return nil, data.ErrNoSuchHead
+	}
+
+	if dr.Seq == seq {
+		return // found
+	}
+
+	// take a look the IdxDB
+
+	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
+		var heads data.Heads
+		if heads, err = feeds.Heads(pk); err != nil {
+			return
+		}
+		var roots data.Roots
+		if roots, err = heads.Roots(nonce); err != nil {
+			return
+		}
+		dr, err = roots.Get(seq)
+		return
+	})
+
+	return
+
+}
+
 // ReceivedRoot called by the node package to
 // check a recived root. The method verify hash
 // and signature of the Root. The method also
@@ -509,7 +264,7 @@ func (i *Index) ReceivedRoot(
 	r.Hash = hash // set the hash
 	r.Sig = sig   // set the signature
 
-	if _, err = i.selectRoot(r.Pub, r.Nonce, r.Seq); err == nil {
+	if _, err = i.findRoot(r.Pub, r.Nonce, r.Seq); err == nil {
 		r.IsFull = true
 		return
 	} else if err == data.ErrNoSuchHead || err == data.ErrNotFound {
@@ -540,17 +295,19 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 	// if the Root already exist
 
-	if ir, _ := i.selectRoot(r.Pub, r.Nonce, r.Seq); ir != nil {
-		ir.Access = time.Now().UnixNano()
-		ir.sync = false
+	var dr *data.Root
 
-		alreadyHave = true // already have
+	switch dr, err = i.findRoot(r.Pub, r.Nonce, r.Seq); {
+	case err == nil:
+		dr.Access = time.Now().UnixNano()
+		alreadyHave = true
 		return
+	case err == data.ErrNotFound || err == data.ErrNoSuchHead:
+	default:
+		return // an error
 	}
 
 	// save in the IdxDB
-
-	var dr *data.Root
 
 	err = i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
@@ -564,6 +321,12 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 			return
 		}
 
+		// the Set never return "already exist" error
+
+		if alreadyHave, err = rs.Has(r.Seq); err != nil {
+			return
+		}
+
 		// create data.Root
 
 		dr = new(data.Root)
@@ -572,8 +335,6 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 		dr.Hash = r.Hash
 		dr.Sig = r.Sig
 
-		// the Set never return "already exist" error
-
 		return rs.Set(dr)
 	})
 
@@ -581,28 +342,19 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 		return
 	}
 
-	// add to the Index
-
-	var hs, ok = i.feeds[r.Pub]
-
-	if ok == false {
-		hs = newIndexHeads()
-		i.feeds[r.Pub] = hs
+	if r.Seq < dr.Seq {
+		// don't add to the Index the fucking, old,
+		// outdated, never need, nobody need Root
+		return
 	}
 
-	var rs = hs.h[r.Nonce]
+	// add to the Index
 
-	rs = append(rs, &indexRoot{
-		Root: *dr,
-		sync: true,
-		hold: 0,
-	})
+	var hs = i.feeds[r.Pub]
 
-	sort.Slice(rs, func(i, j int) bool {
-		return rs[i].Seq < rs[j].Seq
-	})
+	// replace the last
 
-	hs.h[r.Nonce] = rs
+	hs.h[r.Nonce] = dr
 
 	if hs.activet < r.Time {
 		hs.activet = r.Time
@@ -629,25 +381,6 @@ func (i *Index) AddRoot(r *registry.Root) (alreadyHave bool, err error) {
 	defer i.mx.Unlock()
 
 	return i.addRoot(r)
-}
-
-// AddHoldRoot is AddRoot that holds given Root. Use
-// this mehtod instead of sequential calls of AddRoot
-// and HoldRoot. The method never hold Root if it
-// already exist in DB. E.g. if the alradyHave reply
-// is true, then the Root was not held
-func (i *Index) AddHoldRoot(r *registry.Root) (alreadyHave bool, err error) {
-
-	i.mx.Lock()
-	defer i.mx.Unlock()
-
-	if alreadyHave, err = i.addRoot(r); err != nil || alreadyHave == true {
-		return
-	}
-
-	err = i.holdRoot(r.Pub, r.Nonce, r.Seq)
-	return
-
 }
 
 // ActiveHead returns nonce of head that contains
@@ -725,18 +458,12 @@ func (i *Index) LastRoot(
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	var rs []*indexRoot
-	if rs, err = i.selectRoots(pk, nonce); err != nil {
+	var lr *data.Root
+	if lr, err = i.lastRoot(pk, nonce); err != nil {
 		return
 	}
 
-	if len(rs) == 0 {
-		return nil, data.ErrNotFound
-	}
-
-	var ir = rs[len(rs)-1]
-
-	r, err = i.c.RootByHash(ir.Hash) // using Cache
+	r, err = i.c.RootByHash(lr.Hash)
 	return
 }
 
@@ -748,27 +475,15 @@ func (i *Index) delFeedFromIndex(
 	err error,
 ) {
 
+	// check out the feed
+
 	var hs, ok = i.feeds[pk]
 
 	if ok == false {
 		return nil, data.ErrNoSuchFeed
 	}
 
-	// a Root can be held
-
-	rss = make([][]*indexRoot, 0, len(hs.h))
-
-	for _, rs := range hs.h {
-
-		for _, ir := range rs {
-			if ir.hold > 0 {
-				return nil, ErrRootIsHeld
-			}
-		}
-
-		rss = append(rss, rs)
-
-	}
+	var rootHashes []cipher.SHA256
 
 	// delete from IdxDB first
 
@@ -786,15 +501,10 @@ func (i *Index) delFeedFromIndex(
 				return
 			}
 
-			for _, ir := range rs {
-				if err = roots.Del(ir.Seq); err != nil {
-					return
-				}
-			}
-
-			if err = heads.Del(nonce); err != nil {
+			err = roots.Ascend(func(dr *data.Root) (err error) {
+				rootHashes = append(rootHashes, dr.Hash)
 				return
-			}
+			})
 
 		}
 

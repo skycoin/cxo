@@ -15,11 +15,15 @@ const Version int = 2 // previous is 1
 
 // comon errors
 var (
-	ErrEmptyValue      = errors.New("empty value")
+	ErrEmptyValue = errors.New("empty value")
+
+	ErrWrongValueLength = errors.New("wrong value length")
+
 	ErrMissingMetaInfo = errors.New("missing meta information")
-	ErrMissingVersion  = errors.New("missing version in meta")
-	ErrOldVersion      = errors.New("db file of old version")      // cxodbfix
-	ErrNewVersion      = errors.New("db file newer then this CXO") // go get
+
+	ErrMissingVersion = errors.New("missing version in meta")
+	ErrOldVersion     = errors.New("db file of old version")      // cxodbfix
+	ErrNewVersion     = errors.New("db file newer then this CXO") // go get
 )
 
 //
@@ -52,4 +56,16 @@ func encodeUint32(u uint32) (ub []byte) {
 
 func decodeUint32(ub []byte) uint32 {
 	return binary.BigEndian.Uint32(ub)
+}
+
+// increment slice
+func incSlice(b []byte) {
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] == 0xff {
+			b[i] = 0
+			continue // increase next byte
+		}
+		b[i]++
+		return
+	}
 }
