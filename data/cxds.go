@@ -21,7 +21,9 @@ type IterateObjectsFunc func(key cipher.SHA256, rc uint32, val []byte) error
 //
 //     key -> {rc, val}
 //
-// The CXDS removes all elements with zero-rc
+// The CXDS keeps elements with rc == 0. End used should
+// track size of the DB and remove objects that doesn't
+// used to free up space
 type CXDS interface {
 
 	// Get and change references counter (rc). If the
@@ -47,7 +49,7 @@ type CXDS interface {
 	Inc(key cipher.SHA256, inc int) (rc uint32, err error)
 
 	// Iterate all keys in CXDS. The rc is refs count.
-	// Use ErrStopIteration to stop an iteration
+	// Use ErrStopIteration to stop an iteration.
 	Iterate(iterateFunc IterateObjectsFunc) (err error)
 
 	// Del removes obejct with given key unconditionally.

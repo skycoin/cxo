@@ -13,10 +13,8 @@ type Feeds interface {
 	// Add feed. Adding a feed twice or
 	// more times does nothing
 	Add(pk cipher.PubKey) (err error)
-	// Del feed if its empty. It's impossible to
-	// delete non-empty feed. This restriction required
-	// for related objects. We need to decrement refs count
-	// of all related objects. If feed doesn't exist
+	// Del feed with all heads and Root objects
+	// unconditionally. If feed doesn't exist
 	// then the Del returns ErrNoSuchFeed
 	Del(pk cipher.PubKey) (err error)
 
