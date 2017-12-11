@@ -49,9 +49,7 @@ var (
 
 	// root (push and done)
 
-	_ Msg = &Root{}     // <- Root (feed, nonce, seq, sig, val)
-	_ Msg = &RootDone{} // -> RD   (feed, nonce, seq)
-	_ Msg = &RootErr{}  // -> RE (feed, nonce, seq)
+	_ Msg = &Root{} // <- Root (feed, nonce, seq, sig, val)
 
 	// obejcts
 
@@ -254,44 +252,6 @@ func (*Root) Type() Type { return RootType }
 // Ecnode the Root
 func (r *Root) Encode() []byte { return encode(r) }
 
-// A RootDone is response for the Root.
-// A node that receives a Root object requires
-// some time to fill or drop it. After that
-// it sends the RootDone back to notify
-// peer that this Root object no longer
-// needed. E.g. a node holds a Root before
-// sending, to prevent removing. And the
-// node have to know when peer fills this
-// root or drops it.
-type RootDone struct {
-	Feed  cipher.PubKey // feed
-	Nonce uint64        // head
-	Seq   uint64        // seq of the Root
-}
-
-// Type implements Msg interface
-func (*RootDone) Type() Type { return RootDoneType }
-
-// Ecnode the RootDone
-func (r *RootDone) Encode() []byte { return encode(r) }
-
-// A RootErr represents error that sender
-// of a Root sends to receiver to notify
-// the receiver that Root can't be replicated
-// because of some error
-type RootErr struct {
-	Feed  cipher.PubKey // feed
-	Nonce uint64        // head
-	Seq   uint64        // seq of the Root
-	Err   string        // reason
-}
-
-// Type implements Msg interface
-func (*RootErr) Type() Type { return RootErrType }
-
-// Ecnode the RootErr
-func (r *RootErr) Encode() []byte { return encode(r) }
-
 //
 // objects
 //
@@ -357,14 +317,12 @@ const (
 	RqListType // 9
 	ListType   // 10
 
-	RootType     // 11
-	RootDoneType // 12
-	RootErrType  // 13
+	RootType // 11
 
-	RqObjectType // 14
-	ObjectType   // 15
+	RqObjectType // 12
+	ObjectType   // 13
 
-	RqPreviewType // 16
+	RqPreviewType // 14
 )
 
 // Type to string mapping
@@ -384,9 +342,7 @@ var msgTypeString = [...]string{
 	RqListType: "RqList",
 	ListType:   "List",
 
-	RootType:     "Root",
-	RootDoneType: "RootDone",
-	RootErrType:  "RootErr",
+	RootType: "Root",
 
 	RqObjectType: "RqObject",
 	ObjectType:   "Object",
@@ -418,9 +374,7 @@ var forwardRegistry = [...]reflect.Type{
 	RqListType: reflect.TypeOf(RqList{}),
 	ListType:   reflect.TypeOf(List{}),
 
-	RootType:     reflect.TypeOf(Root{}),
-	RootDoneType: reflect.TypeOf(RootDone{}),
-	RootErrType:  reflect.TypeOf(RootErr{}),
+	RootType: reflect.TypeOf(Root{}),
 
 	RqObjectType: reflect.TypeOf(RqObject{}),
 	ObjectType:   reflect.TypeOf(Object{}),
