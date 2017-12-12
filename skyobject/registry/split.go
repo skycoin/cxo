@@ -25,8 +25,9 @@ import (
 // skip subtrees of the Root tree that
 // guaranteed in DB.
 //
-// The Splitter uses Add and Done methods from
-// sync.WaitGroupt to wait its goroutines.
+// The Splitter uses Acquire and Release methods
+// from to limit number of parallel subtrees and
+// wait for goroutines.
 //
 // The Splitter calls Splitter since it splits
 // walking to all possible subtrees (unlike the
@@ -45,11 +46,15 @@ type Splitter interface {
 	Fail(err error)
 
 	//
-	// wait group
+	// goroutines limit and waiting
 	//
 
-	Add(delta int)
-	Done()
+	// Acquire is like (sync.WaitGroup).Add(1), but
+	// the Acquire blocks if goroutins limit reached and
+	// the Acquire returns false if the Splitter closed
+	Acquire() (ok bool)
+	// Release is like (sync.WaitGroup).Done()
+	Release()
 }
 
 func splitSchemaHashAsync(
@@ -57,7 +62,7 @@ func splitSchemaHashAsync(
 	sch Schema, //         : schema of the object
 	hash cipher.SHA256, // : hash of the object
 ) {
-	defer s.Done()
+	defer s.Release()
 	splitSchemaHash(s, sch, hash)
 }
 
@@ -97,7 +102,7 @@ func splitSchemaDataAsync(
 	sch Schema, // :
 	val []byte, // :
 ) {
-	defer s.Done()
+	defer s.Release()
 	splitSchemaData(s, sch, val)
 }
 
@@ -265,7 +270,11 @@ func splitArraySlice(
 		}
 
 		// split
-		s.Add(1)
+
+		if s.Acquire() == false {
+			return
+		}
+
 		go splitSchemaDataAsync(s, el, val[shift:shift+m])
 
 		shift += m
@@ -305,7 +314,10 @@ func splitStruct(
 			return
 		}
 
-		s.Add(1)
+		if s.Acquire() == false {
+			return
+		}
+
 		go splitSchemaDataAsync(s, fl.Schema(), val[shift:shift+z])
 
 		shift += z

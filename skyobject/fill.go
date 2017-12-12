@@ -22,9 +22,11 @@ type Filler struct {
 	mx   sync.Mutex
 	incs map[cipher.SHA256]int
 
+	limit chan struct{} // max
+
 	errq chan error
 
-	sync.WaitGroup
+	await sync.WaitGroup
 
 	closeq chan struct{}
 	closeo sync.Once
@@ -106,7 +108,7 @@ func (f *Filler) requset(key cipher.SHA256) (ok bool) {
 func (f *Filler) Close() {
 	f.closeo.Do(func() {
 		close(f.closeq)
-		f.Wait()
+		f.await.Wait()
 	})
 }
 
@@ -118,9 +120,9 @@ func (f *Filler) Close() {
 func (c *Container) Fill(
 	r *registry.Root, //        : the Root to fill
 	rq chan<- cipher.SHA256, // : request object from peers
+	maxParall int, //           : max subtrees processing at the same time
 ) (
 	f *Filler, //               : the Filler
-	err error, //               : an error
 ) {
 
 	f = new(Filler)
@@ -130,6 +132,10 @@ func (c *Container) Fill(
 
 	f.rq = rq
 	f.incs = make(map[cipher.SHA256]int)
+
+	if maxParall > 0 {
+		f.limit = make(chan struct{}, maxParall)
+	}
 
 	f.errq = make(chan error, 1)
 	f.closeq = make(chan struct{})
@@ -145,6 +151,41 @@ func (f *Filler) remove() {
 	}
 }
 
+// Acquire is like (sync.WaitGroup).Add(1), but the
+// Acquire blocks if goroutines limit reached, and
+// the Acquire returns false if the Filler closed
+func (f *Filler) Acquire() (ok bool) {
+
+	if f.limit == nil {
+		ok = true
+		f.await.Add(1)
+		return
+	}
+
+	select {
+	case f.limit <- struct{}{}:
+		ok = true
+		f.await.Add(1)
+	case <-f.closeq:
+	}
+
+	return
+
+}
+
+// Release is like (sync.WaitGroup).Done
+func (f *Filler) Release() {
+
+	if f.limit == nil {
+		f.await.Done()
+		return
+	}
+
+	<-f.limit
+	f.await.Done()
+
+}
+
 // Run the Filler. The Run method blocks
 // until finish or first error
 func (f *Filler) Run() (err error) {
@@ -154,16 +195,19 @@ func (f *Filler) Run() (err error) {
 		return
 	}
 
-	f.Add(len(f.r.Refs))
-
 	for _, dr := range f.r.Refs {
+
+		if f.Acquire() == false {
+			break
+		}
+
 		go dr.Split(f)
 	}
 
 	var done = make(chan struct{})
 
 	go func() {
-		f.Wait() // wait group
+		f.await.Wait() // wait group
 		close(done)
 	}()
 

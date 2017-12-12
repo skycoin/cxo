@@ -227,7 +227,7 @@ func (n *Node) addConnection(c *Conn) (err error) {
 
 	delete(n.pc, c) // remove from pending
 
-	n.fc[cipher.PubKey{}][c] = struct{}{}
+	n.fc[cipher.PubKey{}].cs[c] = struct{}{}
 	n.ic[c.peerID.Pk] = c
 
 	return
@@ -242,26 +242,26 @@ func (n *Node) delConnection(c *Conn) {
 	// use range over the map instead of
 	// c.Feeds() to avoid slice building
 	for pk := range c.feeds {
-		delete(n.fc[pk], c)
+		delete(n.fc[pk].cs, c)
 	}
 
-	delete(n.fc[cipher.PubKey{}], c)
+	delete(n.fc[cipher.PubKey{}].cs, c)
 
 }
 
 // under lock
 func (n *Node) addConnFeed(c *Conn, pk cipher.PubKey) {
 
-	delete(n.fc[cipher.PubKey{}], c)
+	delete(n.fc[cipher.PubKey{}].cs, c)
 
 	var cf, ok = n.fc[pk]
 
 	if ok == false {
-		cf = make(map[*Conn]struct{})
+		cf = newFeed()
 		n.fc[pk] = cf
 	}
 
-	cf[c] = struct{}{}
+	cf.cs[c] = struct{}{}
 
 }
 
@@ -571,5 +571,17 @@ func (n *Node) OnFillingBreaks(c *Conn, r *registry.Root, reason error) {
 	}
 
 	brk(c, r, reason)
+
+}
+
+func (n *Node) fill(r *registry.Root) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if nf, ok = n.fc[r.Pub]; ok == false {
+		return
+	}
+
+	nf.fillesr
 
 }

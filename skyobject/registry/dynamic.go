@@ -150,10 +150,10 @@ func (d *Dynamic) Walk(
 }
 
 // Split used by the node package to fill the Dynamic.
-// At the end the Split method calls s.Done, thus
-// before the Split call s.Add(1)
+// At the end the Split method calls s.Release, thus
+// before the Split call s.ACquire()
 func (d *Dynamic) Split(s Splitter) {
-	defer s.Done()
+	defer s.Release()
 
 	if d.IsValid() == false {
 		s.Fail(ErrInvalidDynamicReference)

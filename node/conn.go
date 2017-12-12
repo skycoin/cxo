@@ -18,13 +18,6 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// root key
-type root struct {
-	pk    cipher.PubKey // feed
-	nonce uint64        // head
-	seq   uint64        // seq
-}
-
 // A Conn represent connection of the Node
 type Conn struct {
 	*factory.Connection
@@ -44,13 +37,13 @@ type Conn struct {
 	// peer id
 	peerID NodeID
 
-	sr *registry.Root // sent Root
-	sp *registry.Root // waits the sent to be sent
-
 	// feeds this connection share with peer;
-	// the connection remembers last root received
-	// per head; e.g. feed -> head -> last received
-	feeds map[cipher.PubKey]map[uint64]root
+	// the feeds keeps last root the peer
+	// send to this one; the last root used
+	// to fill a received root obejcts; if the
+	// peer have a filling root, then we use
+	// this connection to fill the root
+	feeds map[cipher.PubKey]map[uint64]seq
 
 	// messege seq number (for request-response)
 	seq uint32
@@ -90,7 +83,7 @@ func (n *Node) newConnection(
 
 	c.n = n
 
-	c.feeds = make(map[cipher.PubKey]map[uint64]root)
+	c.feeds = make(map[cipher.PubKey]map[uint64]uint64)
 	c.reqs = make(map[uint32]chan<- msg.Msg)
 
 	c.sendq = fc.GetChanOut()
@@ -278,15 +271,12 @@ func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
 	switch x := reply.(type) {
 
 	case *msg.Ok:
-
 		// success
 
 	case *msg.Err:
-
 		err = errors.New(x.Err)
 
 	default:
-
 		err = fmt.Errorf("invalid response type %T", reply)
 
 	}
@@ -295,7 +285,9 @@ func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
 		reutrn
 	}
 
-	c.feeds[feed] = new(connFeed)
+	c.feeds[feed] = make(map[uint64]uint64)
+
+	// TOOD (kostyarin): send the last Root of the feed to the peer
 
 	return
 }
@@ -306,43 +298,40 @@ func (c *Conn) Unsubscribe(feed cipher.PubKey) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	var cf, ok = c.feeds[feed]
-
-	// not subscribed
-
-	if ok == false {
+	if _, ok := c.feeds[feed]; ok == false {
 		return
 	}
 
-	cf.Lock()
-	defer cf.Unlock()
+	delete(c.feeds, feed)
+	c.n.delConnFeed(c, feed) // delete from node mapping
 
-	cf.unholdSent(c.n)
-	delete(c.feeds, cf)
-
+	// notify peer
 	c.sendMsg(c.nextSeq(), 0, &msg.Unsub{
 		Feed: feed,
 	})
 
 	return
-
 }
 
 //
 // terminate
 //
 
+// close and release
+func (c *Conn) close(reason error) error {
+	c.closeo.Do(func() {
+		close(c.closeq)      // close the channel
+		c.Connection.Close() // close
+		c.await.Wait()       // wait for goroutines
+
+		c.n.onDisconenct(c, reason) // callback
+	})
+	return reason
+}
+
 // Close the Conn
 func (c *Conn) Close() (err error) {
-
-	c.closeo.Do(func() {
-
-		// TODO
-
-		c.Connection.Close()
-	})
-
-	return
+	return c.close(nil)
 }
 
 func (c *Conn) nextSeq() uint32 {
@@ -377,18 +366,12 @@ func (c *Conn) sendRaw(raw []byte) {
 
 }
 
-func (c *Conn) closeWithError(err error) {
-
-	// TODO
-
-}
-
 func (c *Conn) fatality(args ...interface{}) {
 
 	var err = errors.New(fmt.Sprint(args...))
 
 	c.n.Print("[ERR] ", err)
-	c.closeWithError(err)
+	c.close(err)
 }
 
 func (c *Conn) receiving() {
@@ -505,15 +488,12 @@ func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
 
 	select {
 	case rq <- reply:
-
 		return
 
 	case <-tc:
-
 		return nil, ErrTimeout
 
 	case <-c.closeq:
-
 		return nil, ErrClosed
 	}
 
@@ -535,38 +515,33 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 	// subscriptions
 
 	case *msg.Sub: // <- Sub (feed)
-
 		return c.handleSub(seq, x)
 
 	case *msg.Unsub: // <- Unsub (feed)
-
 		return c.handleUnsub(seq, x)
 
 	// public server features
 
 	case *msg.RqList: // <- RqList ()
-
 		return c.handleRqList(seq, x)
 
 	// the *List is response and handled outside the handle()
 
-	// root (push and done)
+	// root (push)
 
 	case *msg.Root: // <- Root (feed, nonce, seq, sig, val)
-
 		return c.handleRoot(x)
 
 	// obejcts
 
 	case *msg.RqObject: // <- RqO (key, prefetch)
-
+		c.await.Add(1)
 		go c.handleRqObject(x)
 		return
 
 	// preview
 
 	case *msg.RqPreview: // -> RqPreview (feed)
-
 		return c.handleRqPreview(seq, x)
 
 	//
@@ -631,19 +606,15 @@ func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 	var cs, ok = c.n.fc[sub.Feed]
 
 	if ok == false {
-
 		err = errors.New("not share the feed")
 		c.sendErr(seq, err)
-
 		return
 	}
 
 	// ok
 
 	c.n.addConnFeed(c, sub.Feed)
-
-	c.feeds[sub.Feed] = new(connFeed)
-
+	c.feeds[sub.Feed] = make(map[uint64]uint64)
 	c.sendOk(seq)
 
 	return
@@ -655,14 +626,14 @@ func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (_ error) {
 	var err error // not fatal error
 
 	if unsub.Feed == (cipher.PubKey{}) {
-		//
-		return
+		return errors.New("invalid request Unsub blank feed") // fatal
 	}
 
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	c.unsubscribe(unsub.Feed)
+	c.n.delConnFeed(c, unsub.Feed) // from node mapping
+	delete(c.feeds, unsub.Feed)    // from the Conn
 
 	return
 }
@@ -693,6 +664,7 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 	var cf, ok = c.feeds[root.Feed]
 
 	if ok == false {
+		// DEBUG: unexpected Root received
 		return // not subscribed to the feed
 	}
 
@@ -731,12 +703,14 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 
 	// the Root is not full and going to replace the last
 
-	c.fill(r)
+	cf[r.Nonce] = r.Seq // last
+	go c.n.fill(r)      // fill the Root (async)
 	return
 }
 
 // async
 func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
+	defer c.await.Done()
 
 	var (
 		val []byte
@@ -779,6 +753,8 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
 	case <-tc:
 		c.sendMsg(c.nextSeq(), seq, &msg.Err{}) // timeout
+	case <-c.closeq:
+		// closed
 	}
 
 	return

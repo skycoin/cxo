@@ -122,10 +122,10 @@ func (r *Ref) Walk(
 }
 
 // Split used by the node package to fill the Ref.
-// At the end the Split method calls s.Done, thus
-// before the Split call s.Add(1)
+// At the end the Split method calls s.Release, thus
+// before the Split call s.Acquire()
 func (r *Ref) Split(s Splitter, el Schema) {
-	defer s.Done()
+	defer s.Release()
 
 	splitSchemaHash(s, el, r.Hash)
 }
