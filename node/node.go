@@ -1,7 +1,6 @@
 package node
 
 import (
-	"encoding/hex"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -52,6 +51,8 @@ var (
 // by configs
 type Node struct {
 	log.Logger // logger of the server
+
+	seed *factory.SeedConfig // stub
 
 	src msg.Src // msg source
 
@@ -171,6 +172,13 @@ func NewNode(sc Config) (s *Node, err error) {
 	// node instance
 
 	s = new(Node)
+
+	// TOOD (kostyarin): unfortunately, with the seed the nodes
+	//                   doesn't connects, may be one constant seed
+	//                   for al nodes required?
+
+	s.seed = factory.NewSeedConfig() // seed
+	s.seed = nil
 
 	s.Logger = log.NewLogger(sc.Log)
 	s.conf = sc
@@ -328,22 +336,30 @@ func (s *Node) start(cxPath, idxPath string) (err error) {
 	)
 
 	if len(s.conf.DiscoveryAddresses) > 0 {
+
 		f := factory.NewMessengerFactory()
+
 		for _, addr := range s.conf.DiscoveryAddresses {
+
 			f.ConnectWithConfig(addr, &factory.ConnConfig{
+				SeedConfig:                     s.seed,
 				Reconnect:                      true,
 				ReconnectWait:                  time.Second * 30,
 				FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
 				OnConnected: s.
 					updateServiceDiscoveryCallback,
 			})
+
 		}
+
 		s.discovery = f
+
 		if s.conf.Log.Debug == true && s.conf.Log.Pins&DiscoveryPin != 0 {
 			f.SetLoggerLevel(factory.DebugLevel)
 		} else {
 			f.SetLoggerLevel(factory.ErrorLevel)
 		}
+
 	}
 
 	// start listener
@@ -414,51 +430,62 @@ func (s *Node) updateServiceDiscovery(conn *factory.Connection,
 
 	s.Debugln(DiscoveryPin, "updateServiceDiscovery", feeds)
 
-	conn.FindServiceNodesByKeys(feeds)
+	if err := conn.FindServiceNodesByKeys(feeds); err != nil {
+		s.Debug(DiscoveryPin, "finding error: ", err)
+	}
 	if s.conf.PublicServer {
-		conn.UpdateServices(&factory.NodeServices{
+		err := conn.UpdateServices(&factory.NodeServices{
 			ServiceAddress: s.conf.Listen,
 			Services:       services,
 		})
-	}
-}
 
-// unfortunately, cipher.PubKeyFromHex panics in some
-// cases that is not acceptable
-func pubKeyFromHex(pks string) (pk cipher.PubKey, err error) {
-	var b []byte
-	if b, err = hex.DecodeString(pks); err != nil {
-		return
+		if err != nil {
+			s.Debug(DiscoveryPin, "updating error: ", err)
+		}
 	}
-	if len(b) != len(cipher.PubKey{}) {
-		err = ErrInvalidPubKeyLength
-		return
-	}
-	pk = cipher.NewPubKey(b)
-	return
 }
 
 func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {
+
+	s.Debug(DiscoveryPin, "findServiceNodesCallback:", len(resp.Result))
+
 	if len(resp.Result) < 1 {
 		return
 	}
-	for k, v := range resp.Result {
-		key, err := pubKeyFromHex(k)
-		if err != nil {
-			s.Debugln(DiscoveryPin, "can't get public key:", err)
-			continue
+
+	for _, si := range resp.Result {
+
+		if si == nil {
+			continue // happens, TODO (kostyarin): ask about it
 		}
-		for _, addr := range v {
-			c, err := s.ConnectOrGet(addr)
+
+		// TODO (kostyarin): filter by the seed (pk, that is node id)
+
+		for _, ni := range si.Nodes {
+
+			if ni == nil {
+				continue // never happens
+			}
+
+			// ignore ni.PubKey for now
+
+			c, err := s.ConnectOrGet(ni.Address)
+
 			if err != nil {
-				s.Debugf(DiscoveryPin, "can't ConnectOrGet %q: %v", addr, err)
+				s.Debugf(DiscoveryPin, "can't ConnectOrGet %q: %v",
+					ni.Address,
+					err)
 				continue
 			}
-			if err = c.Subscribe(key); err != nil {
+
+			if err = c.Subscribe(si.PubKey); err != nil {
 				s.Debugln(DiscoveryPin, "can't Subscribe:", err)
 			}
+
 		}
+
 	}
+
 }
 
 func (s *Node) gotObject(key cipher.SHA256, obj *msg.Object) {
@@ -497,12 +524,13 @@ func (s *Node) Discovery() *factory.MessengerFactory {
 	return s.discovery
 }
 
-// ConnectToMessenger connects to a messenger server.
+// ConnectToMessenger connects to a messenger server
 func (s *Node) ConnectToMessenger(address string) (*factory.Connection, error) {
 	if s.discovery == nil {
 		return nil, errors.New("messenger factory not initialised")
 	}
 	return s.discovery.ConnectWithConfig(address, &factory.ConnConfig{
+		SeedConfig:                     s.seed,
 		Reconnect:                      true,
 		ReconnectWait:                  time.Second * 30,
 		FindServiceNodesByKeysCallback: s.findServiceNodesCallback,
@@ -857,6 +885,9 @@ func (s *Node) delFeed(pk cipher.PubKey) (ok bool) {
 
 // perform it under 'fmx' lock
 func updateServiceDiscovery(n *Node) {
+
+	n.Debug(DiscoveryPin, "updateServiceDiscovery function")
+
 	if n.discovery != nil {
 		feeds := make([]cipher.PubKey, 0, len(n.feeds))
 		services := make([]*factory.Service, 0, len(feeds))
