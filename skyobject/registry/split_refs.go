@@ -48,35 +48,35 @@ func (r *Refs) splitHash(s Splitter, hash cipher.SHA256) (load bool) {
 }
 
 // Split used by the node package to fill the Dynamic.
-// At the end the Split method calls s.Release, thus
-// before the Split call s.Acquire(). Unlike the Walk
-// the Split desigend for fresh Refs received by network
-// the the Split never reset the Refs if it loads it and
-// never updates hashes of the Refs if they are not
-// actual
+// Unlike the Walk the Split desigend for fresh Refs
+// received by network the the Split never reset the
+// Refs if it loads it and never updates hashes of
+// the Refs if they are not actual
 func (r *Refs) Split(s Splitter, el Schema) {
-	defer s.Release()
 
-	var fp = fakePack{s} // fake Pack
+	s.Go(func() {
 
-	if r.Hash == (cipher.SHA256{}) {
-		return // done
-	}
+		var fp = fakePack{s} // fake Pack
 
-	// first of all, check the Refs.Hash
+		if r.Hash == (cipher.SHA256{}) {
+			return // done
+		}
 
-	if r.splitHash(s, r.Hash) == false {
-		return
-	}
+		// first of all, check the Refs.Hash
 
-	// laod to walk
-	if err := r.initialize(&fp); err != nil {
-		s.Fail(err)
-		return
-	}
+		if r.splitHash(s, r.Hash) == false {
+			return
+		}
 
-	r.splitNode(s, &fp, el, r.refsNode, r.depth)
-	return
+		// laod to walk
+		if err := r.initialize(&fp); err != nil {
+			s.Fail(err)
+			return
+		}
+
+		r.splitNode(s, &fp, el, r.refsNode, r.depth)
+
+	})
 
 }
 
@@ -87,8 +87,7 @@ func (r *Refs) splitNodeAsync(
 	rn *refsNode, // : the node
 	depth int, //    : depth of the node
 ) {
-	defer s.Release()
-	r.splitNode(s, fp, sch, rn, depth)
+	s.Go(func() { r.splitNode(s, fp, sch, rn, depth) })
 }
 
 func (r *Refs) splitNode(
@@ -102,12 +101,7 @@ func (r *Refs) splitNode(
 	if depth == 0 {
 
 		for _, leaf := range rn.leafs {
-
-			if s.Acquire() == false {
-				return
-			}
-
-			go splitSchemaHashAsync(s, sch, leaf.Hash)
+			s.Go(func() { splitSchemaHashAsync(s, sch, leaf.Hash) })
 		}
 
 		return
@@ -126,14 +120,7 @@ func (r *Refs) splitNode(
 			return
 		}
 
-		if s.Acquire() == false {
-			return
-		}
-
-		go r.splitNodeAsync(s, fp, sch, rn, depth)
-
+		s.Go(func() { r.splitNodeAsync(s, fp, sch, rn, depth) })
 	}
-
-	return
 
 }

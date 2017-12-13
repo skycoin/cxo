@@ -49,12 +49,10 @@ type Splitter interface {
 	// goroutines limit and waiting
 	//
 
-	// Acquire is like (sync.WaitGroup).Add(1), but
-	// the Acquire blocks if goroutins limit reached and
-	// the Acquire returns false if the Splitter closed
-	Acquire() (ok bool)
-	// Release is like (sync.WaitGroup).Done()
-	Release()
+	// Go performs a task in separate of in the current
+	// goroutine depending on parallelism of the
+	// Splitter
+	Go(func())
 }
 
 func splitSchemaHashAsync(
@@ -62,8 +60,7 @@ func splitSchemaHashAsync(
 	sch Schema, //         : schema of the object
 	hash cipher.SHA256, // : hash of the object
 ) {
-	defer s.Release()
-	splitSchemaHash(s, sch, hash)
+	s.Go(func() { splitSchemaHash(s, sch, hash) })
 }
 
 func splitSchemaHash(
@@ -102,8 +99,7 @@ func splitSchemaDataAsync(
 	sch Schema, // :
 	val []byte, // :
 ) {
-	defer s.Release()
-	splitSchemaData(s, sch, val)
+	s.Go(func() { splitSchemaData(s, sch, val) })
 }
 
 func splitSchemaData(
@@ -159,7 +155,7 @@ func splitSchemaReference(
 			return
 		}
 
-		ref.Split(s, el) // sync
+		ref.Split(s, el)
 
 	case ReferenceTypeSlice: // Refs
 
@@ -175,7 +171,7 @@ func splitSchemaReference(
 			return
 		}
 
-		refs.Split(s, el) // sync
+		refs.Split(s, el)
 
 	case ReferenceTypeDynamic: // Dynamic
 
@@ -185,7 +181,7 @@ func splitSchemaReference(
 			return
 		}
 
-		dr.Split(s) // sync
+		dr.Split(s)
 
 	default:
 
@@ -271,11 +267,7 @@ func splitArraySlice(
 
 		// split
 
-		if s.Acquire() == false {
-			return
-		}
-
-		go splitSchemaDataAsync(s, el, val[shift:shift+m])
+		s.Go(func() { splitSchemaDataAsync(s, el, val[shift:shift+m]) })
 
 		shift += m
 
@@ -314,11 +306,9 @@ func splitStruct(
 			return
 		}
 
-		if s.Acquire() == false {
-			return
-		}
-
-		go splitSchemaDataAsync(s, fl.Schema(), val[shift:shift+z])
+		s.Go(func() {
+			splitSchemaDataAsync(s, fl.Schema(), val[shift:shift+z])
+		})
 
 		shift += z
 

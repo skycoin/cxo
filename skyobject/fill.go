@@ -151,38 +151,46 @@ func (f *Filler) remove() {
 	}
 }
 
-// Acquire is like (sync.WaitGroup).Add(1), but the
-// Acquire blocks if goroutines limit reached, and
-// the Acquire returns false if the Filler closed
-func (f *Filler) Acquire() (ok bool) {
+func (f *Filler) acquire() (parall bool) {
 
 	if f.limit == nil {
-		ok = true
+		parall = true
 		f.await.Add(1)
 		return
 	}
 
 	select {
 	case f.limit <- struct{}{}:
-		ok = true
+		parall = true
 		f.await.Add(1)
-	case <-f.closeq:
+	default:
 	}
 
 	return
 
 }
 
-// Release is like (sync.WaitGroup).Done
-func (f *Filler) Release() {
+func (f *Filler) release() {
 
-	if f.limit == nil {
-		f.await.Done()
-		return
+	if f.limit != nil {
+		<-f.limit
 	}
 
-	<-f.limit
 	f.await.Done()
+
+}
+
+// Go performs some task dependig on parallelism.
+func (f *Filler) Go(fn func()) {
+
+	if f.acquire() == true {
+		go func() {
+			defer f.release()
+			fn()
+		}()
+	}
+
+	fn()
 
 }
 
@@ -196,12 +204,7 @@ func (f *Filler) Run() (err error) {
 	}
 
 	for _, dr := range f.r.Refs {
-
-		if f.Acquire() == false {
-			break
-		}
-
-		go dr.Split(f)
+		f.Go(func() { dr.Split(f) })
 	}
 
 	var done = make(chan struct{})

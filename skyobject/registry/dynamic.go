@@ -150,29 +150,31 @@ func (d *Dynamic) Walk(
 }
 
 // Split used by the node package to fill the Dynamic.
-// At the end the Split method calls s.Release, thus
-// before the Split call s.ACquire()
 func (d *Dynamic) Split(s Splitter) {
-	defer s.Release()
 
-	if d.IsValid() == false {
-		s.Fail(ErrInvalidDynamicReference)
-		return
-	}
+	s.Go(func() {
 
-	if d.IsBlank() == true {
-		return // nothing to split
-	}
+		if d.IsValid() == false {
+			s.Fail(ErrInvalidDynamicReference)
+			return
+		}
 
-	var (
-		sch Schema
-		err error
-	)
+		if d.IsBlank() == true {
+			return // nothing to split
+		}
 
-	if sch, err = s.Registry().SchemaByReference(d.Schema); err != nil {
-		s.Fail(err)
-		return
-	}
+		var (
+			sch Schema
+			err error
+		)
 
-	splitSchemaHash(s, sch, d.Hash)
+		if sch, err = s.Registry().SchemaByReference(d.Schema); err != nil {
+			s.Fail(err)
+			return
+		}
+
+		splitSchemaHash(s, sch, d.Hash)
+
+	})
+
 }
