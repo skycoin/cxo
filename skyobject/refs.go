@@ -450,7 +450,7 @@ func (r *Refs) RefByHashWithIndex(hash cipher.SHA256) (i int, needle *RefsElem,
 		for up := cur.upper; up != nil; cur, up = up, up.upper {
 			// so, we need to check out branches only,
 			// because the needle.upper contains leafs, but
-			// all nodes above contains brances
+			// all nodes above contains branches
 
 			for _, br := range up.branches {
 				if br == cur {
@@ -829,7 +829,7 @@ func (r *Refs) save(depth int) {
 // walk from tail to find nodes that has incorrect 'Hash' and 'length'
 // fields to set proper; the method doesn't check hashes of nested
 // nodes or leafs, it checks only lengths; e.g. the method is useful
-// after insert (Append or cahngeDepth); it can't be used after Ascend
+// after insert (Append or changeDepth); it can't be used after Ascend
 // or Descend (if someone change or removes elements while iterating),
 // because it walks from tail and stops on first correct (unchanged) node
 func (r *Refs) updateHashLengthFieldsFromTail(depth int) (set bool, err error) {
@@ -1093,7 +1093,7 @@ func (r *Refs) AppendHashes(hashes ...cipher.SHA256) (err error) {
 	var i int
 	for _, hash := range hashes {
 		if hash == (cipher.SHA256{}) {
-			continue // delte from the hashes
+			continue // delete from the hashes
 		}
 		hashes[i] = hash
 		i++

@@ -149,7 +149,7 @@ func (c *Container) LastRoot(pk cipher.PubKey) (r *Root, err error) {
 	return
 }
 
-// Root returns Root object by feed and seq numebr. It gets the Root object from
+// Root returns Root object by feed and seq number. It gets the Root object from
 // DB, thus the Root can only be full. This method returns holded Root object
 // and it can't be removed from database. You have to unhold it later using
 // Unhold or UnholdRoot method

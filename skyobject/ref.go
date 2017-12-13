@@ -40,7 +40,7 @@ func (r *Ref) IsBlank() bool {
 	return r.Hash == (cipher.SHA256{})
 }
 
-// Short returns first 7 bytes of Stirng
+// Short returns first 7 bytes of String
 func (r *Ref) Short() string {
 	return r.Hash.Hex()[:7]
 }

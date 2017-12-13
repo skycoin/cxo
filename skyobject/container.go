@@ -22,7 +22,7 @@ var (
 	ErrNotFound                 = errors.New("not found")
 	ErrEmptyRootHash            = errors.New("empty hash of Root")
 	ErrMissingDB                = errors.New(
-		"skyobejct.NewContainer: missing *data.DB")
+		"skyobject.NewContainer: missing *data.DB")
 )
 
 // A Container represents overlay for database
@@ -110,7 +110,7 @@ func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
 	return
 }
 
-// Unpack given Root obejct. Use flags by your needs
+// Unpack given Root object. Use flags by your needs
 //
 //     r, err := c.Root(pk, 500)
 //     if err != nil {

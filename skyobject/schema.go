@@ -431,10 +431,10 @@ type Field interface {
 	Schema() Schema     // Schema of the Field
 	Kind() reflect.Kind // kind of the Field (short hand)
 
-	Name() string    // Name of the Filed
-	RawName() []byte // raw name of the Filed
+	Name() string    // Name of the Field
+	RawName() []byte // raw name of the Field
 
-	Tag() reflect.StructTag // Tag of the Filed
+	Tag() reflect.StructTag // Tag of the Field
 	RawTag() []byte         // raw tag of the Field
 
 	Encode() (b []byte) // Encode field

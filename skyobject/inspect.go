@@ -421,7 +421,7 @@ func (i *inspector) Refs(sch Schema, val []byte) (it gotree.GTStructure) {
 
 	val, _, _ = i.c.db.CXDS().Get(refs.Hash)
 	if val == nil {
-		it.Name = "(err) missing obejct " + refs.Short()
+		it.Name = "(err) missing object " + refs.Short()
 		return
 	}
 
