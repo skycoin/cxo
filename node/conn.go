@@ -118,7 +118,7 @@ func (c *Conn) Node() (n *Node) {
 	return c.s
 }
 
-// Gnet retursn underlying *gnet.Conn
+// Gnet returns underlying *gnet.Conn
 func (c *Conn) Gnet() *gnet.Conn {
 	return c.gc
 }
