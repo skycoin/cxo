@@ -3,7 +3,7 @@ CXDS
 
 [![GoDoc](https://godoc.org/github.com/skycoin/cxo/data/cxds?status.svg)](https://godoc.org/github.com/skycoin/cxo/data/cxds)
 
-CXDS is CX data store. The package is stub and will be repalced with
+CXDS is CX data store. The package is stub and will be replaced with
 client library for CX data server. API of the package is close to goal
 and can be used without caring about future.
 
