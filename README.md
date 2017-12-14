@@ -45,7 +45,7 @@ go test -cover -race github.com/skycoin/cxo/...
   - `cxocli` - CLI is admin RPC based tool to control any CXO-node
     ([wiki/CLI](https://github.com/skycoin/cxo/wiki/CLI)).
   - `cxod` - an example CXO daemon that accepts all subscriptions
-- `data` - database interfaces, obejcts and errors
+- `data` - database interfaces, objects and errors
   - `data/cxds` - CX data store is implementation of key-value store
   - `data/idxdb` - implementation of index DB
   - `data/tests` - tests for the `data` interfaces
