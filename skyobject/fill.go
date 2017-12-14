@@ -154,6 +154,9 @@ func (f *Filler) remove() {
 func (f *Filler) acquire() (parall bool) {
 
 	if f.limit == nil {
+
+		// no limit
+
 		parall = true
 		f.await.Add(1)
 		return
@@ -161,9 +164,16 @@ func (f *Filler) acquire() (parall bool) {
 
 	select {
 	case f.limit <- struct{}{}:
+
+		// limit
+
 		parall = true
 		f.await.Add(1)
+
 	default:
+
+		// limit reached
+
 	}
 
 	return
@@ -184,11 +194,18 @@ func (f *Filler) release() {
 func (f *Filler) Go(fn func()) {
 
 	if f.acquire() == true {
+
+		// parallel
+
 		go func() {
 			defer f.release()
 			fn()
 		}()
+
+		return
 	}
+
+	// otherwise, in the very goroutine
 
 	fn()
 
