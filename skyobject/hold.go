@@ -43,7 +43,7 @@ func (r *rootsHolder) Unhold(pk cipher.PubKey, seq uint64) {
 	}
 }
 
-// IsHolded check if Root object is holded or not
+// IsHolded check if Root object is held or not
 func (r *rootsHolder) IsHolded(pk cipher.PubKey, seq uint64) (yep bool) {
 	r.hmx.Lock()
 	defer r.hmx.Unlock()
@@ -54,7 +54,7 @@ func (r *rootsHolder) IsHolded(pk cipher.PubKey, seq uint64) (yep bool) {
 // CanRemove is like IsHolded but it returns
 // *HoldedRootError if Root can't be removed.
 // And it returns nothing if Root is not
-// holded and can be removed
+// held and can be removed
 func (r *rootsHolder) CanRemove(pk cipher.PubKey, seq uint64) (err error) {
 	r.hmx.Lock()
 	defer r.hmx.Unlock()
@@ -66,14 +66,14 @@ func (r *rootsHolder) CanRemove(pk cipher.PubKey, seq uint64) (err error) {
 }
 
 // A HoldedRootError represents error
-// removing a holded Root object
+// removing a held Root object
 type HoldedRootError struct {
-	Pub cipher.PubKey // feed ot the holded Root
-	Seq uint64        // seq of the holded Root
+	Pub cipher.PubKey // feed ot the held Root
+	Seq uint64        // seq of the held Root
 }
 
 // Error implements error interface
 func (h *HoldedRootError) Error() string {
-	return fmt.Sprintf("can't remove holded Root {%s:%d}", h.Pub.Hex()[:7],
+	return fmt.Sprintf("can't remove held Root {%s:%d}", h.Pub.Hex()[:7],
 		h.Seq)
 }
