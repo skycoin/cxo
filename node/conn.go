@@ -704,7 +704,9 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 	// the Root is not full and going to replace the last
 
 	cf[r.Nonce] = r.Seq // last
-	go c.n.fill(r)      // fill the Root (async)
+
+	c.n.fillRoot(r) // fill async
+
 	return
 }
 
