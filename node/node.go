@@ -741,8 +741,8 @@ func (s *Node) RPCAddress() (address string) {
 }
 
 // Publish given Root (send to feed). Given Root
-// must be holded and not changed during this call
-// (holded during this call only)
+// must be held and not changed during this call
+// (held during this call only)
 func (s *Node) Publish(r *skyobject.Root) {
 
 	// make sterile copy first
@@ -952,7 +952,7 @@ func (s *Node) DelFeed(pk cipher.PubKey) (err error) {
 	}
 
 	// now, we can remove the feed if there
-	// are not holded Root objects
+	// are not held Root objects
 	err = s.so.DelFeed(pk)
 	return
 }

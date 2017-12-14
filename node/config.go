@@ -197,7 +197,7 @@ type Config struct {
 	// OnRootFilled is callback that called when
 	// Client finishes filling received Root object.
 	// This callback performs in own goroutine. The
-	// Root is full and holded during this callabck.
+	// Root is full and held during this callabck.
 	// You can use it anywhere
 	OnRootFilled func(c *Conn, root *skyobject.Root)
 	// OnFillingBreaks occurs when a filling Root
