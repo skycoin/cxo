@@ -12,11 +12,11 @@ type memoryDB struct {
 	name string
 }
 
-// NewMemeoryDB returns stub for memory DB.
-// The memeory-db is not implemened yet
+// NewMemoryDB returns stub for memory DB.
+// The memory-db is not implemened yet
 // and the function returns on-drive-db that
 // uses temporary file that deleted on Close
-func NewMemeoryDB() (idx data.IdxDB) {
+func NewMemoryDB() (idx data.IdxDB) {
 	fl, err := ioutil.TempFile("", "cxds")
 	if err != nil {
 		panic(err)

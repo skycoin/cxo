@@ -9,7 +9,7 @@ and can be used without caring about future.
 
 The CXDS based on [boltdb](github.com/boltdb/bolt) and
 [buntdb](github.com/tidwall/buntdb). E.g. it can be used as long time store
-on HDD (SSD or vinil disks). And there is in-memeory store for test.
+on HDD (SSD or vinil disks). And there is in-memory store for test.
 
 
 ## Schema
