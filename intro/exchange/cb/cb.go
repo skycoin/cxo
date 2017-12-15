@@ -21,11 +21,11 @@ import (
 
 // defaults
 const (
-	Host        string = "[::1]:8002" // default host address of the node
-	RPC         string = "[::1]:7002" // default RPC address
-	RemoteClose bool   = false        // don't allow closing by RPC by default
+	Host        string = "127.0.0.1:8002" // default host address of the node
+	RPC         string = "127.0.0.1:7002" // default RPC address
+	RemoteClose bool   = false            // don't allow closing by RPC
 
-	Discovery string = "[::1]:8008" // discovery server
+	Discovery string = "messenger.skycoin.net:8080" // discovery server
 )
 
 func waitInterrupt(quit <-chan struct{}) {
@@ -70,6 +70,8 @@ func main() {
 
 	// node logger
 	c.Log.Prefix = "[cb] "
+	c.Log.Pins = log.All
+	c.Log.Debug = true
 
 	// suppress gnet logger
 	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})

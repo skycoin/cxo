@@ -433,16 +433,28 @@ func (s *Node) updateServiceDiscovery(conn *factory.Connection,
 	if err := conn.FindServiceNodesByKeys(feeds); err != nil {
 		s.Debug(DiscoveryPin, "finding error: ", err)
 	}
-	if s.conf.PublicServer {
+
+	if s.conf.PublicServer == true && s.conf.EnableListener == true {
+
+		var address = s.Pool().Address()
+
+		if address == "" {
+			return // the node doesn't listen
+		}
+
+		s.Debug(DiscoveryPin, "UpdateServices adress: ", address)
+
 		err := conn.UpdateServices(&factory.NodeServices{
-			ServiceAddress: s.conf.Listen,
+			ServiceAddress: address,
 			Services:       services,
 		})
 
 		if err != nil {
 			s.Debug(DiscoveryPin, "updating error: ", err)
 		}
+
 	}
+
 }
 
 func (s *Node) findServiceNodesCallback(resp *factory.QueryResp) {

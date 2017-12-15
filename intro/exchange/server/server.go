@@ -15,11 +15,11 @@ import (
 
 // defaults
 const (
-	Host        string = "[::1]:8000" // default host address of the node
-	RPC         string = "[::1]:7000" // default RPC address
-	RemoteClose bool   = false        // don't allow closing by RPC by default
+	Host        string = "127.0.0.1:8000" // default host address of the node
+	RPC         string = "127.0.0.1:7000" // default RPC address
+	RemoteClose bool   = false            // don't allow closing by RPC
 
-	Discovery string = "[::1]:8008" // discovery server
+	Discovery string = "messenger.skycoin.net:8080" // discovery server
 )
 
 func waitInterrupt(quit <-chan struct{}) {
@@ -58,6 +58,8 @@ func main() {
 	c.InMemoryDB = true // use DB in memeory
 
 	c.Log.Prefix = "[server] "
+	c.Log.Pins = log.All // all
+	c.Log.Debug = true   // debug
 
 	c.Skyobject.Log.Prefix = "[server cxo] "
 
