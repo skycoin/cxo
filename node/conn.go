@@ -39,8 +39,8 @@ type Conn struct {
 
 	pings map[msg.ID]chan struct{}
 
-	// send a holded Root to peer, the Root
-	// should be unholded after use
+	// send a held Root to peer, the Root
+	// should be unheld after use
 	sendRoot chan *skyobject.Root
 
 	// filling
@@ -118,7 +118,7 @@ func (c *Conn) Node() (n *Node) {
 	return c.s
 }
 
-// Gnet retursn underlying *gnet.Conn
+// Gnet returns underlying *gnet.Conn
 func (c *Conn) Gnet() *gnet.Conn {
 	return c.gc
 }

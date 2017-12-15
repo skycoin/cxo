@@ -11,7 +11,7 @@ type IterateFeedsFunc func(cipher.PubKey) error
 // A Feeds represents bucket of feeds
 type Feeds interface {
 	// Add feed. Adding a feed twice or
-	// mote times does nothing
+	// more times does nothing
 	Add(cipher.PubKey) error
 	// Del feed if its empty. It's impossible to
 	// delete non-empty feed. This restriction required

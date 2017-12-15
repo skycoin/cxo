@@ -102,7 +102,7 @@ func (m *memoryCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
 	return
 }
 
-// Dec decrements referecnes counter and removes value if it turns 0
+// Dec decrements references counter and removes value if it turns 0
 func (m *memoryCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
 	m.mx.Lock()
 	defer m.mx.Unlock()

@@ -9,7 +9,7 @@ import (
 
 // A Dynamic represents dynamic reference that contains
 // reference to schema and reference to object. Use
-// SetSchemaRef and SetHash to chagne fields.
+// SetSchemaRef and SetHash to change fields.
 type Dynamic struct {
 	Object    cipher.SHA256 // reference to object
 	SchemaRef SchemaRef     // reference to Schema

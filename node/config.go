@@ -192,12 +192,12 @@ type Config struct {
 	// performs in own goroutine. You can't use
 	// Root of this callback anywhere because it
 	// is not saved and filled yet. This callback doesn't
-	// called if received a Roto already exists
+	// called if received a Root already exists
 	OnRootReceived func(c *Conn, root *skyobject.Root)
 	// OnRootFilled is callback that called when
 	// Client finishes filling received Root object.
 	// This callback performs in own goroutine. The
-	// Root is full and holded during this callabck.
+	// Root is full and held during this callabck.
 	// You can use it anywhere
 	OnRootFilled func(c *Conn, root *skyobject.Root)
 	// OnFillingBreaks occurs when a filling Root

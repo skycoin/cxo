@@ -65,7 +65,7 @@ type Pack struct {
 }
 
 // Close the Pack, unhold underlying Root
-// (if it's holded), release some resources
+// (if it's held), release some resources
 func (p *Pack) Close() {
 	if p.flags&freshRoot == 0 {
 		p.unhold.Do(func() {
@@ -155,7 +155,7 @@ func (p *Pack) Save() (err error) {
 	var (
 		seqDec = p.r.Seq                     // base
 		saved  = make(map[cipher.SHA256]int) // decr. on fail
-		holded bool                          // new root
+		held   bool                          // new root
 	)
 
 	err = p.c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
@@ -232,7 +232,7 @@ func (p *Pack) Save() (err error) {
 		// to prevent some situations
 
 		p.c.Hold(p.r.Pub, p.r.Seq)
-		holded = true
+		held = true
 		return
 	})
 
@@ -251,11 +251,11 @@ func (p *Pack) Save() (err error) {
 		}
 
 		// unhold the new Root
-		if holded {
+		if held {
 			p.c.Unhold(p.r.Pub, p.r.Seq)
 		}
 
-		// if the holded is true then p.r.Seq is seq of new Root
+		// if the held is true then p.r.Seq is seq of new Root
 		// and seqDec contains seq of previous Root. Since, the
 		// Close method Unholds Root by p.r.Seq, then we have to
 		// prevent this and unhold the Root manually
@@ -279,7 +279,7 @@ func (p *Pack) Save() (err error) {
 
 			// this Root is not based on anything, it's fresh, created
 			// from scratch, but next root will be based on this new
-			// Root, and this new Root is holded, the Close method unholds
+			// Root, and this new Root is held, the Close method unholds
 			// it, but we need to unset the freshRoot flag
 
 			p.unsetFlag(freshRoot)
@@ -287,7 +287,7 @@ func (p *Pack) Save() (err error) {
 		} else {
 
 			// this Root is based on another one, we need to unhold previous
-			// Root object; this new Root alredy holded inside transaction
+			// Root object; this new Root alredy held inside transaction
 
 			p.c.Unhold(p.r.Pub, seqDec)
 
@@ -329,7 +329,7 @@ func (p *Pack) init() (err error) {
 // Root of the Pack. It returns underlying Root object
 // that change with changes in Pack. Fields of the Root
 // are actual after every successful Save (or Unpack) and
-// before first chagnes
+// before first changes
 func (p *Pack) Root() *Root { return p.r }
 
 // Registry of the Pack

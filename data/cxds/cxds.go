@@ -13,7 +13,7 @@ import (
 
 const Version int = 1 // previous is 0
 
-// comon errors
+// common errors
 var (
 	ErrEmptyValue      = errors.New("empty value")
 	ErrMissingMetaInfo = errors.New("missing meta information")

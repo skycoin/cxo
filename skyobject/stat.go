@@ -13,7 +13,7 @@ type Stat struct {
 	// Objects is total amount of all objects
 	Objects ObjectsStat
 	// Shared objects is part of the total objects
-	// that used by many Root obejcts
+	// that used by many Root objects
 	Shared ObjectsStat
 
 	// Feeds contains detailed statistic per feed
@@ -24,7 +24,7 @@ type Stat struct {
 	Stat    time.Duration // duration of the Stat collecting
 }
 
-// Percents returns percent of shared obejcts. Amount and Volume
+// Percents returns percent of shared objects. Amount and Volume
 func (s *Stat) Percents() (sap, svp float64) {
 	return sharedPercent(&s.Shared, &s.Objects)
 }
@@ -49,7 +49,7 @@ func sharedPercent(shd, objs *ObjectsStat) (sap, svp float64) {
 // A FeedStat represents detailed
 // statistic about a feed
 type FeedStat struct {
-	// Objects is amount of all obejcts used by
+	// Objects is amount of all objects used by
 	// this feed
 	Objects ObjectsStat
 	// Shared objects if amount of objects
@@ -60,7 +60,7 @@ type FeedStat struct {
 	Roots map[uint64]RootStat
 }
 
-// Percents returns percent of shared obejcts. Amount and Volume
+// Percents returns percent of shared objects. Amount and Volume
 func (f *FeedStat) Percents() (sap, svp float64) {
 	return sharedPercent(&f.Shared, &f.Objects)
 }
@@ -76,7 +76,7 @@ type RootStat struct {
 	Shared ObjectsStat
 }
 
-// Percents returns percent of shared obejcts. Amount and Volume
+// Percents returns percent of shared objects. Amount and Volume
 func (r *RootStat) Percents() (sap, svp float64) {
 	return sharedPercent(&r.Shared, &r.Objects)
 }
