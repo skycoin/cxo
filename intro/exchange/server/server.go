@@ -19,7 +19,7 @@ const (
 	RPC         string = "127.0.0.1:7000" // default RPC address
 	RemoteClose bool   = false            // don't allow closing by RPC
 
-	Discovery string = "messenger.skycoin.net:8080" // discovery server
+	Discovery string = "127.0.0.1:8008" // discovery server
 )
 
 func waitInterrupt(quit <-chan struct{}) {

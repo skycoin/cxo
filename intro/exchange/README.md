@@ -37,7 +37,7 @@ Four terminals required.
 Launch the skycoin messenger server using "[::1]:8008" address in first terminal
 ```
 go run $GOPATH/src/github.com/skycoin/net/skycoin-messenger/server/main.go \
-    -address [::1]:8008
+    -address 127.0.0.1:8008
 ```
 
 Launch the `server` first
