@@ -60,7 +60,8 @@ type Node struct {
 	discovery *discovery.MessengerFactory
 
 	// keep config
-	config *Config
+	config             *Config
+	maxFillingParallel int // copy of c.Config().MaxFillingParallel
 
 	//
 	// closing

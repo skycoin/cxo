@@ -61,32 +61,25 @@ func (a *Addresses) Set(addr string) error {
 // replace the received one in some cases. In
 // this cases the OnFillingBreaks callback does
 // not called.
+//
+// The callback never called for Root obejcts
+// received, if node or connection doesn't
+// interest the Root
 type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 
 // OnRootFilledFunc represents callback that
 // called when new Root filled and can be used.
-// The Root is held by Container and can't be
-// removed inside this function. After the
-// call the Root will be unheld and you should
-// to hold it if you want to use it after. The
-// callback called once per Root.
-type OnRootFilledFunc func(c *Conn, r *registry.Root)
+// The callback called once per Root.
+type OnRootFilledFunc func(r *registry.Root)
 
 // OnFillingBreaksFunc represents callback that
 // called when a new Root object can't be filled.
 // The callback called with non-full Root (that
-// can't be used), connection and filling error.
+// can't be used), and with filling error.
 // There is no way to resume the filling. If
 // a remote peer push this Root obejct again,
-// then it can be filled (or can be not). The
-// callback can be called many times if many
-// connections fill a Root and breaks the
-// filling. The callback ever called if connection
-// or node closed
-//
-// The Conn argument is locked and can be used
-// read only.
-type OnFillingBreaksFunc func(c *Conn, r *registry.Root, err error)
+// then the Root can be filled (or can be not).
+type OnFillingBreaksFunc func(r *registry.Root, err error)
 
 // OnconnectFunc represents callback that called
 // when a connection closed. The callback can be
@@ -143,6 +136,28 @@ type Config struct {
 	// MaxConnections is limit of connections.
 	// Set it to zero to disable the limit.
 	MaxConnections int
+
+	// MaxHeads is limit of heads per feed. A head
+	// allocates some resources in the Node. And
+	// this limit required to protect the Node against
+	// misuse and against intentional DoS attacks. A
+	// user can generate infinity number of heads.
+	// This limit dismiss heads Root objects of
+	// which received most early. It's impossible to
+	// know which heads will be rejected, and which
+	// not. But in reality, it is not a problem.
+	//
+	// For example, if a node subscribed to feed A,
+	// and a peer receive 10 Root object one by one
+	// wiht different heads. And, if the MaxHeads
+	// limit is 5, then first 5 received Root obejcts
+	// will be rejected when last 5 received.
+	//
+	// In reality, this porblem can't occur or be
+	// a real problem
+	//
+	// Set the limit to zero, to turn it off.
+	MaxHeads int
 
 	// MaxFillingTime is time limit for filling of
 	// a Root object. If a Root object fills too

@@ -91,6 +91,7 @@ type fillHead struct {
 	r  *registry.Root     // filling Root
 	f  *skyobject.Filler  // filler of the r
 	rq chan cipher.SHA256 // request objects (TODO: maxParall)
+	ff chan error         // filler failure
 
 	p *registry.Root // waits to be filled
 
@@ -125,7 +126,7 @@ func (n *nodeHead) handle() {
 		c   *Conn
 		cr  connRoot
 		fc  fillConn
-		ok  bool
+		err error // fillign failure or nil
 	)
 
 	for {
@@ -135,7 +136,9 @@ func (n *nodeHead) handle() {
 		case c = <-f.successq:
 			f.handleSuccess(c)
 		case fc = <-f.failureq:
-			f.handleFailure(fc)
+			f.handleRequestFailure(fc)
+		case err = <-f.ff:
+			f.handleFillingResult(err)
 		case cr = <-rrq: // root received
 			f.handleReceivedRoot(cr)
 		case c = <-delcq: // delete connection
@@ -149,15 +152,42 @@ func (n *nodeHead) handle() {
 }
 
 func (f *fillHead) handleRequest(key cipher.SHA256) {
-	//
+	f.rqo.PushBack(key)
+	f.triggerRequest()
 }
 
-func (f *fillHead) handleSuccess(key cipher.SHA256) {
-	//
+func (f *fillHead) handleSuccess(c *Conn) {
+	f.requesting--
+	f.fc.PushBack(c) // push
+	f.triggerRequest()
 }
 
-func (f *fillHead) handleFailure(key cipher.SHA256) {
-	//
+func (f *fillHead) handleRequestFailure(fr failedRequest) {
+
+	f.requesting--
+
+	switch fr.err {
+	case ErrInvalidResponse:
+
+		// close connections that sends invalid responses
+		go fr.c.fatality(fr.err)
+		delete(f.cs, c) // remove connection
+
+	case ErrClosed, skyobject.ErrTerminated:
+
+		// clsoed
+		delete(f.cs, c) // remove connection
+
+	case ErrTimeout:
+
+		// probably don't have object we're requesting anymore
+		f.cs.removeKnown(fr.c, fr.seq)
+
+	}
+
+	f.rqo.PushFront(fr.key) // shift
+	f.triggerRequest()
+
 }
 
 func (f *fillHead) handleReceivedRoot(cr connRoot) {
@@ -178,16 +208,137 @@ func (f *fillHead) handleReceivedRoot(cr connRoot) {
 			return
 		}
 
+		if f.p == nil {
+
+			// callback
+			if reject := f.node().onRootReceived(cr.c, cr.r); reject != nil {
+				return // rejected
+			}
+
+			f.p = c.r // next to be filled
+			return
+		}
+
+		// else -> f.p != nil
+
+		if f.p.Seq < cr.r.Seq {
+
+			// callback
+			if reject := f.node().onRootReceived(cr.c, cr.r); reject != nil {
+				return // rejected
+			}
+
+			f.p = cr.r // replace the next with newer one
+		}
+
 		return
 	}
 
 	// else -> the f.r is nil (there aren't)
 
-	//
+	f.cs.addKnown(cr.c, cr.r.Seq) // add connection to known
+
+	// callback
+	if reject := f.node().onRootReceived(cr.c, cr.r); reject != nil {
+		return // rejected
+	}
+
+	f.createFiller(cr.r) // fill the Root
 
 }
 
-func (f *fillHead) triggerRequest() (fatal bool) {
+// value for channels, if hte (*Node).maxFillingParallel
+// is zero, then the skyobejct.Filler has no limits for
+// goroutines, but we can't create an unlimited channel,
+// thus we cahnge the zero to 1024 (I think it's enough)
+func (f *fillHead) maxParallel() (mp int) {
+	if mp := f.node().maxFillingParallel; mp <= 0 {
+		mp = 1024 // TODO (kostyarin): make constant
+	}
+	return
+}
+
+func (f *fillHead) createFiller(r *registry.Root) {
+
+	f.r = r
+	f.rq = make(chan cipher.SHA256, f.maxParallel())
+	f.f = f.node().c.Fill(r, f.rq, f.maxParallel())
+
+	f.rqo = list.New()                // create list of keys
+	f.fc = f.cs.buildConnsList(r.Seq) // create list of connections
+
+	if f.fc.Len() == 0 {
+
+		// can't fill the Root, no connections to fill from
+		f.node().OnFillingBreaks(r, reason)
+
+		f.f.Close()
+		f.r, f.rqo, f.fc = nil, nil, nil
+		return
+	}
+
+	f.await.Add(1)
+	go f.runFiller(f.f)
+}
+
+// (async)
+func (f *fillHead) runFiller(fill *skyobject.Filler) {
+	defer f.await.Done()
+
+	select {
+	case f.ff <- fill.Run():
+	case <-f.closeq:
+		fill.Close() // since, the result ignored
+	}
+}
+
+func (f *fillHead) closeFiller() {
+	if f.f == nil {
+		return
+	}
+
+	f.f.Close()
+	f.rqo, f.fc, f.r = nil, nil, nil
+	f.rq = nil
+	f.requesting = 0
+}
+
+func (f *fillHead) handleFillingResult(err error) {
+
+	f.closeFiller() // close the filler and wait it's goroutines
+
+	if err == nil {
+		f.node().OnRootFilled(f.r) // callback
+	} else {
+		f.node().OnFillingBreaks(f.r, err) // callback
+	}
+
+	// is there a pending Root to be filled?
+
+	// no
+
+	if f.p == nil {
+		return
+	}
+
+	// yes
+
+	f.createFiller(f.p)
+	f.p = nil
+
+}
+
+func (f *fillHead) triggerRequest() {
+
+	if fatal := f.tryRequest(); fatal == true {
+		f.handleFillingResult(ErrNoConnectionsToFillFrom) // fatal case
+	}
+
+}
+
+// the fatal means that we haven't conenctions to
+// request objects from anymore, neither busy nor idle
+func (f *fillHead) tryRequest() (fatal bool) {
 
 	if f.rqo.Len() == 0 {
 		return // no objects to request
@@ -267,9 +418,7 @@ func (f *fillHead) handleDelConn(c *Conn) {
 }
 
 func (f *fillHead) terminate() {
-	if f.f != nil {
-		f.f.Close() // terminate filler
-	}
+	f.closeFiller()
 }
 
 type knownRoots map[*Conn][]uint64

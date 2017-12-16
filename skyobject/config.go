@@ -31,6 +31,10 @@ const (
 
 	MaxObjectSize int = 16 * 1024 * 1024 // default is 16M
 
+	// filling
+
+	MaxFillingParallel int = 10 // ten parallel subtrees
+
 	// DB related constants
 	CXDS  string = "cxds.db" // default CXDS file name
 	IdxDB string = "idx.db"  // default IdxDB file name
@@ -138,6 +142,13 @@ type Config struct {
 	//
 	// The MaxObjectSize can't be less then 1024
 	MaxObjectSize int
+
+	// MaxFillingParallel is limit of subtrees that used
+	// by Filler at the same time. The Filler can walk
+	// all possible subtress sumultaneously, creating
+	// goroutines. The MaxFillingParallel should be closer
+	// to number of conenctions that used to fill a Root.
+	MaxFillingParallel int
 
 	// DB configs
 
