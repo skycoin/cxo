@@ -375,6 +375,7 @@ func (f *fillHead) handleFillingResult(err error) {
 	if err == nil {
 		f.node().OnRootFilled(f.r)       // callback
 		f.favg.Add(time.Now().Sub(f.tp)) // average time
+		f.cs.moveForward(f.r.Seq + 1)    // move forward
 	} else {
 		f.node().OnFillingBreaks(f.r, err) // callback
 	}
