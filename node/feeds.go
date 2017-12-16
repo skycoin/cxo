@@ -9,20 +9,22 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// connection and feed
-type connFeed struct {
-	c *Conn
-	f cipher.PubKey
-}
-
 // connection and received Root
 type connRoot struct {
 	c *Conn
 	r *registry.Root
 }
 
+// connection and feed
+type connFeed struct {
+	c *Conn
+	f cipher.PubKey
+}
+
 // feeds of the Node
 type nodeFeeds struct {
+	n *Node // back reference
+
 	fs map[cipher.PubKey]*nodeFeed // feeds
 	fl []cipher.PubKey             // clear-on-write
 
@@ -32,20 +34,26 @@ type nodeFeeds struct {
 	addcfq chan connFeed // add connection to a feed
 	delcfq chan connFeed // del connection from a feed
 
-	listrq chan struct{}        // request list
-	listq  chan []cipher.PubKey // receive list
+	listrq chan struct{}        // list request
+	listrn chan []cipher.PubKey // list response
 
-	fr chan connRoot // received Root objects
+	rrq chan connRoot // received root
+
+	await  sync.WaitGroup // wait the handle
+	closeo sync.Once      // once
+	closeq chan struct{}  // terminate
 }
 
-func newNodeFeeds() (n *nodeFeeds) {
+func newNodeFeeds(node *Node) (n *nodeFeeds) {
 
 	n = new(nodeFeeds)
+
+	n.n = node
 
 	n.fs = make(map[cipher.PubKey]*nodeFeed)
 
 	// idle connection (not pending)
-	n.fs[cipher.PubKey{}] = newNodeFeed()
+	n.fs[cipher.PubKey{}] = newNodeFeed(node)
 
 	n.addq = make(chan cipher.PubKey) // add feed
 	n.delq = make(chan cipher.PubKey) // del feed
@@ -53,38 +61,135 @@ func newNodeFeeds() (n *nodeFeeds) {
 	n.addcfq = make(chan connFeed) // add connection to a feed
 	n.delcfq = make(chan connFeed) // del connection from a feed
 
-	n.listrq = make(chan struct{})       // request list
-	n.listq = make(chan []cipher.PubKey) // receive list
+	n.listrq = make(chan struct{})        // request list
+	n.listrn = make(chan []cipher.PubKey) // receive list
 
-	n.fr = make(chan connRoot) // received Root objects
+	n.rrq = make(chan connRoot, 10) // received Root objects
+
+	n.closeq = make(chan struct{}) // terminate
+
+	n.await.Add(1)
+	go n.handle()
 
 	return
 }
 
-func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
+func (n *nodeFeeds) close() {
+	n.closeo.Do(func() {
+		close(n.closeq)
+	})
+	n.await.Wait()
+}
+
+func (n *nodeFeeds) terminate() {
+
+	for _, nf := range n.fs {
+		nf.close()
+	}
+
+}
+
+func (n *nodeFeeds) handle() {
+
+	defer n.await.Done()
+	defer n.terminate()
+
+	var (
+		addq = n.addq
+		delq = n.delq
+
+		addcfq = n.addcfq
+		delcfq = n.delcfq
+
+		listrq = n.listrq
+		listrn = n.listrn
+
+		rrq = n.rrq
+
+		closeq = n.closeq
+
+		pk cipher.PubKey
+		cr connRoot
+		cf connFeed
+	)
+
+	for {
+
+		select {
+
+		case cr = <-rrq:
+			n.handleReceivedRoot(cr)
+
+		case cf = <-addcfq:
+			n.handleAddConnFeed(cf)
+
+		case cf = <-delcfq:
+			n.handleDelConnFeed(cf)
+
+		case pk = <-addq:
+			n.handleAddFeed(pk)
+
+		case pk = <-delq:
+			n.handleDelFeed(pk)
+
+		case <-listrq:
+			n.handleList()
+
+		case <-closeq:
+			return
+		}
+
+	}
+
+}
+
+// (api)
+func (n *nodeFeeds) addFeed(pk cipher.PubKey) {
 
 	if pk == (cipher.PubKey{}) {
 		return // blank feed is special
 	}
 
+	select {
+	case n.addq <- pk:
+	case <-n.closeq:
+	}
+
+}
+
+// (handler)
+func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
+
 	if _, ok := n.fs[pk]; ok == true {
 		return // already have the feed
 	}
 
-	n.fs[pk] = newNodeFeed()
+	n.fs[pk] = newNodeFeed(n.n)
 	n.fl = nil
+
 }
 
-func (n *nodeFeeds) handleDelFeed(pk cipher.PubKey) {
+// (api)
+func (n *nodeFeeds) delFeed(pk cipher.PubKey) {
 
 	if pk == (cipher.PubKey) {
 		return // blank feed is special
 	}
 
+	select {
+	case n.delq <- pk:
+	case <-n.closeq:
+	}
+
+}
+
+// (handler)
+func (n *nodeFeeds) handleDelFeed(pk cipher.PubKey) {
+
 	var nf, ok = n.fs[pk]
 
 	if ok == false {
-		return // doesn't have the feed, nothing ot delete
+		return // doesn't have the feed, nothing to delete
 	}
 
 	nf.close() // close the feed, terminating all internal
@@ -94,6 +199,17 @@ func (n *nodeFeeds) handleDelFeed(pk cipher.PubKey) {
 
 }
 
+// (api)
+func (n *nodeFeeds) addConnFeed(c *Conn, pk cipher.PubKey) {
+
+	select {
+	case n.addcfq <- connFeed{c, pk}:
+	case <-n.closeq:
+	}
+
+}
+
+// (handler)
 func (n *nodeFeeds) handleAddConnFeed(cf connFeed) {
 
 	// if the cf.f is blank the this connection is new
@@ -106,7 +222,7 @@ func (n *nodeFeeds) handleAddConnFeed(cf connFeed) {
 	var nf, ok = n.fs[cf.f]
 
 	if ok == false {
-		nf = newNodeFeed()
+		nf = newNodeFeed(n.n)
 		n.fs[cf.f] = nf
 	}
 
@@ -115,13 +231,18 @@ func (n *nodeFeeds) handleAddConnFeed(cf connFeed) {
 
 }
 
-func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
+// (api)
+func (n *nodeFeeds) delConnFeed(c *Conn, pk cipher.PubKey) {
 
-	// if the cf.f is blank the this is invalid
-
-	if cf.f == (cipher.PubKey{}) {
-		return
+	select {
+	case n.delcfq <- connFeed{c, pk}:
+	case <-n.closeq:
 	}
+
+}
+
+// (handler)
+func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
 
 	var nf, ok = n.fs[cf.f]
 
@@ -131,7 +252,7 @@ func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
 
 	nf.delConn(c)
 
-	// if the connection does't share a feed, the
+	// if the connection does't share a feed, then
 	// we put it to idle
 
 	for pk, nf := range n.fs {
@@ -146,6 +267,24 @@ func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
 
 }
 
+// (api) get lsit of feeds (async method)
+func (n *nodeFeeds) list() (list []cipher.PubKey) {
+
+	select {
+	case n.listrq <- struct{}{}:
+	case <-n.closeq:
+		return
+	}
+
+	select {
+	case list <- n.listrn:
+	case <-n.closeq:
+	}
+
+	return
+}
+
+// (handler)
 func (n *nodeFeeds) handleList() {
 
 	if n.fl == nil && len(n.fl) > 1 {
@@ -165,31 +304,32 @@ func (n *nodeFeeds) handleList() {
 	}
 
 	select {
-	case n.listq <- n.fl:
+	case n.listrn <- n.fl:
 	case <-n.closeq:
 	}
 	return
 
 }
 
-// get lsit of feeds
-func (n *nodeFeeds) list() (list []cipher.PubKey) {
+// (api)
+func (n *nodeFeeds) receivedRoot(c *Conn, r *registry.Root) {
 
 	select {
-	case n.listrq <- struct{}{}:
-	case <-n.closeq:
-		return
-	}
-
-	select {
-	case list <- n.listq:
+	case n.rrq <- connRoot{c, r}:
 	case <-n.closeq:
 	}
 
-	return
 }
 
+// (handler)
 func (n *nodeFeeds) handleReceivedRoot(cr connRoot) {
+
+	if cr.r.Pub == (cipher.PubKey{}) {
+		return // invalid case
+	}
+
+	// connection rejects root objects of a feed
+	// the connection doesn't share
 
 	var nf, ok = n.fr[cr.r.Pub]
 
@@ -199,75 +339,4 @@ func (n *nodeFeeds) handleReceivedRoot(cr connRoot) {
 
 	nf.receivedRoot(cr)
 
-}
-
-// feed of the Node
-type nodeFeed struct {
-	cs map[*Conn]struct{}   // connections of the feed
-	hs map[uint64]*nodeHead // heads of the feed
-}
-
-func newNodeFeed() (n *nodeFeed) {
-
-	n = new(nodeFeed)
-	n.cs = make(map[*Conn]struct{})
-	n.hs = make(map[uint64]*nodeHead)
-
-	return
-}
-
-// addConn used to add a connection that share the feed
-// but we don't know about Root obejcts remote peer knows
-// about and the connection can't be used to fill a Root
-// object, but it can be filled to send new Root objects
-func (n *nodeFeed) addConn(c *Conn) {
-	n.cs[c] = struct{}{}
-}
-
-func (n *nodeFeed) delConn(c *Conn) {
-	delete(n.cs, c)
-
-	// TOOD (kostyarin): delete from fillers
-
-}
-
-func (n *nodeFeed) hasConn(c *Conn) (ok bool) {
-	_, ok = n.cs[c]
-	return
-}
-
-// a head
-type nodeHead struct {
-	r *registry.Root // filling Root
-	p *registry.Root // pending to be filled
-
-	f  *skyobject.Filler  // filler of the r
-	rq chan cipher.SHA256 // request objects from a peer (used by the f)
-
-	// connection -> [] known Root obejcts
-	//
-	// the known is seq numbers of Root objects remote peer
-	// knows about (sending the Root obejcts to us); we drop
-	// all seq of Root objects older than currently filling
-	// Root, because who cares; using the list of know Root
-	// obejcts we can request Root obejcts from a peer;
-	// if peer can't send a requested obejct, then we remove
-	// seq of known object (making it "unknown"); a remote peer
-	// can remove a Root object and all related obejcts, in
-	// this case we can't use the peer to fill a Root (thus,
-	// we make it "unknown")
-	//
-
-	cs map[*Conn][]uint64 // connections used to fill the r
-
-	addc chan *Conn // add connection
-	rmc  chan *Conn // remove connection
-
-	fr chan *registry.Root // received roots to be filled up
-
-	closeq chan struct{} // terminate
-}
-
-func (n *nodeHead) receivedRoot(cr connRoot) {
-	//
 }

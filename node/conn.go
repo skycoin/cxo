@@ -25,31 +25,15 @@ type Conn struct {
 	// lock
 	mx sync.Mutex
 
-	// is incoming or not
-	incoming bool
+	incoming bool // is incoming or not
+	tcp      bool // is tcp or udp
 
-	// is tcp or udp
-	tcp bool
+	n      *Node         // back reference
+	peerID cipher.PubKey // peer id
 
-	// back reference
-	n *Node
-
-	// peer id
-	peerID NodeID
-
-	// feeds this connection share with peer;
-	// the feeds keeps last root the peer
-	// send to this one; the last root used
-	// to fill a received root obejcts; if the
-	// peer have a filling root, then we use
-	// this connection to fill the root
-	feeds map[cipher.PubKey]map[uint64]seq
-
-	// messege seq number (for request-response)
-	seq uint32
-
-	// requests
-	reqs map[uint32]chan<- msg.Msg
+	// request - response
+	seq  uint32                    // messege seq number (for request-response)
+	reqs map[uint32]chan<- msg.Msg // requests
 
 	// stat
 
@@ -57,14 +41,11 @@ type Conn struct {
 	// TODO (kostyarin): RPS, WPS, sent, received
 	//
 
-	sendq  chan<- []byte   // channel from factory.Connection
+	sendq chan<- []byte // channel from factory.Connection
+
+	await  sync.WaitGroup  // wait for receiving loop
 	closeq <-chan struct{} //
-
-	// wait for receiving loop
-	await sync.WaitGroup
-
-	// close once
-	closeo sync.Once
+	closeo sync.Once       // close once
 }
 
 func (n *Node) newConnection(

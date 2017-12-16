@@ -1,81 +1,58 @@
 package node
 
 import (
-	"errors"
 	"sync"
 
-	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/msg"
-	"github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/cxo/skyobject/registry"
+	"guthub.com/skycoin/skycoin/src/cipher"
 )
 
-func (n *Node) fillRoot(r *registry.Root) {
-	n.await.Add(1)
-	go n.fill(r)
+// feed of the Node
+type nodeFeed struct {
+	n *Node // back referece
 
-	n.broadcastRoot(r)
+	cs map[*Conn]struct{}   // connections of the feed
+	hs map[uint64]*nodeHead // heads of the feed
+
+	await sync.WaitGroup // wait for heads
 }
 
-func (n *Node) broadcastRoot(r *registry.Root) {
+func newNodeFeed(node *Node) (n *nodeFeed) {
 
-	//
+	n = new(nodeFeed)
+	n.n = node
+	n.cs = make(map[*Conn]struct{})
+	n.hs = make(map[uint64]*nodeHead)
+
+	return
+}
+
+func (n *nodeFeed) addConn(c *Conn) {
+	n.cs[c] = struct{}{}
+}
+
+func (n *nodeFeed) delConn(c *Conn) {
+	delete(n.cs, c)
+
+	for _, nh := range n.hs {
+		nh.delConn(c)
+	}
 
 }
 
-// a feed represents feed of the Node,
-// the feed uses mutex of the Node
-type feed struct {
-	// feed -> head -> filler
-	fillers map[uint64]*filler
-
-	// connections of the feed
-	cs map[*Conn]struct{}
+func (n *nodeFeed) hasConn(c *Conn) (ok bool) {
+	_, ok = n.cs[c]
+	return
 }
 
-// fill Root
-type filler struct {
-	r *registry.Root // fill
-	p *registry.Root // pending
+func (n *nodeFeed) receivedRoot(cr connRoot) {
 
-	f  *skyobject.Filler // current filler
-	cs []*Conn           // connections to fetch
-
-	rq chan cipher.SHA256
-
-	fillRoot chan *registry.Root // new Root to fill
-
-	addc chan *Conn // add connection to the list
-	delc chan *Conn // delete connection from the list
-
-	closeq chan struct{} // terminate all fillers
-}
-
-func (n *Node) fill(r *registry.Root) (err error) {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	var f, ok = n.fc[r.Pub]
+	var nh, ok = n.hs[cr.r.Nonce]
 
 	if ok == false {
-		return // don't share the feed
+		nh = newNodeHead(n)
+		n.hs[cr.r.Nonce] = nh
 	}
 
-	var fl *filler
-	if fl, ok = f.fillers[r.Nonce]; ok == false {
-		fl = new(filler)
-
-		fl.rq = make(chan cipher.SHA256, 1)
-
-		fl.addc = make(chan *Conn, 1)
-		fl.delc = make(chan *Conn, 1)
-
-		fl.closeq = make(chan struct{})
-
-		fl.r = r
-		fl.f = n.c.Fill(r, fl.rq, 0) // TOOD (kostyarin): config max parall
-	}
+	nh.receivedRoot(cr)
 
 }

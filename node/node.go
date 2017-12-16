@@ -14,22 +14,6 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// A NodeID represents randomly generated
-// unique id that consist of cipher.PubKey
-// and related cipher.SecKey. The NodeID
-// used to protect nodes against cross
-// connections (simultaneous connections,
-// A to B and B to A). Because, a connection
-// is a duplex
-type NodeID struct {
-	Pk cipher.PubKey
-	Sk cipher.SecKey
-}
-
-func (n *NodeID) generate() {
-	n.Pk, n.Sk = cipher.GenerateKeyPair()
-}
-
 // A Node represents network P2P transport
 // for CX objects. The node used to receive
 // send and retransmit CX obejcts
@@ -38,8 +22,8 @@ type Node struct {
 	// logger
 	log.Logger
 
-	// unique random identifier of the Node
-	id NodeID
+	// unique random identifier
+	id *discovery.SeedConfig
 
 	// lock
 	mx sync.Mutex
@@ -47,30 +31,36 @@ type Node struct {
 	// related Container
 	c *skyobject.Container
 
-	// feeds -> []*Conn
-	fc map[cipher.PubKey]*feed
-	fl []cipher.PubKey // clear-on-write
+	//
+	// feeds and connections
+	//
 
-	// reference counters of filling Root
-	// obejcts and of Root obejct of preview;
-	// see (skyobject).Incs for details
-	incs *skyobject.Incs
+	// feeds
+	fs *nodeFeeds
 
-	// node id -> connection
+	// node id (pk) -> connection
 	ic map[cipher.PubKey]*Conn
+
+	// pending connections
+	pc map[*Conn]struct{}
+
+	//
+	// transports
+	//
 
 	// listen and connect
 	tcp *TCP
 	udp *UDP
+
+	//
+	// other
+	//
 
 	// discovery
 	discovery *discovery.MessengerFactory
 
 	// keep config
 	config *Config
-
-	// pending connections
-	pc map[*Conn]struct{}
 
 	//
 	// closing
@@ -130,9 +120,10 @@ func NewNodeContainer(
 	return
 }
 
-// ID retursn ID of the Node. See NodeID
-// for details
-func (n *Node) ID() (id NodeID) {
+// ID retursn identifier of the Node. The identifier
+// is unique random identifier that used by to avoid
+// cross-conenctions
+func (n *Node) ID() (id *discovery.SeedConfig) {
 	return n.id
 }
 
