@@ -11,4 +11,5 @@ var (
 	ErrClosed                = errors.New("closed")
 	ErrNotPublic             = errors.New("not a public server")
 	ErrAlreadyHaveConnection = errors.New("already have connection")
+	ErrInvalidResponse       = errors.New("invalid response")
 )

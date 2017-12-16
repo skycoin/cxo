@@ -2,9 +2,14 @@ package node
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
 
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/node/msg"
+	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // a head
@@ -69,9 +74,7 @@ func (n *nodeHead) close() {
 }
 
 func (n *nodeHead) terminate() {
-
-	// todo
-
+	//
 }
 
 type failedRequest struct {
@@ -97,7 +100,7 @@ type fillHead struct {
 	failureq chan failedRequest // failed requests
 
 	rqo *list.List // request objects (cipher.SHA256)
-	fc  *list.List // conenction to fill from (*Conn)
+	fc  *list.List // conenctions to fill from (*Conn)
 
 	requesting int // number of running requests
 }
@@ -128,35 +131,145 @@ func (n *nodeHead) handle() {
 	for {
 		select {
 		case key = <-f.rq:
-			//
-		case fc = <-f.success:
-			//
-		case fc = <-f.fail:
-			// failed
+			f.handleRequest(key)
+		case c = <-f.successq:
+			f.handleSuccess(c)
+		case fc = <-f.failureq:
+			f.handleFailure(fc)
 		case cr = <-rrq: // root received
-			//
+			f.handleReceivedRoot(cr)
 		case c = <-delcq: // delete connection
-			//
+			n.handleDelConn(c)
 		case <-closeq: // terminate
+			f.terminate()
 			return
 		}
 	}
 
 }
 
-func (f *fillHead) handleRequest(key cipher.SHA256) (ok bool) {
-	f.rqo = append(f.rqo, key)
+func (f *fillHead) handleRequest(key cipher.SHA256) {
+	//
+}
 
-	if len(f.fc) == 0 { // no conenctions to request from
-		ok = (f.requesting != 0) // wait conenctions (or terminate)
+func (f *fillHead) handleSuccess(key cipher.SHA256) {
+	//
+}
+
+func (f *fillHead) handleFailure(key cipher.SHA256) {
+	//
+}
+
+func (f *fillHead) handleReceivedRoot(cr connRoot) {
+
+	// there are a filling Root
+
+	if f.r != nil {
+
+		if cr.r.Seq < f.r.Seq {
+			return // ignore the old Root
+		}
+
+		f.cs.addKnown(cr.c, cr.r.Seq) // add to known
+
+		if cr.r.Seq == f.r.Seq {
+			f.fc.PushBack(cr.c) // add to filling connections
+			f.triggerRequest()
+			return
+		}
+
 		return
 	}
 
-	var c = f.fc[0]
+	// else -> the f.r is nil (there aren't)
 
-	copy(f.fc, f.fc[1:])
-	f.fc[len(f.fc)]
+	//
 
+}
+
+func (f *fillHead) triggerRequest() (fatal bool) {
+
+	if f.rqo.Len() == 0 {
+		return // no objects to request
+	}
+
+	if f.fc.Len() == 0 {
+		fatal = (f.requesting == 0)
+		return // no connections to request from
+	}
+
+	var c = f.fc.Remove(f.fc.Front()).(*Conn) // unshift
+
+	// the c can be removed from the head, let's check it out
+
+	for _, ok := f.cs[c]; ok == false; _, ok = f.cs[c] {
+
+		if f.fc.Len() == 0 {
+			fatal = (f.requesting == 0)
+			return // no connections
+		}
+
+		c = f.fc.Remove(f.fc.Front()).(*Conn) // unshift next
+
+	}
+
+	var key = f.rqo.Remove(f.rqo.Front()).(cipher.SHA256) // unshift
+
+	// do the request
+
+	f.requesting++
+
+	f.await.Add(1) // nodeHead.await
+	go f.requset(c, key)
+
+}
+
+// code readability
+func (f *fillHead) node() *Node {
+	return f.n.n
+}
+
+// (async) request obejct
+func (f *fillHead) request(c *Conn, key cipher.SHA256) {
+	defer f.await.Done()
+
+	var reply, err = c.sendRequest(&msg.RqObject{key})
+
+	if err != nil {
+		f.failureq <- failedRequest{c, key, err}
+		return
+	}
+
+	switch x := reply.(type) {
+	case *msg.Object:
+		var rk = cipher.SumSHA256(x.Value)
+
+		if rk != key {
+			f.failureq <- failedRequest{c, key, ErrInvalidResponse}
+			return
+		}
+
+		if err := f.node().c.Set(key, x.Value, 1); err != nil {
+			f.node().Fatal("DB failure:", err)
+			return
+		}
+
+		f.successq <- c
+
+	default:
+		f.failureq <- failedRequest{c, key, ErrInvalidResponse}
+	}
+
+}
+
+func (f *fillHead) handleDelConn(c *Conn) {
+	delete(f.cs, c) // jsut remove it from list of known
+}
+
+func (f *fillHead) terminate() {
+	if f.f != nil {
+		f.f.Close() // terminate filler
+	}
 }
 
 type knownRoots map[*Conn][]uint64
@@ -239,28 +352,20 @@ func (k knownRoots) moveForward(seq uint64) {
 }
 
 // build list of connections to fill Root with given seq
-func (k knownRoots) buildConnsList(seq uint64) (list chan Conn) {
+func (k knownRoots) buildConnsList(seq uint64) (l *list.List) {
 
-	var pre *Conn // prepare
+	l = list.New()
 
 	for c, known := range k {
 
 		for _, ks := range known {
 
 			if ks == seq {
-				pre = append(pre, c)
+				l.PushBack(c)
 				break
 			}
 
 		}
-	}
-
-	if len(pre) == 0 {
-		return // nil
-	}
-
-	for _, c := range pre {
-		list <- fillConn{c: c} // add to the queue
 	}
 
 	return
