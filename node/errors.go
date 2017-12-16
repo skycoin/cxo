@@ -14,4 +14,5 @@ var (
 	ErrInvalidResponse         = errors.New("invalid response")
 	ErrNoConnectionsToFillFrom = errors.New("no conenctions to fill from")
 	ErrMaxHeadsLimit           = errors.New("max heads limit")
+	ErrUnsubscribe             = errors.New("unsubscribe")
 )

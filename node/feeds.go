@@ -34,6 +34,10 @@ type nodeFeeds struct {
 	addcfq chan connFeed // add connection to a feed
 	delcfq chan connFeed // del connection from a feed
 
+	delcq chan *Conn // delete connection (closed connection and similar)
+
+	brorq chan connRoot // broadcast root to feed (triggered by head)
+
 	// info api
 
 	listrq chan struct{}        // list request
@@ -44,6 +48,12 @@ type nodeFeeds struct {
 
 	cfrq chan cipher.PubKey // connections of feed request
 	cfrn chan []*Conn       // connections of feed response
+
+	hascfrq chan connFeed // has connection a feed
+	hascfrn chan bool     // response
+
+	hasfrq chan cipher.PubKey // has feed
+	hasfrn chan bool          // response
 
 	// roo objects
 
@@ -63,13 +73,17 @@ func newNodeFeeds(node *Node) (n *nodeFeeds) {
 	n.fs = make(map[cipher.PubKey]*nodeFeed)
 
 	// idle connection (not pending)
-	n.fs[cipher.PubKey{}] = newNodeFeed(node)
+	n.fs[cipher.PubKey{}] = newNodeFeed(node, cipher.PubKey{})
 
 	n.addq = make(chan cipher.PubKey) // add feed
 	n.delq = make(chan cipher.PubKey) // del feed
 
 	n.addcfq = make(chan connFeed) // add connection to a feed
 	n.delcfq = make(chan connFeed) // del connection from a feed
+
+	n.delcq = make(chan *Conn)
+
+	n.brorq = make(chan connRoot)
 
 	// info api
 
@@ -81,6 +95,12 @@ func newNodeFeeds(node *Node) (n *nodeFeeds) {
 
 	n.cfrq = make(chan cipher.PubKey)
 	n.cfrn = make(chan []*Conn)
+
+	n.hascfrq = make(chan connFeed)
+	n.hascfrn = make(chan bool)
+
+	n.hasfrq = make(chan cipher.PubKey)
+	n.hasfrn = make(chan bool)
 
 	// root objects
 
@@ -120,15 +140,14 @@ func (n *nodeFeeds) handle() {
 
 		addcfq = n.addcfq
 		delcfq = n.delcfq
+		delcq  = n.delcq
+		broq   = n.brorq
 
-		listrq = n.listrq
-		listrn = n.listrn
-
-		fcrq = n.fcrq
-		fcrn = n.fcrn
-
-		cfrq = n.cfrq
-		cfrn = n.cfrn
+		listrq  = n.listrq
+		fcrq    = n.fcrq
+		cfrq    = n.cfrq
+		hascfrq = n.hascfrq
+		hasfrq  = n.hasfrq
 
 		rrq = n.rrq
 
@@ -153,11 +172,17 @@ func (n *nodeFeeds) handle() {
 		case cf = <-delcfq:
 			n.handleDelConnFeed(cf)
 
+		case cr = <-broq:
+			n.handleBroadcastRoot(cr)
+
 		case pk = <-addq:
 			n.handleAddFeed(pk)
 
 		case pk = <-delq:
 			n.handleDelFeed(pk)
+
+		case c = <-delcq:
+			n.handleDelConn(c)
 
 		//
 		// info api
@@ -171,6 +196,12 @@ func (n *nodeFeeds) handle() {
 
 		case pk = <-cfrq:
 			n.handleConnectionsOfFeed()
+
+		case cf = <-hascfrq:
+			n.handleHasConnFeed(cf)
+
+		case pk = <-hasfrq:
+			n.handleHasFeed(pk)
 
 		// close
 
@@ -203,7 +234,7 @@ func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
 		return // already have the feed
 	}
 
-	n.fs[pk] = newNodeFeed(n.n)
+	n.fs[pk] = newNodeFeed(n.n, pk)
 	n.fl = nil
 
 }
@@ -261,7 +292,7 @@ func (n *nodeFeeds) handleAddConnFeed(cf connFeed) {
 	var nf, ok = n.fs[cf.f]
 
 	if ok == false {
-		nf = newNodeFeed(n.n)
+		nf = newNodeFeed(n.n, cf.f)
 		n.fs[cf.f] = nf
 	}
 
@@ -306,6 +337,45 @@ func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
 
 }
 
+// (bubbling api)
+func (n *nodeFeeds) broadcastRoot(cr connRoot) {
+
+	select {
+	case n.brorq <- cr:
+	case <-n.closeq:
+	}
+
+}
+
+// (handler)
+func (n *nodeFeeds) handleBroadcastRoot(cr connRoot) {
+
+	var nf, ok = n.fs[cr.r.Pub]
+
+	if ok == false {
+		return
+	}
+
+	nf.handleBroadcastRoot(cr)
+}
+
+// (api)
+func (n *nodeFeeds) delConn(c *Conn) {
+
+	select {
+	case n.delcq <- c:
+	case <-n.closeq:
+	}
+
+}
+
+// (handler)
+func (n *nodeFeeds) handleDelConn(c *Conn) {
+	for _, nf := range n.fs {
+		nf.delConn(c) // from all
+	}
+}
+
 // (api)
 func (n *nodeFeeds) receivedRoot(c *Conn, r *registry.Root) {
 
@@ -322,9 +392,6 @@ func (n *nodeFeeds) handleReceivedRoot(cr connRoot) {
 	if cr.r.Pub == (cipher.PubKey{}) {
 		return // invalid case
 	}
-
-	// connection rejects root objects of a feed
-	// the connection doesn't share
 
 	var nf, ok = n.fr[cr.r.Pub]
 
@@ -460,6 +527,70 @@ func (n *nodeFeeds) handleConnectionsOfFeed(pk cipher.PubKey) {
 
 	select {
 	case n.cfrn <- cs:
+	case <-n.closeq:
+	}
+	return
+
+}
+
+// (api) has connection feed
+func (n *nodeFeeds) hasConnFeed(c *Conn, pk cipher.PubKey) (yep bool) {
+
+	select {
+	case n.hascfrq <- connFeed{c, pk}:
+	case <-n.closeq:
+		return
+	}
+
+	select {
+	case yep <- n.hascfrn:
+	case <-n.closeq:
+	}
+
+	return
+}
+
+// (handler)
+func (n *nodeFeeds) handleHasConnFeed(cf connFeed) {
+
+	var nf, ok = n.fs[cf.f]
+
+	if ok == true {
+		_, ok = nf.cs[cf.c]
+	}
+
+	select {
+	case n.hascfrn <- ok:
+	case <-n.closeq:
+	}
+	return
+
+}
+
+// (api) has connection feed
+func (n *nodeFeeds) hasFeed(pk cipher.PubKey) (yep bool) {
+
+	select {
+	case n.hasfrq <- pk:
+	case <-n.closeq:
+		return
+	}
+
+	select {
+	case yep <- n.hasfrn:
+	case <-n.closeq:
+	}
+
+	return
+}
+
+// (handler)
+func (n *nodeFeeds) handleHasFeed(pk cipher.PubKey) {
+
+	var _, ok = n.fs[pk]
+
+	select {
+	case n.hasfrn <- ok:
 	case <-n.closeq:
 	}
 	return

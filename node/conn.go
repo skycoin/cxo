@@ -35,11 +35,11 @@ type Conn struct {
 	seq  uint32                    // messege seq number (for request-response)
 	reqs map[uint32]chan<- msg.Msg // requests
 
-	// stat
-
+	// # stat
 	//
-	// TODO (kostyarin): RPS, WPS, sent, received
+	// TOOD (kostyarin): stat without mutexes to not slow down the connection
 	//
+	// ------
 
 	sendq chan<- []byte // channel from factory.Connection
 
@@ -64,7 +64,6 @@ func (n *Node) newConnection(
 
 	c.n = n
 
-	c.feeds = make(map[cipher.PubKey]map[uint64]uint64)
 	c.reqs = make(map[uint32]chan<- msg.Msg)
 
 	c.sendq = fc.GetChanOut()
@@ -81,7 +80,7 @@ func (n *Node) newConnection(
 
 // start handling
 func (c *Conn) run() {
-	c.await.Add(1)
+	c.await.Add(2)
 	go c.receiving()
 }
 
@@ -149,16 +148,7 @@ func (c *Conn) Address() (address string) {
 // Feeds returns list of feeds this connection
 // share with peer
 func (c *Conn) Feeds() (feeds []cipher.PubKey) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	feeds = make([]cipher.PubKey, 0, len(c.feeds))
-
-	for pk := range c.feeds {
-		feeds = append(feeds, pk)
-	}
-
-	return
+	return c.n.fs.feedsOfConnection(c)
 
 }
 
@@ -222,20 +212,35 @@ func (c *Conn) RemoteFeeds() (feeds []cipher.PubKey, err error) {
 	return
 }
 
+func (c *Conn) sendRoot(r *registry.Root) {
+	c.sendMsg(c.nextSeq(), 0, &msg.Root{
+		Feed:  r.Pub,
+		Nonce: r.Nonce,
+		Seq:   r.Seq,
+
+		Value: r.Encode(),
+
+		Sig: r.Sig,
+	})
+}
+
+// send last Root to peer
+func (c *Conn) sendLastRoot(pk cipher.PubKey) {
+
+	// ignore error
+	if r, _ := c.n.c.LastRoot(pk, c.n.c.ActiveHead(pk)); r != nil {
+		c.sendRoot(r)
+	}
+
+}
+
 // Subscribe to gievn feed of remote peer. The Subscribe adds
 // feed to the Node if the Node doesn't have the feed calling
-// the (*Node).Share method. The feed will not be removed from
-// the Node
+// the (*Node).Share method. If request fails, then the feed
+// is not removed. E.g. if the Subscribe method returns error
+// then it probably adds given feed to the Node, but request
+// fails. Or it can returns error of the (*Node).Share
 func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	// already subscribed ?
-
-	if _, ok := c.feeds[feed]; ok == true {
-		return
-	}
 
 	// add the feed to node
 
@@ -266,31 +271,22 @@ func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
 		reutrn
 	}
 
-	c.feeds[feed] = make(map[uint64]uint64)
-
-	// TOOD (kostyarin): send the last Root of the feed to the peer
-
+	c.n.fs.addConnFeed(c, feed)
+	c.sendLastRoot(pk)
 	return
+}
+
+// just send the messege
+func (c *Conn) unsubscribe(pk cipher.PubKey) {
+	c.sendMsg(c.nextSeq(), 0, &msg.Unsub{
+		Feed: feed,
+	})
 }
 
 // Unsubscribe from given feed of remote peer
 func (c *Conn) Unsubscribe(feed cipher.PubKey) {
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	if _, ok := c.feeds[feed]; ok == false {
-		return
-	}
-
-	delete(c.feeds, feed)
-	c.n.delConnFeed(c, feed) // delete from node mapping
-
-	// notify peer
-	c.sendMsg(c.nextSeq(), 0, &msg.Unsub{
-		Feed: feed,
-	})
-
+	c.n.fs.delConnFeed(c, feed)
+	c.unsubscribe(feed) // notify peer
 	return
 }
 
@@ -548,25 +544,15 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 // subscribe (with reply)
 func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 
-	var err error // not fatal error
-
 	// don't allow blank
 
 	if sub.Feed == (cipher.PubKey{}) {
-
-		err = errors.New("blank public key")
-		c.sendErr(seq, err)
-
-		return
+		return errors.New("blank public key") // fatal (invalid request)
 	}
 
-	// already subscribed
-
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	if _, ok = c.feeds[sub.Feed]; ok == true {
-		c.sendOk(seq)
+	// check first
+	if c.n.fs.hasConnFeed(c, sub.Feed) == true {
+		c.sendOk(seq) // already subscribed
 		return
 	}
 
@@ -579,43 +565,31 @@ func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 		return
 	}
 
-	// has feed ?
+	// the callback can subscibe the node to the feed,
+	// and anyway we can't subscribe to a feed we don't
+	// share
 
-	c.n.mx.Lock()
-	defer c.n.mx.Unlock()
-
-	var cs, ok = c.n.fc[sub.Feed]
-
-	if ok == false {
-		err = errors.New("not share the feed")
-		c.sendErr(seq, err)
+	if c.n.fs.hasFeed(sub.Feed) == false {
+		c.sendErr(seq, errors.New("do not share the feed"))
 		return
 	}
 
 	// ok
 
-	c.n.addConnFeed(c, sub.Feed)
-	c.feeds[sub.Feed] = make(map[uint64]uint64)
+	c.n.fs.addConnFeed(c, sub.Feed)
 	c.sendOk(seq)
 
 	return
 }
 
 // unsubscribe (no reply)
-func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (_ error) {
-
-	var err error // not fatal error
+func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (err error) {
 
 	if unsub.Feed == (cipher.PubKey{}) {
 		return errors.New("invalid request Unsub blank feed") // fatal
 	}
 
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	c.n.delConnFeed(c, unsub.Feed) // from node mapping
-	delete(c.feeds, unsub.Feed)    // from the Conn
-
+	c.n.delConnFeed(c, unsub.Feed) // delete
 	return
 }
 
@@ -637,57 +611,42 @@ func (c *Conn) handleRqList(seq uint32, rq *msg.RqList) (_ error) {
 // got Root (preview Root objects are handled by request-responnse, not here)
 func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 
-	c.mx.Lock()
-	defer c.mx.Unlock()
+	// check seq first (avoid verify-signature for old unwanted Root obejcts)
 
-	// do we share the feed
+	var last, err = c.n.c.LastRootSeq(root.Feed, root.Nonce) // last is full
 
-	var cf, ok = c.feeds[root.Feed]
+	switch err {
+	case data.ErrNoSuchFeed:
 
-	if ok == false {
-		// DEBUG: unexpected Root received
-		return // not subscribed to the feed
+		return // unexpected Root
+
+	case data.ErrNoSuchHead, data.ErrNotFound:
+
+		// go dow
+
+	default: // nil (found)
+
+		if last >= root.Seq {
+			return // we have newer one
+		}
+
 	}
 
-	var (
-		r   *registry.Root //
-		err error          // not fatal
-	)
+	var r *registry.Root
 
 	if r, err = c.n.c.ReceivedRoot(root.Sig, root.Value); err != nil {
 		c.n.Printf("[ERR] [%s] received Root error: %s", c.String(), err)
 		return // keep connection ?
 	}
 
-	// does nothing, because the Node already have this Root
+	// do nothing, because the Node already have this Root
 	if r.IsFull == true {
 		return
 	}
 
-	// so, let's check seq number, may be the Root is too old
-	var last uint64
-	if last, err = c.n.c.LastRootSeq(r.Pub, r.Nonce); err != nil {
-
-		if err != data.ErrNotFound {
-			c.n.Printf("[ERR] [%s] %s, can't get last root",
-				c.String(), r.Short())
-
-			return
-		}
-
-		// just not found (OK)
-
-	} else if last > r.Seq {
-		// old Root (don't care about it)
-		return
-	}
-
-	// the Root is not full and going to replace the last
-
-	cf[r.Nonce] = r.Seq // last
-
-	c.n.fillRoot(r) // fill async
-
+	// fill the Root only if the node and the connection
+	// subscribed to feed of the Root
+	c.n.fs.receivedRoot(c, r)
 	return
 }
 

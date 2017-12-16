@@ -19,31 +19,19 @@ import (
 // for CX objects. The node used to receive
 // send and retransmit CX obejcts
 type Node struct {
+	mx sync.Mutex // lock
 
-	// logger
-	log.Logger
-
-	// unique random identifier
-	id *discovery.SeedConfig
-
-	// lock
-	mx sync.Mutex
-
-	// related Container
-	c *skyobject.Container
+	log.Logger                       // logger
+	id         *discovery.SeedConfig // unique random identifier
+	c          *skyobject.Container  // related Container
 
 	//
 	// feeds and connections
 	//
 
-	// feeds
-	fs *nodeFeeds
-
-	// node id (pk) -> connection
-	ic map[cipher.PubKey]*Conn
-
-	// pending connections
-	pc map[*Conn]struct{}
+	fs *nodeFeeds              // feeds
+	ic map[cipher.PubKey]*Conn // node id (pk) -> connection
+	pc map[*Conn]struct{}      // pending connections
 
 	//
 	// transports
@@ -126,8 +114,8 @@ func NewNodeContainer(
 // ID retursn identifier of the Node. The identifier
 // is unique random identifier that used by to avoid
 // cross-conenctions
-func (n *Node) ID() (id *discovery.SeedConfig) {
-	return n.id
+func (n *Node) ID() (id cipher.PubKey) {
+	return n.id.PublicKey
 }
 
 // Config returns Config with which the
@@ -160,20 +148,23 @@ func (n *Node) Publish(r *registry.Root) {
 
 }
 
-// Connections returns list of connections of given feed.
-// Use blank public key to get all connections that not share
-// a feed
-func (n *Node) Connections(pk cipher.PubKey) (cf []*Conn) {
+// ConnectionsOfFeed returns list of connections of given
+// feed. Use blank public key to get all connections that
+// does not share a feed
+func (n *Node) ConnectionsOfFeed(pk cipher.PubKey) (cs []*Conn) {
+	return n.fs.connectionsOfFeed(pk)
+}
+
+// Connections returns all established connections
+func (n *Node) Connections() (cs []*Conn) {
 
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	var cs = n.fc[pk]
+	cs = make([]*Conn, 0, len(n.ic))
 
-	cf = make([]*Conn, 0, len(cs))
-
-	for c := range cs {
-		cf = append(cf, c)
+	for _, c := range n.ic {
+		cs = append(cs, c)
 	}
 
 	return
@@ -215,58 +206,22 @@ func (n *Node) addConnection(c *Conn) (err error) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if _, ok := n.ic[c.peerID.Pk]; ok == true {
+	if _, ok := n.ic[c.peerID]; ok == true {
 		return ErrAlreadyHaveConnection
 	}
 
-	delete(n.pc, c) // remove from pending
-
-	n.fc[cipher.PubKey{}].cs[c] = struct{}{}
-	n.ic[c.peerID.Pk] = c
+	n.ic[c.peerID] = c                   // add
+	delete(n.pc, c)                      // remove from pending
+	n.fs.addConnFeed(c, cipher.PubKey{}) // add to blank feed
 
 	return
-
 }
 
 // under lock
 func (n *Node) delConnection(c *Conn) {
 
-	delete(n.ic, c.peerID.Pk)
-
-	// use range over the map instead of
-	// c.Feeds() to avoid slice building
-	for pk := range c.feeds {
-		delete(n.fc[pk].cs, c)
-	}
-
-	delete(n.fc[cipher.PubKey{}].cs, c)
-
-}
-
-// under lock
-func (n *Node) addConnFeed(c *Conn, pk cipher.PubKey) {
-
-	delete(n.fc[cipher.PubKey{}].cs, c)
-
-	var cf, ok = n.fc[pk]
-
-	if ok == false {
-		cf = newFeed()
-		n.fc[pk] = cf
-	}
-
-	cf.cs[c] = struct{}{}
-
-}
-
-// under lock
-func (n *Node) delConnFeed(c *Conn, pk cipher.PubKey) {
-
-	delete(n.fc[pk], c)
-
-	if len(c.feeds) == 0 {
-		n.fc[cipher.PubKey{}][c] = struct{}{}
-	}
+	delete(n.ic, c.peerID)
+	n.fs.delConn(c)
 
 }
 
@@ -303,7 +258,7 @@ func (n *Node) onConnect(c *Conn) {
 	var terminate error
 
 	if terminate = occ(c); terminate != nil {
-		c.closeWithError(terminate)
+		c.close(terminate)
 	}
 
 }
@@ -320,10 +275,9 @@ func (n *Node) onDisconenct(c *Conn, reason error) {
 
 }
 
-// callback
-func (n *Node) acceptTCPConnection(fc *factory.Connection) {
+func (n *Node) acceptConnection(fc *factory.Connection, isTCP bool) {
 
-	var c, err = n.wrapConnection(fc, true, true)
+	var c, err = n.wrapConnection(fc, true, isTCP)
 
 	if err != nil {
 
@@ -340,22 +294,13 @@ func (n *Node) acceptTCPConnection(fc *factory.Connection) {
 }
 
 // callback
+func (n *Node) acceptTCPConnection(fc *factory.Connection) {
+	n.acceptConnection(fc, true)
+}
+
+// callback
 func (n *Node) acceptUDPConnection(fc *factory.Connection) {
-
-	var c, err = n.wrapConnection(fc, true, false)
-
-	if err != nil {
-
-		n.Printf("[ERR] [%s] error: %v",
-			connString(true, true, fc.GetRemoteAddr().String()),
-			err)
-
-	} else if n.Pins()&NewConnPin != 0 {
-
-		n.Debug(NewConnPin, "[%s] accept", c.String())
-
-	}
-
+	n.acceptConnection(fc, false)
 }
 
 // delete from pending and close underlying
@@ -379,7 +324,7 @@ func (n *Node) wrapConnection(
 	err error, //              :
 ) {
 
-	c = n.newConnection(fc, true, true)
+	c = n.newConnection(fc, true, true) // adds to pending
 
 	// handshake
 	if err = c.handshake(n.quiting); err != nil {
@@ -419,25 +364,13 @@ func (n *Node) wrapConnection(
 // (*Conn).Subscribe to do that.
 func (n *Node) Share(feed cipher.PubKey) (err error) {
 
-	// alrady have
-
-	if _, ok := n.fc[pk]; ok == true {
-		return
-	}
-
 	// add to the Container
-
 	if err = n.c.AddFeed(feed); err != nil {
 		return
 	}
 
-	// add
-
-	n.fc[feed] = make(map[*Conn]struct{})
-	n.fl = nil // clear
-
+	n.fs.addFeed(pk)
 	return
-
 }
 
 // DontShare given feed. The method does't remove the
@@ -448,27 +381,8 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 // and before removing a feed from Container, call this
 // method to prevent sharing feed that does not exist
 func (n *Node) DontShare(feed cipher.PubKey) (err error) {
-
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	var cs, ok = n.fc[feed]
-
-	if ok == false {
-		return
-	}
-
-	for c := range cs {
-		if err = c.Unsubscribe(feed); err != nil {
-			return
-		}
-	}
-
-	delete(n.fc, feed)
-	n.fl = nil // clear
-
+	n.fs.delFeed(pk)
 	return
-
 }
 
 func (n *Node) onSubscribeRemote(c *Conn, feed cipher.PubKey) (reject error) {

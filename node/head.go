@@ -68,8 +68,8 @@ func (n *nodeHead) closeByError(err error) {
 func (n *nodeHead) delConn(c *Conn) {
 
 	select {
-	case <-n.closeq:
 	case n.delcq <- c:
+	case <-n.closeq:
 	}
 
 }
@@ -78,8 +78,8 @@ func (n *nodeHead) delConn(c *Conn) {
 func (n *nodeHead) receivedRoot(cr connRoot) {
 
 	select {
-	case <-n.closeq:
 	case n.rrq <- cr:
+	case <-n.closeq:
 	}
 
 }
@@ -108,7 +108,7 @@ type failedRequest struct {
 type fillHead struct {
 	*nodeHead
 
-	r  *registry.Root     // filling Root
+	r  connRoot           // filling Root
 	f  *skyobject.Filler  // filler of the r
 	rq chan cipher.SHA256 // request objects (TODO: maxParall)
 	ff chan error         // filler failure
@@ -119,7 +119,7 @@ type fillHead struct {
 	tp   time.Time          // start point (start filling, for stat)
 	favg *statutil.Duration // average filling time
 
-	p *registry.Root // waits to be filled
+	p connRoot // waits to be filled
 
 	cs knownRoots // conn -> known root objects (seq)
 
@@ -181,7 +181,7 @@ func (n *nodeHead) handle() {
 
 		case c = <-delcq: // delete connection
 
-			n.handleDelConn(c)
+			f.handleDelConn(c)
 
 		case <-f.tc: // filling timeout
 
@@ -256,47 +256,47 @@ func (f *fillHead) handleReceivedRoot(cr connRoot) {
 
 	// there are a filling Root
 
-	if f.r != nil {
+	if f.r.r != nil {
 
-		if cr.r.Seq < f.r.Seq {
+		if cr.r.Seq < f.r.r.Seq {
 			return // ignore the old Root
 		}
 
 		f.cs.addKnown(cr.c, cr.r.Seq) // add to known
 
-		if cr.r.Seq == f.r.Seq {
+		if cr.r.Seq == f.r.r.Seq {
 			f.fc.PushBack(cr.c) // add to filling connections
 			f.triggerRequest()
 			return
 		}
 
-		if f.p == nil {
+		if f.p.r == nil {
 
 			// callback
 			if reject := f.node().onRootReceived(cr.c, cr.r); reject != nil {
 				return // rejected
 			}
 
-			f.p = c.r // next to be filled
+			f.p = cr // next to be filled
 			return
 		}
 
-		// else -> f.p != nil
+		// else -> f.p.r != nil
 
-		if f.p.Seq < cr.r.Seq {
+		if f.p.r.Seq < cr.r.Seq {
 
 			// callback
 			if reject := f.node().onRootReceived(cr.c, cr.r); reject != nil {
 				return // rejected
 			}
 
-			f.p = cr.r // replace the next with newer one
+			f.p = cr // replace the next with newer one
 		}
 
 		return
 	}
 
-	// else -> the f.r is nil (there aren't)
+	// else -> the f.r.r is nil (there aren't)
 
 	f.cs.addKnown(cr.c, cr.r.Seq) // add connection to known
 
@@ -305,7 +305,7 @@ func (f *fillHead) handleReceivedRoot(cr connRoot) {
 		return // rejected
 	}
 
-	f.createFiller(cr.r) // fill the Root
+	f.createFiller(cr) // fill the Root
 
 }
 
@@ -320,7 +320,10 @@ func (f *fillHead) maxParallel() (mp int) {
 	return
 }
 
-func (f *fillHead) createFiller(r *registry.Root) {
+func (f *fillHead) createFiller(cr connRoot) {
+
+	// broadcast the Root we are going to fill
+	f.nodeHead.n.fs.broadcastRoot(cr)
 
 	f.tp = time.Now() // time point
 
@@ -329,9 +332,9 @@ func (f *fillHead) createFiller(r *registry.Root) {
 		f.tc = f.ft.C
 	}
 
-	f.r = r
+	f.r = cr
 	f.rq = make(chan cipher.SHA256, f.maxParallel())
-	f.f = f.node().c.Fill(r, f.rq, f.maxParallel())
+	f.f = f.node().c.Fill(cr.r, f.rq, f.maxParallel())
 
 	f.rqo = list.New()                // create list of keys
 	f.fc = f.cs.buildConnsList(r.Seq) // create list of connections
@@ -362,8 +365,10 @@ func (f *fillHead) closeFiller() {
 	}
 
 	f.f.Close()
-	f.rqo, f.fc, f.r = nil, nil, nil
-	f.rq = nil
+
+	f.rqo, f.fc, f.rq = nil, nil, nil
+
+	f.r = connRoot{}
 	f.requesting = 0
 
 }
@@ -373,11 +378,11 @@ func (f *fillHead) handleFillingResult(err error) {
 	f.closeFiller() // close the filler and wait it's goroutines
 
 	if err == nil {
-		f.node().OnRootFilled(f.r)       // callback
+		f.node().OnRootFilled(f.r.r)     // callback
 		f.favg.Add(time.Now().Sub(f.tp)) // average time
-		f.cs.moveForward(f.r.Seq + 1)    // move forward
+		f.cs.moveForward(f.r.r.Seq + 1)  // move forward
 	} else {
-		f.node().OnFillingBreaks(f.r, err) // callback
+		f.node().OnFillingBreaks(f.r.r, err) // callback
 	}
 
 	// is there a pending Root to be filled?
@@ -482,6 +487,15 @@ func (f *fillHead) request(c *Conn, key cipher.SHA256) {
 
 func (f *fillHead) handleDelConn(c *Conn) {
 	delete(f.cs, c) // jsut remove it from list of known
+
+	if f.r.c == c {
+		f.r.c = nil // GC
+	}
+
+	if f.p.c == c {
+		f.p.c == nil // GC
+	}
+
 }
 
 func (f *fillHead) terminate() {
@@ -624,16 +638,16 @@ func (n *nodeHead) handleInfo(f *fillHead) {
 
 	var ni = new(headInfo)
 
-	ni.fillingRoot = (f.r != nil)
+	ni.fillingRoot = (f.r.r != nil)
 
 	if ni.fillingRoot == true {
-		ni.fillingRootSeq = f.r.Seq
+		ni.fillingRootSeq = f.r.r.Seq
 	}
 
-	ni.pendingRoot = (f.p != nil)
+	ni.pendingRoot = (f.p.r != nil)
 
 	if ni.pendingRoot == true {
-		ni.pendingRootSeq = f.r.Seq
+		ni.pendingRootSeq = f.r.r.Seq
 	}
 
 	// make copy

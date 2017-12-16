@@ -3,24 +3,27 @@ package node
 import (
 	"sync"
 
-	"guthub.com/skycoin/skycoin/src/cipher"
+	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // feed of the Node
 type nodeFeed struct {
-	n *Node // back referece
+	fs *nodeFeeds // back reference
+
+	this cipher.PubKey // this feed (to c.Unsubscribe)
 
 	cs map[*Conn]struct{}   // connections of the feed
 	hs map[uint64]*nodeHead // heads of the feed
 	ho []uint64             // heads order (max heads limit)
-
-	await sync.WaitGroup // wait for heads
 }
 
-func newNodeFeed(node *Node) (n *nodeFeed) {
+func newNodeFeed(nf *nodeFeeds, pk cipher.PubKey) (n *nodeFeed) {
 
 	n = new(nodeFeed)
-	n.n = node
+	n.n = nf
+	n.this = pk
 	n.cs = make(map[*Conn]struct{})
 	n.hs = make(map[uint64]*nodeHead)
 
@@ -45,6 +48,10 @@ func (n *nodeFeed) hasConn(c *Conn) (ok bool) {
 	return
 }
 
+func (n *nodeFeed) node() *Node {
+	return n.fs.n
+}
+
 func (n *nodeFeed) receivedRoot(cr connRoot) {
 
 	// do we have the connection?
@@ -58,7 +65,9 @@ func (n *nodeFeed) receivedRoot(cr connRoot) {
 	if ok == false {
 
 		// max heads limit
-		if mh := n.n.config.MaxHeads; mh > 0 && len(n.ho) == mh {
+		if mh := n.node().config.MaxHeads; mh > 0 && len(n.ho) == mh {
+
+			// TOOD (kostyarin): container/list or own doubly linked list ?
 
 			// max heads
 			var torm = n.ho[0]             // to remove
@@ -79,5 +88,34 @@ func (n *nodeFeed) receivedRoot(cr connRoot) {
 	}
 
 	nh.receivedRoot(cr)
+
+}
+
+func (n *nodeFeed) close() {
+
+	if n.this == (cipher.PubKey{}) {
+		return // special blank feed
+	}
+
+	for _, nh := range n.hs {
+		nh.close() // close head
+	}
+
+	for c := range n.cs {
+		c.unsubscribe(n.this) // send Unsub messege to peer
+	}
+
+}
+
+func (n *nodeFeed) broadcastRoot(cr connRoot) {
+
+	for c := range n.cs {
+
+		if c == cr.c {
+			continue
+		}
+
+		c.sendRoot(cr.r)
+	}
 
 }
