@@ -47,6 +47,12 @@ func (n *nodeFeed) hasConn(c *Conn) (ok bool) {
 
 func (n *nodeFeed) receivedRoot(cr connRoot) {
 
+	// do we have the connection?
+
+	if _, ok := n.cs[cr.c]; ok == false {
+		return // the connection is not subscribed to the feed
+	}
+
 	var nh, ok = n.hs[cr.r.Nonce]
 
 	if ok == false {
