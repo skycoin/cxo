@@ -4,12 +4,14 @@ import (
 	"container/list"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
+	"github.com/skycoin/cxo/skyobject/statutil"
 )
 
 // a head
@@ -19,6 +21,11 @@ type nodeHead struct {
 	delcq chan *Conn    // delete connection
 	rrq   chan connRoot // received roots
 	errq  chan err      // close wiht error (max heads limit)
+
+	// api info
+
+	inforq chan struct{}  // info request
+	inforn chan *headInfo // info response
 
 	// closing
 	await  sync.WaitGroup // wait goroutines
@@ -85,8 +92,9 @@ func (n *nodeHead) close() {
 	n.await.Wait()
 }
 
-func (n *nodeHead) terminate() {
-	//
+// code readability
+func (n *nodeHead) node() *Node {
+	return n.n.n
 }
 
 type failedRequest struct {
@@ -104,6 +112,12 @@ type fillHead struct {
 	f  *skyobject.Filler  // filler of the r
 	rq chan cipher.SHA256 // request objects (TODO: maxParall)
 	ff chan error         // filler failure
+
+	ft time.Timer       // fill timeout
+	tc <-chan time.Time // ------------
+
+	tp   time.Time          // start point (start filling, for stat)
+	favg *statutil.Duration // average filling time
 
 	p *registry.Root // waits to be filled
 
@@ -127,11 +141,13 @@ func (n *nodeHead) handle() {
 		rrq    = n.rrq    //
 		closeq = n.closeq //
 		errq   = n.errq   //
+		inforq = n.inforq //
 
 		f = fillHead{
 			nodeHead: n,
 			rq:       make(chan cipher.SHA256, 10),
 			cs:       make(knownRoots),
+			favg:     n.node().fillavg, // reference
 		}
 
 		key cipher.SHA256
@@ -166,6 +182,15 @@ func (n *nodeHead) handle() {
 		case c = <-delcq: // delete connection
 
 			n.handleDelConn(c)
+
+		case <-f.tc: // filling timeout
+
+			f.handleFillingResult(ErrTimeout)
+
+		// api info
+
+		case <-inforq:
+			n.handleInfo(&f)
 
 		case err = <-errq:
 
@@ -206,7 +231,7 @@ func (f *fillHead) handleRequestFailure(fr failedRequest) {
 		go fr.c.fatality(fr.err)
 		delete(f.cs, c) // remove connection
 
-	case ErrClosed, skyobject.ErrTerminated:
+	case ErrClosed:
 
 		// clsoed
 		delete(f.cs, c) // remove connection
@@ -215,6 +240,10 @@ func (f *fillHead) handleRequestFailure(fr failedRequest) {
 
 		// probably don't have object we're requesting anymore
 		f.cs.removeKnown(fr.c, fr.seq)
+
+	default:
+
+		// skyobject.ErrTerminated or other error
 
 	}
 
@@ -286,12 +315,19 @@ func (f *fillHead) handleReceivedRoot(cr connRoot) {
 // thus we cahnge the zero to 1024 (I think it's enough)
 func (f *fillHead) maxParallel() (mp int) {
 	if mp := f.node().maxFillingParallel; mp <= 0 {
-		mp = 1024 // TODO (kostyarin): make constant
+		mp = 1024 // TODO (kostyarin): make it constant
 	}
 	return
 }
 
 func (f *fillHead) createFiller(r *registry.Root) {
+
+	f.tp = time.Now() // time point
+
+	if ft := f.node().config.MaxFillingTime; ft > 0 {
+		f.ft = time.NewTimer(ft)
+		f.tc = f.ft.C
+	}
 
 	f.r = r
 	f.rq = make(chan cipher.SHA256, f.maxParallel())
@@ -299,16 +335,6 @@ func (f *fillHead) createFiller(r *registry.Root) {
 
 	f.rqo = list.New()                // create list of keys
 	f.fc = f.cs.buildConnsList(r.Seq) // create list of connections
-
-	if f.fc.Len() == 0 {
-
-		// can't fill the Root, no connections to fill from
-		f.node().OnFillingBreaks(r, reason)
-
-		f.f.Close()
-		f.r, f.rqo, f.fc = nil, nil, nil
-		return
-	}
 
 	f.await.Add(1)
 	go f.runFiller(f.f)
@@ -326,14 +352,20 @@ func (f *fillHead) runFiller(fill *skyobject.Filler) {
 }
 
 func (f *fillHead) closeFiller() {
+
 	if f.f == nil {
 		return
+	}
+
+	if f.ft != nil {
+		f.ft.Stop()
 	}
 
 	f.f.Close()
 	f.rqo, f.fc, f.r = nil, nil, nil
 	f.rq = nil
 	f.requesting = 0
+
 }
 
 func (f *fillHead) handleFillingResult(err error) {
@@ -341,7 +373,8 @@ func (f *fillHead) handleFillingResult(err error) {
 	f.closeFiller() // close the filler and wait it's goroutines
 
 	if err == nil {
-		f.node().OnRootFilled(f.r) // callback
+		f.node().OnRootFilled(f.r)       // callback
+		f.favg.Add(time.Now().Sub(f.tp)) // average time
 	} else {
 		f.node().OnFillingBreaks(f.r, err) // callback
 	}
@@ -551,4 +584,72 @@ func (k knownRoots) buildConnsList(seq uint64) (l *list.List) {
 	}
 
 	return
+}
+
+type headInfo struct {
+	nonce uint64 // nonce of the head
+
+	fillingRoot    bool   // has filling Root
+	fillingRootSeq uint64 // its seq
+
+	pendingRoot    bool   // has pending Root
+	pendingRootSeq uint64 // its seq
+
+	// TOOD (kostyarin): connections used for current filling
+
+	// known Root objects of peers
+	known map[*Conn][]uint64
+}
+
+// (api) request, can return nil
+func (n *nodeHead) info() (hi *headInfo) {
+
+	select {
+	case n.inforq <- struct{}{}:
+	case <-n.closeq:
+		return
+	}
+
+	select {
+	case hi = <-n.inforn:
+	case <-n.closeq:
+	}
+
+	return
+
+}
+
+func (n *nodeHead) handleInfo(f *fillHead) {
+
+	var ni = new(headInfo)
+
+	ni.fillingRoot = (f.r != nil)
+
+	if ni.fillingRoot == true {
+		ni.fillingRootSeq = f.r.Seq
+	}
+
+	ni.pendingRoot = (f.p != nil)
+
+	if ni.pendingRoot == true {
+		ni.pendingRootSeq = f.r.Seq
+	}
+
+	// make copy
+
+	ni.known = make(map[*Conn][]uint64)
+
+	for c, known := range f.cs {
+		var kc = make([]uint64, len(known))
+		copy(kc, known)
+		ni.known[c] = kc
+	}
+
+	// the nonce field should be set by caller (by requester)
+
+	select {
+	case n.inforn <- ni:
+	case <-n.closeq:
+	}
+
 }

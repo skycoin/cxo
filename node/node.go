@@ -12,6 +12,7 @@ import (
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
+	"github.com/skycoin/cxo/skyobject/statutil"
 )
 
 // A Node represents network P2P transport
@@ -62,22 +63,23 @@ type Node struct {
 	// keep config
 	config             *Config
 	maxFillingParallel int // copy of c.Config().MaxFillingParallel
+	rollAvgSamples     int // copy of c.Config().RollAvgSamples
 
 	//
-	// closing
+	// stat
 	//
 
-	// quiting
-	quiting chan struct{}
+	fillavg *statutil.Duration // filling average
 
-	// clsoed
-	clsoeq chan struct{}
+	//
+	// quiting and closing
+	//
 
-	// wait for goroutines
-	await sync.WaitGroup
+	quiting chan struct{} // quiting
 
-	// close once
-	closeo sync.Once
+	await  sync.WaitGroup // wait for goroutines
+	closeo sync.Once      // close once
+	clsoeq chan struct{}  // clsoed
 }
 
 // NewNode creates new Node instance using provided

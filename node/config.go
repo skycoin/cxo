@@ -17,6 +17,7 @@ const (
 	Prefix          string        = "[node] "
 	MaxConnections  int           = 1000 * 1000
 	MaxFillingTime  time.Duration = 10 * time.Minute
+	MaxHeads        int           = 10
 	ListenTCP       string        = ":8870"
 	ListenUDP       string        = "" // don't listen
 	RPC             string        = ":8871"
@@ -42,29 +43,20 @@ func (a *Addresses) Set(addr string) error {
 // OnRootReceivedFunc represents callback that
 // called when new Root objects received. It's
 // possible to reject a receved Root returning
-// error by this function. The callback can be
-// called many times for different connections,
-// e.g. a Root object can be received from many
-// connections. The callback is first filter on
-// the path of the Root object. But the callback
-// never called if a Root obejct received but
-// already exist in DB of the node (e.g. the
-// callback called for new Root objects for this
-// node). The Root object can't be used
-// since it is not full yet. See OnRootFilledFunc
-// for Root you can use. The callback can be
-// called for Root objects that never be filled
-// for some reasons.
+// error by this function.
 //
-// If a Root received, then it doesn't mean that
-// the Root will be filled. A newer Root can
-// replace the received one in some cases. In
-// this cases the OnFillingBreaks callback does
-// not called.
+// The callback never called if (1) node has a
+// newer Root, (2) node already have the Root,
+// (3) node or connection doesn't interest the
+// Root.
 //
-// The callback never called for Root obejcts
-// received, if node or connection doesn't
-// interest the Root
+// If a Root received then it doesn't mean that
+// the Root will be filled and if this callback
+// called then it can be silently dropped by
+// some reasons.
+//
+// Short words, the callback called if a received
+// Root is going to be filled
 type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 
 // OnRootFilledFunc represents callback that
@@ -77,31 +69,24 @@ type OnRootFilledFunc func(r *registry.Root)
 // The callback called with non-full Root (that
 // can't be used), and with filling error.
 // There is no way to resume the filling. If
-// a remote peer push this Root obejct again,
+// a remote peer push this Root object again,
 // then the Root can be filled (or can be not).
 type OnFillingBreaksFunc func(r *registry.Root, err error)
 
-// OnconnectFunc represents callback that called
-// when a connection closed. The callback can be
-// used to terminate the new connection returning
-// error. In some cases it's not possible to
-// disconnect (e.g. the connection will be closed,
-// and then creaed again, see Config.Discovery).
-// The callback called after connection established.
-// In some cases connection can be rejected by
-// handshake, in this cases the callback will not
-// be called.
+// OnConnectFunc represents callback that called
+// when a connection created and established. It's
+// possible to terminate connection returning error
 type OnConnectFunc func(c *Conn) (terminate error)
 
 // OnDisconnectFunc represents callback that called
-// when a conenction closed. The callback called
+// when a connection closed. The callback called
 // with closing reason. The reason is nil if the
 // connection closed manually. The Conn argument
 // is closed connection that can't be used (e.g.
 // is can be used partially).
 type OnDisconnectFunc func(c *Conn, reason error)
 
-// OnsubscribeRemoteFunc represents callback that
+// OnSubscribeRemoteFunc represents callback that
 // called when a remote peer subscribes to some
 // feed of the Node. The Node accepts the subscription
 // if the Node share the feed. You can add the feed
@@ -122,14 +107,13 @@ type OnUnsubscribeRemoteFunc func(c *Conn, feed cipher.PubKey)
 // with default values use NewConfig
 // method. The recommended way of creating
 // Config is the NewConfig. This Config
-// contains skyobejct.Config.
+// contains skyobject.Config.
 type Config struct {
 
-	// Logger contains configurations of the
-	// logger
+	// Logger contains configurations of logger
 	Logger log.Config
 
-	// Config is configurations of skyobejct.Container.
+	// Config is configurations of skyobject.Container.
 	// Use nil for defaults.
 	*skyobject.Config
 
@@ -150,7 +134,7 @@ type Config struct {
 	// For example, if a node subscribed to feed A,
 	// and a peer receive 10 Root object one by one
 	// wiht different heads. And, if the MaxHeads
-	// limit is 5, then first 5 received Root obejcts
+	// limit is 5, then first 5 received Root objects
 	// will be rejected when last 5 received.
 	//
 	// In reality, this porblem can't occur or be
@@ -183,15 +167,15 @@ type Config struct {
 	RPC string
 
 	//
-	// Conenctions
+	// Connections
 	//
 
 	// ResponseTimeout is timeout for requests (see
 	// (*Conn).Subscribe, (*Conn).Unsubscribe and
-	// (*Conn).RemoteFeeds). And for pings tooo.
+	// (*Conn).RemoteFeeds). And for pings too.
 	// Set it to zero, for infinity waiting. The
-	// timeout doesn't close connections, but returns
-	// ErrTimeout by the request.
+	// timeout doesn't close connections. A request
+	// returns ErrTimeout if time is out.
 	ResponseTimeout time.Duration
 	// Pings is interval for pinging peers. The Node
 	// sends pings only if connections not used for
@@ -211,7 +195,7 @@ type Config struct {
 	//
 
 	// OnConenct is callback for new established
-	// conenctions. See OnConnectFunc for details.
+	// connections. See OnConnectFunc for details.
 	OnConnect OnConnectFunc
 	// OnDisconenct is callback for closed
 	// connections. See OnDisconnectFunc for details.
@@ -290,6 +274,7 @@ func NewConfig() (c *Config) {
 	// node
 	c.MaxConnections = MaxConnections
 	c.MaxFillingTime = MaxFillingTime
+	c.MaxHeads = MaxHeads
 	c.ListenTCP = ListenTCP
 	c.ListenUDP = ListenUDP
 	c.RPC = RPC
@@ -337,6 +322,11 @@ func (c *Config) FromFlags() {
 		"max-filling-time",
 		c.MaxFillingTime,
 		"max time to fill a Root")
+
+	flag.IntVar(&c.MaxHeads,
+		"max-heads",
+		c.MaxHeads,
+		"max heads of a feed allowed")
 
 	flag.StringVar(&c.ListenTCP,
 		"tcp",

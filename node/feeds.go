@@ -34,8 +34,18 @@ type nodeFeeds struct {
 	addcfq chan connFeed // add connection to a feed
 	delcfq chan connFeed // del connection from a feed
 
+	// info api
+
 	listrq chan struct{}        // list request
 	listrn chan []cipher.PubKey // list response
+
+	fcrq chan *Conn           // feeds of connection request
+	fcrn chan []cipher.PubKey // feeds of connection response
+
+	cfrq chan cipher.PubKey // connections of feed request
+	cfrn chan []*Conn       // connections of feed response
+
+	// roo objects
 
 	rrq chan connRoot // received root
 
@@ -61,8 +71,18 @@ func newNodeFeeds(node *Node) (n *nodeFeeds) {
 	n.addcfq = make(chan connFeed) // add connection to a feed
 	n.delcfq = make(chan connFeed) // del connection from a feed
 
-	n.listrq = make(chan struct{})        // request list
-	n.listrn = make(chan []cipher.PubKey) // receive list
+	// info api
+
+	n.listrq = make(chan struct{})
+	n.listrn = make(chan []cipher.PubKey)
+
+	n.fcrq = make(chan *Conn)
+	n.fcrn = make(chan []cipher.PubKey)
+
+	n.cfrq = make(chan cipher.PubKey)
+	n.cfrn = make(chan []*Conn)
+
+	// root objects
 
 	n.rrq = make(chan connRoot, 10) // received Root objects
 
@@ -104,6 +124,12 @@ func (n *nodeFeeds) handle() {
 		listrq = n.listrq
 		listrn = n.listrn
 
+		fcrq = n.fcrq
+		fcrn = n.fcrn
+
+		cfrq = n.cfrq
+		cfrn = n.cfrn
+
 		rrq = n.rrq
 
 		closeq = n.closeq
@@ -111,6 +137,7 @@ func (n *nodeFeeds) handle() {
 		pk cipher.PubKey
 		cr connRoot
 		cf connFeed
+		c  *Conn
 	)
 
 	for {
@@ -132,8 +159,20 @@ func (n *nodeFeeds) handle() {
 		case pk = <-delq:
 			n.handleDelFeed(pk)
 
+		//
+		// info api
+		//
+
 		case <-listrq:
 			n.handleList()
+
+		case c = <-fcrq:
+			n.handleFeedsOfConnection(c)
+
+		case pk = <-cfrq:
+			n.handleConnectionsOfFeed()
+
+		// close
 
 		case <-closeq:
 			return
@@ -267,7 +306,41 @@ func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
 
 }
 
-// (api) get lsit of feeds (async method)
+// (api)
+func (n *nodeFeeds) receivedRoot(c *Conn, r *registry.Root) {
+
+	select {
+	case n.rrq <- connRoot{c, r}:
+	case <-n.closeq:
+	}
+
+}
+
+// (handler)
+func (n *nodeFeeds) handleReceivedRoot(cr connRoot) {
+
+	if cr.r.Pub == (cipher.PubKey{}) {
+		return // invalid case
+	}
+
+	// connection rejects root objects of a feed
+	// the connection doesn't share
+
+	var nf, ok = n.fr[cr.r.Pub]
+
+	if ok == false {
+		return // no such feed (drop the Root)
+	}
+
+	nf.receivedRoot(cr)
+
+}
+
+//
+// info api
+//
+
+// (api) get lsit of feeds
 func (n *nodeFeeds) list() (list []cipher.PubKey) {
 
 	select {
@@ -311,32 +384,84 @@ func (n *nodeFeeds) handleList() {
 
 }
 
-// (api)
-func (n *nodeFeeds) receivedRoot(c *Conn, r *registry.Root) {
+// (api) feeds of connection
+func (n *nodeFeeds) feedsOfConnection(c *Conn) (feeds []cipher.PubKey) {
 
 	select {
-	case n.rrq <- connRoot{c, r}:
+	case n.fcrq <- c:
+	case <-n.closeq:
+		return
+	}
+
+	select {
+	case feeds <- n.fcrn:
 	case <-n.closeq:
 	}
 
+	return
 }
 
 // (handler)
-func (n *nodeFeeds) handleReceivedRoot(cr connRoot) {
+func (n *nodeFeeds) handleFeedsOfConnection(c *Conn) {
 
-	if cr.r.Pub == (cipher.PubKey{}) {
-		return // invalid case
+	var feeds []cipher.PubKey
+
+	for pk, nf := range n.fs {
+
+		if pk == (cipher.PubKey{}) {
+			continue
+		}
+
+		if _, ok := nf.cs[c]; ok == true {
+			feeds = append(feeds, pk)
+		}
+
 	}
 
-	// connection rejects root objects of a feed
-	// the connection doesn't share
+	select {
+	case n.fcrn <- feeds:
+	case <-n.closeq:
+	}
+	return
 
-	var nf, ok = n.fr[cr.r.Pub]
+}
 
-	if ok == false {
-		return // no such feed (drop the Root)
+// (api) connections of feed
+func (n *nodeFeeds) connectionsOfFeed(pk cipher.PubKey) (cs []*Conn) {
+
+	select {
+	case n.cfrn <- pk:
+	case <-n.closeq:
+		return
 	}
 
-	nf.receivedRoot(cr)
+	select {
+	case cs <- n.cfrn:
+	case <-n.closeq:
+	}
+
+	return
+}
+
+// (handler)
+func (n *nodeFeeds) handleConnectionsOfFeed(pk cipher.PubKey) {
+
+	var cs []*Conn
+
+	var nf, ok = n.fs[pk]
+
+	if ok == true {
+
+		for _, c := range nf.cs {
+			cs = append(cs, c)
+		}
+
+	}
+
+	select {
+	case n.cfrn <- cs:
+	case <-n.closeq:
+	}
+	return
 
 }
