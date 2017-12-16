@@ -13,4 +13,5 @@ var (
 	ErrAlreadyHaveConnection   = errors.New("already have connection")
 	ErrInvalidResponse         = errors.New("invalid response")
 	ErrNoConnectionsToFillFrom = errors.New("no conenctions to fill from")
+	ErrMaxHeadsLimit           = errors.New("max heads limit")
 )

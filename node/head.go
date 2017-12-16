@@ -18,6 +18,7 @@ type nodeHead struct {
 
 	delcq chan *Conn    // delete connection
 	rrq   chan connRoot // received roots
+	errq  chan err      // close wiht error (max heads limit)
 
 	// closing
 	await  sync.WaitGroup // wait goroutines
@@ -37,12 +38,23 @@ func newNodeHead(nf *nodeFeed) (n *nodeHead) {
 	n.delcq = make(chan *Conn)
 	n.rrq = make(chan connRoot)
 
+	n.errq = make(chan error)
 	n.closeq = make(chan struct{})
 
 	n.await.Add(1)
 	go n.handle()
 
 	return
+}
+
+// (api)
+func (n *nodeHead) closeByError(err error) {
+
+	select {
+	case n.errq <- err:
+	case <-n.closeq:
+	}
+
 }
 
 // (api)
@@ -109,12 +121,12 @@ type fillHead struct {
 func (n *nodeHead) handle() {
 
 	defer n.await.Done()
-	defer n.terminate()
 
 	var (
 		delcq  = n.delcq  //
 		rrq    = n.rrq    //
 		closeq = n.closeq //
+		errq   = n.errq   //
 
 		f = fillHead{
 			nodeHead: n,
@@ -132,20 +144,41 @@ func (n *nodeHead) handle() {
 	for {
 		select {
 		case key = <-f.rq:
+
 			f.handleRequest(key)
+
 		case c = <-f.successq:
+
 			f.handleSuccess(c)
+
 		case fc = <-f.failureq:
+
 			f.handleRequestFailure(fc)
+
 		case err = <-f.ff:
+
 			f.handleFillingResult(err)
+
 		case cr = <-rrq: // root received
+
 			f.handleReceivedRoot(cr)
+
 		case c = <-delcq: // delete connection
+
 			n.handleDelConn(c)
-		case <-closeq: // terminate
+
+		case err = <-errq:
+
+			f.p = nil // remove pending Root
+			f.handleFillingResult(err)
 			f.terminate()
 			return
+
+		case <-closeq: // terminate
+
+			f.terminate()
+			return
+
 		}
 	}
 
