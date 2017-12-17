@@ -26,7 +26,6 @@ type Conn struct {
 	mx sync.Mutex
 
 	incoming bool // is incoming or not
-	tcp      bool // is tcp or udp
 
 	n      *Node         // back reference
 	peerID cipher.PubKey // peer id
@@ -37,7 +36,7 @@ type Conn struct {
 
 	// # stat
 	//
-	// TOOD (kostyarin): stat without mutexes to not slow down the connection
+	// TOOD (kostyarin): stat without mutexes to do not slow down the connection
 	//
 	// ------
 
@@ -105,18 +104,6 @@ func (c *Conn) decodeRaw(raw []byte) (seq, rseq uint32, m msg.Msg, err error) {
 // info
 //
 
-// IsTCP returns true if this conenctions
-// is tcp connection
-func (c *Conn) IsTCP() (tcp bool) {
-	return c.tcp
-}
-
-// IsUDP retursn true if this conenctions
-// si udp conenction
-func (c *Conn) IsUDP() (udp bool) {
-	return c.tcp == false
-}
-
 // PeerID is ID of remote peer that used
 // for internals and unique
 func (c *Conn) PeerID() (id NodeID) {
@@ -174,7 +161,7 @@ func connString(isIncoming, isTCP bool, addr string) (s string) {
 // arrow is "->" for incoming connections and is "<-"
 // for outgoing
 func (c *Conn) String() (s string) {
-	return connString(c.incoming, c.tcp, c.Address())
+	return connString(c.incoming, c.IsTCP(), c.Address())
 }
 
 //
@@ -290,6 +277,87 @@ func (c *Conn) Unsubscribe(feed cipher.PubKey) {
 	return
 }
 
+// PreviewFunc used by (*Conn).Preview method. The function
+// receive registry.Pack and lates Root object. The Pack
+// used to get obejcts from DB or from remote peer. If the
+// function returns true, then the Node and the Connection
+// will be subscribed to the feed. Given Pack and given Root
+// can't be used outside the function.
+type PreviewFunc func(pack registry.Pack, r *registry.Root) (subscribe bool)
+
+// Preview a feed of remote peer. The request is blocking.
+// The Preview gets latest Root of given feed from remote
+// peer and uses the peer to obtain objects this node does
+// not have.
+func (c *Conn) Preview(
+	feed cipher.PubKey, //      : feed to preview
+	previewFunc PreviewFunc, // : the function
+) (
+	err error, //               : first error
+) {
+
+	var reply msg.Msg
+	if reply, err = c.sendRequest(&msg.RqPreview{feed}); err != nil {
+		return
+	}
+
+	var r *registry.Root
+
+	switch x := reply.(type) {
+	case *msg.Err:
+		return errors.New("error: " + x.Err)
+	case *msg.Root:
+		if r, err = c.n.c.ReceivedRoot(x.Sig, x.Value); err != nil {
+			return
+		}
+	default:
+		return fmt.Errorf("invalid msg type received: %T", reply)
+	}
+
+	var p *skyobject.Preview
+	if p, err = c.n.c.Preview(r, c.getter()); err != nil {
+		return
+	}
+
+	if previewFunc(p, r) == true {
+		err = c.Subscribe(feed)
+	}
+
+	return
+}
+
+// implements skyobject.Getter wrapping
+// the Conn
+type cget struct {
+	c *Conn
+}
+
+func (c *cget) Get(key cipher.SHA256) (val []byte, err error) {
+
+	var reply msg.Msg
+	if reply, err = c.c.sendRequest(m); err != nil {
+		return
+	}
+
+	switch x := reply.(type) {
+	case *msg.Object:
+		if cipher.SumSHA256(x.Value) != key {
+			return errors.New("wrong object received (different hash)")
+		}
+		val = x.Value
+	case *msg.Err:
+		return errors.New("error: " + x.Err)
+	default:
+		return fmt.Errorf("invalid msg type received: %T", reply)
+	}
+
+	return
+}
+
+func (c *Conn) getter() (cg skyobject.Getter) {
+	return &cget{c}
+}
+
 //
 // terminate
 //
@@ -297,6 +365,7 @@ func (c *Conn) Unsubscribe(feed cipher.PubKey) {
 // close and release
 func (c *Conn) close(reason error) error {
 	c.closeo.Do(func() {
+		c.n.delConnection(c)
 		close(c.closeq)      // close the channel
 		c.Connection.Close() // close
 		c.await.Wait()       // wait for goroutines
@@ -666,7 +735,7 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 
 	// TODO (kostyarin): the request holds resources and in good case
 	//                   it's ok, but it's possible to DDoS the Node
-	//                   perfroming many trash request
+	//                   perfoкming many trash request
 
 	// TODO (kostyarin): get the object or subscribe for the object
 	//                   only if it is wanted (to think)

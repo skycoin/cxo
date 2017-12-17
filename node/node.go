@@ -2,6 +2,7 @@ package node
 
 import (
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -45,9 +46,6 @@ type Node struct {
 	// other
 	//
 
-	// discovery
-	discovery *discovery.MessengerFactory
-
 	// keep config
 	config             *Config
 	maxFillingParallel int // copy of c.Config().MaxFillingParallel
@@ -76,37 +74,105 @@ type Node struct {
 func NewNode(conf *Config) (n *Node, err error) {
 
 	if conf == nil {
-		conf = NewConfig()
+		conf = NewConfig() // use defaults
+	}
+
+	if conf.Config == nil {
+		conf.Config = skyobject.NewConfig() // use defaults
 	}
 
 	if err = conf.Validate(); err != nil {
+		return // invalid
+	}
+
+	var c *skyobject.Container
+
+	if c, err = skyobject.NewContainer(conf.Config); err != nil {
 		return
 	}
 
-	// TODO
-
-	return
+	return NewNodeContainer(conf, c)
 }
 
 // NewNodeContainer use provided Container.
 // Configurations related to Container ignored.
 func NewNodeContainer(
 	conf *Config,
-	c skyobject.Container,
+	c *skyobject.Container,
 ) (
 	n *Node,
 	err error,
 ) {
 
 	if conf == nil {
-		conf = NewConfig()
+		conf = NewConfig() // use defaults
 	}
 
 	if err = conf.Validate(); err != nil {
-		return
+		return // invalid
 	}
 
-	// TOOD
+	n = new(Node)
+
+	n.id = discovery.NewSeedConfig()
+	n.c = c
+	n.fs = newNodeFeeds(n)
+	n.ic = make(map[cipher.PubKey]*Conn)
+	n.pc = make(map[*Conn]struct{})
+
+	n.config = conf
+
+	var cc = n.c.Config()
+
+	n.maxFillingParallel = cc.MaxFillingParallel
+	n.rollAvgSamples = cc.RollAvgSamples
+
+	n.fillavg = statutil.NewDuration(n.rollAvgSamples)
+	n.quiting = make(chan struct{})
+	n.clsoeq = make(chan struct{})
+
+	//
+	// create
+	//
+
+	// logger
+
+	n.Logger = log.NewLogger(conf.Logger) // logger
+
+	// listen
+
+	if conf.TCP.Listen != "" {
+		if err = n.TCP().Listen(conf.TCP.Listen); err != nil {
+			n.tcp.Close()
+			n = nil
+			return
+		}
+	}
+
+	if conf.UDP.Listen != "" {
+		if err = n.UDP().Listen(conf.UDP.Listen); err != nil {
+			n.tcp.Close()
+			n.udp.Close()
+			n = nil
+			return
+		}
+	}
+
+	// rpc
+
+	// ---
+
+	// discoveries
+
+	for _, address := range conf.TCP.Discovery {
+		n.TCP().ConnectToDiscoveryServer(address)
+	}
+
+	for _, address := range conf.UDP.Discovery {
+		n.UDP().ConnectToDiscoveryServer(address)
+	}
+
+	// TOOD (kostyarin): pings (move to connection)
 
 	return
 }
@@ -143,9 +209,7 @@ func (n *Node) Discovery() (discovery *discovery.MessengerFactory) {
 // subscribed to feed of the Root. The Publish used
 // to publish new Root obejcts
 func (n *Node) Publish(r *registry.Root) {
-
-	// TODO
-
+	n.fs.broadcastRoot(connRoot{r, nil})
 }
 
 // ConnectionsOfFeed returns list of connections of given
@@ -217,8 +281,9 @@ func (n *Node) addConnection(c *Conn) (err error) {
 	return
 }
 
-// under lock
 func (n *Node) delConnection(c *Conn) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
 
 	delete(n.ic, c.peerID)
 	n.fs.delConn(c)
@@ -249,29 +314,30 @@ func (n *Node) createUDP() {
 
 func (n *Node) onConnect(c *Conn) {
 
-	var occ = n.config.OnConnect
+	if occ := n.config.OnConnect; occ != nil {
 
-	if occ == nil {
-		return
+		if terminate := occ(c); terminate != nil {
+			c.close(terminate)
+			return
+		}
+
 	}
 
-	var terminate error
-
-	if terminate = occ(c); terminate != nil {
-		c.close(terminate)
-	}
+	n.Debugf(ConnEstPin, "[%s] established", c.Address())
 
 }
 
 func (n *Node) onDisconenct(c *Conn, reason error) {
 
-	var odc = n.config.OnDisconnect
-
-	if odc == nil {
-		return
+	if odc := n.config.OnDisconnect; odc != nil {
+		odc(c, reason)
 	}
 
-	odc(c, reason)
+	if reason != nil {
+		n.Debugf(CloseConnPin, "[%s] closed by %v", c.Address(), reason)
+	} else {
+		n.Debugf(CloseConnPin, "[%s] closed", c.Address())
+	}
 
 }
 
@@ -281,13 +347,13 @@ func (n *Node) acceptConnection(fc *factory.Connection, isTCP bool) {
 
 	if err != nil {
 
-		n.Printf("[ERR] [%s] error: %v",
-			connString(true, true, fc.GetRemoteAddr().String()),
+		n.Printf("[ERR] [%s] handshake error: %v",
+			connString(true, isTCP, fc.GetRemoteAddr().String()),
 			err)
 
-	} else if n.Pins()&NewConnPin != 0 {
+	} else if n.Pins()&NewInConnPin != 0 {
 
-		n.Debug(NewConnPin, "[%s] accept", c.String())
+		n.Debug(NewInConnPin, "[%s] accept", c.String())
 
 	}
 
@@ -339,10 +405,43 @@ func (n *Node) wrapConnection(
 		return
 	}
 
+	// add to transport if the connection is incoming
+	if isIncoming == true {
+		if isTCP == true {
+			n.TCP().addAcceptedconnection(c)
+		} else {
+			n.UDP().addAcceptedconnection(c)
+		}
+	}
+
 	c.run()
 	n.onConnect(c)
 
 	return
+
+}
+
+func (n *Node) updateServiceDiscovery() {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	var notUsed = (n.tcp == nil || n.tcp.Discovery() == nil) &&
+		(n.udp == nil || n.udp.Discovery() == nil)
+
+	if notUsed == true {
+		return
+	}
+
+	var feeds = n.fs.list()
+
+	if n.tcp != nil && n.tcp.Discovery() != nil {
+		n.tcp.updateServiceDiscovery(feeds)
+	}
+
+	if n.udp != nil && n.udp.Discovery() != nil {
+		n.udp.updateServiceDiscovery(feeds)
+	}
 
 }
 
@@ -370,6 +469,8 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 	}
 
 	n.fs.addFeed(pk)
+	n.updateServiceDiscovery()
+
 	return
 }
 
@@ -381,7 +482,10 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 // and before removing a feed from Container, call this
 // method to prevent sharing feed that does not exist
 func (n *Node) DontShare(feed cipher.PubKey) (err error) {
+
 	n.fs.delFeed(pk)
+	n.updateServiceDiscovery()
+
 	return
 }
 
@@ -443,8 +547,8 @@ func (n *Node) Feeds() (feeds []cipher.PubKey) {
 	return
 }
 
-// HasFeed returns true if the Node share given feed
-func (n *Node) HasFeed(feed cipher.PubKey) (ok bool) {
+// IsSharing returns true if the Node is sharing given feed
+func (n *Node) IsSharing(feed cipher.PubKey) (ok bool) {
 
 	if feed == (cipher.PubKey{}) {
 		return
@@ -470,7 +574,7 @@ func (n *Node) onRootReceived(c *Conn, r *registry.Root) (err error) {
 
 }
 
-func (n *Node) OnFillingBreaks(c *Conn, r *registry.Root, reason error) {
+func (n *Node) onFillingBreaks(c *Conn, r *registry.Root, reason error) {
 
 	var brk = n.config.OnFillingBreaks
 
@@ -482,14 +586,11 @@ func (n *Node) OnFillingBreaks(c *Conn, r *registry.Root, reason error) {
 
 }
 
-func (n *Node) fill(r *registry.Root) {
+// has connection to peer with given id (pk)
+func (n *Node) hasPeer(id cipher.PubKey) (yep bool) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if nf, ok = n.fc[r.Pub]; ok == false {
-		return
-	}
-
-	nf.fillesr
-
+	_, yep = n.ic[id]
+	return
 }

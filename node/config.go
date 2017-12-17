@@ -102,6 +102,43 @@ type OnSubscribeRemoteFunc func(c *Conn, feed cipher.PubKey) (reject error)
 // only
 type OnUnsubscribeRemoteFunc func(c *Conn, feed cipher.PubKey)
 
+// NetConfig represents configurations of
+// a TCP or UDP network
+type NetConfig struct {
+	// Listen is listening address. Blank string
+	// disables listening. Use ":0" to listen on all
+	// interfaces (and ipv4 + ipv6 if possible) with
+	// OS-choosed ports.
+	Listen string
+
+	// Discovery is lsit of addresses of a discovery
+	// severs to connect to. The discovery servers
+	// used to connect Nodes between to share feeds
+	// they interested in
+	Discovery Addresses
+
+	// ResponseTimeout is timeout for requests (see
+	// (*Conn).Subscribe, (*Conn).Unsubscribe and
+	// (*Conn).RemoteFeeds). And for pings too.
+	// Set it to zero, for infinity waiting. The
+	// timeout doesn't close connections. A request
+	// returns ErrTimeout if time is out.
+	ResponseTimeout time.Duration
+
+	// Pings is interval for pinging peers. The Node
+	// sends pings only if connections not used for
+	// reading and writing. E.g. a ping will be sent
+	// if connection not used Pings - ResponseTimout
+	// time (for reading or writing). Thus the Pings
+	// should be at least two times greater then the
+	// ResponseTimeout. Set it to zero to disable pings.
+	// It's possible to ping a connections manually
+	// calling the (*Conn).Ping method. If peer doesn't
+	// response for a ping, then connection will be
+	// closed with ErrTimeout.
+	Pings time.Duration
+}
+
 // A Config represents configurations
 // of the Node. To create Config filled
 // with default values use NewConfig
@@ -150,45 +187,19 @@ type Config struct {
 	// limit.
 	MaxFillingTime time.Duration
 
-	// ListenTCP is listening address for TCP listener.
-	// Blank string disables TCP listening. Use ":0" to
-	// listen on all interfaces (and ipv4 + ipv6 if
-	// possible) with OS-choosed ports.
-	ListenTCP string
-
-	// ListenUDP is listening address for UDP lsitener.
-	// Blank string disables UDP listening. Use ":0" to
-	// listen on all interfaces (and ipv4 - ipv6 if
-	// possible) with OS-choosed ports.
-	ListenUDP string
-
 	// RPC is RPC listening address. Empty string
 	// disables RPC.
 	RPC string
 
 	//
-	// Connections
+	// Networks
 	//
 
-	// ResponseTimeout is timeout for requests (see
-	// (*Conn).Subscribe, (*Conn).Unsubscribe and
-	// (*Conn).RemoteFeeds). And for pings too.
-	// Set it to zero, for infinity waiting. The
-	// timeout doesn't close connections. A request
-	// returns ErrTimeout if time is out.
-	ResponseTimeout time.Duration
-	// Pings is interval for pinging peers. The Node
-	// sends pings only if connections not used for
-	// reading and writing. E.g. a ping will be sent
-	// if connection not used Pings - ResponseTimout
-	// time (for reading or writing). Thus the Pings
-	// should be at least two times greater then the
-	// ResponseTimeout. Set it to zero to disable pings.
-	// It's possible to ping a connections manually
-	// calling the (*Conn).Ping method. If peer doesn't
-	// response for a ping, then connection will be
-	// closed with ErrTimeout.
-	Pings time.Duration
+	// TCP configurations
+	TCP NetConfig
+
+	// UDP configurations
+	UDP NetConfig
 
 	//
 	// Connection callbacks
@@ -214,11 +225,6 @@ type Config struct {
 	// allows to use Discovery (see below) if the
 	// Public is true.
 	Public bool
-	// Discovery is lsit of addresses of a discovery
-	// severs to connect to. The discovery servers
-	// used to connect Nodes between to share feeds
-	// they interested in
-	Discovery Addresses
 
 	//
 	// Subscription related callbacks
@@ -275,8 +281,14 @@ func NewConfig() (c *Config) {
 	c.MaxConnections = MaxConnections
 	c.MaxFillingTime = MaxFillingTime
 	c.MaxHeads = MaxHeads
-	c.ListenTCP = ListenTCP
-	c.ListenUDP = ListenUDP
+
+	c.TCP.Listen = ListenTCP
+	c.TCP.Pings = Pings
+	c.TCP.ResponseTimeout = ResponseTimeout
+
+	c.UDP.Listen = ListenUDP
+	c.UDP.ResponseTimeout = ResponseTimeout
+
 	c.RPC = RPC
 	c.ResponseTimeout = ResponseTimeout
 	c.Pings = Pings
@@ -328,30 +340,46 @@ func (c *Config) FromFlags() {
 		c.MaxHeads,
 		"max heads of a feed allowed")
 
-	flag.StringVar(&c.ListenTCP,
-		"tcp",
-		c.ListenTCP,
-		"tcp listening address")
-
-	flag.StringVar(&c.ListenUDP,
-		"udp",
-		c.ListenUDP,
-		"udp listening address")
-
 	flag.StringVar(&c.RPC,
 		"rpc",
 		c.RPC,
 		"RPC listening address")
 
-	flag.DurationVar(&c.ResponseTimeout,
-		"response-timeout",
-		c.ResponseTimeout,
-		"response timeout")
+	// TCP
 
-	flag.DurationVar(&c.Pings,
-		"pings",
-		c.Pings,
-		"pings interval")
+	flag.StringVar(&c.TCP.Listen,
+		"tcp",
+		c.TCP.Listen,
+		"tcp listening address")
+
+	flag.DurationVar(&c.TCP.ResponseTimeout,
+		"tcp-response-timeout",
+		c.TCP.ResponseTimeout,
+		"response timeout of TCP connections")
+
+	flag.DurationVar(&c.TCP.Pings,
+		"tcp-pings",
+		c.TCP.Pings,
+		"pings interval of TCP connections")
+
+	// UDP
+
+	flag.StringVar(&c.UDP.Listen,
+		"udp",
+		c.UDP.Listen,
+		"udp listening address")
+
+	flag.DurationVar(&c.UDP.ResponseTimeout,
+		"udp-response-timeout",
+		c.UDP.ResponseTimeout,
+		"response timeout of UDP connections")
+
+	flag.DurationVar(&c.UDP.Pings,
+		"udp-pings",
+		c.UDP.Pings,
+		"pings interval of UDP connections")
+
+	// public
 
 	flag.BoolVar(&c.Public,
 		"public",

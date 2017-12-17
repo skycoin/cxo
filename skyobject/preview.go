@@ -25,18 +25,12 @@ type Getter interface {
 // provided getter. The Preview used by
 // the node package for feeds preview
 type Preview struct {
-	m map[cipher.SHA256][]byte // received objects to save after
+	m map[cipher.SHA256][]byte // hash -> value (TODO: keep in memory?)
 	g Getter                   // get from remote peer
 	r *registry.Root           // root for Preview
 	c *Container               // back reference to access DB and get Registry
 
 	*Pack // with Registry
-}
-
-// Received returns map with objects received
-// from peer (but not from local DB)
-func (p *Preview) Received() (got map[cipher.SHA256][]byte) {
-	return p.m
 }
 
 // Root of the Preview
@@ -60,7 +54,7 @@ func (p *Preview) Get(key cipher.SHA256) (val []byte, err error) {
 	// not found
 
 	if val, err = p.g.Get(key); err == nil {
-		p.m[key] = val // save in the Received map
+		p.m[key] = val // save in the map
 	}
 
 	return
