@@ -46,10 +46,9 @@ type Node struct {
 	// other
 	//
 
-	// keep config
-	config             *Config
-	maxFillingParallel int // copy of c.Config().MaxFillingParallel
-	rollAvgSamples     int // copy of c.Config().RollAvgSamples
+	config             *Config // keep config
+	maxFillingParallel int     // copy of c.Config().MaxFillingParallel
+	rollAvgSamples     int     // copy of c.Config().RollAvgSamples
 
 	//
 	// stat
@@ -58,10 +57,14 @@ type Node struct {
 	fillavg *statutil.Duration // filling average
 
 	//
-	// quiting and closing
+	// rpc
 	//
 
-	quiting chan struct{} // quiting
+	rpc *rpcServer
+
+	//
+	//  closing
+	//
 
 	await  sync.WaitGroup // wait for goroutines
 	closeo sync.Once      // close once
@@ -128,7 +131,6 @@ func NewNodeContainer(
 	n.rollAvgSamples = cc.RollAvgSamples
 
 	n.fillavg = statutil.NewDuration(n.rollAvgSamples)
-	n.quiting = make(chan struct{})
 	n.clsoeq = make(chan struct{})
 
 	//
@@ -143,24 +145,30 @@ func NewNodeContainer(
 
 	if conf.TCP.Listen != "" {
 		if err = n.TCP().Listen(conf.TCP.Listen); err != nil {
-			n.tcp.Close()
-			n = nil
+			n.Close()
 			return
 		}
 	}
 
 	if conf.UDP.Listen != "" {
 		if err = n.UDP().Listen(conf.UDP.Listen); err != nil {
-			n.tcp.Close()
-			n.udp.Close()
-			n = nil
+			n.Close()
 			return
 		}
 	}
 
 	// rpc
 
-	// ---
+	if conf.RPC != "" {
+
+		n.rpc = n.createRPC()
+
+		if err = n.rpc.Listen(conf.RPC); err != nil {
+			n.Close()
+			return
+		}
+
+	}
 
 	// discoveries
 
@@ -178,7 +186,7 @@ func NewNodeContainer(
 }
 
 // ID retursn identifier of the Node. The identifier
-// is unique random identifier that used by to avoid
+// is unique random identifier that used to avoid
 // cross-conenctions
 func (n *Node) ID() (id cipher.PubKey) {
 	return n.id.PublicKey
@@ -393,7 +401,7 @@ func (n *Node) wrapConnection(
 	c = n.newConnection(fc, true, true) // adds to pending
 
 	// handshake
-	if err = c.handshake(n.quiting); err != nil {
+	if err = c.handshake(n.clsoeq); err != nil {
 		n.delPendingConnClose(c)
 		return
 	}
@@ -491,24 +499,19 @@ func (n *Node) DontShare(feed cipher.PubKey) (err error) {
 
 func (n *Node) onSubscribeRemote(c *Conn, feed cipher.PubKey) (reject error) {
 
-	var osr = n.config.OnSubscribeRemote
-
-	if osr == nil {
-		return
+	if osr := n.config.OnSubscribeRemote; osr != nil {
+		reject = osr(c, feed)
 	}
 
-	return osr(c, feed)
+	return
 }
 
 func (n *Node) onUnsubscribeRemote(c *Conn, feed cipher.PubKey) {
 
-	var ousr = n.config.OnUnsubscribeRemote
-
-	if ousr == nil {
-		return
+	if ousr := n.config.OnUnsubscribeRemote; ousr != nil {
+		ousr(c, feed)
 	}
 
-	ousr(c, feed)
 }
 
 // send to feed (call under lock)
@@ -522,67 +525,28 @@ func (n *Node) send(pk cipher.PubKey, m msg.Msg) {
 
 // Feeds the Node share. The reply is read-only
 func (n *Node) Feeds() (feeds []cipher.PubKey) {
-
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	if feeds = n.fl; feeds != nil {
-		return
-	}
-
-	// one for cipher.PubKey{} (blank)
-	feeds = make([]cipher.PubKey, 0, len(n.fc)-1)
-
-	for pk := range n.fc {
-
-		if pk == (cipher.PubKey{}) {
-			continue
-		}
-
-		feeds = append(feeds, pk)
-	}
-
-	n.fl = feeds
-
-	return
+	return n.fs.list()
 }
 
 // IsSharing returns true if the Node is sharing given feed
 func (n *Node) IsSharing(feed cipher.PubKey) (ok bool) {
-
-	if feed == (cipher.PubKey{}) {
-		return
-	}
-
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	_, ok = n.fc[feed]
-
-	return
+	return n.fs.hasFeed(feed)
 }
 
 func (n *Node) onRootReceived(c *Conn, r *registry.Root) (err error) {
 
-	var orr = n.config.OnRootReceived
-
-	if orr == nil {
-		return
+	if orr := n.config.OnRootReceived; orr != nil {
+		err = orr(c, r)
 	}
 
-	return orr(c, r)
-
+	return
 }
 
 func (n *Node) onFillingBreaks(c *Conn, r *registry.Root, reason error) {
 
-	var brk = n.config.OnFillingBreaks
-
-	if brk == nil {
-		return
+	if brk := n.config.OnFillingBreaks; brk != nil {
+		brk(c, r, reason)
 	}
-
-	brk(c, r, reason)
 
 }
 
@@ -592,5 +556,36 @@ func (n *Node) hasPeer(id cipher.PubKey) (yep bool) {
 	defer n.mx.Unlock()
 
 	_, yep = n.ic[id]
+	return
+}
+
+// Close the Node. The Close returns error
+// of (skyobject.Container).Close once.
+func (n *Node) Close() (err error) {
+	n.closeo.Do(func() {
+
+		close(n.clsoeq)
+
+		n.mx.Lock()
+		defer n.mx.Unlock()
+
+		err = n.c.Close()
+
+		if n.tcp != nil {
+			n.tcp.Close()
+		}
+
+		if n.udp != nil {
+			n.udp.Close()
+		}
+
+		if n.rpc != nil {
+			n.rpc.Close()
+		}
+
+		n.await.Wait()
+
+	})
+
 	return
 }

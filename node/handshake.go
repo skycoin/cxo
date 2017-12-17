@@ -8,46 +8,65 @@ import (
 	"github.com/skycoin/cxo/node/msg"
 )
 
-func (c *Conn) handshake(nodeQuiting <-chan struct{}) (err error) {
+func (c *Conn) handshake(nodeCloseq <-chan struct{}) (err error) {
 
 	if c.incoming == true {
-		return c.acceptHandshake(nodeQuiting)
+		return c.acceptHandshake(nodeCloseq)
 	}
 
-	return c.performHandshake(nodeQuiting)
+	return c.performHandshake(nodeCloseq)
 }
 
-func (c *Conn) sendWithQuiting(raw []byte, quiting <-chan struct{}) {
+func (c *Conn) sendNodeCloseq(
+	raw []byte,
+	nodeCloseq <-chan struct{},
+) (
+	err error,
+) {
 
 	select {
 	case c.sendq <- raw:
-	case <-quiting:
+	case <-nodeCloseq:
+		err = ErrClosed
 	}
+
+	return
 
 }
 
-func (c *Conn) performHandshake(nodeQuiting <-chan struct{}) (err error) {
+func (c *Conn) performHandshake(nodeCloseq <-chan struct{}) (err error) {
 
 	// (1) send Syn
 	// (2) receive Ack or Err
 
 	var seq = c.nextSeq()
 
-	c.sendWithQuiting(
+	err = c.sendNodeCloseq(
 		c.encodeMsg(seq, 0, &msg.Syn{
 			Protocol: msg.Version,
-			NodePk:   c.n.id.Pk,
-			NodeSk:   c.n.id.Sk,
+			NodeID:   c.n.id.PublicKey,
 		}),
-		nodeQuiting,
+		nodeCloseq,
 	)
 
+	if err != nil {
+		return
+	}
+
 	var (
+		rt time.Duration
+
 		tm *time.Timer
 		tc <-chan time.Time
 	)
 
-	if rt := c.n.config.ResponseTimeout; rt > 0 {
+	if c.IsTCP() == true {
+		rt = c.n.config.TCP.ResponseTimeout
+	} else {
+		rt = c.n.config.UDP.ResponseTimeout
+	}
+
+	if rt > 0 {
 		tm = time.NewTimer(rt)
 		tc = tm.C
 
@@ -59,7 +78,7 @@ func (c *Conn) performHandshake(nodeQuiting <-chan struct{}) (err error) {
 	case raw, ok := <-c.GetChanIn():
 
 		if ok == false {
-			return
+			return ErrClosed
 		}
 
 		var (
@@ -79,10 +98,9 @@ func (c *Conn) performHandshake(nodeQuiting <-chan struct{}) (err error) {
 
 		case *msg.Ack:
 
-			c.peerID.Pk = x.NodePk
-			c.peerID.Sk = x.NodeSk
+			c.peerID = x.NodeID
 
-			return
+			return // ok
 
 		case *msg.Err:
 
@@ -98,15 +116,15 @@ func (c *Conn) performHandshake(nodeQuiting <-chan struct{}) (err error) {
 
 		return ErrTimeout
 
-	case <-nodeQuiting:
+	case <-nodeCloseq:
 
-		return
+		return ErrClosed
 
 	}
 
 }
 
-func (c *Conn) acceptHandshake(nodeQuiting <-chan struct{}) (err error) {
+func (c *Conn) acceptHandshake(nodeCloseq <-chan struct{}) (err error) {
 
 	// (1) receive the Syn
 	// (2) send the Ack or Err
@@ -122,11 +140,11 @@ func (c *Conn) acceptHandshake(nodeQuiting <-chan struct{}) (err error) {
 	case raw, ok = <-c.GetChanIn():
 
 		if ok == false {
-			return
+			return ErrClosed
 		}
 
-	case <-nodeQuiting:
-		return
+	case <-nodeCloseq:
+		return ErrClosed
 	}
 
 	var (
@@ -150,26 +168,24 @@ func (c *Conn) acceptHandshake(nodeQuiting <-chan struct{}) (err error) {
 
 			// send Err back
 
-			c.sendWithQuiting(
+			c.sendNodeCloseq(
 				c.encodeMsg(c.nextSeq(), seq, &msg.Err{err.Error()}),
-				nodeQuiting,
+				nodeCloseq,
 			)
 
 			return
 
 		}
 
-		c.peerID.Pk = x.NodePk
-		c.peerID.Sk = x.NodeSk
+		c.peerID = x.NodeID
 
 		// (2) send Ack back
 
-		c.sendWithQuiting(
+		err = c.sendWithQuiting(
 			c.encodeMsg(c.nextSeq(), seq, &msg.Ack{
-				NodePk: c.n.id.Pk,
-				NodeSk: c.n.id.Sk,
+				NodeID: c.n.id.PublicKey,
 			}),
-			nodeQuiting,
+			nodeCloseq,
 		)
 
 		return

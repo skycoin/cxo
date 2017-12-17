@@ -108,8 +108,7 @@ func (*Pong) Encode() []byte {
 // A Syn is handshake initiator message
 type Syn struct {
 	Protocol uint16
-	NodePk   cipher.PubKey // } node.NodeID
-	NodeSk   cipher.SecKey // }
+	NodeID   cipher.PubKey // node id
 }
 
 // Type implements Msg interface
@@ -122,8 +121,7 @@ func (s *Syn) Encode() []byte { return encode(s) }
 // if handshake has been accepted.
 // Otherwise, the Err returned
 type Ack struct {
-	NodePk cipher.PubKey // } node.NodeID
-	NodeSk cipher.SecKey // }
+	NodeID cipher.PubKey // node id
 }
 
 // Type implements Msg interface

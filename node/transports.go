@@ -298,6 +298,20 @@ func (t *TCP) onDiscoveryConnected(c *discovery.Connection) {
 
 }
 
+// connections strings
+func (t *TCP) connections() (cs []string) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	cs = make([]string, 0, len(t.cs))
+
+	for _, c := range t.cs {
+		cs = append(cs, c.String())
+	}
+
+	return
+}
+
 // A UDP represents UDP transport
 // of the Node. The UDP used to
 // listen and connect
@@ -581,4 +595,18 @@ func (u *UDP) onDiscoveryConnected(c *discovery.Connection) {
 			err)
 	}
 
+}
+
+// connections strings
+func (u *UDP) connections() (cs []string) {
+	u.mx.Lock()
+	defer u.mx.Unlock()
+
+	cs = make([]string, 0, len(u.cs))
+
+	for _, c := range u.cs {
+		cs = append(cs, c.String())
+	}
+
+	return
 }
