@@ -58,7 +58,7 @@ type Index struct {
 	feedsl []cipher.PubKey // change on write
 
 	stat   *indexStat
-	clsoeo sync.Once // close once
+	closeo sync.Once // close once
 }
 
 func (i *Index) load(c *Container) (err error) {
@@ -243,7 +243,7 @@ func (i *Index) findRoot(
 }
 
 // ReceivedRoot called by the node package to
-// check a recived root. The method verify hash
+// check a received root. The method verify hash
 // and signature of the Root. The method also
 // check database, may be DB already has this
 // root. The method changes nothing in DB, it
@@ -416,12 +416,12 @@ func (i *Index) AddRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 // ActiveHead returns nonce of head that contains
 // newest Root object of given feed. If the feed
-// doesn't have Root obejcts, then reply will be
+// doesn't have Root objects, then reply will be
 // zero. The ActiveHead method looks for timestamps
-// of last Root obejcts only. E.g. the newest is
-// the newest of last. For exmaple if there are
+// of last Root objects only. E.g. the newest is
+// the newest of last. For example if there are
 // three heads with 100 Root oebjcts, then only
-// timestamps of three last Root obejcts will
+// timestamps of three last Root objects will
 // be compared. If given feed doesn't exist in DB
 // then reply will be zero too.
 //
@@ -562,6 +562,10 @@ func (i *Index) delFeed(
 				return
 			})
 
+			if err != nil {
+				return
+			}
+
 		}
 
 		return feeds.Del(pk) // remove the feed
@@ -649,6 +653,10 @@ func (i *Index) delHead(
 			rhs = append(rhs, dr.Hash)
 			return
 		})
+
+		if err != nil {
+			return
+		}
 
 		return hs.Del(nonce) // remove the head
 	})
@@ -815,7 +823,7 @@ func (i *Index) delPackWalkFunc(
 	}
 
 	walkFunc = func(
-		hash cipher.SHA256, // : hash of obejct to decrement
+		hash cipher.SHA256, // : hash of object to decrement
 		_ int, //              : never used
 	) (
 		deepper bool, //       : go deepper
@@ -978,13 +986,13 @@ func (i *Index) AddHead(pk cipher.PubKey, nonce uint64) (err error) {
 }
 
 // Close Index syncing it with DB. Access time
-// of Root obejcts is not saved in DB and should
+// of Root objects is not saved in DB and should
 // be synchronised with the Index
 func (i *Index) Close() (err error) {
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	i.stat.Clsoe() // close statistic first
+	i.stat.Close() // close statistic first
 
 	// TODO (kostyarin): access time
 

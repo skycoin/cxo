@@ -561,7 +561,7 @@ func TestSchema_Size(t *testing.T) {
 		if ss, err = s.Size(data); err != nil {
 			t.Error(err)
 		} else if ss != len(data) {
-			t.Error("wrong struct Size: want %d, got %d", len(data), ss)
+			t.Errorf("wrong struct Size: want %d, got %d", len(data), ss)
 		}
 
 		var rv = reflect.Indirect(reflect.ValueOf(tt.Val))

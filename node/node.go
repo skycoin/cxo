@@ -17,7 +17,7 @@ import (
 
 // A Node represents network P2P transport
 // for CX objects. The node used to receive,
-// send and retransmit CX obejcts. The Node
+// send and retransmit CX objects. The Node
 // cares about last Root object of active
 // head (see skyobject.Index.ActiveHead) of
 // a feed. E.g. the Node never replicates an
@@ -74,7 +74,7 @@ type Node struct {
 
 	await  sync.WaitGroup // wait for goroutines
 	closeo sync.Once      // close once
-	clsoeq chan struct{}  // clsoed
+	closeq chan struct{}  // closed
 }
 
 // NewNode creates new Node instance using provided
@@ -138,7 +138,7 @@ func NewNodeContainer(
 	n.rollAvgSamples = cc.RollAvgSamples
 
 	n.fillavg = statutil.NewDuration(n.rollAvgSamples)
-	n.clsoeq = make(chan struct{})
+	n.closeq = make(chan struct{})
 
 	//
 	// create
@@ -187,14 +187,14 @@ func NewNodeContainer(
 		n.UDP().ConnectToDiscoveryServer(address)
 	}
 
-	// TOOD (kostyarin): pings (move to connection)
+	// TODO (kostyarin): pings (move to connection)
 
 	return
 }
 
 // ID retursn identifier of the Node. The identifier
 // is unique random identifier that used to avoid
-// cross-conenctions
+// cross-connections
 func (n *Node) ID() (id cipher.PubKey) {
 	return n.idpk
 }
@@ -214,9 +214,9 @@ func (n *Node) Container() (c *skyobject.Container) {
 	return n.c
 }
 
-// Publish sends given Root obejct to peers that
+// Publish sends given Root object to peers that
 // subscribed to feed of the Root. The Publish used
-// to publish new Root obejcts. E.g. the Node sends
+// to publish new Root objects. E.g. the Node sends
 // last Root object of a feed to subsctibers. But
 // the Node knows nothing about new Root objects.
 // And to share an updated Root, call the Publish.
@@ -416,7 +416,7 @@ func (n *Node) wrapConnection(
 	c = n.newConnection(fc, isIncoming) // adds to pending
 
 	// handshake
-	if err = c.handshake(n.clsoeq); err != nil {
+	if err = c.handshake(n.closeq); err != nil {
 		n.delPendingConnClose(c)
 		return
 	}
@@ -482,7 +482,7 @@ func (n *Node) updateServiceDiscovery() {
 // Container calling (*skyobjec.Container).AddFeed()
 // method. The method never return an error if given
 // feed is already shared. The share never associate
-// the feed with a conenction. You should to call
+// the feed with a connection. You should to call
 // (*Conn).Subscribe to do that.
 func (n *Node) Share(feed cipher.PubKey) (err error) {
 
@@ -596,7 +596,7 @@ func (n *Node) Stat() (s *Stat) {
 func (n *Node) Close() (err error) {
 	n.closeo.Do(func() {
 
-		close(n.clsoeq)
+		close(n.closeq)
 
 		n.mx.Lock()
 		defer n.mx.Unlock()

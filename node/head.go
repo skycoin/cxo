@@ -18,7 +18,7 @@ type nodeHead struct {
 
 	delcq chan *Conn    // delete connection
 	rrq   chan connRoot // received roots
-	errq  chan error    // close wiht error (max heads limit)
+	errq  chan error    // close with error (max heads limit)
 
 	// api info
 
@@ -27,7 +27,7 @@ type nodeHead struct {
 
 	// closing
 	await  sync.WaitGroup // wait goroutines
-	clsoeo sync.Once      // close once
+	closeo sync.Once      // close once
 	closeq chan struct{}  // terminate
 }
 
@@ -81,7 +81,7 @@ func (n *nodeHead) receivedRoot(cr connRoot) {
 
 // (api)
 func (n *nodeHead) close() {
-	n.clsoeo.Do(func() {
+	n.closeo.Do(func() {
 		close(n.closeq)
 	})
 	n.await.Wait()
@@ -122,7 +122,7 @@ type fillHead struct {
 	failureq chan failedRequest // failed requests
 
 	rqo *list.List // request objects (cipher.SHA256)
-	fc  *list.List // conenctions to fill from (*Conn)
+	fc  *list.List // connections to fill from (*Conn)
 
 	requesting int // number of running requests
 }
@@ -239,7 +239,7 @@ func (f *fillHead) handleRequestFailure(fr failedRequest) {
 
 	case ErrClosed:
 
-		// clsoed
+		// closed
 		delete(f.cs, fr.c) // remove connection
 
 	case ErrTimeout:
@@ -318,11 +318,11 @@ func (f *fillHead) handleReceivedRoot(cr connRoot) {
 }
 
 // value for channels, if hte (*Node).maxFillingParallel
-// is zero, then the skyobejct.Filler has no limits for
+// is zero, then the skyobject.Filler has no limits for
 // goroutines, but we can't create an unlimited channel,
 // thus we cahnge the zero to 1024 (I think it's enough)
 func (f *fillHead) maxParallel() (mp int) {
-	if mp := f.node().maxFillingParallel; mp <= 0 {
+	if mp = f.node().maxFillingParallel; mp <= 0 {
 		mp = 1024 // TODO (kostyarin): make it constant
 	}
 	return
@@ -422,7 +422,7 @@ func (f *fillHead) triggerRequest() {
 
 }
 
-// the fatal means that we haven't conenctions to
+// the fatal means that we haven't connections to
 // request objects from anymore, neither busy nor idle
 func (f *fillHead) tryRequest() (fatal bool) {
 
@@ -467,14 +467,14 @@ func (f *fillHead) node() *Node {
 	return f.n.fs.n
 }
 
-// (async) request obejct
+// (async) request object
 func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 	defer f.await.Done()
 
 	f.node().Debugf(FillPin, "[fill] request from [%s] %d %s", c.String(), seq,
 		key.Hex()[:7])
 
-	var reply, err = c.sendRequest(&msg.RqObject{key})
+	var reply, err = c.sendRequest(&msg.RqObject{Key: key})
 
 	if err != nil {
 		f.failureq <- failedRequest{c, seq, key, err}
@@ -505,7 +505,7 @@ func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 }
 
 func (f *fillHead) handleDelConn(c *Conn) {
-	delete(f.cs, c) // jsut remove it from list of known
+	delete(f.cs, c) // just remove it from list of known
 
 	if f.r.c == c {
 		f.r.c = nil // GC
@@ -628,7 +628,7 @@ type headInfo struct {
 	pendingRoot    bool   // has pending Root
 	pendingRootSeq uint64 // its seq
 
-	// TOOD (kostyarin): connections used for current filling
+	// TODO (kostyarin): connections used for current filling
 
 	// known Root objects of peers
 	known map[*Conn][]uint64

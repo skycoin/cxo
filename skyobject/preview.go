@@ -19,9 +19,9 @@ type Getter interface {
 }
 
 // A Preview implements registry.Pack for
-// feeds preview. The Preview get obejct
+// feeds preview. The Preview get object
 // of a Root from database if possible,
-// otherwise it request this obejcts using
+// otherwise it request this objects using
 // provided getter. The Preview used by
 // the node package for feeds preview
 type Preview struct {
@@ -63,7 +63,7 @@ func (p *Preview) Get(key cipher.SHA256) (val []byte, err error) {
 // Preview creates Preview using given
 // Getter and registry.Root. It returns
 // error if the Preview method can't
-// obtain related Registry using Contianer
+// obtain related Registry using Container
 // or Getter. The Preview method can blocks
 // calling Get from given Getter. The Preview
 // method used by node package for feeds

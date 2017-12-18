@@ -11,7 +11,7 @@ import (
 )
 
 //
-// TOOD (kostyarin): DRY
+// TODO (kostyarin): DRY
 //
 
 // A TCP represents TCP transport
@@ -26,7 +26,7 @@ type TCP struct {
 	//
 	mx sync.Mutex
 
-	d *discovery.MessengerFactory // underlying dicovery server or nil
+	d *discovery.MessengerFactory // underlying discovery server or nil
 
 	address     string // listening address
 	isListening bool
@@ -238,7 +238,7 @@ func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
 
 		if err := c.FindServiceNodesByKeys(feeds); err != nil {
 			t.n.Debug(DiscoveryPin,
-				"(TCP) (dicovery.Connection).FindServiceNodesByKeys error:",
+				"(TCP) (discovery.Connection).FindServiceNodesByKeys error:",
 				err)
 			return
 		}
@@ -254,7 +254,7 @@ func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
 
 		if err != nil {
 			t.n.Debug(DiscoveryPin,
-				"(TCP) (dicovery.Connection).UpdateServices error:",
+				"(TCP) (discovery.Connection).UpdateServices error:",
 				err)
 		}
 	})
@@ -505,7 +505,7 @@ func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
 
 		if err := c.FindServiceNodesByKeys(feeds); err != nil {
 			u.n.Debug(DiscoveryPin,
-				"(TCP) (dicovery.Connection).FindServiceNodesByKeys error:",
+				"(TCP) (discovery.Connection).FindServiceNodesByKeys error:",
 				err)
 			return
 		}
@@ -521,7 +521,7 @@ func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
 
 		if err != nil {
 			u.n.Debug(DiscoveryPin,
-				"(TCP) (dicovery.Connection).UpdateServices error:",
+				"(TCP) (discovery.Connection).UpdateServices error:",
 				err)
 		}
 	})

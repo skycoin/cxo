@@ -75,7 +75,7 @@ func (r *Refs) walkBlank(walkFunc WalkFunc) (err error) {
 // initialize the Refs. More then that if the Refs is not initialized, but
 // the Refs.Hash is not blank, then after the initialization the Refs will
 // be reset. This way, end-user will not have a Refs with flags he don't want
-// (becuase, the initialization saves flags inside the Refs).
+// (because, the initialization saves flags inside the Refs).
 //
 // Feel free to use ErrStopIteration to break the Walk. Any error returned
 // by the WalkFunc (excepth the ErrStopIteration) will be passed through
@@ -222,7 +222,7 @@ func (r *Refs) walkNode(
 
 		// the br contains hash, but the br can be not loaded;
 		// here the walkFunc called with dept of this node, e.g.
-		// the br is branch, not leaf, but the br can contians
+		// the br is branch, not leaf, but the br can contains
 		// leafs
 
 		if deepper, err = walkFunc(br.hash, depth); err != nil {

@@ -194,7 +194,7 @@ func (r *Refs) SetDegree(pack Pack, degree Degree) (err error) {
 // Flags returns current flags of the Refs.
 // If the Refs is not initialized it returns
 // zero. The method deosn't initializes
-// Refs and can be used (e.g. is usefull) with
+// Refs and can be used (e.g. is useful) with
 // initialized Refs only. The Frags are flags
 // with which the Refs has been initialized
 // before. You can check HashTableIndex flag
@@ -395,7 +395,7 @@ func (r *Refs) indicesOfHashUsingHashTable(
 	return
 }
 
-// IndicesByHash returns indices of all elements wiht given hash.
+// IndicesByHash returns indices of all elements with given hash.
 // It returns ErrNotFound if the Refs doesn't contain such elements.
 // Order of the indices, the IndicesByHash returns, is undefined.
 //
@@ -508,7 +508,7 @@ func (r *Refs) HashByIndex(
 func (r *Refs) ValueByIndex(
 	pack Pack, //          : pack to load
 	i int, //              : index to find
-	obj interface{}, //    : pointer to obejct to decode
+	obj interface{}, //    : pointer to object to decode
 ) (
 	hash cipher.SHA256, // : hash of the element
 	err error, //          : error if any
@@ -855,7 +855,7 @@ func (r *Refs) isFindingIteratorsIndexFromRootRequired() (yep bool) {
 // index of element and hash of the element. Use
 // ErrStopIteration to break an iteration. The
 // ErrStopIteration will be hidden, but any other error
-// returned by this function will be returnd by iterator
+// returned by this function will be returned by iterator
 type IterateFunc func(i int, hash cipher.SHA256) (err error)
 
 // ascendFrom iterates elemnets of the Refs starting from
@@ -887,9 +887,9 @@ func (r *Refs) ascendFrom(
 	r.startIteration()
 	defer r.stopIteration()
 
-	var rewind bool  // find next element from root of the Refs
-	var i int = from // i is next index to find
-	var pass int     // passed items by current step
+	var rewind bool // find next element from root of the Refs
+	var i = from    // i is next index to find
+	var pass int    // passed items by current step
 
 	for {
 
@@ -909,7 +909,7 @@ func (r *Refs) ascendFrom(
 			continue  // find next index from root of the Refs
 		}
 
-		// the loop is necesary for rewinding only
+		// the loop is necessary for rewinding only
 		break
 
 		// if the rewind is true, then the err is nil;
@@ -960,7 +960,7 @@ func (r *Refs) AscendFrom(
 }
 
 // descendFrom iterates elements descending
-// starting from element wiht given index
+// starting from element with given index
 func (r *Refs) descendFrom(
 	pack Pack, //               : pack to load
 	from int, //                : index to start from
@@ -1011,7 +1011,7 @@ func (r *Refs) descendFrom(
 			continue // find next index from root of the Refs
 		}
 
-		// the loop is necesary for rewinding only
+		// the loop is necessary for rewinding only
 		break
 	}
 
@@ -1340,7 +1340,7 @@ func (r *Refs) appnedFunc(
 			return // nothing to finialize
 		}
 
-		// ap.increase > 0, ap.rn contians leafs
+		// ap.increase > 0, ap.rn contains leafs
 
 		for ; ap.rn != nil; ap.rn, ap.depth = ap.rn.upper, ap.depth+1 {
 
@@ -1651,7 +1651,7 @@ func (r *Refs) Rebuild(
 		return
 	}
 
-	// TOOD (kostyarin): origin mod
+	// TODO (kostyarin): origin mod
 
 	// can we reduce depth of the Refs?
 

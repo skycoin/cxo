@@ -36,7 +36,7 @@ type Conn struct {
 
 	// # stat
 	//
-	// TOOD (kostyarin): stat without mutexes to do not slow down the connection
+	// TODO (kostyarin): stat without mutexes to do not slow down the connection
 	//
 	// ------
 
@@ -110,7 +110,7 @@ func (c *Conn) PeerID() (id cipher.PubKey) {
 
 // IsIncoming returns true if this Conn is
 // incoming and accepted by listener
-func (c *Conn) IsIncomig() (ok bool) {
+func (c *Conn) IsIncoming() (ok bool) {
 	return c.incoming
 }
 
@@ -285,7 +285,7 @@ func (c *Conn) Unsubscribe(feed cipher.PubKey) {
 
 // PreviewFunc used by (*Conn).Preview method. The function
 // receive registry.Pack and lates Root object. The Pack
-// used to get obejcts from DB or from remote peer. If the
+// used to get objects from DB or from remote peer. If the
 // function returns true, then the Node and the Connection
 // will be subscribed to the feed. Given Pack and given Root
 // can't be used outside the function.
@@ -303,7 +303,7 @@ func (c *Conn) Preview(
 ) {
 
 	var reply msg.Msg
-	if reply, err = c.sendRequest(&msg.RqPreview{feed}); err != nil {
+	if reply, err = c.sendRequest(&msg.RqPreview{Feed: feed}); err != nil {
 		return
 	}
 
@@ -341,7 +341,7 @@ type cget struct {
 func (c *cget) Get(key cipher.SHA256) (val []byte, err error) {
 
 	var reply msg.Msg
-	if reply, err = c.c.sendRequest(&msg.RqObject{key}); err != nil {
+	if reply, err = c.c.sendRequest(&msg.RqObject{Key: key}); err != nil {
 		return
 	}
 
@@ -570,7 +570,7 @@ func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
 }
 
 func (c *Conn) sendErr(rseq uint32, err error) {
-	c.sendMsg(c.nextSeq(), rseq, &msg.Err{err.Error()})
+	c.sendMsg(c.nextSeq(), rseq, &msg.Err{Err: err.Error()})
 }
 
 func (c *Conn) sendOk(rseq uint32) {
@@ -602,7 +602,7 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 	case *msg.Root: // <- Root (feed, nonce, seq, sig, val)
 		return c.handleRoot(x)
 
-	// obejcts
+	// objects
 
 	case *msg.RqObject: // <- RqO (key, prefetch)
 		c.await.Add(1)
@@ -719,7 +719,7 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 	c.n.Debugf(MsgReceivePin, "[%s] handleRoot %s/%d/%d",
 		c.String(), root.Feed.Hex()[:7], root.Nonce, root.Seq)
 
-	// check seq first (avoid verify-signature for old unwanted Root obejcts)
+	// check seq first (avoid verify-signature for old unwanted Root objects)
 
 	var last, err = c.n.c.LastRootSeq(root.Feed, root.Nonce) // last is full
 
@@ -806,7 +806,7 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 	case obj := <-gc:
 		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
 	case <-tc:
-		c.sendMsg(c.nextSeq(), seq, &msg.Err{ErrTimeout.Error()}) // timeout
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{}) // timeout
 	case <-c.closeq:
 		// closed
 	}

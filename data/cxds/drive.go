@@ -30,7 +30,7 @@ type driveCXDS struct {
 	amountAll  int // amount of all objects
 	amountUsed int // amount of used objects
 
-	volumeAll  int // volume of all obejcts
+	volumeAll  int // volume of all objects
 	volumeUsed int // volume of used objects
 
 	b *bolt.DB
@@ -452,7 +452,7 @@ func (d *driveCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 			c   = tx.Bucket(objsBucket).Cursor()
 		)
 
-		// Seek instead of the Next, beacuse we allows modifications
+		// Seek instead of the Next, because we allows modifications
 		// and the BoltDB requires Seek after mutating
 
 		for k, v := c.First(); k != nil; k, v = c.Seek(key[:]) {

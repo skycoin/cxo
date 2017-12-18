@@ -36,10 +36,14 @@ type Filler struct {
 // methods of the registry.Splitter
 //
 
+// Registry of the Filler
 func (f *Filler) Registry() (reg *registry.Registry) {
 	return f.reg
 }
 
+// Get object from DB or request it usung provided
+// channel. The Get increments references counter
+// of value
 func (f *Filler) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 
 	// try to get from DB first
@@ -78,6 +82,8 @@ func (f *Filler) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 	return
 }
 
+// Fail used to terminate the Filler with
+// provided error
 func (f *Filler) Fail(err error) {
 	select {
 	case f.errq <- err:
@@ -106,7 +112,7 @@ func (f *Filler) requset(key cipher.SHA256) (ok bool) {
 	return
 }
 
-// Clsoe terminates the Split walking and waits for
+// Close terminates the Split walking and waits for
 // goroutines the split creates
 func (f *Filler) Close() {
 	f.closeo.Do(func() {
@@ -116,9 +122,9 @@ func (f *Filler) Close() {
 }
 
 // Fill given Root returns Filler that fills given
-// Root obejct. To request objects, the DB doesn't
+// Root object. To request objects, the DB doesn't
 // have, given rq channel used. The Fill used by
-// the node package to fill Root obejcts. The filler
+// the node package to fill Root objects. The filler
 // must be closed after using
 func (c *Container) Fill(
 	r *registry.Root, //        : the Root to fill
@@ -151,7 +157,7 @@ func (f *Filler) remove() {
 		if _, err := f.c.db.CXDS().Inc(key, -inc); err != nil {
 			panic("DB failure: " + err.Error())
 		}
-		// TOOD (kostyarin): handle error
+		// TODO (kostyarin): handle error
 	}
 }
 

@@ -12,7 +12,7 @@ var (
 	ErrNotPublic               = errors.New("not a public server")
 	ErrAlreadyHaveConnection   = errors.New("already have connection")
 	ErrInvalidResponse         = errors.New("invalid response")
-	ErrNoConnectionsToFillFrom = errors.New("no conenctions to fill from")
+	ErrNoConnectionsToFillFrom = errors.New("no connections to fill from")
 	ErrMaxHeadsLimit           = errors.New("max heads limit")
 	ErrUnsubscribe             = errors.New("unsubscribe")
 )

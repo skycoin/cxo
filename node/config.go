@@ -170,7 +170,7 @@ type Config struct {
 	//
 	// For example, if a node subscribed to feed A,
 	// and a peer receive 10 Root object one by one
-	// wiht different heads. And, if the MaxHeads
+	// with different heads. And, if the MaxHeads
 	// limit is 5, then first 5 received Root objects
 	// will be rejected when last 5 received.
 	//

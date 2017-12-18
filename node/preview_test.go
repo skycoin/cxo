@@ -58,7 +58,7 @@ func Test_preview(t *testing.T) {
 	)
 
 	// save the Root
-	if err := sc.Save(up, r); err != nil {
+	if err = sc.Save(up, r); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,6 +112,10 @@ func Test_preview(t *testing.T) {
 
 			return false
 		})
+
+	if err != nil {
+		t.Fatal(err)
+	}
 
 }
 
@@ -179,7 +183,7 @@ func Test_preview_refs(t *testing.T) {
 	)
 
 	// save the Root
-	if err := sc.Save(up, r); err != nil {
+	if err = sc.Save(up, r); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,5 +237,9 @@ func Test_preview_refs(t *testing.T) {
 
 			return false
 		})
+
+	if err != nil {
+		t.Fatal(err)
+	}
 
 }

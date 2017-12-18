@@ -201,7 +201,6 @@ func (d *driveHeads) Roots(nonce uint64) (rs data.Roots, err error) {
 	var bk *bolt.Bucket
 	if bk = d.bk.Bucket(nonceToBytes(nonce)); bk == nil {
 		return nil, data.ErrNoSuchHead
-		return
 	}
 	return &driveRoots{bk}, nil
 }
@@ -349,7 +348,7 @@ func (d *driveRoots) Set(r *data.Root) (err error) {
 	}
 
 	r.Create = nr.Create // "reply"
-	r.Access = r.Access  // "reply"
+	r.Access = nr.Access // "reply"
 
 	// touch
 	nr.Access = time.Now().UnixNano()

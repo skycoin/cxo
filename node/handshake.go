@@ -175,7 +175,7 @@ func (c *Conn) acceptHandshake(nodeCloseq <-chan struct{}) (err error) {
 			// send Err back
 
 			c.sendNodeCloseq(
-				c.encodeMsg(c.nextSeq(), seq, &msg.Err{err.Error()}),
+				c.encodeMsg(c.nextSeq(), seq, &msg.Err{Err: err.Error()}),
 				nodeCloseq,
 			)
 

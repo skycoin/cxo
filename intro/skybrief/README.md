@@ -1,7 +1,7 @@
 skybrief
 ========
 
-The skybrief is brief exmaple for the skyobejct package
+The skybrief is brief example for the skyobject package
 
 - Root is objects root
 - Ref is like pointer (`*User`)

@@ -76,7 +76,7 @@ func mkdirp(dir string) error {
 // and options of Container
 type Config struct {
 	// Degree of registry.Refs' Merkle-trees.
-	// The option affects new trees onyl and not
+	// The option affects new trees only and not
 	// changes existsing registry.Refs
 	Degree registry.Degree
 
@@ -99,7 +99,7 @@ type Config struct {
 	CachePolicy CachePolicy
 	// CacheRegistries is number of Registries the Cache
 	// will keep unpacked. A Registry is fast for access
-	// but decoding is slow. And to increase performace
+	// but decoding is slow. And to increase performance
 	// the Cache keeps some Registries unpacked. Set this
 	// field to zero to turn off caching of Registries.
 	// This number should not be too big. Becuse the
@@ -125,16 +125,16 @@ type Config struct {
 
 	// limits
 
-	// MaxObjectSize is max size of obejct the CXO can
+	// MaxObjectSize is max size of object the CXO can
 	// manipulate. The size is size of encoded vlaue. The
 	// limit is required to protect against intentional
 	// DoS attacks. Because, CXO manipulate with objects
 	// in RAM a very big object can break a node.
 	//
 	// So, reducing this size be sure that database doesn't
-	// contain obejct large then this limit. Otherwise CXO
+	// contain object large then this limit. Otherwise CXO
 	// falls. To check DB after reducing set the CheckSizes
-	// config to true. If DB contains obejcts large then
+	// config to true. If DB contains objects large then
 	// this limit the NewContiner returns error. And this
 	// error can't be solved by CXO, e.g. you should
 	// resolve it yourself. But DB doesn't have any limits
@@ -147,24 +147,24 @@ type Config struct {
 	// by Filler at the same time. The Filler can walk
 	// all possible subtress sumultaneously, creating
 	// goroutines. The MaxFillingParallel should be closer
-	// to number of conenctions that used to fill a Root.
+	// to number of connections that used to fill a Root.
 	MaxFillingParallel int
 
 	// DB configs
 
-	// CheckSizes force Container to check sizes of obejcts
+	// CheckSizes force Container to check sizes of objects
 	// in database. The option can be useful if MaxObjectSize
 	// was reduced after last start and you not sure that
-	// DB contians valid objects. If this option is true then
+	// DB contains valid objects. If this option is true then
 	// Container check DB and returns an error if there are
-	// obejcts alrge then MaxObejctSize limit. But, the
+	// objects alrge then MaxObjectSize limit. But, the
 	// checking stops on first error.
 	CheckSizes bool
 	// ReinitDB forces to reinitialize database. A database
 	// can be broken if previous time the CXO application
 	// was closed by panic, log.Fatal, unexpected os.Exit
 	// or similar. The CXO uses Write-Behind cache and this
-	// cache synchronizes wiht DB during closing. In this
+	// cache synchronizes with DB during closing. In this
 	// "fatal" cases DB will be reinitialized automatically.
 	// This option forces the reinit even if DB closed
 	// safetly
@@ -218,6 +218,8 @@ func NewConfig() (conf *Config) {
 	return
 }
 
+// FromFlags associates config fields
+// with command line flags.
 func (c *Config) FromFlags() {
 	flag.BoolVar(&c.InMemoryDB,
 		"mem-db",
@@ -277,12 +279,12 @@ func (c *Config) Validate() error {
 
 	if c.CacheMaxItemSize > cacheMaxItemSize {
 		return fmt.Errorf(
-			"skyobject.Config.CacheaxItemSize is too big: %f (> %f)",
+			"skyobject.Config.CacheaxItemSize is too big: %d (> %d)",
 			c.CacheMaxItemSize, cacheMaxItemSize)
 	}
 
 	if c.MaxObjectSize < 1024 {
-		return fmt.Errorf("skyobject.Config.MAxObejctSize is too small: %d",
+		return fmt.Errorf("skyobject.Config.MAxObjectSize is too small: %d",
 			c.MaxObjectSize)
 	}
 

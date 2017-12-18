@@ -4,10 +4,9 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-// An IterateObjectsFunc sued to iterate over objects
-// of the CXDS. The cal argumen is read onyl can must
-// not be modified, the val can be used only inside the
-// function.
+// An IterateObjectsFunc used to iterate over objects
+// of the CXDS. All arguments are read only and must
+// not be modified.
 type IterateObjectsFunc func(key cipher.SHA256, rc uint32, val []byte) error
 
 // A CXDS is interface of CX data store. The CXDS is
@@ -16,8 +15,8 @@ type IterateObjectsFunc func(key cipher.SHA256, rc uint32, val []byte) error
 // and in-memory (golang map based) implementations of
 // the CXDS. The CXDS returns ErrNotFound from this
 // package if any value has not been found. The
-// references counters is number of objects that point
-// to an object. E.g. shema of the CXDS is
+// references counters is number of objects that points
+// to an object. E.g. schema of the CXDS is
 //
 //     key -> {rc, val}
 //
@@ -52,8 +51,8 @@ type CXDS interface {
 	// Use ErrStopIteration to stop an iteration.
 	Iterate(iterateFunc IterateObjectsFunc) (err error)
 
-	// Del removes obejct with given key unconditionally.
-	// The Del method doesn't return an error if obejct
+	// Del removes object with given key unconditionally.
+	// The Del method doesn't return an error if object
 	// doesn't exist
 	Del(key cipher.SHA256) (err error)
 
@@ -61,7 +60,7 @@ type CXDS interface {
 	// Stat
 	//
 
-	// Amount of obejcts
+	// Amount of objects
 	Amount() (all, used int)
 	// Volume of objects
 	Volume() (all, used int)

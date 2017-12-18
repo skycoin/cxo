@@ -25,13 +25,15 @@ type Stat struct {
 	UsedObjects ObjectsStat
 
 	// RootsPerSecond is average vlaue of new
-	// Root obejcts per second
+	// Root objects per second
 	RootsPerSecond float64
 
 	// Feeds contains statistic of feeds
 	Feeds map[cipher.PubKey]FeedStat
 }
 
+// An ObjectsStat represents
+// statistics of objects
 type ObjectsStat struct {
 	Amount statutil.Amount
 	Volume statutil.Volume
@@ -43,7 +45,7 @@ type ReadWriteStat struct {
 	WPS float64 // writes per second
 }
 
-// A FeedsTat represents statistic
+// A FeedStat represents statistic
 // of a feed
 type FeedStat struct {
 	// Hads contains statistic of heads
@@ -54,7 +56,7 @@ type FeedStat struct {
 // a head
 type HeadStat struct {
 	// Len is total amount of Root
-	// obejcts of this head
+	// objects of this head
 	Len int
 
 	// First Root of the head

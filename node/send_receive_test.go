@@ -178,7 +178,7 @@ func Test_send_receive(t *testing.T) {
 		t.Fatal("slow")
 	}
 
-	// TOOD (kostyarin): compare Root obejcts
+	// TODO (kostyarin): compare Root objects
 
 	_ = rr
 
@@ -338,7 +338,7 @@ func Test_send_receive_refs(t *testing.T) {
 		t.Fatal("slow")
 	}
 
-	// TOOD (kostyarin): compare the Root objects
+	// TODO (kostyarin): compare the Root objects
 
 	_ = rr
 

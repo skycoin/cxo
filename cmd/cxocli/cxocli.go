@@ -703,14 +703,14 @@ func (c *client) stat(in []string) (err error) {
 
 	fmt.Fprintln(out, "  average cache celaning duration:", s.CacheCleaning)
 
-	fmt.Fprintln(out, "  amount of all obejcts:          ",
+	fmt.Fprintln(out, "  amount of all objects:          ",
 		s.AllObjects.Amount.String())
-	fmt.Fprintln(out, "  volume of all obejcts:          ",
+	fmt.Fprintln(out, "  volume of all objects:          ",
 		s.AllObjects.Volume.String())
 
-	fmt.Fprintln(out, "  amount of used obejcts:         ",
+	fmt.Fprintln(out, "  amount of used objects:         ",
 		s.UsedObjects.Amount.String())
-	fmt.Fprintln(out, "  volume of used obejcts:         ",
+	fmt.Fprintln(out, "  volume of used objects:         ",
 		s.UsedObjects.Volume.String())
 
 	fmt.Fprintln(out, "  new Root objects per second:    ", s.RootsPerSecond)

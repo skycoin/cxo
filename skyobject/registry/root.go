@@ -34,7 +34,7 @@ type Root struct {
 	Prev cipher.SHA256
 
 	// IsFull means that this Root object
-	// has been sucessfully colelcted by this
+	// has been successfully colelcted by this
 	// machine. E.g. this field is not part
 	// of a Root, and this field is machine
 	// local
@@ -78,7 +78,7 @@ func (r *Root) String() string {
 		r.Hash.Hex()[:7])
 }
 
-// DecodeRoot decodes and encoded Root obejct
+// DecodeRoot decodes and encoded Root object
 func DecodeRoot(val []byte) (r *Root, err error) {
 	r = new(Root)
 	if err = encoder.DeserializeRaw(val, r); err != nil {
@@ -91,7 +91,7 @@ func DecodeRoot(val []byte) (r *Root, err error) {
 // be called with hash of the Root and with hash of Registry of
 // the Root. The pack argument must have related registry.
 // E.g. this preparation should be done before. Short wrods
-// the Walk calls (*Dynamic).Walk for every Dynamic refernece
+// the Walk calls (*Dynamic).Walk for every Dynamic reference
 // of the Root (see Refs field)
 func (r *Root) Walk(pack Pack, walkFunc WalkFunc) (err error) {
 

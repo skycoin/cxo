@@ -8,7 +8,7 @@ import (
 )
 
 type indexStat struct {
-	rps *statutil.Float // new Root obejcts per second
+	rps *statutil.Float // new Root objects per second
 	sr  int             // roots for current second
 
 	mx     sync.Mutex
@@ -16,10 +16,10 @@ type indexStat struct {
 	closeo sync.Once
 }
 
-func newIndexStat(smaples int) (i *indexStat) {
+func newIndexStat(samples int) (i *indexStat) {
 	i = new(indexStat)
 
-	i.rps = statutil.NewFloat(smaples)
+	i.rps = statutil.NewFloat(samples)
 	i.quit = make(chan struct{})
 
 	go i.secondLoop()
@@ -27,7 +27,7 @@ func newIndexStat(smaples int) (i *indexStat) {
 	return
 }
 
-func (i *indexStat) Clsoe() {
+func (i *indexStat) Close() {
 	i.closeo.Do(func() {
 		close(i.quit)
 	})

@@ -11,8 +11,8 @@ import (
 // A Splitter used by the node package
 // to fill a Root object uinsg multiply
 // connections. The Splitter provides
-// Get method that lookups DB and if obejct
-// doesn't exists, then it request the obejct
+// Get method that lookups DB and if object
+// doesn't exists, then it request the object
 // using connectiosn from free list.
 //
 // The Splitter used to walking, but unlike the
@@ -20,8 +20,8 @@ import (
 // goroutines (the Walk is single-gourutine)
 //
 // The Get method returns not a real rc from DB.
-// The rc is rc of obejcts that belongs to full
-// Root obejcts. Thus, the rc can be used to
+// The rc is rc of objects that belongs to full
+// Root objects. Thus, the rc can be used to
 // skip subtrees of the Root tree that
 // guaranteed in DB.
 //

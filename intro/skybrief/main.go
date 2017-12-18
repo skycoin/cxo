@@ -15,12 +15,14 @@ func init() {
 	log.SetFlags(log.Lshortfile)
 }
 
+// A User represetns user info
 type User struct {
 	Name   string
 	Age    uint32
 	Hidden []byte `enc:"-"`
 }
 
+// A Group is group of the Users
 type Group struct {
 	Name string
 
@@ -30,6 +32,7 @@ type Group struct {
 	Developer registry.Dynamic
 }
 
+// A Man is an average developer
 type Man struct {
 	Name   string
 	GitHub string

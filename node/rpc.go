@@ -155,7 +155,7 @@ func (t *TCPRPC) Disconnect(address string, _ *struct{}) (err error) {
 	return
 }
 
-// A ConnFeed represents conenction address and feed
+// A ConnFeed represents connection address and feed
 type ConnFeed struct {
 	Address string
 	Feed    cipher.PubKey
@@ -280,7 +280,7 @@ func (u *UDPRPC) Address(_ struct{}, address *string) (_ error) {
 }
 
 // A RootRPC represents RPC object
-// of Root obejcts of the Node
+// of Root objects of the Node
 type RootRPC struct {
 	n *Node
 }

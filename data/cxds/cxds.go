@@ -1,7 +1,12 @@
-// Package cxds represents stub for CXO data server.
-// The cxds is some kind of client of CX data server.
-// In future it will be replaced with real client.
-// API of this package close to goal and can be used
+// Package cxds implements cxo/data.CXDS
+// interface. E.g. the package provides data
+// store for CXO. The data store is key value
+// stroe, in which the key is SHA256 hash of
+// value. And every value has references
+// counter (rc). The counter set outside the
+// CXDS. The rc is number references to an
+// object. The CXDS never remove objects
+// with zero-rc.
 package cxds
 
 import (
@@ -11,6 +16,7 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
+// Version of the CXDS API and data representation
 const Version int = 2 // previous is 1
 
 // comon errors

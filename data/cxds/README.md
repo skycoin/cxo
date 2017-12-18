@@ -17,7 +17,7 @@ Schema is simple
 hash - > {rc, object}
 ```
 
-Where the `hash` is SHA256 hash of the object. The obejct is any non-blank
+Where the `hash` is SHA256 hash of the object. The object is any non-blank
 `[]byte`. And the `rc` is references counter. The `rc` is number of other
 objects that point to this one
 

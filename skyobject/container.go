@@ -67,7 +67,7 @@ func NewContainer(conf *Config) (c *Container, err error) {
 		}
 	}()
 
-	// check size of obejcts
+	// check size of objects
 	if err = c.checkSize(); err != nil {
 		return
 	}
@@ -252,8 +252,8 @@ func (c *Container) DB() (db *data.DB) {
 }
 
 // Walk walks throug given Root calling given
-// walkFunc for every obejct of the Root including
-// hash of the Root and Regsitry (depending on the
+// walkFunc for every object of the Root including
+// hash of the Root and Registry (depending on the
 // deepper reply of the WalkFunc).
 //
 // The Walk obtains objects of the Root from DB

@@ -141,7 +141,7 @@ func walkArray(
 		// any invalid Schema shuld not break CXO, since
 		// we are not trusting remote nodes, even if they
 		// sign their objects; any attacker can provide
-		// invalid signed Regsitry to brak every nodes;
+		// invalid signed Registry to brak every nodes;
 		// but we just return the error
 		return fmt.Errorf("Schema of element of array %q is nil", sch)
 	}

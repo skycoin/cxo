@@ -84,8 +84,8 @@ type Roots interface {
 	// iteration. The Descend doesn't update access time
 	Descend(iterateFunc IterateRootsFunc) (err error)
 
-	// Set adds new Root obejct to the DB. If an
-	// obejct already exists, then the Set touch
+	// Set adds new Root object to the DB. If an
+	// object already exists, then the Set touch
 	// it updating acess time. In this case, the
 	// set changes Access field of the gvien Root.
 	// If Root doesn't exist, then the Set sets

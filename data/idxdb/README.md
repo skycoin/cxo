@@ -18,4 +18,4 @@ feed -> [ head -> [ root, ...], ... ]
 ```
 
 Key for a feed is public key. Key for a head is nonce (`uint64`). And all
-root obejcts sorted by seq number (the seq is key).
+root objects sorted by seq number (the seq is key).

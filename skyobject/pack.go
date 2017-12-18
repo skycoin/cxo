@@ -43,7 +43,7 @@ func (p *Pack) Add(val []byte) (key cipher.SHA256, err error) {
 	return
 }
 
-// Dgree of the Pack
+// Degree of the Pack
 func (p *Pack) Degree() registry.Degree {
 	return p.deg
 }

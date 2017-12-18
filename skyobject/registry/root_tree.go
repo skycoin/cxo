@@ -562,7 +562,7 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it gotree.GTStructure) {
 	}
 
 	if err = encoder.DeserializeRaw(val, &refs); err != nil {
-		it.Name = fmt.Sprintf("[]*(%s) %s err: %s", el.String(), err.Error())
+		it.Name = fmt.Sprintf("[]*(-----) %s err: %s", el.String(), err.Error())
 		return
 	}
 

@@ -14,9 +14,9 @@ var (
 	ErrTerminated       = errors.New("terminated")
 )
 
-// ObejctIsTooLargeError represents error that
-// occurs when an obejct exceed max obejct size
-// limit. The error contians hash of the obejct
+// ObjectIsTooLargeError represents error that
+// occurs when an object exceed max object size
+// limit. The error contains hash of the object
 type ObjectIsTooLargeError struct {
 	hash cipher.SHA256
 }

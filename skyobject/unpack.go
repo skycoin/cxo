@@ -79,7 +79,8 @@ func (c *Container) Unpack(
 ) {
 
 	if reg == nil {
-		err = errors.New("regsitry is nil")
+		err = errors.New("Registry is nil")
+		return
 	}
 
 	if err = sk.Verify(); err != nil {
@@ -162,7 +163,7 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 
 			// here we reduce the ui.inc; if end-user saves an
 			// object many times (or the object saved by Refs
-			// modifications, for exmaple if it's hash of
+			// modifications, for example if it's hash of
 			// node of the Refs), then the inc will be greater
 			// then one
 			//
@@ -229,7 +230,7 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 			return
 		}
 
-		// leave the CXDS broken if an error occured
+		// leave the CXDS broken if an error occurred
 
 	}
 
@@ -271,6 +272,10 @@ func (i *Index) saveRoot(
 			lastHash = dr.Hash
 			return data.ErrStopIteration // enough
 		})
+
+		if err != nil {
+			return
+		}
 
 		if lastHash != (cipher.SHA256{}) {
 			r.Seq = lastSeq + 1

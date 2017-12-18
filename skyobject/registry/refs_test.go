@@ -453,7 +453,7 @@ func TestRefs_Len(t *testing.T) {
 				if ln, err = refs.Len(pack); err != nil {
 					t.Fatal(err)
 				} else if ln != length {
-					t.Error("wrong length: want %d, got %d", length, ln)
+					t.Errorf("wrong length: want %d, got %d", length, ln)
 				}
 
 			}
@@ -475,7 +475,7 @@ func TestRefs_Len(t *testing.T) {
 				if ln, err = refs.Len(pack); err != nil {
 					t.Fatal(err)
 				} else if ln != length {
-					t.Error("wrong length: want %d, got %d", length, ln)
+					t.Errorf("wrong length: want %d, got %d", length, ln)
 				}
 
 			}
@@ -500,7 +500,7 @@ func TestRefs_Len(t *testing.T) {
 				if ln, err = refs.Len(pack); err != nil {
 					t.Fatal(err)
 				} else if ln != length {
-					t.Error("wrong length: want %d, got %d", length, ln)
+					t.Errorf("wrong length: want %d, got %d", length, ln)
 				}
 
 			}
@@ -622,7 +622,7 @@ func TestRefs_Depth(t *testing.T) {
 				if dp, err = refs.Depth(pack); err != nil {
 					t.Fatal(err)
 				} else if dp-1 != depth {
-					t.Error("wrong depth: want %d, got %d", depth, dp)
+					t.Errorf("wrong depth: want %d, got %d", depth, dp)
 				}
 
 			}
@@ -644,7 +644,7 @@ func TestRefs_Depth(t *testing.T) {
 				if dp, err = refs.Depth(pack); err != nil {
 					t.Fatal(err)
 				} else if dp-1 != depth {
-					t.Error("wrong depth: want %d, got %d", depth, dp)
+					t.Errorf("wrong depth: want %d, got %d", depth, dp)
 				}
 
 			}
@@ -669,7 +669,7 @@ func TestRefs_Depth(t *testing.T) {
 				if dp, err = refs.Depth(pack); err != nil {
 					t.Fatal(err)
 				} else if dp-1 != depth {
-					t.Error("wrong depth: want %d, got %d", depth, dp)
+					t.Errorf("wrong depth: want %d, got %d", depth, dp)
 				}
 
 			}
@@ -821,7 +821,7 @@ func TestRefs_Degree(t *testing.T) {
 					if dg, err = refs.Degree(pack); err != nil {
 						t.Fatal(err)
 					} else if dg != degree {
-						t.Error("wrong degree: want %d, got %d", degree, dg)
+						t.Errorf("wrong degree: want %d, got %d", degree, dg)
 					}
 
 				}
@@ -843,7 +843,7 @@ func TestRefs_Degree(t *testing.T) {
 					if dg, err = refs.Degree(pack); err != nil {
 						t.Fatal(err)
 					} else if dg != degree {
-						t.Error("wrong degree: want %d, got %d", degree, dg)
+						t.Errorf("wrong degree: want %d, got %d", degree, dg)
 					}
 
 				}
@@ -869,7 +869,7 @@ func TestRefs_Degree(t *testing.T) {
 						if dg, err = refs.Degree(pack); err != nil {
 							t.Fatal(err)
 						} else if dg != degree {
-							t.Error("wrong degree: want %d, got %d", degree, dg)
+							t.Errorf("wrong degree: want %d, got %d", degree, dg)
 						}
 
 					}
@@ -1698,7 +1698,7 @@ func testRefsHashByIndex(
 			if h, err = r.HashByIndex(pack, i); err != nil {
 				t.Error(err)
 			} else if h != hash {
-				t.Error("wrong hash of %d: wnat %s, got %s",
+				t.Errorf("wrong hash of %d: want %s, got %s",
 					i,
 					hash.Hex()[:7],
 					h.Hex()[:7],
@@ -1833,7 +1833,7 @@ func TestRefs_HashByIndex(t *testing.T) {
 		if hash, err = refs.HashByIndex(pack, 2); err != nil {
 			t.Error(err)
 		} else if hash != (cipher.SHA256{}) {
-			t.Errorf("wrong hash: want blank, got %d", hash.Hex()[:7])
+			t.Errorf("wrong hash: want blank, got %s", hash.Hex()[:7])
 		}
 
 	})
@@ -1864,7 +1864,7 @@ func testRefsSetHashByIndexOutOfRange(
 	if err = r.SetHashByIndex(pack, i, hash); err == nil {
 		t.Error("missing error")
 	} else if err != ErrIndexOutOfRange {
-		t.Error("wrong error %q, want %q", ErrIndexOutOfRange)
+		t.Errorf("wrong error %q, want %q", err, ErrIndexOutOfRange)
 	}
 
 }
@@ -1891,7 +1891,8 @@ func testRefsSetHashByIndex(
 	} else if h, err = r.HashByIndex(pack, i); err != nil {
 		t.Error(err)
 	} else if h != hash {
-		t.Error("wrong hash of %d: %s, want %s", i, h.Hex()[:7], hash.Hex()[:7])
+		t.Errorf("wrong hash of %d: %s, want %s", i, h.Hex()[:7],
+			hash.Hex()[:7])
 	} else if r.flags&HashTableIndex != 0 {
 		if r.refsIndex == nil {
 			t.Error("hash-table index is nil")
@@ -2034,7 +2035,7 @@ func testRefsDeleteByIndexOutOfRange(
 	if err = r.DeleteByIndex(pack, i); err == nil {
 		t.Error("missing error")
 	} else if err != ErrIndexOutOfRange {
-		t.Error("wrong error %q, want %q", ErrIndexOutOfRange)
+		t.Errorf("wrong error %q, want %q", err, ErrIndexOutOfRange)
 	}
 
 }

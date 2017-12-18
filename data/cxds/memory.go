@@ -217,7 +217,7 @@ func (m *memoryCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 	return
 }
 
-// amoutn of obejcts
+// amoutn of objects
 func (m *memoryCXDS) Amount() (all, used int) {
 	return m.amountAll, m.amountUsed
 }

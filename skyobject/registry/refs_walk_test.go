@@ -41,7 +41,7 @@ func TestRefs_Walk(t *testing.T) {
 
 				t.Run("blank", func(t *testing.T) {
 
-					var isInitialized bool = isRefsInitialized(&r)
+					var isInitialized = isRefsInitialized(&r)
 					var called int
 
 					err = r.Walk(pack,

@@ -16,6 +16,7 @@ import (
 // that is obvious
 type CachePolicy int
 
+// cache policies
 const (
 	LRU CachePolicy = iota // LRU cache
 	LFU                    // LFU cache
@@ -32,7 +33,7 @@ func (c CachePolicy) String() string {
 	return fmt.Sprintf("CachePolicy<%d>", c)
 }
 
-// An obejct represents DB object
+// An Object represents DB object
 // that is []byte, its hash and
 // references counter
 type Object struct {
@@ -412,7 +413,7 @@ func (c *Cache) cleanDown(vol int) (err error) {
 		}
 
 		// and if, after the cleaning, the cache has
-		// enouth palce to fit new item, we are done
+		// enouth place to fit new item, we are done
 
 		if c.volume+vol <= c.maxVolume {
 			return // done
@@ -547,7 +548,7 @@ func (c *Cache) get(
 // Get returns value and new references counter. The Get can returns
 // an error that doen'r relate to given element. Putting element to
 // the Cache the Get can clean up cache to free space, syncing
-// wiht DB. In this case if the synching fails, the Get can returns
+// with DB. In this case if the synching fails, the Get can returns
 // valid value and rc and some error. Anyway, any DB failure should be
 // fatal. E.g. all errors except data.ErrNotFound means that data
 // in the DB can be lost
@@ -828,7 +829,7 @@ func (c *Cache) Unwant(
 	delete(it.fwant, gc)
 }
 
-// SetIfWanted perfroms Set if vlaue with
+// SetIfWanted performs Set if vlaue with
 // given key is wanted. The SetIfWanted used
 // by node for filling
 func (c *Cache) SetIfWanted(
@@ -846,7 +847,7 @@ func (c *Cache) SetIfWanted(
 	var it, ok = c.c[key]
 
 	if ok == false {
-		return // is not wnated
+		return // is not wanted
 	}
 
 	if it.isWanted() == false {

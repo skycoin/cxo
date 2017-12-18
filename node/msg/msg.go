@@ -51,7 +51,7 @@ var (
 
 	_ Msg = &Root{} // <- Root (feed, nonce, seq, sig, val)
 
-	// obejcts
+	// objects
 
 	_ Msg = &RqObject{} // <- RqO (key, prefetch)
 	_ Msg = &Object{}   // -> O   (val, vals)
@@ -81,7 +81,7 @@ type Ping struct{}
 // Type implements Msg interface
 func (*Ping) Type() Type { return PingType }
 
-// Ecnode the Ping
+// Encode the Ping
 func (*Ping) Encode() []byte {
 	return []byte{
 		byte(PingType),
@@ -94,7 +94,7 @@ type Pong struct{}
 // Type implements Msg interface
 func (*Pong) Type() Type { return PongType }
 
-// Ecnode the Pong
+// Encode the Pong
 func (*Pong) Encode() []byte {
 	return []byte{
 		byte(PongType),
@@ -114,7 +114,7 @@ type Syn struct {
 // Type implements Msg interface
 func (*Syn) Type() Type { return SynType }
 
-// Ecnode the Syn
+// Encode the Syn
 func (s *Syn) Encode() []byte { return encode(s) }
 
 // An Ack is response for the Syn
@@ -127,7 +127,7 @@ type Ack struct {
 // Type implements Msg interface
 func (*Ack) Type() Type { return AckType }
 
-// Ecnode the Ack
+// Encode the Ack
 func (a *Ack) Encode() []byte { return encode(a) }
 
 //
@@ -140,7 +140,7 @@ type Ok struct{}
 // Type implements Msg interface
 func (*Ok) Type() Type { return OkType }
 
-// Ecnode the Ok
+// Encode the Ok
 func (*Ok) Encode() []byte {
 	return []byte{
 		byte(OkType),
@@ -155,7 +155,7 @@ type Err struct {
 // Type implements Msg interface
 func (*Err) Type() Type { return ErrType }
 
-// Ecnode the Err
+// Encode the Err
 func (e *Err) Encode() []byte { return encode(e) }
 
 //
@@ -170,7 +170,7 @@ type Sub struct {
 // Type implements Msg interface
 func (*Sub) Type() Type { return SubType }
 
-// Ecnode the Sub
+// Encode the Sub
 func (s *Sub) Encode() []byte {
 	return append(
 		[]byte{
@@ -189,7 +189,7 @@ type Unsub struct {
 // Type implements Msg interface
 func (*Unsub) Type() Type { return UnsubType }
 
-// Ecnode the Unsub
+// Encode the Unsub
 func (u *Unsub) Encode() []byte {
 	return append(
 		[]byte{
@@ -209,7 +209,7 @@ type RqList struct{}
 // Type implements Msg interface
 func (*RqList) Type() Type { return RqListType }
 
-// Ecnode the RqList
+// Encode the RqList
 func (*RqList) Encode() []byte {
 	return []byte{
 		byte(RqListType),
@@ -224,7 +224,7 @@ type List struct {
 // Type implements Msg interface
 func (*List) Type() Type { return ListType }
 
-// Ecnode the List
+// Encode the List
 func (l *List) Encode() []byte { return encode(l) }
 
 //
@@ -247,7 +247,7 @@ type Root struct {
 // Type implements Msg interface
 func (*Root) Type() Type { return RootType }
 
-// Ecnode the Root
+// Encode the Root
 func (r *Root) Encode() []byte { return encode(r) }
 
 //
@@ -262,7 +262,7 @@ type RqObject struct {
 // Type implements Msg interface
 func (*RqObject) Type() Type { return RqObjectType }
 
-// Ecnode the RqObject
+// Encode the RqObject
 func (r *RqObject) Encode() []byte { return encode(r) }
 
 // An Object reperesents encoded object
@@ -273,14 +273,14 @@ type Object struct {
 // Type implements Msg interface
 func (*Object) Type() Type { return ObjectType }
 
-// Ecnode the Object
+// Encode the Object
 func (o *Object) Encode() []byte { return encode(o) }
 
 //
 // preview
 //
 
-// RqReview is request for feeds preview
+// RqPreview is request for feeds preview
 type RqPreview struct {
 	Feed cipher.PubKey
 }
@@ -288,7 +288,7 @@ type RqPreview struct {
 // Type implements Msg interface
 func (*RqPreview) Type() Type { return RqPreviewType }
 
-// Ecnode the RqPreview
+// Encode the RqPreview
 func (r *RqPreview) Encode() []byte { return encode(r) }
 
 //

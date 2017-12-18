@@ -51,7 +51,7 @@ func NewRPCClient(address string) (rc *RPCClient, err error) {
 	return
 }
 
-// An RPCCLientNode implements RPC
+// An RPCClientNode implements RPC
 // methods related to the Node
 type RPCClientNode struct {
 	r *RPCClient
@@ -62,25 +62,30 @@ func (r *RPCClientNode) Share(pk cipher.PubKey) (err error) {
 	return r.r.c.Call("node.Share", pk, &struct{}{})
 }
 
+// DontShare given feed
 func (r *RPCClientNode) DontShare(pk cipher.PubKey) (err error) {
 	return r.r.c.Call("node.DontShare", pk, &struct{}{})
 }
 
+// Feeds that the Node is shareing
 func (r *RPCClientNode) Feeds() (fs []cipher.PubKey, err error) {
 	err = r.r.c.Call("node.Feeds", struct{}{}, &fs)
 	return
 }
 
+// IsSharing a feed or not
 func (r *RPCClientNode) IsSharing(pk cipher.PubKey) (yep bool, err error) {
 	err = r.r.c.Call("node.IsSharing", struct{}{}, &yep)
 	return
 }
 
+// Connections of the Node
 func (r *RPCClientNode) Connections() (cs []string, err error) {
 	err = r.r.c.Call("node.Connections", struct{}{}, &cs)
 	return
 }
 
+// Config of the Node
 func (r *RPCClientNode) Config() (config *Config, err error) {
 	var c Config
 	if err = r.r.c.Call("node.Config", struct{}{}, &c); err != nil {
@@ -89,6 +94,7 @@ func (r *RPCClientNode) Config() (config *Config, err error) {
 	return &c, nil
 }
 
+// Stat obtains statistic of the Node
 func (r *RPCClientNode) Stat() (stat *Stat, err error) {
 	var s Stat
 	if err = r.r.c.Call("node.Stat", struct{}{}, &s); err != nil {
@@ -103,18 +109,22 @@ type RPCClientTCP struct {
 	r *RPCClient
 }
 
+// Connect to given TCP address
 func (r *RPCClientTCP) Connect(address string) (err error) {
 	return r.r.c.Call("tcp.Connect", address, &struct{}{})
 }
 
+// Disconnect from peer
 func (r *RPCClientTCP) Disconnect(address string) (err error) {
 	return r.r.c.Call("tcp.Disconnect", address, &struct{}{})
 }
 
+// Subscribe to feed of peer
 func (r *RPCClientTCP) Subscribe(address string, pk cipher.PubKey) (err error) {
 	return r.r.c.Call("tcp.Subscribe", ConnFeed{address, pk}, &struct{}{})
 }
 
+// Unsubscribe from feed of peer
 func (r *RPCClientTCP) Unsubscribe(
 	address string,
 	pk cipher.PubKey,
@@ -124,6 +134,7 @@ func (r *RPCClientTCP) Unsubscribe(
 	return r.r.c.Call("tcp.Unsubscribe", ConnFeed{address, pk}, &struct{}{})
 }
 
+// RemoteFeeds of peer
 func (r *RPCClientTCP) RemoteFeeds(
 	address string, //      :
 ) (
@@ -134,6 +145,7 @@ func (r *RPCClientTCP) RemoteFeeds(
 	return
 }
 
+// Address of TCP listener
 func (r *RPCClientTCP) Address() (address string, err error) {
 	err = r.r.c.Call("tcp.Address", struct{}{}, &address)
 	return
@@ -145,18 +157,22 @@ type RPCClientUDP struct {
 	r *RPCClient
 }
 
+// Connect to peer
 func (r *RPCClientUDP) Connect(address string) (err error) {
 	return r.r.c.Call("udp.Connect", address, &struct{}{})
 }
 
+// Disconnect from peer
 func (r *RPCClientUDP) Disconnect(address string) (err error) {
 	return r.r.c.Call("udp.Disconnect", address, &struct{}{})
 }
 
+// Subscribe to feed of peer
 func (r *RPCClientUDP) Subscribe(address string, pk cipher.PubKey) (err error) {
 	return r.r.c.Call("udp.Subscribe", ConnFeed{address, pk}, &struct{}{})
 }
 
+// Unsubscribe from feed of peer
 func (r *RPCClientUDP) Unsubscribe(
 	address string,
 	pk cipher.PubKey,
@@ -166,6 +182,7 @@ func (r *RPCClientUDP) Unsubscribe(
 	return r.r.c.Call("udp.Unsubscribe", ConnFeed{address, pk}, &struct{}{})
 }
 
+// RemoteFeeds of peer
 func (r *RPCClientUDP) RemoteFeeds(
 	address string, //      :
 ) (
@@ -176,6 +193,7 @@ func (r *RPCClientUDP) RemoteFeeds(
 	return
 }
 
+// Address of UDP listener
 func (r *RPCClientUDP) Address() (address string, err error) {
 	err = r.r.c.Call("udp.Address", struct{}{}, &address)
 	return
@@ -187,6 +205,7 @@ type RPCClientRoot struct {
 	r *RPCClient
 }
 
+// Show breif information of Root object
 func (r *RPCClientRoot) Show(
 	feed cipher.PubKey,
 	nonce uint64,
@@ -204,6 +223,7 @@ func (r *RPCClientRoot) Show(
 	return &x, nil
 }
 
+// Tree of Root object
 func (r *RPCClientRoot) Tree(
 	feed cipher.PubKey,
 	nonce uint64,
@@ -216,6 +236,7 @@ func (r *RPCClientRoot) Tree(
 	return
 }
 
+// Last Root object
 func (r *RPCClientRoot) Last(
 	feed cipher.PubKey,
 ) (

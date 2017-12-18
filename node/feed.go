@@ -63,7 +63,7 @@ func (n *nodeFeed) receivedRoot(cr connRoot) {
 		// max heads limit
 		if mh := n.node().config.MaxHeads; mh > 0 && len(n.ho) == mh {
 
-			// TOOD (kostyarin): container/list or own doubly linked list ?
+			// TODO (kostyarin): container/list or own doubly linked list ?
 
 			// max heads
 			var torm = n.ho[0]             // to remove
