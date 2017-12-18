@@ -70,3 +70,36 @@ func (p *Pack) AddFlags(flags registry.Flags) {
 func (p *Pack) ClearFlags(flags registry.Flags) {
 	p.flags &^= flags
 }
+
+// Pack returns Pack that obtains values from DB. The
+// Pack implements Add and Set method, but using of the
+// methods creates objects in DB that never be removed.
+//
+// Use the Pack as read-only to avoid ownerless objects
+// in DB.
+//
+// To create objects updating (or creating) a Root see
+// Unpack and Save methods of the Container.
+//
+// The Pack can be used for Root.Tree and similar methods
+// that doesn't change anything in DB.
+//
+// If given Registry is nil, then the Pack method obtains
+// registry from DB
+func (c *Container) Pack(
+	r *registry.Root,
+	reg *registry.Registry,
+) (
+	p *Pack,
+	err error,
+) {
+
+	if reg == nil {
+		if reg, err = c.Registry(r.Reg); err != nil {
+			return
+		}
+	}
+
+	p = c.getPack(reg)
+	return
+}
