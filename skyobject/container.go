@@ -246,6 +246,11 @@ func (c *Container) checkSize() (err error) {
 
 }
 
+// DB of the Container.
+func (c *Container) DB() (db *data.DB) {
+	return c.db
+}
+
 // Walk walks throug given Root calling given
 // walkFunc for every obejct of the Root including
 // hash of the Root and Regsitry (depending on the
@@ -312,6 +317,7 @@ func (c *Container) rootByHash(
 	}
 
 	r, err = registry.DecodeRoot(val)
+	r.Hash = hash
 	return
 }
 

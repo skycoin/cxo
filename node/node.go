@@ -365,32 +365,19 @@ func (n *Node) onDisconenct(c *Conn, reason error) {
 
 }
 
-func (n *Node) acceptConnection(fc *factory.Connection, isTCP bool) {
+func (n *Node) acceptConnection(fc *factory.Connection) {
 
-	var c, err = n.wrapConnection(fc, true, isTCP)
+	n.Debugf(NewInConnPin, "[%s] accept",
+		connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
 
-	if err != nil {
+	if _, err := n.wrapConnection(fc, true); err != nil {
 
 		n.Printf("[ERR] [%s] handshake error: %v",
-			connString(true, isTCP, fc.GetRemoteAddr().String()),
+			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()),
 			err)
-
-	} else if n.Pins()&NewInConnPin != 0 {
-
-		n.Debug(NewInConnPin, "[%s] accept", c.String())
 
 	}
 
-}
-
-// callback
-func (n *Node) acceptTCPConnection(fc *factory.Connection) {
-	n.acceptConnection(fc, true)
-}
-
-// callback
-func (n *Node) acceptUDPConnection(fc *factory.Connection) {
-	n.acceptConnection(fc, false)
 }
 
 // delete from pending and close underlying
@@ -408,13 +395,15 @@ func (n *Node) delPendingConnClose(c *Conn) {
 func (n *Node) wrapConnection(
 	fc *factory.Connection, // :
 	isIncoming bool, //        :
-	isTCP bool, //             :
 ) (
 	c *Conn, //                :
 	err error, //              :
 ) {
 
-	c = n.newConnection(fc, true, true) // adds to pending
+	n.Debugf(ConnHskPin, "[%s] wrapConnection",
+		connString(isIncoming, fc.IsTCP(), fc.GetRemoteAddr().String()))
+
+	c = n.newConnection(fc, isIncoming) // adds to pending
 
 	// handshake
 	if err = c.handshake(n.clsoeq); err != nil {
@@ -431,7 +420,7 @@ func (n *Node) wrapConnection(
 
 	// add to transport if the connection is incoming
 	if isIncoming == true {
-		if isTCP == true {
+		if c.IsTCP() == true {
 			n.TCP().addAcceptedconnection(c)
 		} else {
 			n.UDP().addAcceptedconnection(c)

@@ -10,9 +10,9 @@ import (
 	discovery "github.com/skycoin/net/skycoin-messenger/factory"
 )
 
+//
 // TOOD (kostyarin): DRY
-
-type acceptConnectionCallback func(c *factory.Connection)
+//
 
 // A TCP represents TCP transport
 // of the Node. The TCP used to
@@ -41,7 +41,8 @@ func newTCP(n *Node) (t *TCP) {
 	t.TCPFactory = factory.NewTCPFactory()
 
 	t.n = n
-	t.AcceptedCallback = n.acceptTCPConnection
+	t.AcceptedCallback = n.acceptConnection
+	t.cs = make(map[string]*Conn)
 
 	return
 }
@@ -109,7 +110,7 @@ func (t *TCP) Connect(address string) (c *Conn, err error) {
 		return
 	}
 
-	if c, err = t.n.wrapConnection(fc, false, true); err != nil {
+	if c, err = t.n.wrapConnection(fc, false); err != nil {
 		return
 	}
 
@@ -307,7 +308,8 @@ func newUDP(n *Node) (u *UDP) {
 	u.UDPFactory = factory.NewUDPFactory()
 
 	u.n = n
-	u.AcceptedCallback = n.acceptUDPConnection
+	u.AcceptedCallback = n.acceptConnection
+	u.cs = make(map[string]*Conn)
 
 	return
 }
@@ -375,7 +377,7 @@ func (u *UDP) Connect(address string) (c *Conn, err error) {
 		return
 	}
 
-	if c, err = u.n.wrapConnection(fc, false, true); err != nil {
+	if c, err = u.n.wrapConnection(fc, false); err != nil {
 		return
 	}
 

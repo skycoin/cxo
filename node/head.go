@@ -452,6 +452,9 @@ func (f *fillHead) node() *Node {
 func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 	defer f.await.Done()
 
+	f.node().Debugf(FillPin, "request from [%s] %d %s", c.String(), seq,
+		key.Hex()[:7])
+
 	var reply, err = c.sendRequest(&msg.RqObject{key})
 
 	if err != nil {
@@ -468,7 +471,8 @@ func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 			return
 		}
 
-		if _, err := f.node().c.SetIfWanted(key, x.Value, 1); err != nil {
+		// incremented by the Want call(s)
+		if _, err := f.node().c.SetIfWanted(key, x.Value, 0); err != nil {
 			f.node().Fatal("DB failure:", err)
 			return
 		}

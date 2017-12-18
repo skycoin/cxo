@@ -251,6 +251,7 @@ func (i *Index) findRoot(
 // field of the Root to true if DB already have
 // this Root
 func (i *Index) ReceivedRoot(
+	pk cipher.PubKey,
 	sig cipher.Sig,
 	val []byte,
 ) (
@@ -262,7 +263,7 @@ func (i *Index) ReceivedRoot(
 	defer i.mx.Unlock()
 
 	var hash = cipher.SumSHA256(val)
-	if err = cipher.VerifySignature(r.Pub, sig, hash); err != nil {
+	if err = cipher.VerifySignature(pk, sig, hash); err != nil {
 		return
 	}
 
@@ -375,6 +376,27 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 
 	return
 
+}
+
+func (i *Index) addSavedRoot(r *registry.Root, dr *data.Root) {
+
+	// add to the Index
+
+	var hs = i.feeds[r.Pub]
+
+	// replace the last
+
+	hs.h[r.Nonce] = dr
+
+	if hs.activet < r.Time {
+		hs.activet = r.Time
+		hs.activen = r.Nonce
+	}
+
+	// add to stat
+	i.stat.addRoot()
+
+	return
 }
 
 // AddRoot to DB. The method doesn't create feed of the root
@@ -496,7 +518,10 @@ func (i *Index) LastRoot(
 		return
 	}
 
-	r, err = i.c.RootByHash(lr.Hash)
+	r, err = i.c.rootByHash(lr.Hash)
+
+	r.IsFull = true
+	r.Sig = lr.Sig
 	return
 }
 

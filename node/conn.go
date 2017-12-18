@@ -50,7 +50,6 @@ type Conn struct {
 func (n *Node) newConnection(
 	fc *factory.Connection,
 	isIncoming bool,
-	isTCP bool,
 ) (
 	c *Conn,
 ) {
@@ -141,9 +140,9 @@ func (c *Conn) Feeds() (feeds []cipher.PubKey) {
 func connString(isIncoming, isTCP bool, addr string) (s string) {
 
 	if isIncoming == true {
-		s = "-> "
+		s = "↓ "
 	} else {
-		s = "<- "
+		s = "↑ "
 	}
 
 	if isTCP == true {
@@ -213,10 +212,18 @@ func (c *Conn) sendRoot(r *registry.Root) {
 // send last Root to peer
 func (c *Conn) sendLastRoot(pk cipher.PubKey) {
 
-	// ignore error
-	if r, _ := c.n.c.LastRoot(pk, c.n.c.ActiveHead(pk)); r != nil {
+	var (
+		activeHead = c.n.c.ActiveHead(pk)
+		r, err     = c.n.c.LastRoot(pk, activeHead)
+	)
+
+	if err == nil {
 		c.sendRoot(r)
+		return
 	}
+
+	c.n.Debugf(MsgSendPin, "[%s] sendLastRoot %s: no Root objects found (%d)",
+		c.String(), pk.Hex()[:7], activeHead)
 
 }
 
@@ -243,7 +250,7 @@ func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
 	switch x := reply.(type) {
 
 	case *msg.Ok:
-		// success
+	// success
 
 	case *msg.Err:
 		err = errors.New(x.Err)
@@ -306,7 +313,7 @@ func (c *Conn) Preview(
 	case *msg.Err:
 		return errors.New("error: " + x.Err)
 	case *msg.Root:
-		if r, err = c.n.c.ReceivedRoot(x.Sig, x.Value); err != nil {
+		if r, err = c.n.c.ReceivedRoot(x.Feed, x.Sig, x.Value); err != nil {
 			return
 		}
 	default:
@@ -390,7 +397,7 @@ func (c *Conn) encodeMsg(seq, rseq uint32, m msg.Msg) (raw []byte) {
 	raw = make([]byte, 8, 8+len(em))
 
 	binary.LittleEndian.PutUint32(raw, seq)
-	binary.LittleEndian.PutUint32(raw[:4], rseq)
+	binary.LittleEndian.PutUint32(raw[4:], rseq)
 
 	raw = append(raw, em...)
 
@@ -399,6 +406,9 @@ func (c *Conn) encodeMsg(seq, rseq uint32, m msg.Msg) (raw []byte) {
 }
 
 func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) {
+
+	c.n.Debugf(MsgSendPin, "[%s] send %d %T", c.String(), rseq, m)
+
 	c.sendRaw(c.encodeMsg(seq, rseq, m))
 }
 
@@ -421,6 +431,8 @@ func (c *Conn) fatality(args ...interface{}) {
 
 func (c *Conn) receiving() {
 
+	c.n.Debugf(ConnPin, "[%s] receiving", c.String())
+
 	defer c.await.Done()
 
 	var (
@@ -442,7 +454,7 @@ func (c *Conn) receiving() {
 		case raw, ok = <-receiveq:
 
 			if ok == false {
-				return
+				return // closed
 			}
 
 			// [ 4 seq ][ 4 rseq ][ 1 msg type ]
@@ -464,6 +476,8 @@ func (c *Conn) receiving() {
 				c.fatality("can't decode received messege: ", err)
 				return
 			}
+
+			c.n.Debugf(MsgReceivePin, "[%s] receive %T", c.String(), m)
 
 			// the messege can be a response for a request
 			if rq, ok := c.isResponse(rseq); ok == true {
@@ -507,21 +521,25 @@ func (c *Conn) delRequest(seq uint32) {
 	delete(c.reqs, seq)
 }
 
-func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
-
-	var (
-		rt time.Duration
-		tr *time.Timer
-		tc <-chan time.Time
-	)
-
+func (c *Conn) responseTimeout() (rt time.Duration) {
 	if c.IsTCP() == true {
 		rt = c.n.config.TCP.ResponseTimeout
 	} else {
 		rt = c.n.config.UDP.ResponseTimeout
 	}
+	return
+}
 
-	if rt > 0 {
+func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
+
+	c.n.Debugf(MsgSendPin, "[%s] sendRequest %T", c.String(), m)
+
+	var (
+		tr *time.Timer
+		tc <-chan time.Time
+	)
+
+	if rt := c.responseTimeout(); rt > 0 {
 		tr = time.NewTimer(rt)
 		tc = tr.C
 
@@ -529,7 +547,7 @@ func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
 	}
 
 	var (
-		rq  = make(chan msg.Msg)
+		rq  = make(chan msg.Msg, 1)
 		seq = c.nextSeq()
 	)
 
@@ -539,7 +557,7 @@ func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
 	c.sendMsg(seq, 0, m)
 
 	select {
-	case rq <- reply:
+	case reply = <-rq:
 		return
 
 	case <-tc:
@@ -621,6 +639,9 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 // subscribe (with reply)
 func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 
+	c.n.Debugf(MsgReceivePin, "[%s] handleSub %s",
+		c.String(), sub.Feed.Hex()[:7])
+
 	// don't allow blank
 
 	if sub.Feed == (cipher.PubKey{}) {
@@ -656,11 +677,16 @@ func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 	c.n.fs.addConnFeed(c, sub.Feed)
 	c.sendOk(seq)
 
+	c.sendLastRoot(sub.Feed) // and push last Root
+
 	return
 }
 
 // unsubscribe (no reply)
 func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (err error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleUnsub %s",
+		c.String(), unsub.Feed.Hex()[:7])
 
 	if unsub.Feed == (cipher.PubKey{}) {
 		return errors.New("invalid request Unsub blank feed") // fatal
@@ -672,6 +698,8 @@ func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (err error) {
 
 // request list of feeds
 func (c *Conn) handleRqList(seq uint32, rq *msg.RqList) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqList", c.String())
 
 	if c.n.config.Public == false {
 		c.sendErr(seq, ErrNotPublic)
@@ -687,6 +715,9 @@ func (c *Conn) handleRqList(seq uint32, rq *msg.RqList) (_ error) {
 
 // got Root (preview Root objects are handled by request-responnse, not here)
 func (c *Conn) handleRoot(root *msg.Root) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRoot %s/%d/%d",
+		c.String(), root.Feed.Hex()[:7], root.Nonce, root.Seq)
 
 	// check seq first (avoid verify-signature for old unwanted Root obejcts)
 
@@ -711,7 +742,9 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 
 	var r *registry.Root
 
-	if r, err = c.n.c.ReceivedRoot(root.Sig, root.Value); err != nil {
+	r, err = c.n.c.ReceivedRoot(root.Feed, root.Sig, root.Value)
+
+	if err != nil {
 		c.n.Printf("[ERR] [%s] received Root error: %s", c.String(), err)
 		return // keep connection ?
 	}
@@ -731,6 +764,9 @@ func (c *Conn) handleRoot(root *msg.Root) (_ error) {
 func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 	defer c.await.Done()
 
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqObject %s", c.String(),
+		rq.Key.Hex()[:7])
+
 	var (
 		gc = make(chan skyobject.Object, 1)
 
@@ -745,7 +781,7 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 	// TODO (kostyarin): get the object or subscribe for the object
 	//                   only if it is wanted (to think)
 
-	if err := c.n.c.Want(rq.Key, gc); err != nil {
+	if err := c.n.c.Want(rq.Key, gc, 0); err != nil {
 		c.n.Fatal("DB failure: ", err)
 	}
 	defer c.n.c.Unwant(rq.Key, gc) // to be memory safe
@@ -759,15 +795,7 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 		// wait
 	}
 
-	var rt time.Duration
-
-	if c.IsTCP() == true {
-		rt = c.n.config.TCP.ResponseTimeout
-	} else {
-		rt = c.n.config.UDP.ResponseTimeout
-	}
-
-	if rt > 0 {
+	if rt := c.responseTimeout(); rt > 0 {
 		tm = time.NewTimer(rt)
 		tc = tm.C
 
@@ -778,7 +806,7 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 	case obj := <-gc:
 		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
 	case <-tc:
-		c.sendMsg(c.nextSeq(), seq, &msg.Err{}) // timeout
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{ErrTimeout.Error()}) // timeout
 	case <-c.closeq:
 		// closed
 	}
@@ -787,6 +815,9 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 }
 
 func (c *Conn) handleRqPreview(seq uint32, rqp *msg.RqPreview) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqPreview %s", c.String(),
+		rqp.Feed.Hex()[:7])
 
 	var r, err = c.n.c.LastRoot(rqp.Feed, c.n.c.ActiveHead(rqp.Feed))
 

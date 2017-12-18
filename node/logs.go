@@ -12,6 +12,7 @@ const (
 	NewInConnPin  log.Pin = 1 << iota // new incoming connection
 	NewOutConnPin                     // new outgoing connection
 
+	ConnHskPin   // handshake logs
 	ConnEstPin   // connection established
 	CloseConnPin // connection closed (except ERR logs)
 
@@ -22,7 +23,7 @@ const (
 
 	// filling
 
-	// ...
+	FillPin //
 
 	// discovery
 
@@ -31,6 +32,6 @@ const (
 	// joiners
 
 	MsgPin  = MsgSendPin | MsgReceivePin // send/receive
-	ConnPin = NewInConnPin | NewOutConnPin | ConnEstPin |
+	ConnPin = NewInConnPin | NewOutConnPin | ConnEstPin | ConnHskPin |
 		CloseConnPin // connections
 )

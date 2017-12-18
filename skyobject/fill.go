@@ -54,10 +54,12 @@ func (f *Filler) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
 		fatal("DB failure:", err) // fatality
 	}
 
+	err = nil // clear if it's data.ErrNotFound
+
 	// not found
 	var gc = make(chan Object, 1) // wait for the object
 
-	f.c.Want(key, gc)
+	f.c.Want(key, gc, 1)
 	defer f.c.Unwant(key, gc) // to be memory safe
 
 	// requset the object using the rq channel
@@ -145,8 +147,9 @@ func (c *Container) Fill(
 
 func (f *Filler) remove() {
 	for key, inc := range f.incs {
-		f.c.db.CXDS().Inc(key, -inc) // ignore error
-
+		if _, err := f.c.db.CXDS().Inc(key, -inc); err != nil {
+			panic("DB failure: " + err.Error())
+		}
 		// TOOD (kostyarin): handle error
 	}
 }
@@ -221,7 +224,12 @@ func (f *Filler) Run() (err error) {
 	}
 
 	for _, dr := range f.r.Refs {
-		f.Go(func() { dr.Split(f) })
+
+		// the closure is data-race protection
+		func(dr registry.Dynamic) {
+			f.Go(func() { dr.Split(f) })
+		}(dr)
+
 	}
 
 	var done = make(chan struct{})
@@ -251,6 +259,7 @@ func (f *Filler) getRegistry() (err error) {
 			return // DB failure or malformed encoded Registry
 		}
 
+		// incrementing
 		if _, _, err = f.Get(cipher.SHA256(f.r.Reg)); err != nil {
 			return
 		}
@@ -261,5 +270,4 @@ func (f *Filler) getRegistry() (err error) {
 	f.reg = reg
 
 	return
-
 }

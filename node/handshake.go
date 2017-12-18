@@ -10,6 +10,8 @@ import (
 
 func (c *Conn) handshake(nodeCloseq <-chan struct{}) (err error) {
 
+	c.n.Debugf(ConnHskPin, "[%s] handshake", c.String())
+
 	if c.incoming == true {
 		return c.acceptHandshake(nodeCloseq)
 	}
@@ -35,6 +37,8 @@ func (c *Conn) sendNodeCloseq(
 }
 
 func (c *Conn) performHandshake(nodeCloseq <-chan struct{}) (err error) {
+
+	c.n.Debugf(ConnHskPin, "[%s] performHandshake", c.String())
 
 	// (1) send Syn
 	// (2) receive Ack or Err
@@ -125,6 +129,8 @@ func (c *Conn) performHandshake(nodeCloseq <-chan struct{}) (err error) {
 }
 
 func (c *Conn) acceptHandshake(nodeCloseq <-chan struct{}) (err error) {
+
+	c.n.Debugf(ConnHskPin, "[%s] acceptHandshake", c.String())
 
 	// (1) receive the Syn
 	// (2) send the Ack or Err
