@@ -143,6 +143,11 @@ func (n *nodeHead) handle() {
 			rq:       make(chan cipher.SHA256, 10),
 			cs:       make(knownRoots),
 			favg:     n.node().fillavg, // reference
+
+			ff: make(chan error), // filling error or nil (success)
+
+			successq: make(chan *Conn),         // release connection
+			failureq: make(chan failedRequest), // failed requests
 		}
 
 		key cipher.SHA256
@@ -205,17 +210,23 @@ func (n *nodeHead) handle() {
 }
 
 func (f *fillHead) handleRequest(key cipher.SHA256) {
+	f.node().Debugln(FillPin, "[fill] handleRequest", key.Hex()[:7])
+
 	f.rqo.PushBack(key)
 	f.triggerRequest()
 }
 
 func (f *fillHead) handleSuccess(c *Conn) {
+	f.node().Debugln(FillPin, "[fill] handleSuccess", c.String())
+
 	f.requesting--
 	f.fc.PushBack(c) // push
 	f.triggerRequest()
 }
 
 func (f *fillHead) handleRequestFailure(fr failedRequest) {
+	f.node().Debugln(FillPin, "[fill] handleRequestFailure", fr.c.String(),
+		fr.key.Hex()[:7])
 
 	f.requesting--
 
@@ -248,6 +259,8 @@ func (f *fillHead) handleRequestFailure(fr failedRequest) {
 }
 
 func (f *fillHead) handleReceivedRoot(cr connRoot) {
+	f.node().Debugln(FillPin, "[fill] handleReceivedRoot",
+		cr.c.String(), cr.r.Short())
 
 	// there are a filling Root
 
@@ -316,6 +329,8 @@ func (f *fillHead) maxParallel() (mp int) {
 }
 
 func (f *fillHead) createFiller(cr connRoot) {
+	f.node().Debugln(FillPin, "[fill] createFiller", cr.c.String(),
+		cr.r.Short())
 
 	// broadcast the Root we are going to fill
 	f.nodeHead.n.fs.broadcastRoot(cr)
@@ -370,12 +385,16 @@ func (f *fillHead) closeFiller() {
 
 func (f *fillHead) handleFillingResult(err error) {
 
+	f.node().Debugf(FillPin, "handleFillingResult %s: %v", f.r.r.Short(), err)
+
+	var moveForward = f.r.r.Seq + 1
+
 	f.closeFiller() // close the filler and wait it's goroutines
 
 	if err == nil {
 		f.node().onRootFilled(f.r.r)     // callback
 		f.favg.Add(time.Now().Sub(f.tp)) // average time
-		f.cs.moveForward(f.r.r.Seq + 1)  // move forward
+		f.cs.moveForward(moveForward)    // move forward
 	} else {
 		f.node().onFillingBreaks(f.r.r, err) // callback
 	}
@@ -452,7 +471,7 @@ func (f *fillHead) node() *Node {
 func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 	defer f.await.Done()
 
-	f.node().Debugf(FillPin, "request from [%s] %d %s", c.String(), seq,
+	f.node().Debugf(FillPin, "[fill] request from [%s] %d %s", c.String(), seq,
 		key.Hex()[:7])
 
 	var reply, err = c.sendRequest(&msg.RqObject{key})

@@ -143,8 +143,6 @@ func Test_send_receive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Log(sc.Stat())
-
 	if sn.TCP().Address() == "" {
 		t.Fatal("blank listening address")
 	}

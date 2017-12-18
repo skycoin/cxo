@@ -97,6 +97,7 @@ func (f *Filler) inc(key cipher.SHA256) {
 }
 
 func (f *Filler) requset(key cipher.SHA256) (ok bool) {
+
 	select {
 	case f.rq <- key:
 		ok = true
@@ -217,6 +218,14 @@ func (f *Filler) Go(fn func()) {
 // Run the Filler. The Run method blocks
 // until finish or first error
 func (f *Filler) Run() (err error) {
+
+	// save Root
+
+	if _, err = f.c.Set(f.r.Hash, f.r.Encode(), 1); err != nil {
+		return
+	}
+
+	f.inc(f.r.Hash) // increment
 
 	if err = f.getRegistry(); err != nil {
 		f.remove()
