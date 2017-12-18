@@ -2,6 +2,7 @@ package node
 
 import (
 	"sync"
+	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
@@ -43,6 +44,13 @@ func newTCP(n *Node) (t *TCP) {
 	t.AcceptedCallback = n.acceptTCPConnection
 
 	return
+}
+
+func (t *TCP) getConn(address string) (c *Conn) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	return t.cs[address]
 }
 
 // Listen on given address. It's possible to listen
@@ -128,8 +136,8 @@ func (t *TCP) ConnectToDiscoveryServer(address string) {
 	if t.d == nil {
 		t.d = discovery.NewMessengerFactory()
 
-		if t.n.conf.Logger.Debug == true {
-			if t.n.conf.Logger.Pins&DiscoveryPin != 0 {
+		if t.n.config.Logger.Debug == true {
+			if t.n.config.Logger.Pins&DiscoveryPin != 0 {
 				t.d.SetLoggerLevel(discovery.DebugLevel)
 			} else {
 				t.d.SetLoggerLevel(discovery.ErrorLevel)
@@ -137,7 +145,7 @@ func (t *TCP) ConnectToDiscoveryServer(address string) {
 		}
 	}
 
-	t.d.ConnectWithConfig(addr, &discovery.ConnConfig{
+	t.d.ConnectWithConfig(address, &discovery.ConnConfig{
 		SeedConfig: t.n.id,
 
 		Reconnect:     true,
@@ -203,7 +211,7 @@ func (t *TCP) findServiceNodes(resp *discovery.QueryResp) {
 // called after Share/DontShare
 func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
 
-	if t.d == nil {
+	if t.Discovery() == nil {
 		return
 	}
 
@@ -216,12 +224,13 @@ func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
 	}
 
 	var (
-		public  = t.n.config.Public
+		share   = t.n.config.Public
 		address string
 	)
 
-	if public == true {
+	if share == true {
 		address = t.Address()
+		share = share && (address != "")
 	}
 
 	t.d.ForEachConn(func(c *discovery.Connection) {
@@ -233,7 +242,7 @@ func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
 			return
 		}
 
-		if public == false {
+		if share == false {
 			return
 		}
 
@@ -254,47 +263,7 @@ func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
 func (t *TCP) onDiscoveryConnected(c *discovery.Connection) {
 
 	t.n.Debugln(DiscoveryPin, "(UDP) OnDiscoveryConencted")
-
-	var (
-		feeds    = t.n.Feeds()
-		services = make([]*discovery.Service, 0, len(feeds))
-	)
-
-	for _, pk := range feeds {
-		services = append(services, &discovery.Service{Key: pk})
-	}
-
-	var (
-		public  = u.n.config.Public
-		address string
-	)
-
-	if public == true {
-		address = t.Address()
-		public |= (address != "") // skip, if it is not listening
-	}
-
-	if err := c.FindServiceNodesByKeys(feeds); err != nil {
-		t.n.Debug(DiscoveryPin,
-			"(UDP) (dicovery.Connection).FindServiceNodesByKeys error:",
-			err)
-		return
-	}
-
-	if public == false {
-		return
-	}
-
-	err := c.UpdateServices(&discovery.NodeServices{
-		ServiceAddress: address,
-		Services:       services,
-	})
-
-	if err != nil {
-		t.n.Debug(DiscoveryPin,
-			"(UDP) (dicovery.Connection).UpdateServices error:",
-			err)
-	}
+	t.updateServiceDiscovery(t.n.Feeds())
 
 }
 
@@ -341,6 +310,13 @@ func newUDP(n *Node) (u *UDP) {
 	u.AcceptedCallback = n.acceptUDPConnection
 
 	return
+}
+
+func (u *UDP) getConn(address string) (c *Conn) {
+	u.mx.Lock()
+	defer u.mx.Unlock()
+
+	return u.cs[address]
 }
 
 // Listen on given address. It's possible to listen
@@ -395,7 +371,7 @@ func (u *UDP) Connect(address string) (c *Conn, err error) {
 
 	var fc *factory.Connection
 
-	if fc, err = u.TCPFactory.Connect(address); err != nil {
+	if fc, err = u.UDPFactory.Connect(address); err != nil {
 		return
 	}
 
@@ -426,8 +402,8 @@ func (u *UDP) ConnectToDiscoveryServer(address string) {
 	if u.d == nil {
 		u.d = discovery.NewMessengerFactory()
 
-		if u.n.conf.Logger.Debug == true {
-			if u.n.conf.Logger.Pins&DiscoveryPin != 0 {
+		if u.n.config.Logger.Debug == true {
+			if u.n.config.Logger.Pins&DiscoveryPin != 0 {
 				u.d.SetLoggerLevel(discovery.DebugLevel)
 			} else {
 				u.d.SetLoggerLevel(discovery.ErrorLevel)
@@ -435,7 +411,7 @@ func (u *UDP) ConnectToDiscoveryServer(address string) {
 		}
 	}
 
-	u.d.ConnectWithConfig(addr, &discovery.ConnConfig{
+	u.d.ConnectWithConfig(address, &discovery.ConnConfig{
 		SeedConfig: u.n.id,
 
 		Reconnect:     true,
@@ -501,7 +477,7 @@ func (u *UDP) findServiceNodes(resp *discovery.QueryResp) {
 // called after Share/DontShare
 func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
 
-	if u.d == nil {
+	if u.Discovery() == nil {
 		return
 	}
 
@@ -514,13 +490,13 @@ func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
 	}
 
 	var (
-		public  = u.n.config.Public
+		share   = u.n.config.Public
 		address string
 	)
 
-	if public == true {
+	if share == true {
 		address = u.Address()
-		public |= (address != "") // skip, if it is not listening
+		share = share && (address != "") // skip, if it is not listening
 	}
 
 	u.d.ForEachConn(func(c *discovery.Connection) {
@@ -532,7 +508,7 @@ func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
 			return
 		}
 
-		if public == false {
+		if share == false {
 			return
 		}
 
@@ -553,47 +529,7 @@ func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
 func (u *UDP) onDiscoveryConnected(c *discovery.Connection) {
 
 	u.n.Debugln(DiscoveryPin, "(UDP) OnDiscoveryConencted")
-
-	var (
-		feeds    = u.n.Feeds()
-		services = make([]*discovery.Service, 0, len(feeds))
-	)
-
-	for _, pk := range feeds {
-		services = append(services, &discovery.Service{Key: pk})
-	}
-
-	var (
-		public  = u.n.config.Public
-		address string
-	)
-
-	if public == true {
-		address = u.Address()
-		public |= (address != "") // skip, if it is not listening
-	}
-
-	if err := c.FindServiceNodesByKeys(feeds); err != nil {
-		u.n.Debug(DiscoveryPin,
-			"(UDP) (dicovery.Connection).FindServiceNodesByKeys error:",
-			err)
-		return
-	}
-
-	if public == false {
-		return
-	}
-
-	err := c.UpdateServices(&discovery.NodeServices{
-		ServiceAddress: address,
-		Services:       services,
-	})
-
-	if err != nil {
-		u.n.Debug(DiscoveryPin,
-			"(UDP) (dicovery.Connection).UpdateServices error:",
-			err)
-	}
+	u.updateServiceDiscovery(u.n.Feeds())
 
 }
 

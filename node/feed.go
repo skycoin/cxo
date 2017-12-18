@@ -1,11 +1,7 @@
 package node
 
 import (
-	"sync"
-
 	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // feed of the Node
@@ -22,7 +18,7 @@ type nodeFeed struct {
 func newNodeFeed(nf *nodeFeeds, pk cipher.PubKey) (n *nodeFeed) {
 
 	n = new(nodeFeed)
-	n.n = nf
+	n.fs = nf
 	n.this = pk
 	n.cs = make(map[*Conn]struct{})
 	n.hs = make(map[uint64]*nodeHead)

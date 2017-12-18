@@ -2,7 +2,6 @@ package node
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
-	"github.com/skycoin/cxo/skyobject/registry"
 	"github.com/skycoin/cxo/skyobject/statutil"
 )
 
@@ -20,7 +18,7 @@ type nodeHead struct {
 
 	delcq chan *Conn    // delete connection
 	rrq   chan connRoot // received roots
-	errq  chan err      // close wiht error (max heads limit)
+	errq  chan error    // close wiht error (max heads limit)
 
 	// api info
 
@@ -38,9 +36,6 @@ func newNodeHead(nf *nodeFeed) (n *nodeHead) {
 	n = new(nodeHead)
 
 	n.n = nf
-
-	n.rq = make(chan cipher.SHA256)
-	n.cs = make(map[*Conn][]uint64)
 
 	n.delcq = make(chan *Conn)
 	n.rrq = make(chan connRoot)
@@ -94,7 +89,7 @@ func (n *nodeHead) close() {
 
 // code readability
 func (n *nodeHead) node() *Node {
-	return n.n.n
+	return n.n.fs.n
 }
 
 type failedRequest struct {
@@ -113,7 +108,7 @@ type fillHead struct {
 	rq chan cipher.SHA256 // request objects (TODO: maxParall)
 	ff chan error         // filler failure
 
-	ft time.Timer       // fill timeout
+	ft *time.Timer      // fill timeout
 	tc <-chan time.Time // ------------
 
 	tp   time.Time          // start point (start filling, for stat)
@@ -153,7 +148,7 @@ func (n *nodeHead) handle() {
 		key cipher.SHA256
 		c   *Conn
 		cr  connRoot
-		fc  fillConn
+		fc  failedRequest
 		err error // fillign failure or nil
 	)
 
@@ -194,7 +189,7 @@ func (n *nodeHead) handle() {
 
 		case err = <-errq:
 
-			f.p = nil // remove pending Root
+			f.p = connRoot{} // remove pending Root
 			f.handleFillingResult(err)
 			f.terminate()
 			return
@@ -229,12 +224,12 @@ func (f *fillHead) handleRequestFailure(fr failedRequest) {
 
 		// close connections that sends invalid responses
 		go fr.c.fatality(fr.err)
-		delete(f.cs, c) // remove connection
+		delete(f.cs, fr.c) // remove connection
 
 	case ErrClosed:
 
 		// clsoed
-		delete(f.cs, c) // remove connection
+		delete(f.cs, fr.c) // remove connection
 
 	case ErrTimeout:
 
@@ -336,8 +331,8 @@ func (f *fillHead) createFiller(cr connRoot) {
 	f.rq = make(chan cipher.SHA256, f.maxParallel())
 	f.f = f.node().c.Fill(cr.r, f.rq, f.maxParallel())
 
-	f.rqo = list.New()                // create list of keys
-	f.fc = f.cs.buildConnsList(r.Seq) // create list of connections
+	f.rqo = list.New()                   // create list of keys
+	f.fc = f.cs.buildConnsList(cr.r.Seq) // create list of connections
 
 	f.await.Add(1)
 	go f.runFiller(f.f)
@@ -378,25 +373,25 @@ func (f *fillHead) handleFillingResult(err error) {
 	f.closeFiller() // close the filler and wait it's goroutines
 
 	if err == nil {
-		f.node().OnRootFilled(f.r.r)     // callback
+		f.node().onRootFilled(f.r.r)     // callback
 		f.favg.Add(time.Now().Sub(f.tp)) // average time
 		f.cs.moveForward(f.r.r.Seq + 1)  // move forward
 	} else {
-		f.node().OnFillingBreaks(f.r.r, err) // callback
+		f.node().onFillingBreaks(f.r.r, err) // callback
 	}
 
 	// is there a pending Root to be filled?
 
 	// no
 
-	if f.p == nil {
+	if f.p == (connRoot{}) {
 		return
 	}
 
 	// yes
 
 	f.createFiller(f.p)
-	f.p = nil
+	f.p = connRoot{}
 
 }
 
@@ -443,23 +438,24 @@ func (f *fillHead) tryRequest() (fatal bool) {
 	f.requesting++
 
 	f.await.Add(1) // nodeHead.await
-	go f.requset(c, key)
+	go f.request(c, f.r.r.Seq, key)
 
+	return
 }
 
 // code readability
 func (f *fillHead) node() *Node {
-	return f.n.n
+	return f.n.fs.n
 }
 
 // (async) request obejct
-func (f *fillHead) request(c *Conn, key cipher.SHA256) {
+func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 	defer f.await.Done()
 
 	var reply, err = c.sendRequest(&msg.RqObject{key})
 
 	if err != nil {
-		f.failureq <- failedRequest{c, key, err}
+		f.failureq <- failedRequest{c, seq, key, err}
 		return
 	}
 
@@ -468,11 +464,11 @@ func (f *fillHead) request(c *Conn, key cipher.SHA256) {
 		var rk = cipher.SumSHA256(x.Value)
 
 		if rk != key {
-			f.failureq <- failedRequest{c, key, ErrInvalidResponse}
+			f.failureq <- failedRequest{c, seq, key, ErrInvalidResponse}
 			return
 		}
 
-		if err := f.node().c.Set(key, x.Value, 1); err != nil {
+		if _, err := f.node().c.SetIfWanted(key, x.Value, 1); err != nil {
 			f.node().Fatal("DB failure:", err)
 			return
 		}
@@ -480,7 +476,7 @@ func (f *fillHead) request(c *Conn, key cipher.SHA256) {
 		f.successq <- c
 
 	default:
-		f.failureq <- failedRequest{c, key, ErrInvalidResponse}
+		f.failureq <- failedRequest{c, seq, key, ErrInvalidResponse}
 	}
 
 }
@@ -493,7 +489,7 @@ func (f *fillHead) handleDelConn(c *Conn) {
 	}
 
 	if f.p.c == c {
-		f.p.c == nil // GC
+		f.p.c = nil // GC
 	}
 
 }
@@ -509,7 +505,7 @@ func (k knownRoots) addKnown(c *Conn, seq uint64) {
 	var known, ok = k[c]
 
 	if ok == false {
-		k[c] = []uint64{c}
+		k[c] = []uint64{seq}
 		return
 	}
 
@@ -557,13 +553,12 @@ func (k knownRoots) removeKnown(c *Conn, seq uint64) {
 }
 
 // a Root filled, and we can rid out of old known
-// Root objects of peers
+// Root objects of all peers
 func (k knownRoots) moveForward(seq uint64) {
 
 	var (
-		known = k[c]
-		ks    uint64
-		i     int
+		ks uint64
+		i  int
 	)
 
 	for c, known := range k {

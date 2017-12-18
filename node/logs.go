@@ -31,6 +31,6 @@ const (
 	// joiners
 
 	MsgPin  = MsgSendPin | MsgReceivePin // send/receive
-	ConnPin = NewInConnPin | NewOutConnPin | ConnEstPin | HskErrPin |
+	ConnPin = NewInConnPin | NewOutConnPin | ConnEstPin |
 		CloseConnPin // connections
 )

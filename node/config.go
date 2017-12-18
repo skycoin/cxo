@@ -20,7 +20,7 @@ const (
 	MaxHeads        int           = 10
 	ListenTCP       string        = ":8870"
 	ListenUDP       string        = "" // don't listen
-	RPC             string        = ":8871"
+	RPCAddress      string        = ":8871"
 	ResponseTimeout time.Duration = 59 * time.Second
 	Pings           time.Duration = 118 * time.Second
 	Public          bool          = false
@@ -289,9 +289,7 @@ func NewConfig() (c *Config) {
 	c.UDP.Listen = ListenUDP
 	c.UDP.ResponseTimeout = ResponseTimeout
 
-	c.RPC = RPC
-	c.ResponseTimeout = ResponseTimeout
-	c.Pings = Pings
+	c.RPC = RPCAddress
 	c.Public = Public
 
 	return

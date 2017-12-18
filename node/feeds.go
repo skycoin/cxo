@@ -5,7 +5,6 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
@@ -73,7 +72,7 @@ func newNodeFeeds(node *Node) (n *nodeFeeds) {
 	n.fs = make(map[cipher.PubKey]*nodeFeed)
 
 	// idle connection (not pending)
-	n.fs[cipher.PubKey{}] = newNodeFeed(node, cipher.PubKey{})
+	n.fs[cipher.PubKey{}] = newNodeFeed(n, cipher.PubKey{})
 
 	n.addq = make(chan cipher.PubKey) // add feed
 	n.delq = make(chan cipher.PubKey) // del feed
@@ -195,7 +194,7 @@ func (n *nodeFeeds) handle() {
 			n.handleFeedsOfConnection(c)
 
 		case pk = <-cfrq:
-			n.handleConnectionsOfFeed()
+			n.handleConnectionsOfFeed(pk)
 
 		case cf = <-hascfrq:
 			n.handleHasConnFeed(cf)
@@ -234,7 +233,7 @@ func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
 		return // already have the feed
 	}
 
-	n.fs[pk] = newNodeFeed(n.n, pk)
+	n.fs[pk] = newNodeFeed(n, pk)
 	n.fl = nil
 
 }
@@ -242,7 +241,7 @@ func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
 // (api)
 func (n *nodeFeeds) delFeed(pk cipher.PubKey) {
 
-	if pk == (cipher.PubKey) {
+	if pk == (cipher.PubKey{}) {
 		return // blank feed is special
 	}
 
@@ -292,12 +291,12 @@ func (n *nodeFeeds) handleAddConnFeed(cf connFeed) {
 	var nf, ok = n.fs[cf.f]
 
 	if ok == false {
-		nf = newNodeFeed(n.n, cf.f)
+		nf = newNodeFeed(n, cf.f)
 		n.fs[cf.f] = nf
 	}
 
-	nf.addConn(c)
-	n.fs[cipher.PubKey].delConn(cf.c) // delete from idle
+	nf.addConn(cf.c)
+	n.fs[cipher.PubKey{}].delConn(cf.c) // delete from idle
 
 }
 
@@ -320,20 +319,24 @@ func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
 		return // no such feed
 	}
 
-	nf.delConn(c)
+	nf.delConn(cf.c)
 
 	// if the connection does't share a feed, then
 	// we put it to idle
 
 	for pk, nf := range n.fs {
 
-		if nf.hasConn() == true {
+		if pk == (cipher.PubKey{}) {
+			continue // avoid map lookup
+		}
+
+		if nf.hasConn(cf.c) == true {
 			return
 		}
 
 	}
 
-	n.fs[cipher.PubKey].addConn(cf.c) // add to idle
+	n.fs[cipher.PubKey{}].addConn(cf.c) // add to idle
 
 }
 
@@ -356,7 +359,7 @@ func (n *nodeFeeds) handleBroadcastRoot(cr connRoot) {
 		return
 	}
 
-	nf.handleBroadcastRoot(cr)
+	nf.broadcastRoot(cr)
 }
 
 // (api)
@@ -393,7 +396,7 @@ func (n *nodeFeeds) handleReceivedRoot(cr connRoot) {
 		return // invalid case
 	}
 
-	var nf, ok = n.fr[cr.r.Pub]
+	var nf, ok = n.fs[cr.r.Pub]
 
 	if ok == false {
 		return // no such feed (drop the Root)
@@ -417,7 +420,7 @@ func (n *nodeFeeds) list() (list []cipher.PubKey) {
 	}
 
 	select {
-	case list <- n.listrn:
+	case list = <-n.listrn:
 	case <-n.closeq:
 	}
 
@@ -433,7 +436,7 @@ func (n *nodeFeeds) handleList() {
 
 		for pk := range n.fs {
 
-			if pk == (cipher.PubKey) {
+			if pk == (cipher.PubKey{}) {
 				continue // special case for idle connections
 			}
 
@@ -461,7 +464,7 @@ func (n *nodeFeeds) feedsOfConnection(c *Conn) (feeds []cipher.PubKey) {
 	}
 
 	select {
-	case feeds <- n.fcrn:
+	case feeds = <-n.fcrn:
 	case <-n.closeq:
 	}
 
@@ -497,13 +500,13 @@ func (n *nodeFeeds) handleFeedsOfConnection(c *Conn) {
 func (n *nodeFeeds) connectionsOfFeed(pk cipher.PubKey) (cs []*Conn) {
 
 	select {
-	case n.cfrn <- pk:
+	case n.cfrq <- pk:
 	case <-n.closeq:
 		return
 	}
 
 	select {
-	case cs <- n.cfrn:
+	case cs = <-n.cfrn:
 	case <-n.closeq:
 	}
 
@@ -519,7 +522,7 @@ func (n *nodeFeeds) handleConnectionsOfFeed(pk cipher.PubKey) {
 
 	if ok == true {
 
-		for _, c := range nf.cs {
+		for c := range nf.cs {
 			cs = append(cs, c)
 		}
 
@@ -543,7 +546,7 @@ func (n *nodeFeeds) hasConnFeed(c *Conn, pk cipher.PubKey) (yep bool) {
 	}
 
 	select {
-	case yep <- n.hascfrn:
+	case yep = <-n.hascfrn:
 	case <-n.closeq:
 	}
 
@@ -577,7 +580,7 @@ func (n *nodeFeeds) hasFeed(pk cipher.PubKey) (yep bool) {
 	}
 
 	select {
-	case yep <- n.hasfrn:
+	case yep = <-n.hasfrn:
 	case <-n.closeq:
 	}
 

@@ -42,9 +42,9 @@ type Conn struct {
 
 	sendq chan<- []byte // channel from factory.Connection
 
-	await  sync.WaitGroup  // wait for receiving loop
-	closeq <-chan struct{} //
-	closeo sync.Once       // close once
+	await  sync.WaitGroup // wait for receiving loop
+	closeq chan struct{}  //
+	closeo sync.Once      // close once
 }
 
 func (n *Node) newConnection(
@@ -59,7 +59,6 @@ func (n *Node) newConnection(
 
 	c.Connection = fc
 	c.incoming = isIncoming
-	c.tcp = isTCP
 
 	c.n = n
 
@@ -104,9 +103,9 @@ func (c *Conn) decodeRaw(raw []byte) (seq, rseq uint32, m msg.Msg, err error) {
 // info
 //
 
-// PeerID is ID of remote peer that used
+// PeerID is id of remote peer that used
 // for internals and unique
-func (c *Conn) PeerID() (id NodeID) {
+func (c *Conn) PeerID() (id cipher.PubKey) {
 	return c.peerID
 }
 
@@ -184,7 +183,7 @@ func (c *Conn) RemoteFeeds() (feeds []cipher.PubKey, err error) {
 
 	case *msg.List:
 
-		feeds = x.List
+		feeds = x.Feeds
 
 	case *msg.Err:
 
@@ -255,18 +254,18 @@ func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
 	}
 
 	if err != nil {
-		reutrn
+		return
 	}
 
 	c.n.fs.addConnFeed(c, feed)
-	c.sendLastRoot(pk)
+	c.sendLastRoot(feed)
 	return
 }
 
 // just send the messege
 func (c *Conn) unsubscribe(pk cipher.PubKey) {
 	c.sendMsg(c.nextSeq(), 0, &msg.Unsub{
-		Feed: feed,
+		Feed: pk,
 	})
 }
 
@@ -335,20 +334,20 @@ type cget struct {
 func (c *cget) Get(key cipher.SHA256) (val []byte, err error) {
 
 	var reply msg.Msg
-	if reply, err = c.c.sendRequest(m); err != nil {
+	if reply, err = c.c.sendRequest(&msg.RqObject{key}); err != nil {
 		return
 	}
 
 	switch x := reply.(type) {
 	case *msg.Object:
 		if cipher.SumSHA256(x.Value) != key {
-			return errors.New("wrong object received (different hash)")
+			return nil, errors.New("wrong object received (different hash)")
 		}
 		val = x.Value
 	case *msg.Err:
-		return errors.New("error: " + x.Err)
+		return nil, errors.New("error: " + x.Err)
 	default:
-		return fmt.Errorf("invalid msg type received: %T", reply)
+		return nil, fmt.Errorf("invalid msg type received: %T", reply)
 	}
 
 	return
@@ -511,11 +510,18 @@ func (c *Conn) delRequest(seq uint32) {
 func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
 
 	var (
+		rt time.Duration
 		tr *time.Timer
 		tc <-chan time.Time
 	)
 
-	if rt := c.n.config.ResponseTimeout; rt > 0 {
+	if c.IsTCP() == true {
+		rt = c.n.config.TCP.ResponseTimeout
+	} else {
+		rt = c.n.config.UDP.ResponseTimeout
+	}
+
+	if rt > 0 {
 		tr = time.NewTimer(rt)
 		tc = tr.C
 
@@ -582,7 +588,7 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 	case *msg.RqObject: // <- RqO (key, prefetch)
 		c.await.Add(1)
-		go c.handleRqObject(x)
+		go c.handleRqObject(seq, x)
 		return
 
 	// preview
@@ -608,6 +614,8 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 
 	}
 
+	return
+
 }
 
 // subscribe (with reply)
@@ -626,7 +634,7 @@ func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
 	}
 
 	// callback
-	var reject = c.n.onSubscribeRemote(c, feed)
+	var reject = c.n.onSubscribeRemote(c, sub.Feed)
 
 	// reject subscription by callback
 	if reject != nil {
@@ -658,7 +666,7 @@ func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (err error) {
 		return errors.New("invalid request Unsub blank feed") // fatal
 	}
 
-	c.n.delConnFeed(c, unsub.Feed) // delete
+	c.n.fs.delConnFeed(c, unsub.Feed) // delete
 	return
 }
 
@@ -724,13 +732,10 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 	defer c.await.Done()
 
 	var (
-		val []byte
-		err error
-
 		gc = make(chan skyobject.Object, 1)
 
 		tm *time.Timer
-		tc <-chan time.C
+		tc <-chan time.Time
 	)
 
 	// TODO (kostyarin): the request holds resources and in good case
@@ -740,7 +745,9 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 	// TODO (kostyarin): get the object or subscribe for the object
 	//                   only if it is wanted (to think)
 
-	c.n.c.Want(rq.Key, gc)
+	if err := c.n.c.Want(rq.Key, gc); err != nil {
+		c.n.Fatal("DB failure: ", err)
+	}
 	defer c.n.c.Unwant(rq.Key, gc) // to be memory safe
 
 	select {
@@ -752,7 +759,15 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 		// wait
 	}
 
-	if rt := c.n.config.ResponseTimeout; rt > 0 {
+	var rt time.Duration
+
+	if c.IsTCP() == true {
+		rt = c.n.config.TCP.ResponseTimeout
+	} else {
+		rt = c.n.config.UDP.ResponseTimeout
+	}
+
+	if rt > 0 {
 		tm = time.NewTimer(rt)
 		tc = tm.C
 

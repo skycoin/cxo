@@ -44,7 +44,7 @@ func (c *Conn) performHandshake(nodeCloseq <-chan struct{}) (err error) {
 	err = c.sendNodeCloseq(
 		c.encodeMsg(seq, 0, &msg.Syn{
 			Protocol: msg.Version,
-			NodeID:   c.n.id.PublicKey,
+			NodeID:   c.n.idpk,
 		}),
 		nodeCloseq,
 	)
@@ -181,9 +181,9 @@ func (c *Conn) acceptHandshake(nodeCloseq <-chan struct{}) (err error) {
 
 		// (2) send Ack back
 
-		err = c.sendWithQuiting(
+		err = c.sendNodeCloseq(
 			c.encodeMsg(c.nextSeq(), seq, &msg.Ack{
-				NodeID: c.n.id.PublicKey,
+				NodeID: c.n.idpk,
 			}),
 			nodeCloseq,
 		)

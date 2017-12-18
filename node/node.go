@@ -10,7 +10,6 @@ import (
 	discovery "github.com/skycoin/net/skycoin-messenger/factory"
 
 	"github.com/skycoin/cxo/node/log"
-	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 	"github.com/skycoin/cxo/skyobject/statutil"
@@ -25,6 +24,8 @@ type Node struct {
 	log.Logger                       // logger
 	id         *discovery.SeedConfig // unique random identifier
 	c          *skyobject.Container  // related Container
+
+	idpk cipher.PubKey // id.PublicKey (string -> pk)
 
 	//
 	// feeds and connections
@@ -118,6 +119,7 @@ func NewNodeContainer(
 	n = new(Node)
 
 	n.id = discovery.NewSeedConfig()
+	n.idpk, _ = cipher.PubKeyFromHex(n.id.PublicKey)
 	n.c = c
 	n.fs = newNodeFeeds(n)
 	n.ic = make(map[cipher.PubKey]*Conn)
@@ -161,7 +163,7 @@ func NewNodeContainer(
 
 	if conf.RPC != "" {
 
-		n.rpc = n.createRPC()
+		n.rpc = n.newRPC()
 
 		if err = n.rpc.Listen(conf.RPC); err != nil {
 			n.Close()
@@ -189,7 +191,7 @@ func NewNodeContainer(
 // is unique random identifier that used to avoid
 // cross-conenctions
 func (n *Node) ID() (id cipher.PubKey) {
-	return n.id.PublicKey
+	return n.idpk
 }
 
 // Config returns Config with which the
@@ -207,24 +209,18 @@ func (n *Node) Container() (c *skyobject.Container) {
 	return n.c
 }
 
-// Discovery returns related discovery factory. That can be nil
-// if this feature is turned off
-func (n *Node) Discovery() (discovery *discovery.MessengerFactory) {
-	return n.discovery
-}
-
 // Publish sends given Root obejct to peers that
 // subscribed to feed of the Root. The Publish used
 // to publish new Root obejcts
 func (n *Node) Publish(r *registry.Root) {
-	n.fs.broadcastRoot(connRoot{r, nil})
+	n.fs.broadcastRoot(connRoot{nil, r})
 }
 
 // ConnectionsOfFeed returns list of connections of given
 // feed. Use blank public key to get all connections that
 // does not share a feed
-func (n *Node) ConnectionsOfFeed(pk cipher.PubKey) (cs []*Conn) {
-	return n.fs.connectionsOfFeed(pk)
+func (n *Node) ConnectionsOfFeed(feed cipher.PubKey) (cs []*Conn) {
+	return n.fs.connectionsOfFeed(feed)
 }
 
 // Connections returns all established connections
@@ -242,6 +238,16 @@ func (n *Node) Connections() (cs []*Conn) {
 	return
 }
 
+// don't create TCP in background
+// returning nil, if the TCP doesn't
+// exist
+func (n *Node) getTCP() (t *TCP) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	return n.tcp
+}
+
 // TCP returns TCP transport of the Node
 func (n *Node) TCP() (tcp *TCP) {
 
@@ -251,6 +257,16 @@ func (n *Node) TCP() (tcp *TCP) {
 	n.createTCP()
 
 	return n.tcp
+}
+
+// don't create TCP in background
+// returning nil, if the TCP doesn't
+// exist
+func (n *Node) getUDP() (u *UDP) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	return n.udp
 }
 
 // UDP returns UDP transport of the Node
@@ -476,7 +492,7 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 		return
 	}
 
-	n.fs.addFeed(pk)
+	n.fs.addFeed(feed)
 	n.updateServiceDiscovery()
 
 	return
@@ -491,7 +507,7 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 // method to prevent sharing feed that does not exist
 func (n *Node) DontShare(feed cipher.PubKey) (err error) {
 
-	n.fs.delFeed(pk)
+	n.fs.delFeed(feed)
 	n.updateServiceDiscovery()
 
 	return
@@ -510,15 +526,6 @@ func (n *Node) onUnsubscribeRemote(c *Conn, feed cipher.PubKey) {
 
 	if ousr := n.config.OnUnsubscribeRemote; ousr != nil {
 		ousr(c, feed)
-	}
-
-}
-
-// send to feed (call under lock)
-func (n *Node) send(pk cipher.PubKey, m msg.Msg) {
-
-	for c := range n.fc[pk] {
-		c.sendMsg(c.nextSeq(), 0, m)
 	}
 
 }
@@ -542,10 +549,18 @@ func (n *Node) onRootReceived(c *Conn, r *registry.Root) (err error) {
 	return
 }
 
-func (n *Node) onFillingBreaks(c *Conn, r *registry.Root, reason error) {
+func (n *Node) onRootFilled(r *registry.Root) {
+
+	if orf := n.config.OnRootFilled; orf != nil {
+		orf(r)
+	}
+
+}
+
+func (n *Node) onFillingBreaks(r *registry.Root, reason error) {
 
 	if brk := n.config.OnFillingBreaks; brk != nil {
-		brk(c, r, reason)
+		brk(r, reason)
 	}
 
 }
@@ -556,6 +571,24 @@ func (n *Node) hasPeer(id cipher.PubKey) (yep bool) {
 	defer n.mx.Unlock()
 
 	_, yep = n.ic[id]
+	return
+}
+
+// A Stat represents Node stat
+type Stat struct {
+	*skyobject.Stat
+	Fillavg time.Duration
+}
+
+// Stat returns statistic of the Node
+func (n *Node) Stat() (s *Stat) {
+
+	// TODO (kostyarin): improve the stat
+
+	s = new(Stat)
+	s.Stat = n.c.Stat()
+	s.Fillavg = n.fillavg.Value()
+
 	return
 }
 
