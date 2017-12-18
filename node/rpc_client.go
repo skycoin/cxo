@@ -14,6 +14,11 @@ type RPCClient struct {
 	c *rpc.Client
 }
 
+// Close client
+func (r *RPCClient) Close() (err error) {
+	return r.c.Close()
+}
+
 // Node related methods
 func (r *RPCClient) Node() (n *RPCClientNode) {
 	return &RPCClientNode{r}
@@ -213,16 +218,13 @@ func (r *RPCClientRoot) Tree(
 
 func (r *RPCClientRoot) Last(
 	feed cipher.PubKey,
-	nonce uint64,
-	seq uint64,
 ) (
 	z *registry.Root,
 	err error,
 ) {
 
 	var x registry.Root
-	err = r.r.c.Call("root.Last", RootSelector{feed, nonce, seq}, &x)
-	if err != nil {
+	if err = r.r.c.Call("root.Last", feed, &x); err != nil {
 		return
 	}
 	return &x, nil

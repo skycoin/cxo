@@ -305,10 +305,24 @@ func (r *RootRPC) Show(rs RootSelector, z *registry.Root) (err error) {
 
 // Tree of Root (RPC method)
 func (r *RootRPC) Tree(rs RootSelector, tree *string) (err error) {
-	return errors.New("not implemented yet")
+
+	var x *registry.Root
+	if x, err = r.n.c.Root(rs.Feed, rs.Nonce, rs.Seq); err != nil {
+		return
+	}
+
+	var p registry.Pack
+	if p, err = r.n.c.Pack(x, nil); err != nil {
+		return
+	}
+
+	var t string
+	t, err = x.Tree(p)
+	*tree = t
+	return
 }
 
-// Last of given Feed (RPC method)
+// Last Root of given Feed (RPC method)
 func (r *RootRPC) Last(feed cipher.PubKey, z *registry.Root) (err error) {
 	var x *registry.Root
 	if x, err = r.n.c.LastRoot(feed, r.n.c.ActiveHead(feed)); err != nil {

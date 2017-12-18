@@ -21,7 +21,7 @@ type IterateObjectsFunc func(key cipher.SHA256, rc uint32, val []byte) error
 //
 //     key -> {rc, val}
 //
-// The CXDS keeps elements with rc == 0. End used should
+// The CXDS keeps elements with rc == 0. End-user should
 // track size of the DB and remove objects that doesn't
 // used to free up space
 type CXDS interface {

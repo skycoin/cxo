@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/user"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,13 +17,14 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
-	cxo "github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // defaults
 const (
 	HISTORY = ".cxocli.history" // history file name
-	ADDRESS = "[::]:8997"       // default RPC address to connect to
+	ADDRESS = "[::]:8871"       // default RPC address to connect to
 )
 
 var (
@@ -38,33 +36,52 @@ var (
 	errInvalidQuery     = errors.New("invalid query")
 
 	commands = []string{
-		"add feed ",
-		"del feed ",
 
-		"subscribe ",
-		"unsubscribe ",
+		// feeds
 
-		"connect ",
-		"disconnect ",
+		"share feed ",
+		"don't share feed ",
+		"list feeds ",
+
+		// tcp
+
+		"tcp connect ",
+		"tcp disconnect ",
+
+		"tcp subsribe ",
+		"tcp unsubscribe ",
+
+		"tcp address ",
+
+		// udp
+
+		"udp connect ",
+		"udp disconnect ",
+
+		"udp subscribe ",
+		"udp unsubscribe ",
+
+		"udp address ",
+
+		// all connections
 
 		"connections ",
-		"incoming connections ",
-		"outgoing connections ",
 
-		"connection ",
-		"feed ",
+		// root objects
 
-		"feeds ",
+		"root info ",
+		"root tree ",
+		"last root ",
 
-		"roots ",
-		"tree ",
-
-		"info ",
-		"listening address ",
+		// stat
 
 		"stat ",
 
-		"terminate ",
+		// help
+
+		"help",
+
+		// leave the cli
 
 		"quit ",
 		"exit ",
@@ -77,12 +94,12 @@ func main() {
 		address string
 		execute string
 
-		rpc *node.RPCClient
+		rpc = new(client)
 		err error
 
-		line      *liner.State
-		cmd       string
-		terminate bool
+		line *liner.State
+		cmd  string
+		quit bool
 
 		help bool
 		code int
@@ -126,15 +143,15 @@ func main() {
 		return
 	}
 
-	if rpc, err = node.NewRPCClient(address); err != nil {
+	if rpc.r, err = node.NewRPCClient(address); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		code = 1
 		return
 	}
-	defer rpc.Close()
+	defer rpc.r.Close()
 
 	if execute != "" {
-		_, err = executeCommand(execute, rpc)
+		_, err = rpc.executeCommand(execute)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			code = 1
@@ -164,7 +181,7 @@ func main() {
 
 	// prompt loop
 
-	fmt.Fprintln(out, "enter 'help' to get help")
+	fmt.Fprintln(out, "enter 'help' to get help, use 'tab' to complite command")
 	for {
 		cmd, err = line.Prompt("> ")
 		if err != nil && err != liner.ErrPromptAborted {
@@ -172,11 +189,11 @@ func main() {
 			code = 1
 			return
 		}
-		terminate, err = executeCommand(cmd, rpc)
+		quit, err = rpc.executeCommand(cmd)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
-		if terminate {
+		if quit {
 			return
 		}
 		line.AppendHistory(cmd)
@@ -185,11 +202,7 @@ func main() {
 }
 
 func histroyFilePath() (hf string, err error) {
-	var usr *user.User
-	if usr, err = user.Current(); err != nil {
-		return
-	}
-	hf = filepath.Join(usr.HomeDir, HISTORY)
+	hf = filepath.Join(skyobject.DataDir(), HISTORY)
 	return
 }
 
@@ -201,7 +214,7 @@ func loadHistory(line *liner.State) (err error) {
 	}
 	var fl *os.File
 	if fl, err = os.Open(hf); err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) == true {
 			err = nil
 			return // no history file found
 		}
@@ -230,186 +243,116 @@ Error:
 	fmt.Fprintln(os.Stderr, "error saving history:", err)
 }
 
-func args(ss []string) (string, error) {
-	switch len(ss) {
-	case 0, 1:
-		return "", errMisisngArgument
-	case 2:
-		return ss[1], nil
-	}
-	return "", errTooManyArguments
+type client struct {
+	r *node.RPCClient
+	m map[string]func(in []string) (err error)
+
+	// TODO (kostyarin): autocomplite feeds, nonces, seq numbers,
+	//                   connections
 }
 
-func executeCommand(command string, rpc *node.RPCClient) (terminate bool,
-	err error) {
+func (c *client) mapping() map[string]func(in []string) (err error) {
 
-	ss := strings.Fields(command)
-	if len(ss) == 0 {
-		return
+	if c.m != nil {
+		return c.m
 	}
-	switch strings.ToLower(ss[0]) {
 
-	case "subscribe":
-		err = subscribeTo(rpc, ss)
-	case "unsubscribe":
-		err = unsubscribeFrom(rpc, ss)
+	c.m = map[string]func(in []string) (err error){
+		"share feed":       c.share,
+		"don't share feed": c.dontShare,
+		"list feeds":       c.listFeeds,
 
-	case "connect":
-		err = connect(rpc, ss)
-	case "disconnect":
-		err = disconnect(rpc, ss)
+		"tcp connect":     c.tcpConnect,
+		"tcp disconnect":  c.tcpDisconnet,
+		"tcp subsribe":    c.tcpSubscribe,
+		"tcp unsubscribe": c.tcpUnsubscribe,
+		"tcp address":     c.tcpAddress,
 
-	case "connections":
-		err = connections(rpc)
+		"udp connect":     c.udpConnect,
+		"udp disconnect":  c.udpDisconnet,
+		"udp subsribe":    c.udpSubscribe,
+		"udp unsubscribe": c.udpUnsubscribe,
+		"udp address":     c.udpAddress,
 
-	case "connection":
-		err = connection(rpc, ss)
-	case "feed":
-		err = feed(rpc, ss)
+		"connections": c.connections,
 
-	case "feeds":
-		err = feeds(rpc)
+		"root info": c.rootInfo,
+		"root tree": c.rootTree,
+		"last root": c.lastRoot,
 
-	case "roots":
-		err = roots(rpc, ss)
-	case "tree":
-		err = tree(rpc, ss)
+		"stat": c.stat,
 
-	case "info":
-		err = info(rpc)
+		"help": c.help,
 
-	case "stat":
-		err = stat(rpc, ss)
-
-	case "terminate":
-		err = term(rpc)
-
-	case "help":
-		showHelp()
-
-	case "quit", "exit":
-		terminate = true
-		fmt.Fprintln(out, "cya")
-
-	default:
-
-		if len(ss) < 2 {
-			err = errUnknowCommand
-			break
-		}
-
-		switch ss[0] + " " + ss[1] {
-
-		case "add feed":
-			err = addFeed(rpc, ss)
-		case "del feed":
-			err = delFeed(rpc, ss)
-
-		case "incoming connections":
-			err = incomingConnections(rpc)
-		case "outgoing connections":
-			err = outgoingConnections(rpc)
-
-		case "listening address":
-			err = listeningAddress(rpc)
-
-		default:
-			err = errUnknowCommand
-		}
-
+		"quit": c.quit,
+		"exit": c.quit,
 	}
+
+	return c.m
+
+}
+
+func prefixLength(in, pfx string) (pl int) {
+	var ml = len(pfx)
+
+	if len(in) < ml {
+		ml = len(in)
+	}
+
+	for pl = 0; pl < ml && in[pl] == pfx[pl]; pl++ {
+	}
+
 	return
 }
 
-func showHelp() {
-	fmt.Fprintln(out, `
-
-  add feed <public key>
-    start sharing feed
-  del feed <public key>
-    stop sharing feed
-
-  subscribe <address> <pub key>
-    subscribe to feed of a connected peer
-  unsubscribe <address> <public key>
-    unsubscribe from feed of a connected peer
-
-  connect <address>
-    connect to node with given address
-  disconnect <address>
-    disconnect from given address
-
-  connections
-    list all connections, in the list "-->" means that
-    this connection is incoming and "<--" means that this
-    connection is outgoing; (✓) means that connection is
-    established, and (⌛) means that this connection is
-    establishing
-  incoming connections
-    list all incoming connections
-  outgoing connections
-    list all outgoing connections
-
-  connection <address>
-    list feeds of given connection
-  feed <public key>
-    list connections of given feed
-
-  feeds
-    list all feeds
-
-  roots <public key>
-    print brief information about all root objects of given feed
-  tree <pub key> [seq]
-    print root by public key and seq number, if the seq omitted then
-    last full root printed
-
-  info
-    get brief information about node
-  listening address
-    print listening address
-
-  stat [public key] [seq query]
-    show detailed statistic; optional public key shows statistic
-    of a feed (instead of all feeds), and optional seq query
-    shows statistic of range of root objects; the stat can be used
-    this ways:
-
-    stat
-      statistic of all, by default it shows statistic of every feed
-      and last root of every feed
-    stat full
-      statistic of all, output can be big
-    stat 022241cd1857ec73b7741ccb5d5494743e1ef7075ec71d6eca59979fd6be58758c
-      statistic of given feed
-
-    the "seq query" can be used if public key given, there are variants:
-      1    - statistic of given root (with seq = 1)
-      1..3 - statistic of root objects 1, 2 and 3
-      ..3  - statistic of all root objects before 3 (inclusive)
-      3..  - statistic of all root objects after 3 (inclusive)
-      -3   - statistic of latest 3 root objects
-      +3   - statistic of first 3 root objects
-
-    for example
-
-    stat 022241cd1857ec73b7741ccb5d5494743e1ef7075ec71d6eca59979fd6be58758c 1..3
-
-  terminate
-    terminate server if allowed
-
-  help
-    show this help message
-
-  quit, exit
-    leave the cli
-
-`)
+func trimPrefix(in, pfx string) (out []string) {
+	return strings.Fields(strings.TrimSpace(strings.TrimPrefix(in, pfx)))
 }
 
-// ========================================================================== //
-//                            cxo related commands                            //
-// ========================================================================== //
+func (c *client) executeCommand(in string) (quit bool, err error) {
+
+	var prefix string // longest prefix
+
+	for cmd := range c.mapping() {
+		if pl := prefixLength(in, cmd); pl > len(prefix) {
+			prefix = in[:pl]
+		}
+	}
+
+	var fn, ok = c.mapping()[prefix]
+
+	if ok == false {
+		return false, fmt.Errorf("unknown command %q", in)
+	}
+
+	if prefix == "quit" || prefix == "exit" {
+		quit = true
+	}
+
+	err = fn(trimPrefix(in, prefix))
+	return
+}
+
+func (c *client) argsOne(
+	in []string,
+	name string,
+) (
+	one string,
+	err error,
+) {
+
+	if len(in) == 0 {
+		return "", errors.New("missing argument: expected " + name)
+	}
+
+	if len(in) > 1 {
+		return "", errors.New("too many arguments, expected " + name + " only")
+
+	}
+
+	return in[0], nil
+
+}
 
 func pubKeyFromHex(pks string) (pk cipher.PubKey, err error) {
 	var b []byte
@@ -423,207 +366,462 @@ func pubKeyFromHex(pks string) (pk cipher.PubKey, err error) {
 	return
 }
 
-// helper
-func publicKeyArg(ss []string) (pub cipher.PubKey, err error) {
-	var pubs string
-	if pubs, err = args(ss); err != nil {
+func (c *client) argsFeed(in []string) (pk cipher.PubKey, err error) {
+
+	var one string
+	if one, err = c.argsOne(in, "public key"); err != nil {
 		return
 	}
-	pub, err = pubKeyFromHex(pubs)
-	return
+
+	return pubKeyFromHex(one)
 }
 
-func addFeed(rpc *node.RPCClient, ss []string) (err error) {
-	var pk cipher.PubKey
-	if pk, err = publicKeyArg(ss); err != nil {
-		return
-	}
-	if err = rpc.Subscribe("", pk); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  subscribed")
-	return
+func (c *client) argsAddress(in []string) (a string, err error) {
+	return c.argsOne(in, "network address")
 }
 
-func addressFeedArgs(ss []string) (address string, pk cipher.PubKey,
-	err error) {
+func (c *client) argsConnFeed(in []string) (af node.ConnFeed, err error) {
 
-	switch len(ss) {
-	case 0, 1, 2:
-		err = errMisisngArgument
-	case 3:
-		address = ss[1]
-		pk, err = pubKeyFromHex(ss[2])
+	const expected = "expected address and public key"
+
+	switch len(in) {
+	case 0:
+		err = errors.New("missing arguments: " + expected)
+	case 1:
+		err = errors.New("missing public key: " + expected)
+	case 2:
+		af.Address = in[0]
+		af.Feed, err = pubKeyFromHex(in[1])
 	default:
-		err = errTooManyArguments
+		err = errors.New("too many arguments: " + expected)
+	}
+
+	return
+
+}
+
+func (c *client) argsRoot(in []string) (rs node.RootSelector, err error) {
+
+	const expected = "expected public key, nonce and seq number"
+
+	switch len(in) {
+	case 0, 1, 2:
+		err = errors.New("missing arguments: " + expected)
+	case 3:
+		if rs.Feed, err = pubKeyFromHex(in[0]); err != nil {
+			return
+		}
+		if rs.Nonce, err = strconv.ParseUint(in[1], 10, 64); err != nil {
+			return
+		}
+		rs.Seq, err = strconv.ParseUint(in[0], 10, 64)
+	default:
+		err = errors.New("too many arguments: " + expected)
+	}
+
+	return
+
+}
+
+func (c *client) argsNo(in []string) (err error) {
+	if len(in) != 0 {
+		err = errors.New("unexpected arguments, expected nothing")
 	}
 	return
 }
 
-func subscribeTo(rpc *node.RPCClient, ss []string) (err error) {
+//
+// feeds
+//
+
+func (c *client) share(in []string) (err error) {
 	var pk cipher.PubKey
-	var address string
-	if address, pk, err = addressFeedArgs(ss); err != nil {
+	if pk, err = c.argsFeed(in); err != nil {
 		return
 	}
-	if err = rpc.Subscribe(address, pk); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  subscribed") // optimistic
-	return
+	return c.r.Node().Share(pk)
 }
 
-func delFeed(rpc *node.RPCClient, ss []string) (err error) {
+func (c *client) dontShare(in []string) (err error) {
 	var pk cipher.PubKey
-	if pk, err = publicKeyArg(ss); err != nil {
+	if pk, err = c.argsFeed(in); err != nil {
 		return
 	}
-	if err = rpc.Unsubscribe("", pk); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  unsubscribed") // optimistic
-	return
+	return c.r.Node().DontShare(pk)
 }
 
-func unsubscribeFrom(rpc *node.RPCClient, ss []string) (err error) {
-	var pk cipher.PubKey
-	var address string
-	if address, pk, err = addressFeedArgs(ss); err != nil {
+func (c *client) listFeeds(in []string) (err error) {
+	if err = c.argsNo(in); err != nil {
 		return
 	}
-	if err = rpc.Unsubscribe(address, pk); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  unsubscribed") // optimistic
-	return
-}
-
-func feeds(rpc *node.RPCClient) (err error) {
 	var list []cipher.PubKey
-	if list, err = rpc.Feeds(); err != nil {
+	if list, err = c.r.Node().Feeds(); err != nil {
 		return
 	}
 	if len(list) == 0 {
-		fmt.Fprintln(out, "  no feeds")
+		fmt.Fprintln(out, "  no feeds are shared")
 		return
 	}
-	for _, f := range list {
-		fmt.Fprintln(out, "  +", f.Hex())
+	for _, pk := range list {
+		fmt.Fprintln(out, "  -", pk.Hex())
 	}
 	return
 }
 
-func connection(rpc *node.RPCClient, ss []string) (err error) {
+//
+// tcp
+//
+
+func (c *client) tcpConnect(in []string) (err error) {
 	var address string
-	if address, err = args(ss); err != nil {
+	if address, err = c.argsAddress(in); err != nil {
 		return
 	}
-	var feeds []cipher.PubKey
-	if feeds, err = rpc.Connection(address); err != nil {
+	return c.r.TCP().Connect(address)
+}
+
+func (c *client) tcpDisconnet(in []string) (err error) {
+	var address string
+	if address, err = c.argsAddress(in); err != nil {
 		return
 	}
-	if len(feeds) == 0 {
-		fmt.Fprintln(out, "  no feeds")
+	return c.r.TCP().Disconnect(address)
+}
+
+func (c *client) tcpSubscribe(in []string) (err error) {
+	var cf node.ConnFeed
+	if cf, err = c.argsConnFeed(in); err != nil {
 		return
 	}
-	for _, f := range feeds {
-		fmt.Fprintln(out, "  +", f.Hex())
+	return c.r.TCP().Subscribe(cf.Address, cf.Feed)
+}
+
+func (c *client) tcpUnsubscribe(in []string) (err error) {
+	var cf node.ConnFeed
+	if cf, err = c.argsConnFeed(in); err != nil {
+		return
 	}
+	return c.r.TCP().Unsubscribe(cf.Address, cf.Feed)
+}
+
+func (c *client) tcpAddress(in []string) (err error) {
+	if err = c.argsNo(in); err != nil {
+		return
+	}
+	var address string
+	if address, err = c.r.TCP().Address(); err != nil {
+		return
+	}
+	if address == "" {
+		fmt.Fprintln(out, "  doesn't listen")
+		return
+	}
+	fmt.Fprintln(out, " "+address)
 	return
 }
 
-func feed(rpc *node.RPCClient, ss []string) (err error) {
-	var pk cipher.PubKey
-	if pk, err = publicKeyArg(ss); err != nil {
+//
+// udp
+//
+
+func (c *client) udpConnect(in []string) (err error) {
+	var address string
+	if address, err = c.argsAddress(in); err != nil {
 		return
 	}
-	var conns []string
-	if conns, err = rpc.Feed(pk); err != nil {
+	return c.r.UDP().Connect(address)
+}
+
+func (c *client) udpDisconnet(in []string) (err error) {
+	var address string
+	if address, err = c.argsAddress(in); err != nil {
 		return
 	}
-	if len(conns) == 0 {
+	return c.r.UDP().Disconnect(address)
+}
+
+func (c *client) udpSubscribe(in []string) (err error) {
+	var cf node.ConnFeed
+	if cf, err = c.argsConnFeed(in); err != nil {
+		return
+	}
+	return c.r.UDP().Subscribe(cf.Address, cf.Feed)
+}
+
+func (c *client) udpUnsubscribe(in []string) (err error) {
+	var cf node.ConnFeed
+	if cf, err = c.argsConnFeed(in); err != nil {
+		return
+	}
+	return c.r.UDP().Unsubscribe(cf.Address, cf.Feed)
+}
+
+func (c *client) udpAddress(in []string) (err error) {
+	if err = c.argsNo(in); err != nil {
+		return
+	}
+	var address string
+	if address, err = c.r.UDP().Address(); err != nil {
+		return
+	}
+	if address == "" {
+		fmt.Fprintln(out, "  doesn't listen")
+		return
+	}
+	fmt.Fprintln(out, " "+address)
+	return
+}
+
+//
+// connections
+//
+
+func (c *client) connections(in []string) (err error) {
+	if err = c.argsNo(in); err != nil {
+		return
+	}
+	var cs []string
+	if cs, err = c.r.Node().Connections(); err != nil {
+		return
+	}
+	if len(cs) == 0 {
 		fmt.Fprintln(out, "  no connections")
 		return
 	}
-	for _, c := range conns {
-		fmt.Fprintln(out, "  +", c)
+	for _, c := range cs {
+		fmt.Fprintln(out, " ", c)
 	}
 	return
 }
 
-func stat(rpc *node.RPCClient, args []string) (err error) {
+//
+// root objects
+//
 
-	var stat node.Stat
-	if stat, err = rpc.Stat(); err != nil {
+func (c *client) printRoot(z *registry.Root) {
+	var refs = make([]string, 0, len(z.Refs))
+
+	for _, dr := range z.Refs {
+		refs = append(refs, dr.Short())
+	}
+
+	fmt.Fprintf(out, `  root  %s
+
+    refs:       %#v
+
+	descriptor: %q
+	registry:   %s
+
+	feed:       %s
+	nonce:      %d
+	seq:        %d
+
+	time:       %v
+
+	sig:        %s
+	prev:       %s
+
+`,
+		z.Hash.Hex(),
+		refs,
+		string(z.Descriptor),
+		z.Reg.String(),
+		z.Pub.Hex(),
+		z.Nonce,
+		z.Seq,
+		time.Unix(0, z.Time),
+		z.Sig.Hex(),
+		z.Prev.Hex(),
+	)
+}
+
+func (c *client) rootInfo(in []string) (err error) {
+	var sl node.RootSelector
+	if sl, err = c.argsRoot(in); err != nil {
+		return
+	}
+	var z *registry.Root
+	if z, err = c.r.Root().Show(sl.Feed, sl.Nonce, sl.Seq); err != nil {
+		return
+	}
+	c.printRoot(z)
+	return
+}
+
+func (c *client) rootTree(in []string) (err error) {
+	var sl node.RootSelector
+	if sl, err = c.argsRoot(in); err != nil {
+		return
+	}
+	var tree string
+	if tree, err = c.r.Root().Tree(sl.Feed, sl.Nonce, sl.Seq); err != nil {
+		return
+	}
+	fmt.Fprintln(out, " ", tree)
+	return
+}
+
+func (c *client) lastRoot(in []string) (err error) {
+	var pk cipher.PubKey
+	if pk, err = c.argsFeed(in); err != nil {
+		return
+	}
+	var z *registry.Root
+	if z, err = c.r.Root().Last(pk); err != nil {
+		return
+	}
+	c.printRoot(z)
+	return
+}
+
+//
+// stat
+//
+
+func (c *client) printRootStat(rs skyobject.RootStat) {
+	fmt.Fprintln(out, "      hash:", rs.Hash.Hex())
+	fmt.Fprintln(out, "      time:", rs.Time)
+	fmt.Fprintln(out, "      seq: ", rs.Seq)
+}
+
+func (c *client) stat(in []string) (err error) {
+	if err = c.argsNo(in); err != nil {
+		return
+	}
+	var s *node.Stat
+	if s, err = c.r.Node().Stat(); err != nil {
 		return
 	}
 
-	fmt.Fprintln(out, "  ----")
-	fmt.Fprintln(out, "  Connections:", stat.Node.Connections)
-	fmt.Fprintln(out, "  Feeds:      ", stat.Node.Feeds)
-	fmt.Fprintln(out, "  Filling avg:", stat.Node.FillAvg)
-	fmt.Fprintln(out, "  Drop avg:   ", stat.Node.DropAvg)
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  Save avg:    ", stat.CXO.Save)
-	fmt.Fprintln(out, "  Clean up avg:", stat.CXO.CleanUp)
-	fmt.Fprintln(out, "  Stat time:   ", stat.CXO.Stat)
-	fmt.Fprintln(out, "  ----")
+	fmt.Fprintln(out, "  average filling duration:       ", s.Fillavg)
 
-	sap, svp := stat.CXO.Percents()
+	fmt.Fprintln(out, "  CXDS RPS:                       ", s.CXDS.RPS)
+	fmt.Fprintln(out, "  CXDS WPS:                       ", s.CXDS.WPS)
 
-	fmt.Fprintf(out, "  Total objects amount: %d (%.2f%% shared)\n",
-		stat.CXO.Objects.Amount, sap*100.0)
-	fmt.Fprintf(out, "  Total objects volume: %s (%.2f%% shared)\n",
-		stat.CXO.Objects.Volume, svp*100.0)
+	fmt.Fprintln(out, "  cache RPS:                      ", s.Cache.RPS)
+	fmt.Fprintln(out, "  cache WPS:                      ", s.Cache.WPS)
 
-	if len(stat.CXO.Feeds) == 0 {
+	fmt.Fprintln(out, "  average cache celaning duration:", s.CacheCleaning)
+
+	fmt.Fprintln(out, "  amount of all obejcts:          ",
+		s.AllObjects.Amount.String())
+	fmt.Fprintln(out, "  volume of all obejcts:          ",
+		s.AllObjects.Volume.String())
+
+	fmt.Fprintln(out, "  amount of used obejcts:         ",
+		s.UsedObjects.Amount.String())
+	fmt.Fprintln(out, "  volume of used obejcts:         ",
+		s.UsedObjects.Volume.String())
+
+	fmt.Fprintln(out, "  new Root objects per second:    ", s.RootsPerSecond)
+
+	if len(s.Feeds) == 0 {
 		fmt.Fprintln(out, "  no feeds")
-		fmt.Fprintln(out, "  ----")
-		return // don't give a shit about arguments and anything else
+		return
 	}
 
-	// 1. no arguments    -> print every feed with last root
-	// 2. 'full' argument -> print all
-	// 3. pk argument     -> print given feed
-	// 4. pk + query      -> print by the query
+	for pk, fs := range s.Feeds {
+		fmt.Fprintln(out, " ", pk.Hex())
 
-	switch len(args) {
-	case 0, 1:
-		// no arguments
-		printDefaultFeedsStat(&stat.CXO)
-	case 2:
-		// one argument (full or pk)
-		if args[1] == "full" {
-			printFullFeedsStat(&stat.CXO)
-		} else {
-			var pk cipher.PubKey
-			if pk, err = pubKeyFromHex(args[1]); err != nil {
-				return
+		if len(fs.Heads) == 0 {
+			fmt.Fprintln(out, "    no heads")
+			continue
+		}
+
+		for nonce, hs := range fs.Heads {
+			fmt.Fprintln(out, "    ", nonce)
+
+			switch hs.Len {
+			case 0:
+				fmt.Fprintln(out, "      no root objects")
+			case 1:
+				fmt.Fprintln(out, "      last Root")
+				c.printRootStat(hs.Last)
+			default:
+				fmt.Fprintln(out, "      first Root")
+				c.printRootStat(hs.First)
+				fmt.Fprintln(out, "      last Root")
+				c.printRootStat(hs.Last)
 			}
-			if fs, ok := stat.CXO.Feeds[pk]; ok {
-				printFullFeedStat(pk, &fs)
-				return
-			}
-			fmt.Fprintln(out, "  no such feed")
+
 		}
-	case 3:
-		// pk + query
-		var pk cipher.PubKey
-		if pk, err = pubKeyFromHex(args[1]); err != nil {
-			return
-		}
-		if fs, ok := stat.CXO.Feeds[pk]; ok {
-			err = printFeedStatQuery(pk, &fs, args[2])
-			return
-		}
-		fmt.Fprintln(out, "  no such feed")
-	default:
-		return errTooManyArguments
+
 	}
 
-	fmt.Fprintln(out, "  ----")
 	return
 }
+
+func (c *client) help(in []string) (err error) {
+	fmt.Fprint(out, `
+
+  share feed <public key>
+    start sharing given feed
+  don't share feed <public key>
+    stop sharing given feed
+  list feeds
+    show all feeds the node share
+
+  tcp connect <address>
+    connect to tcp address
+  tcp disconnect <connection address>
+    close tcp connection
+  tcp subsribe <connection address> <public key>
+    subscribe to feed of peer
+  tcp unsubscribe <connection address> <public key>
+    unsubscribe from feed of peer
+  tcp address
+    tcp listening address
+
+  udp connect <address>
+    connect to udp address
+  udp disconnect <connection address>
+    close udp connection
+  udp subsribe <connection address> <public key>
+    subscribe to feed of peer
+  udp unsubscribe <connection address> <public key>
+    unsubscribe from feed of peer
+  udp address
+    udp listening address
+
+
+  connections
+    show all connections
+
+
+  root info <public key> <nonce> <seq>
+    show info of selected Root
+
+  root tree <public key> <nonce> <seq>
+    print tree of selected Root
+
+  last root <public key>
+    show info about last Root of given feed
+
+
+  stat
+    show statistic of node
+
+
+  help
+    show this help messege
+
+
+  quit or exit
+    leave the cli
+
+`)
+	return
+}
+
+func (c *client) quit([]string) (_ error) {
+	fmt.Fprintln(out, "cya")
+	return
+}
+
+/*
+
+TODO (kostyarin): smart query for Root objects
+----------------------------------------------
 
 func printFirstRoots(query string, fs *cxo.FeedStat) (err error) {
 	var num uint64
@@ -826,116 +1024,7 @@ func printFullFeedsStat(stat *cxo.Stat) {
 	}
 }
 
-func connDirString(in bool) string {
-	if in {
-		return "-->"
-	}
-	return "<--"
-}
 
-func connPendString(pend bool) string {
-	if pend {
-		return "(⌛)"
-	}
-	return "(✓)"
-}
-
-func nodeConnectionString(nc node.ConnectionInfo) string {
-	return fmt.Sprintf("%s %s %s", connDirString(nc.IsIncoming),
-		nc.Address, connPendString(nc.IsPending))
-}
-
-func connections(rpc *node.RPCClient) (err error) {
-	var list []node.ConnectionInfo
-	if list, err = rpc.Connections(); err != nil {
-		return
-	}
-	if len(list) == 0 {
-		fmt.Fprintln(out, "  no connections")
-		return
-	}
-	for _, c := range list {
-		fmt.Fprintln(out, " ", nodeConnectionString(c))
-	}
-	return
-}
-
-func incomingConnections(rpc *node.RPCClient) (err error) {
-	var list []node.ConnectionInfo
-	if list, err = rpc.IncomingConnections(); err != nil {
-		return
-	}
-	if len(list) == 0 {
-		fmt.Fprintln(out, "  no incoming connections")
-		return
-	}
-	for _, c := range list {
-		fmt.Fprintf(out, "  %s %s\n", c.Address, connPendString(c.IsPending))
-	}
-	return
-}
-
-func outgoingConnections(rpc *node.RPCClient) (err error) {
-	var list []node.ConnectionInfo
-	if list, err = rpc.OutgoingConnections(); err != nil {
-		return
-	}
-	if len(list) == 0 {
-		fmt.Fprintln(out, "  no outgoing connections")
-		return
-	}
-	for _, c := range list {
-		fmt.Fprintf(out, "  %s %s\n", c.Address, connPendString(c.IsPending))
-	}
-	return
-}
-
-func connect(rpc *node.RPCClient, ss []string) (err error) {
-	var address string
-	if address, err = args(ss); err != nil {
-		return
-	}
-	if err = rpc.Connect(address); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  connected")
-	return
-}
-
-func disconnect(rpc *node.RPCClient, ss []string) (err error) {
-	var address string
-	if address, err = args(ss); err != nil {
-		return
-	}
-	if err = rpc.Disconnect(address); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  disconnected")
-	return
-}
-
-func listeningAddress(rpc *node.RPCClient) (err error) {
-	var address string
-	if address, err = rpc.ListeningAddress(); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  ", address)
-	return
-}
-
-func info(rpc *node.RPCClient) (err error) {
-	var info *node.Info
-	if info, err = rpc.Info(); err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  ----")
-	fmt.Fprintf(out, "  listening: %v\n", info.IsListening)
-	fmt.Fprintln(out, "  address:  ", info.ListeningAddress)
-	fmt.Fprintln(out, "  discovery:", info.Discovery)
-	fmt.Fprintf(out, "  public:    %v\n", info.IsPublicServer)
-	fmt.Fprintln(out, "  ----")
-	return
-}
 
 func roots(rpc *node.RPCClient, ss []string) (err error) {
 	var pub cipher.PubKey
@@ -970,106 +1059,5 @@ func roots(rpc *node.RPCClient, ss []string) (err error) {
 	return
 }
 
-func tree(rpc *node.RPCClient, ss []string) (err error) {
 
-	var pk cipher.PubKey
-	var seq uint64
-	var lsatFull bool
-
-	switch len(ss) {
-	case 0, 1:
-		return errors.New("to few arguments: want <pub key> [seq]")
-	case 2:
-		lsatFull = true
-	case 3:
-	default:
-		return errors.New("to many arguments: want <pub key> [seq]")
-	}
-	if pk, err = pubKeyFromHex(ss[1]); err != nil {
-		return
-	}
-	if lsatFull == false {
-		if seq, err = strconv.ParseUint(ss[2], 10, 64); err != nil {
-			return
-		}
-	}
-	var tree string
-	if tree, err = rpc.Tree(pk, seq, lsatFull); err != nil {
-		return
-	}
-	fmt.Fprintln(out, tree)
-	return
-}
-
-func term(rpc *node.RPCClient) (err error) {
-	if err = rpc.Terminate(); err == io.ErrUnexpectedEOF {
-		err = nil
-	}
-	if err != nil {
-		return
-	}
-	fmt.Fprintln(out, "  terminated")
-	return
-}
-
-// --- sorting (feeds)
-
-func sortFeedStats(fss map[cipher.PubKey]cxo.FeedStat) (cfs cxoFeedStats) {
-	cfs = make(cxoFeedStats, 0, len(fss))
-	for pk, fs := range fss {
-		cfs = append(cfs, cxoFeedStat{
-			pk:   pk,
-			stat: &fs,
-		})
-	}
-	sort.Sort(cfs)
-	return
-}
-
-type cxoFeedStat struct {
-	pk   cipher.PubKey
-	stat *cxo.FeedStat
-}
-
-type cxoFeedStats []cxoFeedStat
-
-func (c cxoFeedStats) Len() int { return len(c) }
-func (c cxoFeedStats) Less(i, j int) bool {
-	return bytes.Compare(c[i].pk[:], c[j].pk[:]) < 0
-}
-func (c cxoFeedStats) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
-
-// --- sorting (roots)
-
-func getLastRootStat(fs *cxo.FeedStat) (last uint64, rs *cxo.RootStat) {
-	for seq, crs := range fs.Roots {
-		if seq > last || (seq == 0 && last == 0) {
-			rs = &crs
-			last = seq
-		}
-	}
-	return // or nil
-}
-
-func sortRootStats(fs *cxo.FeedStat) (rss cxoRootStats) {
-	rss = make(cxoRootStats, 0, len(fs.Roots))
-	for seq, rs := range fs.Roots {
-		rss = append(rss, cxoRootStat{
-			seq:  seq,
-			stat: &rs,
-		})
-	}
-	sort.Sort(rss)
-	return
-}
-
-type cxoRootStat struct {
-	seq  uint64
-	stat *cxo.RootStat
-}
-
-type cxoRootStats []cxoRootStat
-
-func (c cxoRootStats) Len() int           { return len(c) }
-func (c cxoRootStats) Less(i, j int) bool { return c[i].seq < c[j].seq }
-func (c cxoRootStats) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+*/
