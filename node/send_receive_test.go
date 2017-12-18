@@ -129,8 +129,8 @@ func Test_send_receive(t *testing.T) {
 
 	var r = new(registry.Root)
 
-	r.Nonce = 90210 // random
-	r.Pub = pk      // set
+	r.Nonce = 9021 // random
+	r.Pub = pk     // set
 	r.Descriptor = []byte("hey-ho!")
 
 	r.Refs = append(r.Refs,

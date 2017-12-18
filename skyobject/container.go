@@ -254,7 +254,9 @@ func (c *Container) DB() (db *data.DB) {
 // Walk walks throug given Root calling given
 // walkFunc for every obejct of the Root including
 // hash of the Root and Regsitry (depending on the
-// deepper reply of the WalkFunc)
+// deepper reply of the WalkFunc).
+//
+// The Walk obtains objects of the Root from DB
 func (c *Container) Walk(
 	r *registry.Root,
 	walkFunc registry.WalkFunc,

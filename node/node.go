@@ -16,8 +16,13 @@ import (
 )
 
 // A Node represents network P2P transport
-// for CX objects. The node used to receive
-// send and retransmit CX obejcts
+// for CX objects. The node used to receive,
+// send and retransmit CX obejcts. The Node
+// cares about last Root object of active
+// head (see skyobject.Index.ActiveHead) of
+// a feed. E.g. the Node never replicates an
+// old Root if there is a newer one. The Node
+// uses TCP and UDP transports.
 type Node struct {
 	mx sync.Mutex // lock
 
@@ -211,7 +216,12 @@ func (n *Node) Container() (c *skyobject.Container) {
 
 // Publish sends given Root obejct to peers that
 // subscribed to feed of the Root. The Publish used
-// to publish new Root obejcts
+// to publish new Root obejcts. E.g. the Node sends
+// last Root object of a feed to subsctibers. But
+// the Node knows nothing about new Root objects.
+// And to share an updated Root, call the Publish.
+// And don't call the publish for Root objects that
+// alredy saved (that saved before subscription)
 func (n *Node) Publish(r *registry.Root) {
 	n.fs.broadcastRoot(connRoot{nil, r})
 }
