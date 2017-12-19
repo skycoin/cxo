@@ -316,7 +316,6 @@ func (n *Node) delConnection(c *Conn) {
 
 	delete(n.ic, c.peerID)
 	n.fs.delConn(c)
-
 }
 
 // call under lock of the mx
@@ -426,9 +425,9 @@ func (n *Node) wrapConnection(
 	// add to transport if the connection is incoming
 	if isIncoming == true {
 		if c.IsTCP() == true {
-			n.TCP().addAcceptedconnection(c)
+			n.TCP().addAcceptedConnection(c)
 		} else {
-			n.UDP().addAcceptedconnection(c)
+			n.UDP().addAcceptedConnection(c)
 		}
 	}
 

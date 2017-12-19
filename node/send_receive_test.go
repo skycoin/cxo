@@ -76,6 +76,7 @@ func getTestRegistry() (r *registry.Registry) {
 }
 
 func assertNil(t *testing.T, err error) {
+	t.Helper()
 	if err != nil {
 		t.Fatal(err)
 	}

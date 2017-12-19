@@ -84,7 +84,7 @@ func (t *TCP) Address() string {
 	return t.address
 }
 
-func (t *TCP) addAcceptedconnection(c *Conn) {
+func (t *TCP) addAcceptedConnection(c *Conn) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
@@ -356,7 +356,7 @@ func (u *UDP) Address() string {
 	return u.address
 }
 
-func (u *UDP) addAcceptedconnection(c *Conn) {
+func (u *UDP) addAcceptedConnection(c *Conn) {
 	u.mx.Lock()
 	defer u.mx.Unlock()
 

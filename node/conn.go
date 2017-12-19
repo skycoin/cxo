@@ -77,7 +77,7 @@ func (n *Node) newConnection(
 
 // start handling
 func (c *Conn) run() {
-	c.await.Add(2)
+	c.await.Add(1)
 	go c.receiving()
 }
 
@@ -433,7 +433,8 @@ func (c *Conn) receiving() {
 
 	c.n.Debugf(ConnPin, "[%s] receiving", c.String())
 
-	defer c.await.Done()
+	defer c.Close()      //
+	defer c.await.Done() //
 
 	var (
 		receiveq = c.GetChanIn()

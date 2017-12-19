@@ -111,6 +111,33 @@ func TestNode_Container(t *testing.T) {
 
 }
 
+func assertTrue(t *testing.T, v bool, msg string) {
+	t.Helper()
+	if v == false {
+		t.Fatal(msg)
+	}
+}
+
+func assertIDs(t *testing.T, cs []*Conn, ids ...cipher.PubKey) {
+	t.Helper()
+	var im = make(map[cipher.PubKey]struct{})
+	for _, pk := range ids {
+		im[pk] = struct{}{}
+	}
+	if len(im) != len(cs) {
+		t.Fatal("wrong length")
+	}
+	for _, c := range cs {
+		if _, ok := im[c.PeerID()]; ok == false {
+			t.Fatal("missing id")
+		}
+		delete(im, c.PeerID())
+	}
+	if len(im) != 0 {
+		t.Fatal("wrong length")
+	}
+}
+
 func TestNode_Publish(t *testing.T) {
 	// (r *registry.Root)
 
@@ -156,46 +183,80 @@ func TestNode_Publish(t *testing.T) {
 		err           error
 	)
 
-	if sn1, err = NewNode(sc1); err != nil {
-		t.Fatal(err)
-	}
+	sn1, err = NewNode(sc1)
+	assertNil(t, err)
 	defer sn1.Close()
 
-	if sn2, err = NewNode(sc2); err != nil {
-		t.Fatal(err)
-	}
+	sn2, err = NewNode(sc2)
+	assertNil(t, err)
 	defer sn2.Close()
 
-	if un1, err = NewNode(uc1); err != nil {
-		t.Fatal(err)
-	}
+	un1, err = NewNode(uc1)
+	assertNil(t, err)
 	defer un1.Close()
 
 	// feed and owner
 
 	var pk, sk = cipher.GenerateKeyPair()
 
-	if err = ln.Share(pk); err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, ln.Share(pk))
+
+	// check out connections
+
+	assertTrue(t, len(ln.Connections()) == 0, "unexpected connectionss")
+	assertTrue(t, len(sn1.Connections()) == 0, "unexpected connectionss")
+	assertTrue(t, len(sn2.Connections()) == 0, "unexpected connectionss")
+	assertTrue(t, len(un1.Connections()) == 0, "unexpected connectionss")
+
+	assertTrue(t, len(ln.ConnectionsOfFeed(pk)) == 0,
+		"unexpected connectionss")
+	assertTrue(t, len(sn1.ConnectionsOfFeed(pk)) == 0,
+		"unexpected connectionss")
+	assertTrue(t, len(sn2.ConnectionsOfFeed(pk)) == 0,
+		"unexpected connectionss")
+	assertTrue(t, len(un1.ConnectionsOfFeed(pk)) == 0,
+		"unexpected connectionss")
 
 	// conenct to the listener (and subscribe / not susbcribe)
 
-	if c, err := sn1.TCP().Connect(ln.TCP().Address()); err != nil {
-		t.Fatal(err)
-	} else if err = c.Subscribe(pk); err != nil {
-		t.Fatal(err)
-	}
+	// sn1
+	var c *Conn
+	c, err = sn1.TCP().Connect(ln.TCP().Address())
+	assertNil(t, err)
+	assertTrue(t, c.PeerID() == ln.ID(), "wrong ID")
+	assertIDs(t, ln.Connections(), sn1.ID())
 
-	if c, err := sn2.TCP().Connect(ln.TCP().Address()); err != nil {
-		t.Fatal(err)
-	} else if err = c.Subscribe(pk); err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, c.Subscribe(pk))
+	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID())
 
-	if _, err = un1.TCP().Connect(ln.TCP().Address()); err != nil {
-		t.Fatal(err)
-	}
+	// sn2
+	c, err = sn2.TCP().Connect(ln.TCP().Address())
+	assertNil(t, err)
+	assertTrue(t, c.PeerID() == ln.ID(), "wrong ID")
+	assertIDs(t, ln.Connections(), sn1.ID(), sn2.ID())
+
+	assertNil(t, c.Subscribe(pk))
+	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID(), sn2.ID())
+
+	// un1
+	c, err = un1.TCP().Connect(ln.TCP().Address())
+	assertNil(t, err)
+	assertTrue(t, c.PeerID() == ln.ID(), "wrong id")
+
+	// check all connections
+
+	// ln
+	assertIDs(t, ln.Connections(), sn1.ID(), sn2.ID(), un1.ID())
+	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID(), sn2.ID())
+	// sn1
+	assertIDs(t, sn1.Connections(), ln.ID())
+	assertIDs(t, sn1.ConnectionsOfFeed(pk), ln.ID())
+	// sn2
+	assertIDs(t, sn2.Connections(), ln.ID())
+	assertIDs(t, sn2.ConnectionsOfFeed(pk), ln.ID())
+	// un1
+	assertIDs(t, un1.Connections(), ln.ID())
+	assertIDs(t, un1.ConnectionsOfFeed(pk))
 
 	// generate Root
 
@@ -239,33 +300,73 @@ func TestNode_Publish(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
+	// ok, now let's disconnect one by one and check
+	// connections again
+
+	// un1
+	c, err = un1.TCP().Connect(ln.TCP().Address())
+	assertNil(t, err)
+	c.Close()
+
+	<-time.After(100 * time.Millisecond)
+
+	assertIDs(t, ln.Connections(), sn1.ID(), sn2.ID())
+	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID(), sn2.ID())
+	assertIDs(t, un1.Connections())
+	assertIDs(t, un1.ConnectionsOfFeed(pk))
+
+	// sn2
+	c, err = sn2.TCP().Connect(ln.TCP().Address())
+	assertNil(t, err)
+	c.Close()
+
+	<-time.After(100 * time.Millisecond)
+
+	assertIDs(t, ln.Connections(), sn1.ID())
+	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID())
+	assertIDs(t, sn2.Connections())
+	assertIDs(t, sn2.ConnectionsOfFeed(pk))
+
+	// sn1
+	c, err = sn1.TCP().Connect(ln.TCP().Address())
+	assertNil(t, err)
+	c.Close()
+
+	<-time.After(100 * time.Millisecond)
+
+	assertIDs(t, ln.Connections())
+	assertIDs(t, ln.ConnectionsOfFeed(pk))
+	assertIDs(t, sn1.Connections())
+	assertIDs(t, sn1.ConnectionsOfFeed(pk))
+
 }
 
 func TestNode_ConnectionsOfFeed(t *testing.T) {
 	// (feed cipher.PubKey) (cs []*Conn)
 
-	//
+	// moved to Publish
 
 }
 
 func TestNode_Connections(t *testing.T) {
 	// (cs []*Conn)
 
-	//
+	// moved to Publish
 
 }
 
 func TestNode_TCP(t *testing.T) {
 	// (tcp *TCP)
 
-	//
+	// TODO (kostyarin): low priority
 
 }
 
 func TestNode_UDP(t *testing.T) {
 	// (udp *UDP)
 
-	// TOOD (kostyarin): does udp works?
+	// TODO (kostyarin): low priority
+
 }
 
 func TestNode_Share(t *testing.T) {
