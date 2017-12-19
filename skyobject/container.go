@@ -23,7 +23,7 @@ type Container struct {
 
 	db *data.DB // database
 
-	conf Config // ccopy of given
+	conf *Config // configurations
 
 	// human readable (used by node for debugging)
 	cxPath, idxPath string
@@ -54,7 +54,7 @@ func NewContainer(conf *Config) (c *Container, err error) {
 
 	c = new(Container)
 
-	c.conf = *conf // copy
+	c.conf = conf // keep
 
 	if err = c.createDB(conf); err != nil {
 		return
@@ -73,7 +73,7 @@ func NewContainer(conf *Config) (c *Container, err error) {
 	}
 
 	// initialize cache
-	c.Cache.initialize(c.db.CXDS(), &c.conf)
+	c.Cache.initialize(c.db.CXDS(), c.conf)
 
 	if err = c.Index.load(c); err != nil {
 		return
@@ -301,10 +301,10 @@ func (c *Container) walkRoot(
 	return r.Walk(pack, walkFunc)
 }
 
-// Config returns configs of the Container
-func (c *Container) Config() (conf Config) {
-	conf = c.conf // copy
-	return
+// Config returns configs of the Container.
+// The Config must not be modified
+func (c *Container) Config() (conf *Config) {
+	return c.conf
 }
 
 func (c *Container) rootByHash(

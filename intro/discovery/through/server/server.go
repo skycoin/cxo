@@ -1,98 +1,95 @@
 package main
 
+// the server dosn't import the through package and knows
+// nothing about its types and registries; but the server
+// can collect and share any objects (any feeds)
+
 import (
 	"flag"
-	"fmt"
-	"io/ioutil"
+	"log"
 	"os"
 	"os/signal"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/node/log"
 )
 
 // defaults
 const (
-	Host        string = "[::1]:8000" // default host address of the node
-	RPC         string = "[::1]:7000" // default RPC address
-	RemoteClose bool   = false        // don't allow closing by RPC by default
+	Host string = "[::1]:8000" // default host address of the node
+	RPC  string = "[::1]:7000" // default RPC address
 
 	Discovery string = "[::1]:8008" // discovery server
 )
 
-func waitInterrupt(quit <-chan struct{}) {
+// feeds we are going to share
+var (
+	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A")) // A-feed (ca)
+	bpk, _ = cipher.GenerateDeterministicKeyPair([]byte("B")) // B-feed (cb)
+)
+
+// wait for SIGINT and return
+func waitInterrupt() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
-	select {
-	case <-sig:
-	case <-quit:
-	}
+	<-sig
 }
 
 func main() {
 
-	var code int
-
-	defer func() {
-		if err := recover(); err != nil {
-			code = 1
-			fmt.Fprintln(os.Stderr, "[PANIC]:", err)
-		}
-		os.Exit(code) // the Exit "recovers" silently
-	}()
-
 	var c = node.NewConfig()
 
-	c.RPCAddress = RPC
-	c.Listen = Host
-	c.RemoteClose = RemoteClose
+	c.RPC = RPC                                 // enable RPC
+	c.TCP.Listen = Host                         // listen
+	c.TCP.Discovery = node.Addresses{Discovery} // conenct o discovery server
 
-	c.PublicServer = true
-	c.DiscoveryAddresses = node.Addresses{Discovery}
+	c.Public = true // share list of feeds
 
-	c.PingInterval = 0 // suppress pings for this example
+	// use DB in memeory for the example
+	c.Config.InMemoryDB = true
 
-	c.DataDir = ""      // don't create ~/.skycoin/cxo
-	c.InMemoryDB = true // use DB in memeory
+	// logs
+	c.Logger.Prefix = "[server] "
 
-	c.Log.Prefix = "[server] "
+	// uncomment to see all debug logs
+	//
+	// c.Logger.Pins = ^c.Logger.Pins
+	// c.Logger.Debug = true
 
-	c.Skyobject.Log.Prefix = "[server cxo] "
-
-	// suppress gnet logger
-	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
-
+	// obtain configurations from commandline flags
 	c.FromFlags()
 	flag.Parse()
 
-	// apk and bk is A-feed and B-feed
-	apk, _ := cipher.GenerateDeterministicKeyPair([]byte("A"))
-	bpk, _ := cipher.GenerateDeterministicKeyPair([]byte("B"))
+	var (
+		n   *node.Node
+		err error
+	)
 
-	var s *node.Node
-	var err error
-
-	// create and launch
-	if s, err = node.NewNode(c); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		code = 1
-		return
+	// creating node, we creates container instance
+	if n, err = node.NewNode(c); err != nil {
+		log.Fatal(err)
 	}
-	defer s.Close() // close
+	defer n.Close() // close
 
-	// add feeds
-	for _, pk := range []cipher.PubKey{
-		apk,
-		bpk,
-	} {
-		if err = s.AddFeed(pk); err != nil {
-			fmt.Println("[ERR] database failure:", err)
-			code = 1
-			return
-		}
+	// share the feeds
+	//
+	// we have to add the feed to the server; after the
+	// appending, the server sends list of its feeds to
+	// the discovery server and the dicovery server
+	// conencts other nodes to the server (other nodes,
+	// that share feeds apk and bpk)
+
+	if err = n.Share(apk); err != nil {
+		log.Fatal(err)
 	}
 
-	waitInterrupt(s.Closed())
+	if err = n.Share(bpk); err != nil {
+		log.Fatal(err)
+	}
+
+	// daemon mode: on
+
+	waitInterrupt()
+
 }

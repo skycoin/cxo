@@ -127,14 +127,12 @@ func (t *TCP) Discovery() (d *discovery.MessengerFactory) {
 	return t.d
 }
 
-// ConnectToDiscoveryServer connects to given discovery server.
-// If Discovery is nil, then it will be created
-func (t *TCP) ConnectToDiscoveryServer(address string) {
-
+func (t *TCP) createDiscovery() (d *discovery.MessengerFactory) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	if t.d == nil {
+
 		t.d = discovery.NewMessengerFactory()
 
 		if t.n.config.Logger.Debug == true {
@@ -146,7 +144,14 @@ func (t *TCP) ConnectToDiscoveryServer(address string) {
 		}
 	}
 
-	t.d.ConnectWithConfig(address, &discovery.ConnConfig{
+	return t.d
+}
+
+// ConnectToDiscoveryServer connects to given discovery server.
+// If Discovery is nil, then it will be created
+func (t *TCP) ConnectToDiscoveryServer(address string) {
+
+	t.createDiscovery().ConnectWithConfig(address, &discovery.ConnConfig{
 		SeedConfig: t.n.id,
 
 		Reconnect:     true,

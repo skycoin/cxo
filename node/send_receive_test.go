@@ -85,7 +85,7 @@ func Test_send_receive(t *testing.T) {
 
 	var (
 		fr           = make(chan *registry.Root, 100)
-		onRootFilled = func(r *registry.Root) { fr <- r }
+		onRootFilled = func(_ *Node, r *registry.Root) { fr <- r }
 
 		sn = getTestNode("sender")
 
@@ -99,7 +99,7 @@ func Test_send_receive(t *testing.T) {
 		t.Logf("[%s] root received %s", c.String(), r.Short())
 		return
 	}
-	rconf.OnFillingBreaks = func(r *registry.Root, err error) {
+	rconf.OnFillingBreaks = func(n *Node, r *registry.Root, err error) {
 		t.Logf("filling of %s breaks by %v", r.Short(), err)
 	}
 
@@ -229,7 +229,7 @@ func Test_send_receive_refs(t *testing.T) {
 
 	var (
 		fr           = make(chan *registry.Root, 100)
-		onRootFilled = func(r *registry.Root) { fr <- r }
+		onRootFilled = func(_ *Node, r *registry.Root) { fr <- r }
 
 		sn = getTestNode("sender")
 
@@ -243,7 +243,7 @@ func Test_send_receive_refs(t *testing.T) {
 		t.Logf("[%s] root received %s", c.String(), r.Short())
 		return
 	}
-	rconf.OnFillingBreaks = func(r *registry.Root, err error) {
+	rconf.OnFillingBreaks = func(n *Node, r *registry.Root, err error) {
 		t.Logf("filling of %s breaks by %v", r.Short(), err)
 	}
 

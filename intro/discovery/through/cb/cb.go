@@ -3,7 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,186 +13,277 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/node"
-	"github.com/skycoin/cxo/node/log"
 
-	cxo "github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 
-	"github.com/skycoin/cxo/intro/exchange"
+	"github.com/skycoin/cxo/intro/discovery" // types
 )
 
 // defaults
 const (
-	Host        string = "[::1]:8002" // default host address of the node
-	RPC         string = "[::1]:7002" // default RPC address
-	RemoteClose bool   = false        // don't allow closing by RPC by default
+	Host string = "[::1]:8002" // default host address of the node
+	RPC  string = "[::1]:7002" // default RPC address
 
 	Discovery string = "[::1]:8008" // discovery server
 )
 
-func waitInterrupt(quit <-chan struct{}) {
+// interest feeds
+var (
+	// apk is feed the ca interest
+	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	// the bpk is feed the ca generates, the bsk is secret key
+	// that used to sign Root objects of the feed, to proof
+	// that the Root objects really belongs to the bpk;
+	// short words, bpk is feed, bsk is owner of the feed
+	bpk, bsk = cipher.GenerateDeterministicKeyPair([]byte("A"))
+)
+
+// wait for SIGINT and return
+func waitInterrupt() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
-	select {
-	case <-sig:
-	case <-quit:
-	}
+	<-sig
 }
 
 func main() {
 
-	var code int
-
-	defer func() {
-		if err := recover(); err != nil {
-			code = 1
-			fmt.Fprintln(os.Stderr, "[PANIC]:", err)
-		}
-		os.Exit(code) // the Exit "recovers" silently
-	}()
-
-	// register types to use
-	reg := cxo.NewRegistry(func(r *cxo.Reg) {
-		r.Register("exchg.Vote", exchange.Vote{})
-		r.Register("exchg.Content", exchange.Content{})
-	})
-
 	var c = node.NewConfig()
 
-	c.RPCAddress = RPC
-	c.Listen = Host
-	c.RemoteClose = RemoteClose
+	c.RPC = RPC // enable RPC
 
-	c.DiscoveryAddresses = node.Addresses{Discovery}
+	c.TCP.Listen = "" // don't listen
+	c.TCP.Discovery = node.Addresses{Discovery}
 
-	c.PingInterval = 0 // suppress ping logs
+	// use DB in memory for the example
+	c.Config.InMemoryDB = true
 
-	c.DataDir = ""      // don't create ~/.skycoin/cxo
-	c.InMemoryDB = true // use DB in memeory
+	// prefix for logs
+	c.Logger.Prefix = "[ca] "
 
-	// node logger
-	c.Log.Prefix = "[cb] "
+	// uncomment to see all debug logs
+	//
+	// c.Logger.Pins = ^c.Logger.Pins
+	// c.Logger.Debug = true
 
-	// suppress gnet logger
-	c.Config.Logger = log.NewLogger(log.Config{Output: ioutil.Discard})
-
-	c.Skyobject.Registry = reg // <-- registry
-
-	// skyobject logger
-	c.Skyobject.Log.Prefix = "[cb cxo]"
+	//
+	// callbacks
+	//
 
 	// show full root objects
-	c.OnRootFilled = func(c *node.Conn, r *cxo.Root) {
-		fmt.Print("\n\n") // space
-		fmt.Println("----")
-		fmt.Println(r.Pub.Hex())
-		fmt.Println(c.Node().Container().Inspect(r))
-		fmt.Println("----")
-	}
+	c.OnRootFilled = showFilledRoot
 
 	// obtain configs from flags
 	c.FromFlags()
 	flag.Parse()
 
-	// apk and bk is A-feed and B-feed, the bsk is
-	// secret key required for creating
-	apk, _ := cipher.GenerateDeterministicKeyPair([]byte("A"))
-	bpk, bsk := cipher.GenerateDeterministicKeyPair([]byte("B"))
+	// create node
 
-	var s *node.Node
-	var err error
+	var (
+		n   *node.Node
+		err error
+	)
 
 	// create and launch
-	if s, err = node.NewNode(c); err != nil {
-		fmt.Fprintln(os.Stderr, "[FATAL]:", err)
-		code = 1
+	if n, err = node.NewNode(c); err != nil {
+		log.Fatal(err)
 		return
 	}
-	defer s.Close() // close
+	defer n.Close() // close
 
+	//
 	// add feeds
-	for _, pk := range []cipher.PubKey{
-		apk,
-		bpk,
-	} {
-		if err = s.AddFeed(pk); err != nil {
-			fmt.Println("[ERR] database failure:", err)
-			code = 1
-			return
-		}
+	//
+
+	if err = n.Share(apk); err != nil {
+		log.Fatal(err)
 	}
 
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
+	if err = n.Share(bpk); err != nil {
+		log.Fatal(err)
+	}
+
+	// the Share method adds feed to underlying Container;
+	// it's possible to have a feed, but don't share it
+
+	//
+	// generate the B-feed
+	//
+
+	// sync
+	var (
+		wg     sync.WaitGroup        // wait the generate goroutine
+		closed = make(chan struct{}) // closed by SIGING
+	)
 
 	wg.Add(1)
-	go fictiveVotes(s, &wg, bpk, bsk, stop)
+	defer wg.Wait()
 
-	defer wg.Wait()   // wait
-	defer close(stop) // stop fictiveVotes call
+	go generate(&wg, closed, n)
 
-	waitInterrupt(s.Closed())
+	// wait for SIGINT
+	waitInterrupt()
+	close(closed)
 }
 
-func fictiveVotes(s *node.Node, wg *sync.WaitGroup, pk cipher.PubKey,
-	sk cipher.SecKey, stop chan struct{}) {
-
+func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	defer wg.Done()
 
-	s.Debug(log.All, "fictiveVotes")
+	var (
+		usr = discovery.User{
+			Name: "Eva",
+			Age:  19,
+		}
 
-	c := s.Container()
+		feed = discovery.Feed{
+			Head: "Eva's feed",
+			Info: "Feed of very useful information about Eva's life",
+		}
+	)
 
-	pack, err := c.NewRoot(pk, sk, 0, c.CoreRegistry().Types())
+	// Root object
+	var r = new(registry.Root)
+
+	r.Pub = bpk                                 // feed of the Root
+	r.Nonce = rand.Uint64()                     // head of the feed
+	r.Descriptor = []byte("through, version=1") // any data or nothing
+
+	//
+	// let's create and publish the first Root
+	//
+
+	var c = n.Container()
+
+	// secret key and registry
+	var up, err = c.Unpack(bsk, discovery.Registry)
+
 	if err != nil {
-		c.Print("[FATAL] ", err)
-		return
+		log.Fatal(err)
 	}
-	defer pack.Close()
 
-	content := new(exchange.Content)
+	// the up (*skyobject.Unpack) implements registry.Pack interface
+	// and can be used to create new objects
 
-	// create Root (and initialize the "content" var)
-	pack.Append(content)
-	if err := pack.Save(); err != nil {
-		c.Print("[FATAL] ", err)
-		return
+	// Root -> []Dynamic{ User, feed }
+
+	r.Refs = []registry.Dynamic{
+		dynamic(up, "discovery.User", &usr),
+		dynamic(up, "discovery.Feed", &feed),
 	}
-	s.Publish(pack.Root()) // publish the Root
 
-	// update the Root time to time
+	// let's save the "blank" feed
+
+	if err = c.Save(up, r); err != nil {
+		log.Fatal(err)
+	}
+
+	// and publish it
+	n.Publish(r)
+
+	//
+	// now, let's add posts one by one
+	//
+
+	var tk = time.NewTicker(5 * time.Second)
 
 	for i := 0; true; i++ {
 		select {
-		case <-stop:
-			c.Print("[STOP]")
+		case <-closed:
 			return
-		case <-s.Quiting():
-			c.Print("[STOP]")
-			return
-		case <-time.After(5 * time.Second):
+		case <-tk.C:
 		}
 
-		// new random votes
-
-		content.Post.Append(&exchange.Vote{
-			Up:    i%3 != 0,
-			Index: uint32(i),
-		})
-		content.Thread.Append(&exchange.Vote{
-			Up:    i%2 == 0,
-			Index: uint32(i),
+		err = feed.Posts.AppendValues(up, discovery.Post{
+			Head: fmt.Sprintf("Eva's post #%d", i),
+			Body: fmt.Sprintf("nothing happens #%d", i),
 		})
 
-		// replace Content with new one
-		if err := pack.SetRefByIndex(0, content); err != nil {
-			c.Print("[FATAL] ", err)
-			return
+		if err != nil {
+			log.Fatal(err)
 		}
-		if err := pack.Save(); err != nil {
-			c.Print("[FATAL] ", err)
-			return
+
+		// the feed has been changed
+		if err = r.Refs[1].SetValue(up, &feed); err != nil {
+			log.Fatal(err)
 		}
-		s.Publish(pack.Root()) // publish the Root
+
+		if err = c.Save(up, r); err != nil {
+			log.Fatal(err)
+		}
+
+		n.Publish(r)
+
 	}
+
+}
+
+// create Dynamic reference
+func dynamic(
+	up *skyobject.Unpack,
+	schemaName string,
+	obj interface{},
+) (
+	dr registry.Dynamic,
+) {
+
+	// so, it's possible to use Registry.Types() to get schema name
+	// but for received registrues this is not an options; and we
+	// are using schema name; also, it's possible to use
+	// schema reference; but we creating the Dynamic references once
+	// and who cares what method is better
+
+	var sch, err = up.Registry().SchemaByName(schemaName)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dr.Schema = sch.Reference() // schema reference
+
+	// the SetValue method is usability trick; the method is equal to
+	//
+	//     var (
+	//         val = encoder.Serialize(obj) // cipher/encoder
+	//         key = cipher.SumSHA256(val)
+	//     )
+	//
+	//     if err = up.Set(key, val); err != nil {
+	//         log.Fatal(err)
+	//     }
+	//
+	//     dr.Hash = key
+	//
+	// Short words it: (1) serializes given object, (2) calculate SHA256
+	// of the serialized value, (3) saves the object (4) set the hash
+	// to dr.Hash field
+	//
+	// Thus, dr.Schema field is not changed after the SetValue and end-user
+	// have to care about it.
+
+	if err = dr.SetValue(up, obj); err != nil {
+		log.Fatal(err)
+	}
+
+	return
+}
+
+func showFilledRoot(n *node.Node, r *registry.Root) {
+
+	// just preent the Root objects tree
+
+	var pack, err = n.Container().Pack(r, nil)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var tree string
+	if tree, err = r.Tree(pack); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("") // spacing
+	fmt.Println(tree)
+	fmt.Println("") // spacing
 
 }

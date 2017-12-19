@@ -62,7 +62,7 @@ type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 // OnRootFilledFunc represents callback that
 // called when new Root filled and can be used.
 // The callback called once per Root.
-type OnRootFilledFunc func(r *registry.Root)
+type OnRootFilledFunc func(n *Node, r *registry.Root)
 
 // OnFillingBreaksFunc represents callback that
 // called when a new Root object can't be filled.
@@ -71,7 +71,7 @@ type OnRootFilledFunc func(r *registry.Root)
 // There is no way to resume the filling. If
 // a remote peer push this Root object again,
 // then the Root can be filled (or can be not).
-type OnFillingBreaksFunc func(r *registry.Root, err error)
+type OnFillingBreaksFunc func(n *Node, r *registry.Root, err error)
 
 // OnConnectFunc represents callback that called
 // when a connection created and established. It's

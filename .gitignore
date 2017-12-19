@@ -49,9 +49,9 @@ cmd/cxod/cxod
 
 intro/skybrief/skybrief
 
-# tests directory
-
-node/test/
+intro/discovery/through/server/server
+intro/discovery/through/ca/ca
+intro/discovery/through/cb/cb
 
 # suffix for ignore files and directories temporary 
 

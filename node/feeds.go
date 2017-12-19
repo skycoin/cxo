@@ -229,6 +229,8 @@ func (n *nodeFeeds) addFeed(pk cipher.PubKey) {
 // (handler)
 func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
 
+	n.n.Debug(FeedPin, "handleAddFeed ", pk.Hex()[:7])
+
 	if _, ok := n.fs[pk]; ok == true {
 		return // already have the feed
 	}
@@ -255,6 +257,8 @@ func (n *nodeFeeds) delFeed(pk cipher.PubKey) {
 // (handler)
 func (n *nodeFeeds) handleDelFeed(pk cipher.PubKey) {
 
+	n.n.Debug(FeedPin, "handleDelFeed ", pk.Hex()[:7])
+
 	var nf, ok = n.fs[pk]
 
 	if ok == false {
@@ -280,6 +284,8 @@ func (n *nodeFeeds) addConnFeed(c *Conn, pk cipher.PubKey) {
 
 // (handler)
 func (n *nodeFeeds) handleAddConnFeed(cf connFeed) {
+
+	n.n.Debugln(FeedPin, "handleAddConnFeed", cf.c.String(), cf.f.Hex()[:7])
 
 	// if the cf.f is blank the this connection is new
 
@@ -312,6 +318,8 @@ func (n *nodeFeeds) delConnFeed(c *Conn, pk cipher.PubKey) {
 
 // (handler)
 func (n *nodeFeeds) handleDelConnFeed(cf connFeed) {
+
+	n.n.Debugln(FeedPin, "handleDelConnFeed", cf.c.String(), cf.f.Hex()[:7])
 
 	var nf, ok = n.fs[cf.f]
 
@@ -430,7 +438,7 @@ func (n *nodeFeeds) list() (list []cipher.PubKey) {
 // (handler)
 func (n *nodeFeeds) handleList() {
 
-	if n.fl == nil && len(n.fl) > 1 {
+	if n.fl == nil && len(n.fs) > 1 {
 
 		var fl = make([]cipher.PubKey, 0, len(n.fl))
 

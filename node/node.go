@@ -131,13 +131,9 @@ func NewNodeContainer(
 	n.pc = make(map[*Conn]struct{})
 
 	n.config = conf
+	n.config.Config = c.Config() // actual
 
-	var cc = n.c.Config()
-
-	n.maxFillingParallel = cc.MaxFillingParallel
-	n.rollAvgSamples = cc.RollAvgSamples
-
-	n.fillavg = statutil.NewDuration(n.rollAvgSamples)
+	n.fillavg = statutil.NewDuration(conf.Config.RollAvgSamples)
 	n.closeq = make(chan struct{})
 
 	//
@@ -200,13 +196,12 @@ func (n *Node) ID() (id cipher.PubKey) {
 }
 
 // Config returns Config with which the
-// Node was created
+// Node was created. The Config must not
+// be modified. If the Node created using
+// NewNodeContainer, then Config field
+// replaced with config of given Container
 func (n *Node) Config() (conf *Config) {
-
-	conf = new(Config)
-	*conf = *n.config // copy
-
-	return
+	return n.config // copy
 }
 
 // Container returns related Container instance
@@ -551,7 +546,7 @@ func (n *Node) onRootReceived(c *Conn, r *registry.Root) (err error) {
 func (n *Node) onRootFilled(r *registry.Root) {
 
 	if orf := n.config.OnRootFilled; orf != nil {
-		orf(r)
+		orf(n, r)
 	}
 
 }
@@ -559,7 +554,7 @@ func (n *Node) onRootFilled(r *registry.Root) {
 func (n *Node) onFillingBreaks(r *registry.Root, reason error) {
 
 	if brk := n.config.OnFillingBreaks; brk != nil {
-		brk(r, reason)
+		brk(n, r, reason)
 	}
 
 }

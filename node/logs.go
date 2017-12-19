@@ -25,6 +25,10 @@ const (
 
 	FillPin //
 
+	// feeds
+
+	FeedPin //
+
 	// discovery
 
 	DiscoveryPin // show discovery debug logs
