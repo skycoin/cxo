@@ -179,7 +179,7 @@ func (r *Refs) walkNode(
 	sch Schema, //            : schema of elements
 	rn *refsNode, //          : the node
 	depth int, //             : depth of the node
-	walkFunc WalkFunc, // : the function
+	walkFunc WalkFunc, //     : the function
 ) (
 	err error, //             : an error
 ) {

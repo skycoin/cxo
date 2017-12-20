@@ -119,7 +119,7 @@ func TestRefs_AppendHashes(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		pack.ClearFlags(^0) // all
@@ -284,5 +284,93 @@ func TestRefs_AppendHashes(t *testing.T) {
 		testRefsAppendHashesCheck(t, &refs, pack, 0, hashes)
 
 	})
+
+}
+
+func TestRefs_AppendHashes_nodes(t *testing.T) {
+	// AppendHashes(pack Pack, hashes ...cipher.SHA256) (err error)
+
+	var (
+		pack = getTestPack()
+
+		refs Refs
+		err  error
+
+		users []cipher.SHA256 // hashes of the users
+	)
+
+	for _, degree := range []Degree{
+		pack.Degree(),     // default
+		pack.Degree() + 1, // changed
+	} {
+
+		pack.ClearFlags(^0) // all
+
+		t.Run(
+			fmt.Sprintf("append nothing to blank Refs (degree is %d)", degree),
+			func(t *testing.T) {
+
+				clearRefs(t, &refs, pack, degree)
+				var ln int
+				if err = refs.AppendHashes(pack); err != nil {
+					t.Error(err)
+				} else if ln, err = refs.Len(pack); err != nil {
+					t.Error(err)
+				} else if ln != 0 {
+					t.Error("wrong length")
+				}
+			})
+
+		var length = int(degree*degree) + 1
+
+		t.Logf("Refs with %d elements (degree %d)", length, degree)
+
+		clearRefs(t, &refs, pack, degree)
+
+		// generate users
+		users = getHashList(getTestUsers(length))
+
+		if err = refs.AppendHashes(pack, users...); err != nil {
+			t.Fatal(err)
+		}
+
+		var hashes []cipher.SHA256
+
+		err = refs.Walk(pack, nil,
+			func(key cipher.SHA256, depth int) (bool, error) {
+				hashes = append(hashes, key)
+				return depth > 0, nil
+			})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		clearRefs(t, &refs, pack, degree) // can call t.Fatal
+
+		for k := 0; k < len(users) && t.Failed() == false; k++ {
+
+			t.Log("append hash", users[k].Hex()[:7])
+
+			if err = refs.AppendHashes(pack, users[k]); err != nil {
+				t.Fatal(err)
+			}
+
+		}
+
+		var i int
+
+		err = refs.Walk(pack, nil,
+			func(key cipher.SHA256, depth int) (bool, error) {
+				if key != hashes[i] {
+					t.Fatal("wrong hash", i)
+				}
+				i++
+				return depth > 0, nil
+			})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+	}
 
 }

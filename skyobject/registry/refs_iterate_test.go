@@ -62,7 +62,7 @@ func TestRefs_Ascend(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestRefs_AscendFrom(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -481,7 +481,7 @@ func TestRefs_Descend(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {

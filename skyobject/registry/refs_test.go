@@ -711,7 +711,7 @@ func TestRefs_Degree(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -985,7 +985,7 @@ func TestRefs_HasHash(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1162,7 +1162,7 @@ func TestRefs_ValueByHash(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1330,7 +1330,7 @@ func TestRefs_IndexOfHash(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1538,7 +1538,7 @@ func TestRefs_IndicesByHash(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1734,7 +1734,7 @@ func TestRefs_HashByIndex(t *testing.T) {
 
 	for _, degree := range []Degree{
 		pack.Degree(),     // default
-		pack.Degree() + 7, // changed
+		pack.Degree() + 1, // changed
 	} {
 
 		t.Run(fmt.Sprintf("blank (degree %d)", degree), func(t *testing.T) {
@@ -1907,7 +1907,7 @@ func testRefsSetHashByIndex(
 }
 
 func testRefsDegrees(pack Pack) []Degree {
-	return []Degree{2, pack.Degree(), pack.Degree() + 7}
+	return []Degree{2, pack.Degree(), pack.Degree() + 1}
 }
 
 func testRefsLengths(degree Degree) []int {

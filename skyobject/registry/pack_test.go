@@ -73,7 +73,7 @@ func testPackReg(reg *Registry) (dp *dummyPack) {
 	dp = new(dummyPack)
 	dp.vals = make(map[cipher.SHA256][]byte)
 	dp.reg = reg
-	dp.degree = 16 // use 16 for tests
+	dp.degree = 3 // use 3 for tests
 	return
 }
 

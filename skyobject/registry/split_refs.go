@@ -42,9 +42,7 @@ func (r *Refs) splitHash(s Splitter, hash cipher.SHA256) (load bool) {
 		return
 	}
 
-	load = (rc == 1)
-	return
-
+	return (rc == 0) // laod if hard rc > 0
 }
 
 // Split used by the node package to fill the Dynamic.
@@ -66,7 +64,7 @@ func (r *Refs) Split(s Splitter, el Schema) {
 		return
 	}
 
-	// laod to walk
+	// load to walk
 	if err := r.initialize(&fp); err != nil {
 		s.Fail(err)
 		return
@@ -105,8 +103,9 @@ func (r *Refs) splitNode(
 
 	// else if depth > 0 -> { branches }
 
-	for _, br := range rn.branches {
+	var toSplit []*refsNode // data-race protection
 
+	for _, br := range rn.branches {
 		if r.splitHash(s, br.hash) == false {
 			return
 		}
@@ -116,7 +115,13 @@ func (r *Refs) splitNode(
 			return
 		}
 
-		r.splitNodeAsync(s, fp, sch, rn, depth)
+		toSplit = append(toSplit, br)
+	}
+
+	// data-race protection: load first, then split
+
+	for _, br := range toSplit {
+		r.splitNodeAsync(s, fp, sch, br, depth-1)
 	}
 
 }
