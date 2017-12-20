@@ -344,6 +344,7 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 		dr.Prev = r.Prev
 		dr.Hash = r.Hash
 		dr.Sig = r.Sig
+		dr.Time = r.Time
 
 		return rs.Set(dr)
 	})
@@ -352,7 +353,7 @@ func (i *Index) addRoot(r *registry.Root) (alreadyHave bool, err error) {
 		return
 	}
 
-	if r.Seq < ir.Seq {
+	if ir != nil && r.Seq < ir.Seq {
 		// don't add to the Index the fucking, old,
 		// outdated, never need, nobody need Root
 		return

@@ -63,8 +63,6 @@ func main() {
 
 	// uncomment to see all debug logs
 	//
-	c.Logger.Pins = node.DiscoveryPin | node.FeedPin | node.ConnHskPin
-	c.Logger.Debug = true
 	// c.Logger.Pins = ^c.Logger.Pins
 	// c.Logger.Debug = true
 
