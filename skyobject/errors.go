@@ -8,10 +8,9 @@ import (
 
 // common errors
 var (
-	ErrRootIsHeld       = errors.New("Root is held")
-	ErrRootIsNotHeld    = errors.New("Root is not held")
 	ErrObjectIsTooLarge = errors.New("object is too large (see MaxObjectSize)")
 	ErrTerminated       = errors.New("terminated")
+	ErrBlankRegistryRef = errors.New("blank registry reference")
 )
 
 // ObjectIsTooLargeError represents error that

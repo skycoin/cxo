@@ -992,6 +992,7 @@ func (c *Cache) Want(
 			// create wanted item
 			it = new(item)
 			it.fwant = map[chan<- Object]int{gc: inc}
+			c.is[key] = it
 			err = nil // clear
 		}
 

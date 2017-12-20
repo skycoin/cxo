@@ -1,6 +1,8 @@
 package skyobject
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/skycoin/skycoin/src/cipher"
@@ -18,7 +20,7 @@ type User struct {
 type Feed struct {
 	Head  string        // head of the feed
 	Info  string        // brief information about the feed
-	Posts registry.Refs `skyobject:"schema=discovery.Post"` // posts
+	Posts registry.Refs `skyobject:"schema=test.Post"` // posts
 }
 
 // A Post represnts post in the Feed
@@ -29,11 +31,9 @@ type Post struct {
 
 // Registry that contains User, Feed and Post types
 var testRegistry = registry.NewRegistry(func(r *registry.Reg) {
-	// the name can be any, e.g. the "discovery.User" can be
-	// "usr" or any other; feel free to choose
-	r.Register("discovery.User", User{})
-	r.Register("discovery.Feed", Feed{})
-	r.Register("discovery.Post", Post{})
+	r.Register("test.User", User{})
+	r.Register("test.Feed", Feed{})
+	r.Register("test.Post", Post{})
 })
 
 func getTestConfig() (c *Config) {
@@ -71,6 +71,9 @@ func Test_fillinng(t *testing.T) {
 		pk, sk = cipher.GenerateKeyPair()
 	)
 
+	assertNil(t, sc.AddFeed(pk))
+	assertNil(t, rc.AddFeed(pk))
+
 	var up, err = sc.Unpack(sk, testRegistry)
 	assertNil(t, err)
 
@@ -79,18 +82,122 @@ func Test_fillinng(t *testing.T) {
 	r.Pub = pk
 	r.Nonce = 9021
 
+	assertNil(t, sc.Save(up, r))
+	testFillRoot(t, sc, rc, r)
+
 	var usr = User{
 		Name: "Alice",
 		Age:  19,
 	}
+
+	r.Refs = []registry.Dynamic{
+		createDynamic(up, testRegistry, "test.User", &usr),
+	}
+
+	assertNil(t, sc.Save(up, r))
+	testFillRoot(t, sc, rc, r)
 
 	var feed = Feed{
 		Head: "Alices' feed",
 		Info: "an average feed",
 	}
 
+	r.Refs = append(
+		r.Refs,
+		createDynamic(up, testRegistry, "test.Feed", &feed),
+	)
+
 	assertNil(t, sc.Save(up, r))
+	testFillRoot(t, sc, rc, r)
 
-	//
+	for i := 0; i < 100; i++ {
 
+		assertNil(t, feed.Posts.AppendValues(up, Post{
+			Head: fmt.Sprintf("Head #%d", i),
+			Body: fmt.Sprintf("Body #%d", i),
+		}))
+		assertNil(t, r.Refs[1].SetValue(up, &feed))
+
+		assertNil(t, sc.Save(up, r))
+		testFillRoot(t, sc, rc, r)
+	}
+
+}
+
+func testFillRoot(t *testing.T, sc, rc *Container, r *registry.Root) {
+	//t.Helper()
+
+	var hs []cipher.SHA256 // hashes in order
+
+	assertNil(t, sc.Walk(r, func(key cipher.SHA256, _ int) (bool, error) {
+		hs = append(hs, key)
+		return true, nil
+	}))
+
+	var (
+		rq = make(chan cipher.SHA256, 10)
+		f  = rc.Fill(r, rq, 10)
+	)
+
+	var wg sync.WaitGroup
+
+	// the rq channel
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		for {
+			var key, ok = <-rq
+
+			if ok == false {
+				return
+			}
+
+			var val, _, err = sc.Get(key, 0)
+			assertNil(t, err)
+
+			_, err = rc.SetWanted(key, val)
+			assertNil(t, err)
+		}
+
+	}()
+
+	assertNil(t, f.Run())
+
+	close(rq)
+	wg.Wait()
+
+	var i int
+
+	assertNil(t, rc.Walk(r, func(key cipher.SHA256, _ int) (bool, error) {
+		assertTrue(t, key == hs[i], "wrong hash")
+		i++
+		return true, nil
+	}))
+
+	assertTrue(t, i == len(hs), "wrong number of hashes")
+
+}
+
+func createDynamic(
+	pack registry.Pack,
+	reg *registry.Registry,
+	name string,
+	obj interface{},
+) (
+	dr registry.Dynamic,
+) {
+
+	var sch, err = reg.SchemaByName(name)
+	if err != nil {
+		panic(err)
+	}
+
+	err = dr.SetValue(pack, obj)
+	if err != nil {
+		panic(err)
+	}
+
+	dr.Schema = sch.Reference()
+	return
 }

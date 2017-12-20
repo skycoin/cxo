@@ -107,7 +107,7 @@ func (r *Refs) splitNode(
 
 	for _, br := range rn.branches {
 		if r.splitHash(s, br.hash) == false {
-			return
+			continue
 		}
 
 		if err := r.loadNodeIfNeed(fp, br, depth-1); err != nil {

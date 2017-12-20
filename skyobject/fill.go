@@ -152,51 +152,37 @@ func (c *Container) Fill(
 	return
 }
 
-func (f *Filler) remove() {
+func (f *Filler) apply() {
 	for key, inc := range f.incs {
-		if _, err := f.c.db.CXDS().Inc(key, -inc); err != nil {
-			panic("DB failure: " + err.Error())
+		if err := f.c.Finc(key, inc); err != nil {
+			panic("DB failure: " + err.Error()) // TODO: handle the error
 		}
-		// TODO (kostyarin): handle error
+	}
+}
+
+func (f *Filler) reject() {
+	for key, inc := range f.incs {
+		if err := f.c.Finc(key, -inc); err != nil {
+			panic("DB failure: " + err.Error()) // TODO: handle the error
+		}
 	}
 }
 
 func (f *Filler) acquire() (parall bool) {
 
-	if f.limit == nil {
-
-		// no limit
-
+	if f.limit == nil { // no limit
 		parall = true
-		f.await.Add(1)
 		return
 	}
 
 	select {
-	case f.limit <- struct{}{}:
-
-		// limit
-
+	case f.limit <- struct{}{}: // limit
 		parall = true
-		f.await.Add(1)
-
 	default:
-
 		// limit reached
-
 	}
 
 	return
-
-}
-
-func (f *Filler) release() {
-
-	if f.limit != nil {
-		<-f.limit
-	}
-
-	f.await.Done()
 
 }
 
@@ -207,8 +193,10 @@ func (f *Filler) Go(fn func()) {
 
 		// parallel
 
+		f.await.Add(1)
 		go func() {
-			defer f.release()
+			defer f.await.Done()
+			<-f.limit // release
 			fn()
 		}()
 
@@ -233,8 +221,15 @@ func (f *Filler) Run() (err error) {
 
 	f.inc(f.r.Hash) // increment
 
+	defer func() {
+		if err != nil {
+			f.reject()
+		} else {
+			f.apply()
+		}
+	}()
+
 	if err = f.getRegistry(); err != nil {
-		f.remove()
 		return
 	}
 
@@ -256,20 +251,21 @@ func (f *Filler) Run() (err error) {
 
 	select {
 	case err = <-f.errq:
-		f.Close()
-		f.remove()
 	case <-done:
 		f.r.IsFull = true // full!
-		if _, err = f.c.AddRoot(f.r); err != nil {
-			f.Close()
-			f.remove()
-		}
+		_, err = f.c.AddRoot(f.r)
 	}
+
+	f.Close()
 
 	return
 }
 
 func (f *Filler) getRegistry() (err error) {
+
+	if f.r.Reg == (registry.RegistryRef{}) {
+		return ErrBlankRegistryRef
+	}
 
 	var reg *registry.Registry
 
