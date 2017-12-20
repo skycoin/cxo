@@ -219,11 +219,17 @@ func (m *memoryCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 
 // amoutn of objects
 func (m *memoryCXDS) Amount() (all, used int) {
+	m.mx.RLock()
+	defer m.mx.RUnlock()
+
 	return m.amountAll, m.amountUsed
 }
 
 // Volume of objects
 func (m *memoryCXDS) Volume() (all, used int) {
+	m.mx.RLock()
+	defer m.mx.RUnlock()
+
 	return m.voluemAll, m.volumeUsed
 }
 

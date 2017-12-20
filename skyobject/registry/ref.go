@@ -123,5 +123,5 @@ func (r *Ref) Walk(
 
 // Split used by the node package to fill the Ref
 func (r *Ref) Split(s Splitter, el Schema) {
-	s.Go(func() { splitSchemaHash(s, el, r.Hash) })
+	splitSchemaHashAsync(s, el, r.Hash)
 }

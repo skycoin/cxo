@@ -152,7 +152,7 @@ func (t *TCP) createDiscovery() (d *discovery.MessengerFactory) {
 func (t *TCP) ConnectToDiscoveryServer(address string) {
 
 	t.createDiscovery().ConnectWithConfig(address, &discovery.ConnConfig{
-		SeedConfig: t.n.id,
+		//SeedConfig: t.n.id,
 
 		Reconnect:     true,
 		ReconnectWait: time.Second * 30,
@@ -200,7 +200,7 @@ func (t *TCP) findServiceNodes(resp *discovery.QueryResp) {
 
 			// block
 			if err = c.Subscribe(si.PubKey); err != nil {
-				t.n.Debugln(DiscoveryPin, "[%s] can't Subscribe to %s: %v",
+				t.n.Debugf(DiscoveryPin, "[%s] can't Subscribe to %s: %v",
 					c.Address(),
 					si.PubKey.Hex()[:7],
 					err)

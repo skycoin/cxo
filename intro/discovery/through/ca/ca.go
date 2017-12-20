@@ -63,8 +63,8 @@ func main() {
 
 	// uncomment to see all debug logs
 	//
-	// c.Logger.Pins = ^c.Logger.Pins
-	// c.Logger.Debug = true
+	c.Logger.Pins = node.DiscoveryPin | node.FeedPin | node.ConnHskPin
+	c.Logger.Debug = true
 
 	//
 	// callbacks
@@ -193,10 +193,16 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 		case <-tk.C:
 		}
 
+		println("BEFORE APPENDING:", feed.Posts.Hash.Hex()[:7])
+
 		err = feed.Posts.AppendValues(up, discovery.Post{
 			Head: fmt.Sprintf("Alices' post #%d", i),
 			Body: fmt.Sprintf("nothing happens #%d", i),
 		})
+
+		println("AFTER APPENDING:", feed.Posts.Hash.Hex()[:7])
+
+		log.Println(c.Stat().AllObjects.Amount.String())
 
 		if err != nil {
 			log.Fatal(err)
@@ -269,7 +275,7 @@ func dynamic(
 
 func showFilledRoot(n *node.Node, r *registry.Root) {
 
-	// just preent the Root objects tree
+	// just print the Root objects tree
 
 	var pack, err = n.Container().Pack(r, nil)
 

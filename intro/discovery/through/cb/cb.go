@@ -36,7 +36,7 @@ var (
 	// that used to sign Root objects of the feed, to proof
 	// that the Root objects really belongs to the bpk;
 	// short words, bpk is feed, bsk is owner of the feed
-	bpk, bsk = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	bpk, bsk = cipher.GenerateDeterministicKeyPair([]byte("B"))
 )
 
 // wait for SIGINT and return
@@ -63,6 +63,8 @@ func main() {
 
 	// uncomment to see all debug logs
 	//
+	c.Logger.Pins = node.DiscoveryPin | node.FeedPin | node.ConnHskPin
+	c.Logger.Debug = true
 	// c.Logger.Pins = ^c.Logger.Pins
 	// c.Logger.Debug = true
 
@@ -269,7 +271,7 @@ func dynamic(
 
 func showFilledRoot(n *node.Node, r *registry.Root) {
 
-	// just preent the Root objects tree
+	// just print the Root objects tree
 
 	var pack, err = n.Container().Pack(r, nil)
 

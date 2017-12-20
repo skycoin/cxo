@@ -452,6 +452,8 @@ func (n *Node) updateServiceDiscovery() {
 
 	var feeds = n.fs.list()
 
+	n.Debug(DiscoveryPin, "(Node) updateServiceDiscovery ", len(feeds))
+
 	if n.tcp != nil && n.tcp.Discovery() != nil {
 		n.tcp.updateServiceDiscovery(feeds)
 	}
@@ -485,8 +487,16 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 		return
 	}
 
-	n.fs.addFeed(feed)
-	n.updateServiceDiscovery()
+	// TODO (kostyarin): Subscribe that calls the Share that
+	//                   add a new feed then calls
+	//                   updateServiceDiscovery that invoke
+	//                   send new list to discovery and so on
+	//
+	// :: supress the recursion ::
+
+	if n.fs.addFeed(feed) == true {
+		n.updateServiceDiscovery()
+	}
 
 	return
 }

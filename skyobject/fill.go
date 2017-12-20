@@ -259,6 +259,10 @@ func (f *Filler) Run() (err error) {
 		f.Close()
 		f.remove()
 	case <-done:
+		if _, err = f.c.AddRoot(f.r); err != nil {
+			f.Close()
+			f.remove()
+		}
 	}
 
 	return

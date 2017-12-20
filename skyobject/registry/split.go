@@ -84,7 +84,7 @@ func splitSchemaHash(
 		return
 	}
 
-	if rc > 0 {
+	if rc > 1 {
 		return
 	}
 
@@ -266,8 +266,7 @@ func splitArraySlice(
 		}
 
 		// split
-
-		s.Go(func() { splitSchemaDataAsync(s, el, val[shift:shift+m]) })
+		splitSchemaDataAsync(s, el, val[shift:shift+m])
 
 		shift += m
 
@@ -306,9 +305,7 @@ func splitStruct(
 			return
 		}
 
-		s.Go(func() {
-			splitSchemaDataAsync(s, fl.Schema(), val[shift:shift+z])
-		})
+		splitSchemaDataAsync(s, fl.Schema(), val[shift:shift+z])
 
 		shift += z
 

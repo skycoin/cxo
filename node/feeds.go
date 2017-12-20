@@ -28,6 +28,8 @@ type nodeFeeds struct {
 	fl []cipher.PubKey             // clear-on-write
 
 	addq chan cipher.PubKey // add feed
+	addb chan bool          // add feed boolean reply
+
 	delq chan cipher.PubKey // del feed
 
 	addcfq chan connFeed // add connection to a feed
@@ -75,6 +77,8 @@ func newNodeFeeds(node *Node) (n *nodeFeeds) {
 	n.fs[cipher.PubKey{}] = newNodeFeed(n, cipher.PubKey{})
 
 	n.addq = make(chan cipher.PubKey) // add feed
+	n.addb = make(chan bool)
+
 	n.delq = make(chan cipher.PubKey) // del feed
 
 	n.addcfq = make(chan connFeed) // add connection to a feed
@@ -213,7 +217,7 @@ func (n *nodeFeeds) handle() {
 }
 
 // (api)
-func (n *nodeFeeds) addFeed(pk cipher.PubKey) {
+func (n *nodeFeeds) addFeed(pk cipher.PubKey) (added bool) {
 
 	if pk == (cipher.PubKey{}) {
 		return // blank feed is special
@@ -224,6 +228,13 @@ func (n *nodeFeeds) addFeed(pk cipher.PubKey) {
 	case <-n.closeq:
 	}
 
+	select {
+	case added = <-n.addb:
+	case <-n.closeq:
+	}
+
+	return
+
 }
 
 // (handler)
@@ -231,12 +242,19 @@ func (n *nodeFeeds) handleAddFeed(pk cipher.PubKey) {
 
 	n.n.Debug(FeedPin, "handleAddFeed ", pk.Hex()[:7])
 
-	if _, ok := n.fs[pk]; ok == true {
-		return // already have the feed
+	var ok bool
+
+	if _, ok = n.fs[pk]; ok == false {
+		n.fs[pk] = newNodeFeed(n, pk)
+		n.fl = nil
 	}
 
-	n.fs[pk] = newNodeFeed(n, pk)
-	n.fl = nil
+	// or, already have the feed
+
+	select {
+	case n.addb <- (ok == false):
+	case <-n.closeq:
+	}
 
 }
 

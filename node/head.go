@@ -185,7 +185,9 @@ func (n *nodeHead) handle() {
 
 		case <-f.tc: // filling timeout
 
-			f.handleFillingResult(ErrTimeout)
+			if f.f != nil {
+				f.f.Fail(ErrTimeout)
+			}
 
 		// api info
 
@@ -195,7 +197,10 @@ func (n *nodeHead) handle() {
 		case err = <-errq:
 
 			f.p = connRoot{} // remove pending Root
-			f.handleFillingResult(err)
+			if f.f != nil {
+				f.f.Close()
+				f.handleFillingResult(err)
+			}
 			f.terminate()
 			return
 
@@ -387,17 +392,15 @@ func (f *fillHead) handleFillingResult(err error) {
 
 	f.node().Debugf(FillPin, "handleFillingResult %s: %v", f.r.r.Short(), err)
 
-	var moveForward = f.r.r.Seq + 1
-
-	f.closeFiller() // close the filler and wait it's goroutines
-
 	if err == nil {
 		f.node().onRootFilled(f.r.r)     // callback
 		f.favg.Add(time.Now().Sub(f.tp)) // average time
-		f.cs.moveForward(moveForward)    // move forward
+		f.cs.moveForward(f.r.r.Seq + 1)  // move forward
 	} else {
 		f.node().onFillingBreaks(f.r.r, err) // callback
 	}
+
+	f.closeFiller() // close the filler and wait it's goroutines
 
 	// is there a pending Root to be filled?
 
@@ -417,7 +420,9 @@ func (f *fillHead) handleFillingResult(err error) {
 func (f *fillHead) triggerRequest() {
 
 	if fatal := f.tryRequest(); fatal == true {
-		f.handleFillingResult(ErrNoConnectionsToFillFrom) // fatal case
+		if f.f != nil {
+			f.f.Fail(ErrNoConnectionsToFillFrom)
+		}
 	}
 
 }

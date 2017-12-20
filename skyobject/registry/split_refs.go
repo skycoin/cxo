@@ -42,7 +42,7 @@ func (r *Refs) splitHash(s Splitter, hash cipher.SHA256) (load bool) {
 		return
 	}
 
-	load = (rc == 0)
+	load = (rc == 1)
 	return
 
 }
@@ -54,29 +54,25 @@ func (r *Refs) splitHash(s Splitter, hash cipher.SHA256) (load bool) {
 // the Refs if they are not actual
 func (r *Refs) Split(s Splitter, el Schema) {
 
-	s.Go(func() {
+	var fp = fakePack{s} // fake Pack
 
-		var fp = fakePack{s} // fake Pack
+	if r.Hash == (cipher.SHA256{}) {
+		return // done
+	}
 
-		if r.Hash == (cipher.SHA256{}) {
-			return // done
-		}
+	// first of all, check the Refs.Hash
 
-		// first of all, check the Refs.Hash
+	if r.splitHash(s, r.Hash) == false {
+		return
+	}
 
-		if r.splitHash(s, r.Hash) == false {
-			return
-		}
+	// laod to walk
+	if err := r.initialize(&fp); err != nil {
+		s.Fail(err)
+		return
+	}
 
-		// laod to walk
-		if err := r.initialize(&fp); err != nil {
-			s.Fail(err)
-			return
-		}
-
-		r.splitNode(s, &fp, el, r.refsNode, r.depth)
-
-	})
+	r.splitNode(s, &fp, el, r.refsNode, r.depth)
 
 }
 
@@ -101,7 +97,7 @@ func (r *Refs) splitNode(
 	if depth == 0 {
 
 		for _, leaf := range rn.leafs {
-			s.Go(func() { splitSchemaHashAsync(s, sch, leaf.Hash) })
+			splitSchemaHashAsync(s, sch, leaf.Hash)
 		}
 
 		return
@@ -120,7 +116,7 @@ func (r *Refs) splitNode(
 			return
 		}
 
-		s.Go(func() { r.splitNodeAsync(s, fp, sch, rn, depth) })
+		r.splitNodeAsync(s, fp, sch, rn, depth)
 	}
 
 }
