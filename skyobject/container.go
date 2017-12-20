@@ -73,7 +73,7 @@ func NewContainer(conf *Config) (c *Container, err error) {
 	}
 
 	// initialize cache
-	c.Cache.initialize(c.db.CXDS(), c.conf)
+	c.initCache()
 
 	if err = c.Index.load(c); err != nil {
 		return

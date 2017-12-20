@@ -44,7 +44,7 @@ func (f *Filler) Registry() (reg *registry.Registry) {
 // Get object from DB or request it usung provided
 // channel. The Get increments references counter
 // of value
-func (f *Filler) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
+func (f *Filler) Get(key cipher.SHA256) (val []byte, rc int, err error) {
 
 	// try to get from DB first
 	val, rc, err = f.c.Get(key, 1) // incrementing the rc to hold the object

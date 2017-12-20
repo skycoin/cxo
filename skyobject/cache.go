@@ -39,61 +39,60 @@ func (c CachePolicy) String() string {
 type Object struct {
 	Key cipher.SHA256 // hash of the Val
 	Val []byte        // vlaue
-	RC  uint32        // references count
+	RC  int           // references count (hard)
+	Err error         // max object size error
+}
+
+// points that depend on policy
+type cachePoints int
+
+// touch the points
+func (c *cachePoints) touch(policy CachePolicy) {
+
+	switch policy {
+	case LRU:
+		*c = cachePoints(time.Now().Unix()) // last access
+	case LFU:
+		*c++ // access
+	default:
+		panic("cache with undefined CachePolicy: " + policy.String())
+	}
+
 }
 
 type item struct {
 	// chan -> inc
-	fwant map[chan<- Object]int // fillers wanters
+	fwant map[chan<- Object]int // wanters
 
 	// the points is time.Now().Unix() or number of acesses;
 	// e.g. the points is LRU or LFU number and depends on
 	// the cache policy
-	points int
+	cachePoints
 
-	// not sync with DB
-	cc uint32 // changed rc (cached value)
+	// hard rc = cc -fc
+	// sync rc = cc - rc
 
-	// sync with DB
-	rc  uint32 // references counter
+	// if cc is 0, then item removed (even if fc > 0);
+	// but in this case (fc > 0)
+
+	fc  int    // fillers incs
+	cc  int    // cached rc
+	rc  int    // db incs
 	val []byte // value
 }
 
-// isWanted means that this item doesn't exist
-func (i *item) isWanted() (yep bool) {
+func (i *item) isWanted() (ok bool) {
 	return len(i.fwant) > 0
 }
 
-func (i *item) touch(cp CachePolicy) {
-
-	switch cp {
-	case LRU:
-		i.points = int(time.Now().Unix()) // last access
-	case LFU:
-		i.points++ // access
-	default:
-		panic("cache with undefined CachePolicy: " + cp.String())
-	}
-
+func (i *item) isFilling() (ok bool) {
+	return len(i.val) == 0
 }
 
 // itemRegistry
 type itemRegistry struct {
-	r      *registry.Registry // the Registry
-	points int                // LRU or LFU points
-}
-
-func (i *itemRegistry) touch(cp CachePolicy) {
-
-	switch cp {
-	case LRU:
-		i.points = int(time.Now().Unix()) // last access
-	case LFU:
-		i.points++ // access
-	default:
-		panic("cache with undefined CachePolicy: " + cp.String())
-	}
-
+	r           *registry.Registry // the Registry
+	cachePoints                    // LRU or LFU points
 }
 
 // A Cache is internal and used by Container.
@@ -101,69 +100,64 @@ func (i *itemRegistry) touch(cp CachePolicy) {
 type Cache struct {
 	mx sync.Mutex
 
-	db data.CXDS // database
+	c      *Container // back reference
+	enable bool       //
 
-	// use cache or not
-	enable bool
+	amountf int // filling items
+	amountw int // wanted items
 
-	// configs
-	maxAmount     int // max amount of items
-	maxVolume     int // max volume in bytes of all items
-	maxRegistries int // max registries
+	amount int // number of items in the Cache
+	volume int // volume of items in the Cache
 
-	maxItemSize int // don't cache items bigger
+	amountc int // clean down to this (const)
+	volumec int // clean down to this (const)
 
-	policy CachePolicy // policy
-
-	cleanAmount int // clean down to this
-	cleanVolume int // clean down to this
-
-	amount int // number of items in DB
-	volume int // total volume of items in DB
-
-	c map[cipher.SHA256]*item                // values
-	r map[registry.RegistryRef]*itemRegistry // cached registries
+	is map[cipher.SHA256]*item
+	rs map[registry.RegistryRef]*itemRegistry
 
 	stat *cxdsStat
 
 	closeo sync.Once
 }
 
-// conf should be valid, the amount and volume are values of DB
-// and used by cxdsStat, the Cache fields amount and volume are
-// amount and volume of the Cache (not DB)
-func (c *Cache) initialize(db data.CXDS, conf *Config) {
+// initialize the Cache
+func (c *Container) initCache() {
 
-	c.db = db
+	c.Cache.c = c // back reference
 
-	c.maxAmount = conf.CacheMaxAmount
-	c.maxVolume = conf.CacheMaxVolume
-	c.maxItemSize = conf.CacheMaxItemSize
-	c.maxRegistries = conf.CacheRegistries
+	c.Cache.enable = !(c.conf.CacheMaxAmount == 0 || c.conf.CacheMaxVolume == 0)
 
-	c.policy = conf.CachePolicy
+	c.Cache.amountc = int(
+		float64(c.conf.CacheMaxAmount) * (1.0 - c.conf.CacheCleaning),
+	)
+	c.Cache.volumec = int(
+		float64(c.conf.CacheMaxVolume) * (1.0 - c.conf.CacheCleaning),
+	)
 
-	c.cleanAmount = int(float64(c.maxAmount) * (1.0 - conf.CacheCleaning))
-	c.cleanVolume = int(float64(c.maxVolume) * (1.0 - conf.CacheCleaning))
+	c.Cache.amountf = 0
+	c.Cache.amountw = 0
 
-	c.amount = 0 // cache amount
-	c.volume = 0 // cache volume
+	c.Cache.amount = 0 // cache amount
+	c.Cache.volume = 0 // cache volume
 
-	c.c = make(map[cipher.SHA256]*item)
-	c.r = make(map[registry.RegistryRef]*itemRegistry)
+	c.Cache.is = make(map[cipher.SHA256]*item, c.conf.CacheMaxAmount)
+	c.Cache.rs = make(map[registry.RegistryRef]*itemRegistry,
+		c.conf.CacheRegistries)
 
-	c.stat = newCxdsStat(conf.RollAvgSamples)
-
-	c.enable = !(c.maxAmount == 0 || c.maxVolume == 0)
-
-	return
+	c.Cache.stat = newCxdsStat(c.conf.RollAvgSamples)
 }
 
+// reset the Cache
 func (c *Cache) reset() {
-	c.c = nil
-	c.r = nil
+	c.is = nil
+	c.rs = nil
 	c.stat.Close()
 	c.stat = nil
+}
+
+// code readablility
+func (c *Cache) db() data.CXDS {
+	return c.c.db.CXDS()
 }
 
 // call it under lock
@@ -171,28 +165,28 @@ func (c *Cache) addRegistryToCache(r *registry.Registry) {
 
 	// if it already exists
 
-	if ir, ok := c.r[r.Reference()]; ok == true {
-		ir.touch(c.policy)
+	if ir, ok := c.rs[r.Reference()]; ok == true {
+		ir.touch(c.c.conf.CachePolicy)
 		return
 	}
 
 	// clean if need
 
-	if len(c.r) == c.maxRegistries {
+	if len(c.rs) == c.c.conf.CacheRegistries {
 
 		var (
 			tormr registry.RegistryRef // reference
-			tormp int                  // points
+			tormp cachePoints          // points
 		)
 
-		for rr, ir := range c.r {
-			if ir.points > tormp {
+		for rr, ir := range c.rs {
+			if ir.cachePoints > tormp {
 				tormr = rr
-				tormp = ir.points
+				tormp = ir.cachePoints
 			}
 		}
 
-		delete(c.r, tormr)
+		delete(c.rs, tormr)
 
 	}
 
@@ -200,14 +194,14 @@ func (c *Cache) addRegistryToCache(r *registry.Registry) {
 
 	var ir = &itemRegistry{r: r}
 
-	ir.touch(c.policy)
-	c.r[r.Reference()] = ir
+	ir.touch(c.c.conf.CachePolicy)
+	c.rs[r.Reference()] = ir
 }
 
 // AddRegistryToCache adds given registry to Cache
 func (c *Cache) AddRegistryToCache(r *registry.Registry) {
 
-	if c.maxRegistries <= 0 {
+	if c.c.conf.CacheRegistries <= 0 {
 		return
 	}
 
@@ -233,9 +227,9 @@ func (c *Cache) Registry(
 
 	// check out cache first
 
-	if ir, ok := c.r[rr]; ok == true {
+	if ir, ok := c.rs[rr]; ok == true {
 		r = ir.r
-		ir.touch(c.policy)
+		ir.touch(c.c.conf.CachePolicy)
 		return
 	}
 
@@ -250,114 +244,98 @@ func (c *Cache) Registry(
 		return
 	}
 
-	// TOTH (kostyarin): to add or not to add? That is the fucking question
-
-	if c.maxRegistries >= 0 {
+	if c.c.conf.CacheRegistries >= 0 {
 		c.addRegistryToCache(r)
 	}
 
 	return
-
 }
 
-// Close cache releasing associated resuorces
-// and closing CXDS saving statistics. The Close
-// method syncs cached values with saved in DB
+// Clsoe the Cache returning DB error
+// or nil
 func (c *Cache) Close() (err error) {
+
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// sync items
-	for k, it := range c.c {
-		if _, err = c.sync(k, it); err != nil {
-			break // break on first error
-		}
-	}
+	// TODO (kostyarin): todo
 
-	if err == nil {
-		err = c.db.Close()
-	} else {
-		c.db.Close() // ignore error
-	}
+	/*
 
-	c.stat.Close() // release associated resources
-	return
-}
+	   func (c *Cache) Close() (err error) {
+	   	c.mx.Lock()
+	   	defer c.mx.Unlock()
 
-// sync with DB removing item from cache if it is removed from DB
-func (c *Cache) sync(key cipher.SHA256, it *item) (removed bool, err error) {
+	   	// sync items
+	   	for k, it := range c.c {
+	   		if _, err = c.sync(k, it); err != nil {
+	   			break // break on first error
+	   		}
+	   	}
 
-	if it.cc == it.rc {
-		return // already synchronized
-	}
+	   	// decrement filling items
+	   	for k, it := range c.c {
+	   		if it.fc > 0 {
+	   			if _, err = c.Inc(k, -int(it.fc)); err != nil {
+	   				return
+	   			}
+	   		}
+	   	}
 
-	var inc = int(it.cc) - int(it.rc) // 20 - 19 = 1, 19 - 20 = -1
+	   	if err == nil {
+	   		err = c.db.Close()
+	   	} else {
+	   		c.db.Close() // ignore error
+	   	}
 
-	if _, err = c.db.Inc(key, inc); err != nil {
-		c.stat.addWritingDBRequest() // just request
-		return                       // failure
-	}
+	   	c.stat.Close() // release associated resources
+	   	return
+	   }
 
-	it.rc = it.cc // synchronized
-
-	// if the item has been removed from DB
-	if it.cc == 0 {
-		c.amount--
-		c.volume -= len(it.val)
-		delete(c.c, key)
-		removed = true // has been removed
-	} else {
-		c.stat.addWritingDBRequest() // update
-	}
+	*/
 
 	return
 }
 
-// change rc in the cache (cc), removing item if rc turns to be 0
-func (c *Cache) incr(
-	key cipher.SHA256,
-	it *item,
-	inc int,
-) (
-	removed bool,
-	err error,
-) {
+// delete item from the Cache
+func (c *Cache) delete(key cipher.SHA256, it *item) (err error) {
 
-	switch {
+	var inc = it.cc - it.rc // real rc
 
-	case inc == 0:
+	if inc != 0 {
 
-		// leave as is
+		_, err = c.db().Inc(key, inc)
+		c.stat.addWritingDBRequest() // write DB
 
-	case inc < 0:
-
-		inc = -inc             // make it positive
-		var uinc = uint32(inc) // to uint32
-
-		if uinc < it.cc {
-			it.cc -= uinc // reduce
-		} else {
-			// else ->  reduce to zero (sync to remove)
-			if removed, err = c.sync(key, it); err == nil {
-				it.cc = 0 // sync is sync
-			}
+		if err != nil {
+			return
 		}
 
-	case inc > 0:
-
-		it.cc += uint32(inc) // increase
-
 	}
+
+	c.amount--
+	c.volume -= len(it.val)
+
+	if it.fc == 0 {
+		delete(c.is, key)
+		return
+	}
+
+	// keep the item if the fc is not zero,
+	// just make it filling
+
+	it.val = nil
+	it.rc = 0
+	it.cc = 0
+	it.cachePoints = 0
 
 	return
 }
 
-// clean the cache down, the vol is size of item to insert to the cache
-// the items can't be inserted, because the cache is full; we are using
-// this vol to clean the cache down
+// clean the Cache down to lower boundry
 func (c *Cache) cleanDown(vol int) (err error) {
 
-	// stat
+	// stat (average cleaning time)
 	var tp = time.Now()
 	defer func() { c.stat.addCacheCleaning(time.Now().Sub(tp)) }()
 
@@ -366,199 +344,281 @@ func (c *Cache) cleanDown(vol int) (err error) {
 		it  *item
 	}
 
-	var rank = make([]*rankItem, 0, len(c.c))
+	var rank = make([]*rankItem, 0, len(c.is)) // rank items
 
-	for k, it := range c.c {
+	for key, it := range c.is {
 
 		if it.isWanted() == true {
-			continue // skip wanted items
+			return // skip wanted
 		}
 
-		rank = append(rank, &rankItem{k, it}) // add the item to the rank
+		if it.isFilling() == true {
+			return // skip filling (where val is nil)
+		}
+
+		rank = append(rank, &rankItem{key, it})
+
 	}
 
-	// sort the rank by points
+	// sort the rank using cachePoints; we
+	// are removing items with less points
 
 	sort.Slice(rank, func(i, j int) bool {
-		return rank[i].it.points < rank[j].it.points
+		return rank[i].it.cachePoints < rank[j].it.cachePoints
 	})
 
-	// clean down
+	// clean by amount first
 
-	// celan by amount of items only if c.amount == c.maxAmount
+	if c.amount+1 > c.c.conf.CacheMaxAmount {
 
-	var (
-		i       int       // last removed element
-		ri      *rankItem // key->item
-		removed bool      // removed by sync
-	)
-
-	// clean by amount first (if need)
-	if c.amount == c.maxAmount {
+		var (
+			i  int       // to reduce the rank slice
+			ri *rankItem // for the range (we need the i)
+		)
 
 		for i, ri = range rank {
-			if c.amount <= c.cleanAmount { // actually, ==
-				break // done
+
+			if c.amount < c.amountc { // actually, `amount + 1 == ...`
+				break
 			}
 
-			if removed, err = c.sync(ri.key, ri.it); err != nil {
+			// delete item from the Cache
+			if err = c.delete(ri.key, ri.it); err != nil {
 				return // fail on first error
-			} else if removed == false {
-				delete(c.c, ri.key)        // delete from cache
-				c.amount--                 // cache amount
-				c.volume -= len(ri.it.val) // cache volume
 			}
 
-			rank[i] = nil // GC for the item
+			rank[i].it = nil // GC
+
 		}
 
-		// and if, after the cleaning, the cache has
-		// enouth place to fit new item, we are done
-
-		if c.volume+vol <= c.maxVolume {
-			return // done
-		}
-
-		// otherwise, we are cleaning by volume
-		// down to the c.cleanVolume (down to
-		// c.cleanVolume - vol)
+		rank = rank[i:] // shift
 
 	}
 
 	// clean by volume if need
-	for ; i < len(rank); i++ {
 
-		if c.volume+vol <= c.cleanVolume {
-			break // done
+	if c.volume+vol < c.c.conf.CacheMaxVolume {
+		return // enough
+	}
+
+	for i, ri := range rank {
+
+		if c.volume+vol <= c.volumec {
+			break
 		}
 
-		ri = rank[i]
-
-		if removed, err = c.sync(ri.key, ri.it); err != nil {
+		if err = c.delete(ri.key, ri.it); err != nil {
 			return // fail on first error
-		} else if removed == false {
-			delete(c.c, ri.key)
-			c.amount--
-			c.volume -= len(ri.it.val)
 		}
 
-		rank[i] = nil // GC for the item
+		rank[i].it = nil // GC
+
 	}
 
-	return // ok
-}
-
-// put item to the cache
-func (c *Cache) putItem(key cipher.SHA256, val []byte, rc uint32) (err error) {
-
-	if len(val) > c.maxItemSize {
-		return // can't put, the item is too big
-	}
-
-	if c.amount+1 >= c.maxAmount || c.volume+len(val) >= c.maxVolume {
-		if err = c.cleanDown(len(val)); err != nil { // clean the cache first
-			return
-		}
-	}
-
-	var it = &item{
-		cc:  rc, // synchronized
-		rc:  rc,
-		val: val,
-	}
-
-	it.touch(c.policy)
-
-	c.c[key] = it // add to cache
 	return
-
 }
 
-// CXDS wrappers
-
-// call it under lock
-func (c *Cache) get(
-	key cipher.SHA256, // :
-	inc int, //           :
+// create regular item in the cache
+func (c *Cache) putItem(
+	key cipher.SHA256,
+	val []byte,
+	rc int,
 ) (
-	val []byte, //        :
-	rc uint32, //         :
-	err error, //         :
+	err error,
 ) {
 
-	var it, ok = c.c[key]
-
 	if c.enable == false {
-
-		// if cache disabled then an item can be wanted,
-		// and looking cache for wanted items, we can avoid
-		// DB lookup (disck access); here is cache is disabled
-		// then c.c map used for wanted items only, and we
-		// can avoid it.isWanted() call
-		if ok == true {
-			return nil, 0, data.ErrNotFound // if it wanted, then it not found
-		}
-
-		val, rc, err = c.db.Get(key, inc)
-		c.stat.addDBGet(inc) // stat
 		return
 	}
 
-	if ok == true {
+	if len(val) > c.c.conf.CacheMaxItemSize {
+		return
+	}
 
-		// if item is wanted, then the CXDS
-		// doesn't contains the item
+	if rc == 0 {
+		return // don't cache stale values
+	}
 
-		if it.isWanted() == true {
-			return nil, 0, data.ErrNotFound // not found
-		}
+	switch {
+	case c.amount+1 > c.c.conf.CacheMaxAmount,
+		c.volume+len(val) > c.c.conf.CacheMaxVolume:
 
-		// change cc (cached rc)
-		var removed bool
-		if removed, err = c.incr(key, it, inc); err != nil {
+		if err = c.cleanDown(len(val)); err != nil {
 			return
 		}
 
-		if removed == false {
-			c.stat.addCacheGet(inc)
-			it.touch(c.policy) // touch item
-		}
+	}
 
-		val, rc = it.val, it.cc
+	var it = &item{rc: rc, val: val}
+
+	it.touch(c.c.conf.CachePolicy)
+	c.is[key] = it
+
+	return
+}
+
+// create item with fc > 0; e.g.
+// add data to the filling item
+func (c *Cache) putFillingItem(
+	val []byte,
+	rc int,
+	it *item, // filling item
+) (
+	err error,
+) {
+
+	if c.enable == false {
 		return
 	}
 
-	// not found in the cache, let's look DB
-	val, rc, err = c.db.Get(key, inc)
+	if len(val) > c.c.conf.CacheMaxItemSize {
+		return
+	}
+
+	if rc == 0 {
+		return // don't cache stale values
+	}
+
+	switch {
+	case c.amount+1 > c.c.conf.CacheMaxAmount,
+		c.volume+len(val) > c.c.conf.CacheMaxVolume:
+
+		if err = c.cleanDown(len(val)); err != nil {
+			return
+		}
+
+	}
+
+	it.val = val
+	it.rc = rc // real
+	it.cc = rc // real
+
+	it.touch(c.c.conf.CachePolicy)
+
+	return
+}
+
+func incr(cc, inc int) (dcc int) {
+	if cc+inc < 0 {
+		return // 0
+	}
+	return cc + inc
+}
+
+// if item is filling then it exist in DB, but removed
+// from the cache (by the cleanDown, or if the cahe is
+// not used (is disabled)); thus if the cache disabled,
+// then the getFilling method is just (data.CXDS).Get;
+// otherwise, the getFilling load item to the cache, but
+// unlike the Get (non filling item), the rc will be a
+// 'hard rc', e.g. the 'hard rc' is rc (or cc) - fc;
+//
+// this way, if an item put to DB by filler has hard rc
+// greater then 0, then the item has entire subtree;
+// e.g. the hard rc means that item is part of a full
+// Root object and it is guaranteed that the item has
+// entire subtree in the DB
+//
+// the guarantee is neccessary for fillers; a filler
+// can skip subtree (instead of digging it); but a
+// filler can not skip subtree if the subtree is a
+// subtree of another filler; because if the another
+// filler fails, it (the another filler) removes the
+// subtree from DB
+func (c *Cache) getFilling(
+	key cipher.SHA256,
+	inc int,
+	it *item,
+) (
+	val []byte,
+	rc int,
+	err error,
+) {
+
+	var urc uint32
+	val, urc, err = c.db().Get(key, inc)
 	c.stat.addDBGet(inc)
 
 	if err != nil {
 		return
 	}
 
-	// put to cache
-	err = c.putItem(key, val, rc)
+	rc = int(urc) - it.fc
+
+	err = c.putFillingItem(val, int(urc), it)
 	return
 }
 
-// Get from cache or DB, increasing, leaving as is, or reducing
-// references counter. For most reading cases the inc argument should
-// be zero. If value doesn't exist the Get returns data.ErrNotFound.
-// It's possible to get and remove value using the inc argument. The
-// Get returns value and new references counter. The Get can returns
-// an error that doen'r relate to given element. Putting element to
-// the Cache the Get can clean up cache to free space, syncing
-// with DB. In this case if the synching fails, the Get can returns
-// valid value and rc and some error. Anyway, any DB failure should be
-// fatal. E.g. all errors except data.ErrNotFound means that data
-// in the DB can be lost
-func (c *Cache) Get(
-	key cipher.SHA256, // :
-	inc int, //           :
+// under lock
+func (c *Cache) get(
+	key cipher.SHA256,
+	inc int,
 ) (
-	val []byte, //        :
-	rc uint32, //         :
-	err error, //         :
+	val []byte,
+	rc int,
+	err error,
+) {
+
+	var it, ok = c.is[key]
+
+	if ok == true {
+		if it.isWanted() == true {
+			return nil, 0, data.ErrNotFound
+		}
+
+		if it.isFilling() == true {
+			return c.getFilling(key, inc, it)
+		}
+
+		// remove item if it's cc is zero
+		if it.cc = incr(it.cc, inc); it.cc == 0 {
+			c.delete(key, it)
+		} else {
+			c.stat.addCacheGet(inc) // effective cache get
+			it.touch(c.c.conf.CachePolicy)
+		}
+
+		val = it.val
+		rc = it.cc - it.fc // hard rc
+
+		return
+	}
+
+	// not found in the Cache
+
+	var urc uint32
+	val, urc, err = c.db().Get(key, inc)
+	c.stat.addDBGet(inc)
+
+	if err != nil {
+		return
+	}
+
+	err = c.putItem(key, val, int(urc))
+	return
+}
+
+// Get from cache or DB, increasing, leaving as is, or
+// reducing references counter. For most reading cases
+// the inc argument should be zero. If value doesn't
+// exist the Get returns data.ErrNotFound. It's possible
+// to get and remove value using the inc argument. The
+// Get returns value and new references counter. The Get
+// can returns an error that doesn't relate to given
+// element. Putting element to the Cache the Get can
+// clean up cache to free space, syncing with DB. In this
+// case if the synching fails, the Get can returns valid
+// value and rc and some error. Anyway, any DB failure
+// should be fatal. E.g. all errors except data.ErrNotFound
+// and ObjectIsTooLargeError means that data in the DB can
+// be lost
+func (c *Cache) Get(
+	key cipher.SHA256,
+	inc int,
+) (
+	val []byte,
+	rc int,
+	err error,
 ) {
 
 	c.mx.Lock()
@@ -576,53 +636,95 @@ func sendWanted(gc chan<- Object, obj Object) {
 }
 
 func (c *Cache) setWanted(
+	key cipher.SHA256,
+	val []byte,
+	inc int,
 	it *item,
+) (
+	rc int,
+	err error,
+) {
+
+	if len(val) > c.c.conf.MaxObjectSize {
+		err = &ObjectIsTooLargeError{key}
+
+		// ignore the inc
+
+		var obj = Object{key, nil, 0, err}
+
+		for gc := range it.fwant {
+			sendWanted(gc, obj)
+		}
+
+		delete(c.is, key) // force
+		return
+	}
+
+	var wincs int // incs of wants (add to fc after)
+
+	// add incs of wants
+	for _, winc := range it.fwant {
+		wincs += winc
+	}
+
+	// save
+	var urc uint32
+	urc, err = c.db().Set(key, val, inc+wincs)
+	c.stat.addWritingDBRequest()
+
+	if err != nil {
+		return // DB failure
+	}
+
+	// send hard rc to wanters
+	var obj = Object{key, val, int(urc) - (wincs + it.fc), nil}
+
+	for gc := range it.fwant {
+		sendWanted(gc, obj)
+	}
+
+	it.fwant = nil // not wanted anymore
+	it.fc += wincs // incs of fillers (of wanters)
+
+	err = c.putFillingItem(val, int(urc), it)
+	return
+}
+
+func (c *Cache) setFilling(
+	key cipher.SHA256,
+	val []byte,
+	inc int,
+	it *item,
+) (
+	rc int,
+	err error,
+) {
+
+	// the item is filling, and value in db,
+	//
+	// (1) cache disabled or
+	// (2) the item will be dropped (turned filling)
+	//     after cleanDown
+
+	// in both cases we have to access DB
+
+	// but if the item is filling, then it exists in DB
+	// and we can avoid size check, and we can call
+	// incItem instead of the Set, but for filling items
+	// it's equal to call incFilling
+
+	return c.incFilling(key, inc, it)
+}
+
+// Set adds value to DB and to the Cache if it's enabled.
+// The inc argument must be greater then zero
+func (c *Cache) Set(
 	key cipher.SHA256,
 	val []byte,
 	inc int,
 ) (
-	rc uint32,
+	rc int,
 	err error,
-) {
-
-	// inc of wanters
-	for _, winc := range it.fwant {
-		inc += winc
-	}
-
-	// we have to save the item first to guarantee
-	// that the element will exist in DB
-	if rc, err = c.db.Set(key, val, inc); err != nil {
-		c.stat.addWritingDBRequest() // just request
-		return                       // an error
-	}
-
-	// send to wanters
-	for gc := range it.fwant {
-		sendWanted(gc, Object{key, val, rc})
-	}
-
-	delete(c.c, key) // remove from wanted
-
-	if c.enable == false {
-		return // done
-	}
-
-	// put to cache (replace the wanted)
-	err = c.putItem(key, val, rc)
-	return
-}
-
-// Set to DB, increasing references counter. The inc argument must
-// be 1 or greater, otherwise the Set panics. Owerwriting incareases
-// references counter of existing value
-func (c *Cache) Set(
-	key cipher.SHA256, // : key
-	val []byte, //        : value
-	inc int, //           : >= 0
-) (
-	rc uint32, //         : new rc of the value
-	err error, //         : an error
 ) {
 
 	if inc <= 0 {
@@ -632,232 +734,398 @@ func (c *Cache) Set(
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// check out cache first
-	var it, ok = c.c[key]
+	var it, ok = c.is[key]
 
 	if ok == true {
 
 		if it.isWanted() == true {
-			return c.setWanted(it, key, val, inc)
+			return c.setWanted(key, val, inc, it)
 		}
 
-		// not wanted, just chagne the rc
-		// (here the Cache is enabled), we
-		// don't update DB value
+		if it.isFilling() == true {
+			return c.setFilling(key, val, inc, it)
+		}
 
-		it.cc += uint32(inc) // increase
-		c.stat.addWritingCacheRequest()
-		it.touch(c.policy) // touch item
+		// remove item if it's cc is zero
+		if it.cc = incr(it.cc, inc); it.cc == 0 {
+			c.delete(key, it) // not effective cache set
+		} else {
+			c.stat.addWritingCacheRequest() // effective cache set
+			it.touch(c.c.conf.CachePolicy)
+		}
+
+		val = it.val
+		rc = it.cc - it.fc // hard rc
 
 		return
 
+	}
+
+	// not found in the cache
+
+	if len(val) > c.c.conf.MaxObjectSize {
+		err = &ObjectIsTooLargeError{key}
+		return
+	}
+
+	var urc uint32
+	urc, err = c.db().Set(key, val, inc)
+	c.stat.addWritingDBRequest()
+
+	if err != nil {
+		return
+	}
+
+	err = c.putItem(key, val, int(urc))
+	return
+}
+
+func (c *Cache) incFilling(
+	key cipher.SHA256,
+	inc int,
+	it *item,
+) (
+	rc int,
+	err error,
+) {
+
+	var (
+		urc uint32
+		val []byte
+	)
+
+	if c.enable == true {
+		val, urc, err = c.db().Get(key, inc)
+	} else {
+		urc, err = c.db().Inc(key, inc)
+	}
+
+	c.stat.addDBGet(inc)
+
+	if err != nil {
+		return
+	}
+
+	rc = int(urc) - it.fc // hard rc
+
+	err = c.putFillingItem(val, int(urc), it)
+	return
+}
+
+func (c *Cache) incItem(
+	key cipher.SHA256, // :
+	inc int, //           :
+	it *item, //          :
+) (
+	rc int, //            :
+	err error, //         :
+) {
+
+	if it.isWanted() == true {
+		return 0, data.ErrNotFound
+	}
+
+	if it.isFilling() == true {
+		return c.incFilling(key, inc, it)
+	}
+
+	// remove item if it's cc is zero
+	if it.cc = incr(it.cc, inc); it.cc == 0 {
+		c.delete(key, it)
+	} else {
+		c.stat.addCacheGet(inc) // effective cache get
+		it.touch(c.c.conf.CachePolicy)
+	}
+
+	rc = it.cc - it.fc // hard rc
+	return
+}
+
+// under lock
+func (c *Cache) inc(
+	key cipher.SHA256, // :
+	inc int, //           :
+) (
+	rc int, //            :
+	err error, //         :
+) {
+
+	var it, ok = c.is[key]
+
+	if ok == true {
+		return c.incItem(key, inc, it)
 	}
 
 	// not found in the Cache
-	if rc, err = c.db.Set(key, val, inc); err != nil || c.enable == false {
-		c.stat.addWritingDBRequest() // just request
+
+	// get only if cache enabled
+
+	var (
+		urc uint32
+		val []byte
+	)
+
+	if c.enable == true {
+		val, urc, err = c.db().Get(key, inc)
+	} else {
+		urc, err = c.db().Inc(key, inc)
+	}
+
+	c.stat.addDBGet(inc)
+
+	if err != nil {
 		return
 	}
 
-	// cache enabled and err is nil
-	err = c.putItem(key, val, rc)
+	err = c.putItem(key, val, int(urc))
 	return
 
 }
 
-// Inc used to increase or reduce references counter. The Inc with
-// zero inc argument can be used to check presence of a value. If
-// value doesn't exists the Inc returns data.ErrNotFound. If the
-// Inc reduce references counter to zero or less, then value will
-// be deleted
+// Inc used to cahnge rc of an existing value
 func (c *Cache) Inc(
 	key cipher.SHA256, // :
 	inc int, //           :
 ) (
-	rc uint32, //         :
+	rc int, //            :
 	err error, //         :
 ) {
 
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// check out cache first
-	var it, ok = c.c[key]
-
-	if ok == true {
-		// found
-
-		if it.isWanted() == true {
-			err = data.ErrNotFound // wanted item
-			return
-		}
-
-		// here the c.enable is true
-		var removed bool
-		if removed, err = c.incr(key, it, inc); err != nil {
-			return
-		}
-
-		if removed == false {
-			c.stat.addCacheGet(inc) // Inc not Get, but who fucking cares
-			it.touch(c.policy)      // touch item
-		}
-
-		rc = it.cc
-		return
-
-	}
-
-	// not found in cache
-
-	// use Get instead of the Inc, to get val;
-	// the val required for stat to track DB
-	// volume
-	var val []byte
-	val, rc, err = c.db.Get(key, inc)
-	c.stat.addDBGet(inc)
-
-	if err != nil {
-		return
-	}
-
-	// put to cache
-	err = c.putItem(key, val, rc)
-
-	return
-
+	return c.inc(key, inc)
 }
 
-func incUint32(cc uint32, inc int) uint32 {
-	if inc == 0 {
-		return cc
-	}
-	if inc > 0 {
-		return cc + uint32(inc)
-	}
-	inc = -inc // negate
-	if uinc := uint32(inc); uinc < cc {
-		return cc - uinc
-	}
-	return 0
-}
+//
+// filling related methods
+//
 
-// Want is service method. It used by the node package for filling.
-// If wanted value exists in DB, it will be sent through given
-// channel. Otherwise, it will be sent when it comes.
+// Want subscribes to object. If obejct already exists
+// then it will be sent through given channel. If the Want
+// called many times with the same channel, then requested
+// object will be received once. The Want used for filling
+// and have very specific pitfalls. The inc is inc of fillers
+// and after the Want, a filler have to call Unwant and Finc
+// to notify the cache that this object now is part of a
+// full Root objects. Or to notify the cache that filling
+// breaks and inc of the object decrements. The cache never
+// blocks sending to cahnnels, thus, the cahnnel should be
+// buffered.
 func (c *Cache) Want(
-	key cipher.SHA256, // : requested value
-	gc chan<- Object, //  : channel to receive value
-	inc int, //           : increment on set
+	key cipher.SHA256,
+	gc chan<- Object,
+	inc int,
 ) (
-	err error, //         : the err never be data.ErrNotFound
+	err error,
 ) {
 
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	var it, ok = c.c[key]
+	var it, ok = c.is[key]
 
 	if ok == true {
 
 		if it.isWanted() == true {
-			it.fwant[gc] = inc // add to the wanters
+			it.fwant[gc] += inc
 			return
 		}
 
-		// exist (not wanted)
+		if it.isFilling() == true { // but not wanted
 
-		it.cc = incUint32(it.cc, inc)              // change the inc
-		sendWanted(gc, Object{key, it.val, it.cc}) // never block
+			var (
+				val []byte
+				rc  int
+			)
 
-		if inc == 0 {
-			c.stat.addReadingCacheRequest() // get from cache
-		} else {
-			c.stat.addWritingCacheRequest() // get + change
+			if val, rc, err = c.getFilling(key, inc, it); err != nil {
+
+				if err == data.ErrNotFound {
+					it.fwant = map[chan<- Object]int{gc: inc} // want
+					err = nil                                 // clear
+				}
+
+				return // DB failure or nil (not found)
+			}
+
+			// found
+
+			// the getFilling method returns hard rc, but we have to
+			// subtract the inc from it to make it real hard
+
+			it.fc += inc
+			sendWanted(gc, Object{key, val, rc - inc, nil})
+
+			return
 		}
 
-		it.touch(c.policy) // touch the item
+		// regular item in the cache
+
+		it.fc += inc
+		sendWanted(gc, Object{key, it.val, it.cc - it.fc, nil})
+
+		if inc == 0 {
+			c.stat.addReadingCacheRequest() // effective
+		} else {
+			c.stat.addWritingCacheRequest() // effective
+		}
+
+		it.touch(c.c.conf.CachePolicy)
 		return
 
 	}
 
-	// ok == false (doen't exist in the cache)
+	// not in cache, but it can be in DB
 
 	var (
+		urc uint32
 		val []byte
-		rc  uint32
 	)
 
-	val, rc, err = c.db.Get(key, inc)
+	val, urc, err = c.db().Get(key, inc)
 	c.stat.addDBGet(inc)
 
-	if err == data.ErrNotFound {
-		c.c[key] = &item{fwant: map[chan<- Object]int{gc: inc}} // add to wanted
-		return nil                                              // no errors
-	}
-
 	if err != nil {
-		return // database failure
+
+		if err == data.ErrNotFound {
+			// create wanted item
+			it = new(item)
+			it.fwant = map[chan<- Object]int{gc: inc}
+			err = nil // clear
+		}
+
+		return // DB failure or 'not found'
 	}
 
 	// found
-	sendWanted(gc, Object{key, val, rc})
 
-	err = c.putItem(key, val, rc)
+	sendWanted(gc, Object{key, val, int(urc) - inc, nil})
+
+	// create filling item in the cache
+
+	it = new(item)
+	it.fc = inc
+	c.is[key] = it
+
+	err = c.putFillingItem(val, int(urc), it)
 	return
 }
 
-// Unwant is opposite to the want. It removes the channel
+// Unwant used to unsibscribe after the Want, if,
+// by some reasons, the object is not wanted anymore
 func (c *Cache) Unwant(
-	key cipher.SHA256, // :
-	gc chan<- Object, //  :
+	key cipher.SHA256,
+	gc chan<- Object,
 ) {
 
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	var it, ok = c.c[key]
-
-	if ok == false {
-		return
+	if it := c.is[key]; it != nil {
+		delete(it.fwant, gc)
 	}
 
-	if it.isWanted() == false {
-		return
-	}
-
-	delete(it.fwant, gc)
 }
 
-// SetIfWanted performs Set if vlaue with
-// given key is wanted. The SetIfWanted used
-// by node for filling
-func (c *Cache) SetIfWanted(
-	key cipher.SHA256, // : hash
-	val []byte, //        : value
-	inc int, //           : inc
+// SetWanted is like the Set, but is set value
+// only if the value is wanted. The SetWanted
+// never returns "not wanted" error.
+func (c *Cache) SetWanted(
+	key cipher.SHA256,
+	val []byte,
 ) (
-	set bool, //          : is set
-	err error, //         : an error
+	rc int,
+	err error,
 ) {
 
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	var it, ok = c.c[key]
+	var it, ok = c.is[key]
 
 	if ok == false {
-		return // is not wanted
-	}
-
-	if it.isWanted() == false {
-		return // is not wanted
-	}
-
-	if _, err = c.setWanted(it, key, val, inc); err != nil {
 		return
 	}
 
-	set = true
+	if it.isWanted() == false {
+		return
+	}
+
+	return c.setWanted(key, val, 0, it)
+}
+
+// Finc is like the Inc, but it used by fillers to
+// apply incs of filler or reject them. See the
+// Want for details. The method does nothing is
+// item with given key is not a filling item.
+// If the inc argument greater then zero, then
+// it is the apply. Otherwise, it is the reject.
+// The Finc must be called after the moment when
+// item received through gc channell passed to
+// the Want method. The Finc must not be called
+// if the received item is erroneous
+func (c *Cache) Finc(
+	key cipher.SHA256,
+	inc int,
+) (
+	err error,
+) {
+
+	if inc == 0 {
+		panic("(Cache).Finc called with zero for: " + key.Hex()[:7])
+	}
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	var it, ok = c.is[key]
+
+	if ok == false {
+		return
+	}
+
+	if it.fc == 0 {
+		return // not a filling item
+	}
+
+	// apply
+
+	if inc > 0 {
+
+		it.fc -= inc
+
+		if it.fc > 0 {
+			return
+		}
+
+		// else, the fc is 0 (remove if it's filling)
+
+		if it.isWanted() == true {
+			return // can't remove wanted item
+		}
+
+		if len(it.val) == 0 { // filling item (filling only)
+			delete(c.is, key)
+		}
+
+		// keep
+		it.touch(c.c.conf.CachePolicy)
+		return
+	}
+
+	// reject
+
+	it.fc += inc // fc = fc - abs(inc)
+
+	if it.fc < 0 {
+		panic("Finc to negative for: " + key.Hex()[:7])
+	}
+
+	if it.fc == 0 && len(it.val) == 0 {
+		delete(c.is, key) // was a filling only item
+	}
+
+	_, err = c.incItem(key, inc, it) // in db
 	return
 }

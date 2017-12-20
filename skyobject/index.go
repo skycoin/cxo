@@ -832,7 +832,7 @@ func (i *Index) delPackWalkFunc(
 	) {
 
 		var (
-			rc  uint32
+			rc  int
 			val []byte
 		)
 

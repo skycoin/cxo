@@ -12,10 +12,13 @@ import (
 // A Stat represents statistic of the Container
 type Stat struct {
 
-	// CXDS is statistic of CXDS key-value store
+	// CXDS is statistic of CXDS key-value store.
 	CXDS ReadWriteStat
 	// Cache contains read-write statistic of the
-	// Cache
+	// Cache. The Cache statistic collect only
+	// effective reads and writes (where data
+	// requested of changed in the Cache without
+	// DB access).
 	Cache ReadWriteStat
 	// CacheCleaning is average pause of Cache
 	// for cleaning
@@ -25,7 +28,7 @@ type Stat struct {
 	UsedObjects ObjectsStat
 
 	// RootsPerSecond is average vlaue of new
-	// Root objects per second
+	// Root objects per second.
 	RootsPerSecond float64
 
 	// Feeds contains statistic of feeds

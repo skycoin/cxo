@@ -26,10 +26,9 @@ type Unpack struct {
 }
 
 func (u *Unpack) reset() {
-	u.m = make(map[cipher.SHA256]*unpackItem)
-	//for _, ui := range u.m {
-	//	ui.dec = 0
-	//}
+	for _, ui := range u.m {
+		ui.dec = 0
+	}
 }
 
 // Set value
@@ -39,7 +38,7 @@ func (u *Unpack) Set(key cipher.SHA256, val []byte) (err error) {
 		return &ObjectIsTooLargeError{key}
 	}
 
-	var rc uint32
+	var rc int
 	if rc, err = u.c.Set(key, val, 1); err != nil {
 		return
 	}
@@ -107,12 +106,6 @@ func (c *Container) Unpack(
 // Prev fields of the Root, and signs the Root
 func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 
-	defer func() {
-		if err != nil {
-			up.reset()
-		}
-	}()
-
 	// save the Root recursive
 
 	if r.Pub == (cipher.PubKey{}) {
@@ -140,6 +133,12 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 	}
 
 	// walk the Root first
+
+	defer func() {
+		if err != nil {
+			up.reset()
+		}
+	}()
 
 	for _, dr := range r.Refs {
 
@@ -336,3 +335,8 @@ func (c *Container) NewRoot(
 }
 
 */
+
+func (u *Unpack) Close() {
+	u.reset()
+	//
+}

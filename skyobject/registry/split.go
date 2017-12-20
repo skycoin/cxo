@@ -40,7 +40,7 @@ type Splitter interface {
 	Registry() (reg *Registry)
 
 	// Get value from DB or from related remote peers
-	Get(key cipher.SHA256) (val []byte, rc uint32, err error)
+	Get(key cipher.SHA256) (val []byte, rc int, err error)
 
 	// Fail the splitting
 	Fail(err error)
@@ -74,7 +74,7 @@ func splitSchemaHash(
 	}
 
 	var (
-		rc  uint32
+		rc  int
 		val []byte
 		err error
 	)
