@@ -84,6 +84,7 @@ func Test_fillinng(t *testing.T) {
 
 	assertNil(t, sc.Save(up, r))
 	testFillRoot(t, sc, rc, r)
+	testFillDBs(t, sc, rc)
 
 	var usr = User{
 		Name: "Alice",
@@ -96,6 +97,7 @@ func Test_fillinng(t *testing.T) {
 
 	assertNil(t, sc.Save(up, r))
 	testFillRoot(t, sc, rc, r)
+	testFillDBs(t, sc, rc)
 
 	var feed = Feed{
 		Head: "Alices' feed",
@@ -109,17 +111,22 @@ func Test_fillinng(t *testing.T) {
 
 	assertNil(t, sc.Save(up, r))
 	testFillRoot(t, sc, rc, r)
+	testFillDBs(t, sc, rc)
 
 	for i := 0; i < 100; i++ {
+
+		t.Log(i)
 
 		assertNil(t, feed.Posts.AppendValues(up, Post{
 			Head: fmt.Sprintf("Head #%d", i),
 			Body: fmt.Sprintf("Body #%d", i),
 		}))
+
 		assertNil(t, r.Refs[1].SetValue(up, &feed))
 
 		assertNil(t, sc.Save(up, r))
 		testFillRoot(t, sc, rc, r)
+		testFillDBs(t, sc, rc)
 	}
 
 }
@@ -200,4 +207,41 @@ func createDynamic(
 
 	dr.Schema = sch.Reference()
 	return
+}
+
+func testFillDBs(t *testing.T, sc, rc *Container) {
+	t.Helper()
+
+	var (
+		ks  []cipher.SHA256
+		err error
+	)
+
+	assertNil(t, sc.db.CXDS().Iterate(
+		func(key cipher.SHA256, _ uint32, val []byte) (_ error) {
+			ks = append(ks, key)
+			return
+		}))
+
+	if len(ks) == 0 {
+		t.Fatal("no objects in DB")
+	}
+
+	for _, key := range ks {
+
+		var src, rrc int
+		_, src, err = sc.Get(key, 0)
+		assertNil(t, err)
+
+		_, rrc, err = rc.Get(key, 0)
+		assertNil(t, err)
+
+		if src != rrc {
+			t.Error("wrong rc", rrc, src, key.Hex()[:7])
+		}
+	}
+
+	if t.Failed() == true {
+		t.FailNow()
+	}
 }

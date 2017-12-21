@@ -21,6 +21,7 @@ type Filler struct {
 
 	mx   sync.Mutex
 	incs map[cipher.SHA256]int
+	pre  map[cipher.SHA256]struct{} // prerequested by RC
 
 	limit chan struct{} // max
 
@@ -41,16 +42,22 @@ func (f *Filler) Registry() (reg *registry.Registry) {
 	return f.reg
 }
 
-// Get object from DB or request it usung provided
-// channel. The Get increments references counter
-// of value
-func (f *Filler) Get(key cipher.SHA256) (val []byte, rc int, err error) {
+func (f *Filler) get(
+	key cipher.SHA256,
+	inc int,
+) (
+	val []byte,
+	rc int,
+	err error,
+) {
 
 	// try to get from DB first
-	val, rc, err = f.c.Get(key, 1) // incrementing the rc to hold the object
+	val, rc, err = f.c.Get(key, inc) // incrementing the rc to hold the object
 
 	if err == nil {
-		f.inc(key)
+		if inc > 0 {
+			rc = f.inc(key, rc) // ++
+		}
 		return
 	}
 
@@ -63,7 +70,7 @@ func (f *Filler) Get(key cipher.SHA256) (val []byte, rc int, err error) {
 	// not found
 	var gc = make(chan Object, 1) // wait for the object
 
-	f.c.Want(key, gc, 1)
+	f.c.Want(key, gc, inc)
 	defer f.c.Unwant(key, gc) // to be memory safe
 
 	// requset the object using the rq channel
@@ -73,12 +80,58 @@ func (f *Filler) Get(key cipher.SHA256) (val []byte, rc int, err error) {
 
 	select {
 	case obj := <-gc:
-		f.inc(key) // increment it first for the realRC
-		val, rc = obj.Val, obj.RC
+		if err = obj.Err; err != nil {
+			return
+		}
+		val = obj.Val
+		if inc > 0 {
+			rc = f.inc(key, obj.RC)
+		} else {
+			rc = obj.RC
+		}
 	case <-f.closeq:
 		err = ErrTerminated
 	}
 
+	return
+}
+
+// Pre used to prerequest an item to get it late. The Get increments
+// filling rc in the Cache. And to not increment the rc twice for
+// an item this method used. The method doesn't return value, because
+// nobobdy need it. The Pre used to obtain "hard rc" of an item
+func (f *Filler) Pre(key cipher.SHA256) (rc int, err error) {
+	if _, rc, err = f.get(key, 1); err != nil {
+		return
+	}
+
+	f.mx.Lock()
+	defer f.mx.Unlock()
+
+	f.pre[key] = struct{}{} // set
+	return
+}
+
+func (f *Filler) isPrerequested(key cipher.SHA256) (ok bool) {
+	f.mx.Lock()
+	defer f.mx.Unlock()
+
+	_, ok = f.pre[key]
+	return
+}
+
+// Get object from DB or request it usung provided
+// channel. The Get increments references counter
+// of value
+func (f *Filler) Get(key cipher.SHA256) (val []byte, rc int, err error) {
+
+	var inc = 1
+
+	if f.isPrerequested(key) == true {
+		inc = 0 // prerequested
+	}
+
+	val, rc, err = f.get(key, inc)
 	return
 }
 
@@ -95,11 +148,24 @@ func (f *Filler) Fail(err error) {
 // internal methods
 //
 
-func (f *Filler) inc(key cipher.SHA256) {
+// if the item was requested by this filler,
+// then we can force split* methods to skip it
+// even if the item relates to this filling
+// Root only (is not hard)
+func (f *Filler) inc(key cipher.SHA256, drc int) (rc int) {
 	f.mx.Lock()
 	defer f.mx.Unlock()
 
-	f.incs[key]++
+	rc = drc
+
+	var finc, ok = f.incs[key]
+
+	if ok == true {
+		rc++
+	}
+
+	f.incs[key] = finc + 1 // +1 want (+1 finc)
+	return
 }
 
 func (f *Filler) requset(key cipher.SHA256) (ok bool) {
@@ -141,6 +207,7 @@ func (c *Container) Fill(
 
 	f.rq = rq
 	f.incs = make(map[cipher.SHA256]int)
+	f.pre = make(map[cipher.SHA256]struct{})
 
 	if maxParall > 0 {
 		f.limit = make(chan struct{}, maxParall)
@@ -219,10 +286,11 @@ func (f *Filler) Run() (err error) {
 		return
 	}
 
-	f.inc(f.r.Hash) // increment
+	f.inc(f.r.Hash, 0) // increment
 
 	defer func() {
 		if err != nil {
+			f.r.IsFull = false // reset
 			f.reject()
 		} else {
 			f.apply()
@@ -267,20 +335,15 @@ func (f *Filler) getRegistry() (err error) {
 		return ErrBlankRegistryRef
 	}
 
+	// incrementing
+	if _, _, err = f.Get(cipher.SHA256(f.r.Reg)); err != nil {
+		return
+	}
+
 	var reg *registry.Registry
 
 	if reg, err = f.c.Registry(f.r.Reg); err != nil {
-
-		if err != data.ErrNotFound {
-			return // DB failure or malformed encoded Registry
-		}
-
-		// incrementing
-		if _, _, err = f.Get(cipher.SHA256(f.r.Reg)); err != nil {
-			return
-		}
-
-		reg, err = f.c.Registry(f.r.Reg)
+		return
 	}
 
 	f.reg = reg

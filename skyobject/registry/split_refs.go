@@ -33,16 +33,23 @@ func (*fakePack) Flags() (_ Flags)       { return }
 func (*fakePack) AddFlags(Flags)         { panic("fake method called") }
 func (*fakePack) ClearFlags(Flags)       { panic("fake method called") }
 
-func (r *Refs) splitHash(s Splitter, hash cipher.SHA256) (load bool) {
+// get and cache value, and return true
+// if hard rc of value is zero
+func (r *Refs) splitHash(
+	fp *fakePack, //       :
+	hash cipher.SHA256, // :
+) (
+	load bool, //          :
+) {
 
-	var _, rc, err = s.Get(hash)
+	var rc, err = fp.s.Pre(hash)
 
 	if err != nil {
-		s.Fail(err)
+		fp.s.Fail(err)
 		return
 	}
 
-	return (rc == 0) // laod if hard rc > 0
+	return (rc == 0) // laod if hard rc == 0
 }
 
 // Split used by the node package to fill the Dynamic.
@@ -60,7 +67,7 @@ func (r *Refs) Split(s Splitter, el Schema) {
 
 	// first of all, check the Refs.Hash
 
-	if r.splitHash(s, r.Hash) == false {
+	if r.splitHash(&fp, r.Hash) == false {
 		return
 	}
 
@@ -70,22 +77,20 @@ func (r *Refs) Split(s Splitter, el Schema) {
 		return
 	}
 
-	r.splitNode(s, &fp, el, r.refsNode, r.depth)
+	r.splitNode(&fp, el, r.refsNode, r.depth)
 
 }
 
 func (r *Refs) splitNodeAsync(
-	s Splitter, //   : the Splitter
 	fp *fakePack, // : fake pack to load
 	sch Schema, //   : schema of elements
 	rn *refsNode, // : the node
 	depth int, //    : depth of the node
 ) {
-	s.Go(func() { r.splitNode(s, fp, sch, rn, depth) })
+	fp.s.Go(func() { r.splitNode(fp, sch, rn, depth) })
 }
 
 func (r *Refs) splitNode(
-	s Splitter, //   : the Splitter
 	fp *fakePack, // : fake pack to load
 	sch Schema, //   : schema of elements
 	rn *refsNode, // : the node
@@ -95,7 +100,7 @@ func (r *Refs) splitNode(
 	if depth == 0 {
 
 		for _, leaf := range rn.leafs {
-			splitSchemaHashAsync(s, sch, leaf.Hash)
+			splitSchemaHashAsync(fp.s, sch, leaf.Hash)
 		}
 
 		return
@@ -106,12 +111,12 @@ func (r *Refs) splitNode(
 	var toSplit []*refsNode // data-race protection
 
 	for _, br := range rn.branches {
-		if r.splitHash(s, br.hash) == false {
+		if r.splitHash(fp, br.hash) == false {
 			continue
 		}
 
 		if err := r.loadNodeIfNeed(fp, br, depth-1); err != nil {
-			s.Fail(err)
+			fp.s.Fail(err)
 			return
 		}
 
@@ -121,7 +126,7 @@ func (r *Refs) splitNode(
 	// data-race protection: load first, then split
 
 	for _, br := range toSplit {
-		r.splitNodeAsync(s, fp, sch, br, depth-1)
+		r.splitNodeAsync(fp, sch, br, depth-1)
 	}
 
 }

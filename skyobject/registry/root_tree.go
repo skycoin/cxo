@@ -20,7 +20,8 @@ func (r *Root) Tree(pack Pack) (tree string, err error) {
 
 	var gt gotree.GTStructure
 
-	gt.Name = fmt.Sprintf("(root) %s (reg: %s)", r.Short(), r.Reg.Short())
+	gt.Name = fmt.Sprintf("(root) %s %s (reg: %s)",
+		r.Hash.Hex()[:7], r.Short(), r.Reg.Short())
 
 	var reg = pack.Registry()
 

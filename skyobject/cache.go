@@ -449,7 +449,7 @@ func (c *Cache) putItem(
 
 	}
 
-	var it = &item{rc: rc, val: val}
+	var it = &item{rc: rc, cc: rc, val: val}
 
 	it.touch(c.c.conf.CachePolicy)
 	c.is[key] = it
@@ -776,7 +776,8 @@ func (c *Cache) Set(
 		return
 	}
 
-	err = c.putItem(key, val, int(urc))
+	rc = int(urc)
+	err = c.putItem(key, val, rc)
 	return
 }
 

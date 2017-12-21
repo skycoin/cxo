@@ -146,13 +146,24 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 			err error, //          :
 		) {
 
+			if hash == (cipher.SHA256{}) {
+				return
+			}
+
 			// go deepper only if the object was created
 
 			var ui, ok = up.m[hash]
 
 			if ok == false {
 				// this object was not created, then it already
-				// exists in the CXDS, and we can leave it as is
+				// exists in the CXDS, and we have to increment
+				// rc of the object
+
+				if _, err = c.Inc(hash, 1); err != nil {
+					return
+				}
+				up.m[hash] = &unpackItem{inc: 1, dec: 1} // for Close
+
 				return // false, nil
 			}
 
@@ -217,15 +228,14 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 
 		var inc = ui.dec - ui.inc
 
-		if inc == 0 {
-			continue // ok
+		if inc < 0 {
+			// decrement
+			if _, err = c.Inc(key, inc); err != nil {
+				return // leave the CXDS broken if an error occurred
+			}
 		}
 
-		if _, err = c.db.CXDS().Inc(key, inc); err != nil {
-			return
-		}
-
-		// leave the CXDS broken if an error occurred
+		delete(up.m, key) // saved
 
 	}
 
@@ -332,7 +342,16 @@ func (c *Container) NewRoot(
 
 */
 
-func (u *Unpack) Close() {
-	u.reset()
-	//
+// Close the Unpack, rejecting all saved objects that
+// will not be used
+func (u *Unpack) Close() (err error) {
+	for key, ui := range u.m {
+		if ui.inc > 0 {
+			if _, err = u.c.Inc(key, -ui.inc); err != nil {
+				return
+			}
+		}
+	}
+	u.m = nil
+	return
 }

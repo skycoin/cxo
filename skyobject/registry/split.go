@@ -39,6 +39,9 @@ type Splitter interface {
 	// Registry related to Root of the Splitter
 	Registry() (reg *Registry)
 
+	// Pre-request an item
+	Pre(key cipher.SHA256) (rc int, err error)
+
 	// Get value from DB or from related remote peers
 	Get(key cipher.SHA256) (val []byte, rc int, err error)
 
