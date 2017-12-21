@@ -414,7 +414,7 @@ func (c *client) argsRoot(in []string) (rs node.RootSelector, err error) {
 		if rs.Nonce, err = strconv.ParseUint(in[1], 10, 64); err != nil {
 			return
 		}
-		rs.Seq, err = strconv.ParseUint(in[0], 10, 64)
+		rs.Seq, err = strconv.ParseUint(in[2], 10, 64)
 	default:
 		err = errors.New("too many arguments: " + expected)
 	}

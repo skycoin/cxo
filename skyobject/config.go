@@ -19,13 +19,13 @@ const (
 
 	Degree registry.Degree = 16 // default dgree of registry.Refs
 
-	CacheMaxAmount  int     = 1024 * 1024      // binary million
-	CacheMaxVolume  int     = 16 * 1024 * 1024 // 16M
-	CacheRegistries int     = 5                // 5
-	CacheCleaning   float64 = 0.8              // down to 80%
+	CacheMaxAmount  int     = 4096        // 4K
+	CacheMaxVolume  int     = 8192 * 1024 // 8M
+	CacheRegistries int     = 5           // 5
+	CacheCleaning   float64 = 0.8         // down to 80%
 
-	// CacheMaxItemSize is around 1.6M (CacheMaxVolume*(1.0-CacheCleaning) / 2)
-	CacheMaxItemSize int = 16 * 104857
+	// CacheMaxItemSize is 1M (CacheMaxVolume*(1.0-CacheCleaning) / 2)
+	CacheMaxItemSize int = 1024 * 1024
 
 	// default CachePolicy is LRU
 

@@ -258,41 +258,29 @@ func (c *Cache) Close() (err error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// TODO (kostyarin): todo
+	// sync items
+	for key, it := range c.is {
 
-	/*
+		// make wanted items filling
+		if it.isWanted() == true {
+			for _, winc := range it.fwant {
+				it.fc += winc
+			}
+			it.fwant = nil
+		}
 
-	   func (c *Cache) Close() (err error) {
-	   	c.mx.Lock()
-	   	defer c.mx.Unlock()
+		it.cc -= it.fc // remove all fincs
+		it.fc = 0
 
-	   	// sync items
-	   	for k, it := range c.c {
-	   		if _, err = c.sync(k, it); err != nil {
-	   			break // break on first error
-	   		}
-	   	}
+		if err = c.delete(key, it); err != nil {
+			return
+		}
 
-	   	// decrement filling items
-	   	for k, it := range c.c {
-	   		if it.fc > 0 {
-	   			if _, err = c.Inc(k, -int(it.fc)); err != nil {
-	   				return
-	   			}
-	   		}
-	   	}
+	}
 
-	   	if err == nil {
-	   		err = c.db.Close()
-	   	} else {
-	   		c.db.Close() // ignore error
-	   	}
-
-	   	c.stat.Close() // release associated resources
-	   	return
-	   }
-
-	*/
+	// close the CXDS
+	err = c.c.db.CXDS().Close()
+	c.stat.Close() // close goroutine
 
 	return
 }
@@ -683,7 +671,7 @@ func (c *Cache) setWanted(
 		sendWanted(gc, obj)
 	}
 
-	it.fwant = nil // not wanted anymore
+	it.fwant = nil // not wanted anymore (GC)
 	it.fc += wincs // incs of fillers (of wanters)
 
 	err = c.putFillingItem(val, int(urc), it)
@@ -1024,8 +1012,11 @@ func (c *Cache) Unwant(
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	if it := c.is[key]; it != nil {
+	if it := c.is[key]; it != nil && it.fwant != nil {
 		delete(it.fwant, gc)
+		if len(it.fwant) == 0 {
+			it.fwant = nil // GC
+		}
 	}
 
 }

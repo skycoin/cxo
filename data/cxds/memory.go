@@ -217,6 +217,33 @@ func (m *memoryCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 	return
 }
 
+// IterateDel all keys deleteing
+func (m *memoryCXDS) IterateDel(
+	iterateFunc data.IterateObjectsDelFunc,
+) (
+	err error,
+) {
+
+	m.mx.Lock()
+	defer m.mx.Unlock()
+
+	var del bool
+
+	for k, mo := range m.kvs {
+		if del, err = iterateFunc(k, mo.rc, mo.val); err != nil {
+			if err == data.ErrStopIteration {
+				err = nil
+			}
+			return
+		}
+		if del == true {
+			delete(m.kvs, k)
+		}
+	}
+
+	return
+}
+
 // amoutn of objects
 func (m *memoryCXDS) Amount() (all, used int) {
 	m.mx.RLock()

@@ -394,12 +394,8 @@ func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
 }
 
 // Has performs precense check using seq
-func (d *driveRoots) Has(seq uint64) (yep bool, err error) {
-	if _, err = d.Get(seq); err == data.ErrNotFound {
-		err = nil
-	} else if err == nil {
-		yep = true
-	}
+func (d *driveRoots) Has(seq uint64) (yep bool, _ error) {
+	yep = len(d.bk.Get(utob(seq))) > 0
 	return
 }
 

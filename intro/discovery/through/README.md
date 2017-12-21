@@ -18,13 +18,13 @@ Both, `ca` and `cb` are not listening and can't connect between. But the
 `server` is listening and the `server` subscribed to A-feed and to B-feed
 too.
 
-In the example, the `server` si something like proxy or super-seed. The `ca`
+In the example, the `server` is something like proxy or super-seed. The `ca`
 receive B-feed through the `server` and `cb` receive A-feed throut the same
 `server`.
 
 All nodes connected to discovery server and the `server` (not discovery server)
 is public, that means the `server` share list of its feeds. The discovery server
-request listo of feeds all nodes interest, and connect them between. But the 
+request list of feeds all nodes interest, and connect them between. But the 
 `ca` and the `cb` are not public, and are not listening. Thus, the discovery
 server connects them to the `server`.
 

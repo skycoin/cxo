@@ -759,6 +759,20 @@ func (i *Index) delRoot(
 			return
 		}
 
+		var has bool
+		if has, err = rs.Has(seq); err != nil {
+			return
+		}
+
+		if has == false {
+			err = data.ErrNotFound
+			return
+		}
+
+		// if found, then the ir is not nil, because the head is not
+		// blank and we keep last Root of every head in the Index
+		// for fast access
+
 		if err = rs.Del(seq); err != nil || seq != ir.Seq {
 			return
 		}
@@ -786,7 +800,7 @@ func (i *Index) delRoot(
 		hs.h[nonce] = ir
 	}
 
-	// cahnge active head if the Root is last fo active head
+	// cahnge active head if the Root is last for active head
 	if ir.Time == hs.activet {
 		hs.setActive()
 	}
@@ -866,7 +880,7 @@ func (i *Index) delPackWalkFunc(
 func (i *Index) delRootRelatedValues(rootHash cipher.SHA256) (err error) {
 
 	var r *registry.Root
-	if r, err = i.c.RootByHash(rootHash); err != nil {
+	if r, err = i.c.rootByHash(rootHash); err != nil {
 		return
 	}
 
@@ -882,7 +896,8 @@ func (i *Index) delRootRelatedValues(rootHash cipher.SHA256) (err error) {
 	return i.c.walkRoot(pack, r, walkFunc)
 }
 
-// DelRoot deletes Root. It can't remove a held Root
+// DelRoot deletes Root. The method returns data.ErrNotFound if
+// Root doesn't exist
 func (i *Index) DelRoot(pk cipher.PubKey, nonce, seq uint64) (err error) {
 
 	// with lock

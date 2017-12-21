@@ -452,10 +452,7 @@ func (d *driveCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 			c   = tx.Bucket(objsBucket).Cursor()
 		)
 
-		// Seek instead of the Next, because we allows modifications
-		// and the BoltDB requires Seek after mutating
-
-		for k, v := c.First(); k != nil; k, v = c.Seek(key[:]) {
+		for k, v := c.First(); k != nil; k, v = c.Next() {
 
 			copy(key[:], k)
 
@@ -464,6 +461,50 @@ func (d *driveCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 					err = nil
 				}
 				return
+			}
+
+		}
+
+		return
+
+	})
+
+	return
+}
+
+// IterateDel all keys dleting
+func (d *driveCXDS) IterateDel(
+	iterateFunc data.IterateObjectsDelFunc,
+) (
+	err error,
+) {
+
+	err = d.b.Update(func(tx *bolt.Tx) (err error) {
+
+		var (
+			key cipher.SHA256
+			c   = tx.Bucket(objsBucket).Cursor()
+			del bool
+		)
+
+		// Seek instead of the Next, because we allows modifications
+		// and the BoltDB requires Seek after mutating
+
+		for k, v := c.First(); k != nil; k, v = c.Seek(key[:]) {
+
+			copy(key[:], k)
+
+			if del, err = iterateFunc(key, getRefsCount(v), v[4:]); err != nil {
+				if err == data.ErrStopIteration {
+					err = nil
+				}
+				return
+			}
+
+			if del == true {
+				if err = c.Delete(); err != nil {
+					return
+				}
 			}
 
 			incSlice(key[:]) // next

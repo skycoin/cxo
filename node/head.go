@@ -496,7 +496,7 @@ func (f *fillHead) request(c *Conn, seq uint64, key cipher.SHA256) {
 		}
 
 		// incremented by the Want call(s)
-		if _, err := f.node().c.SetIfWanted(key, x.Value, 0); err != nil {
+		if _, err := f.node().c.SetWanted(key, x.Value); err != nil {
 			f.node().Fatal("DB failure:", err)
 			return
 		}

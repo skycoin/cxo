@@ -9,6 +9,18 @@ import (
 // not be modified.
 type IterateObjectsFunc func(key cipher.SHA256, rc uint32, val []byte) error
 
+// An IterateObjectsDelFunc used to iterate over objects
+// deleting them by choose. All arguments are read only
+// and must not be modified.
+type IterateObjectsDelFunc func(
+	key cipher.SHA256,
+	rc uint32,
+	val []byte,
+) (
+	del bool,
+	err error,
+)
+
 // A CXDS is interface of CX data store. The CXDS is
 // key-value store with references counters. There is
 // data/cxds implementation that contains boltdb based
@@ -50,6 +62,9 @@ type CXDS interface {
 	// Iterate all keys in CXDS. The rc is refs count.
 	// Use ErrStopIteration to stop an iteration.
 	Iterate(iterateFunc IterateObjectsFunc) (err error)
+
+	// IterateDel used to remove obejts
+	IterateDel(iterateFunc IterateObjectsDelFunc) (err error)
 
 	// Del removes object with given key unconditionally.
 	// The Del method doesn't return an error if object
