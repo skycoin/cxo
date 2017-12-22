@@ -28,7 +28,7 @@ request list of feeds all nodes interest, and connect them between. But the
 `ca` and the `cb` are not public, and are not listening. Thus, the discovery
 server connects them to the `server`.
 
-![image](into/discovery/through/discovery_through.png)
+![image](./discovery_through.png)
 
 ### Discovery
 
