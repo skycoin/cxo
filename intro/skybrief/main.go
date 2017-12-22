@@ -26,8 +26,8 @@ type User struct {
 type Group struct {
 	Name string
 
-	Leader  registry.Ref  `skyobject:"schema=intro.User"`
-	Members registry.Refs `skyobject:"schema=intro.User"`
+	Leader  registry.Ref  `skyobject:"schema=skybrief.User"`
+	Members registry.Refs `skyobject:"schema=skybrief.User"`
 
 	Developer registry.Dynamic
 }
@@ -41,9 +41,9 @@ type Man struct {
 func main() {
 
 	var reg = registry.NewRegistry(func(r *registry.Reg) {
-		r.Register("intro.User", User{})
-		r.Register("intro.Group", Group{})
-		r.Register("intro.Man", Man{})
+		r.Register("skybrief.User", User{})
+		r.Register("skybrief.Group", Group{})
+		r.Register("skybrief.Man", Man{})
 	})
 
 	var conf = skyobject.NewConfig() // get default config
@@ -70,7 +70,7 @@ func main() {
 
 	r.Pub = pk
 	r.Nonce = 90210
-	r.Descriptor = []byte("intro, version: 3")
+	r.Descriptor = []byte("skybrief, version: 3")
 
 	var alice, eva, ammy = User{
 		Name: "Alice",
@@ -103,7 +103,7 @@ func main() {
 
 	// set schema for the group.Developer
 	var sch registry.Schema
-	if sch, err = reg.SchemaByName("intro.Man"); err != nil {
+	if sch, err = reg.SchemaByName("skybrief.Man"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -115,7 +115,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if sch, err = reg.SchemaByName("intro.Group"); err != nil {
+	if sch, err = reg.SchemaByName("skybrief.Group"); err != nil {
 		log.Fatal(err)
 	}
 

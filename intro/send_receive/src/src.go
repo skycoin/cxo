@@ -22,20 +22,17 @@ import (
 
 // defaults
 const (
-	RPC string = "[::1]:7001" // default RPC address
-
-	Discovery string = "[::1]:8008" // discovery server
+	Bind string = "[::1]:8001" // default host address of the node
+	RPC  string = "[::1]:7001" // default RPC address
 )
 
 // interest feeds
 var (
-	// the apk is feed the ca generates, the ask is secret key
+	// the apk is feed the src generates, the ask is secret key
 	// that used to sign Root objects of the feed, to proof
 	// that the Root objects really belongs to the apk;
 	// short words, apk is feed, ask is owner of the feed
 	apk, ask = cipher.GenerateDeterministicKeyPair([]byte("A"))
-	// bpk is feed the ca interest
-	bpk, _ = cipher.GenerateDeterministicKeyPair([]byte("B"))
 )
 
 // wait for SIGINT and return
@@ -51,26 +48,25 @@ func main() {
 
 	c.RPC = RPC // enable RPC
 
-	c.TCP.Listen = "" // don't listen
-	c.TCP.Discovery = node.Addresses{Discovery}
+	c.TCP.Listen = Bind // listen
+
+	// not public
 
 	// use DB in memory for the example
 	c.Config.InMemoryDB = true
 
+	// change cache parameters for example
+	c.Config.CacheMaxAmount = 185
+	c.Config.CacheMaxVolume = 30 * 1024
+	c.Config.CacheMaxItemSize = 512
+
 	// prefix for logs
-	c.Logger.Prefix = "[ca] "
+	c.Logger.Prefix = "[src] "
 
 	// uncomment to see all debug logs
 	//
 	// c.Logger.Pins = ^c.Logger.Pins
 	// c.Logger.Debug = true
-
-	//
-	// callbacks
-	//
-
-	// show full root objects
-	c.OnRootFilled = showFilledRoot
 
 	// obtain configs from flags
 	c.FromFlags()
@@ -91,14 +87,10 @@ func main() {
 	defer n.Close() // close
 
 	//
-	// add feeds
+	// add feed
 	//
 
 	if err = n.Share(apk); err != nil {
-		log.Fatal(err)
-	}
-
-	if err = n.Share(bpk); err != nil {
 		log.Fatal(err)
 	}
 
@@ -143,9 +135,9 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// Root object
 	var r = new(registry.Root)
 
-	r.Pub = apk                                 // feed of the Root
-	r.Nonce = rand.Uint64()                     // head of the feed
-	r.Descriptor = []byte("through, version=1") // any data or nothing
+	r.Pub = apk                                      // feed of the Root
+	r.Nonce = rand.Uint64()                          // head of the feed
+	r.Descriptor = []byte("send_receive, version=1") // any data or nothing
 
 	//
 	// let's create and publish the first Root
@@ -227,8 +219,8 @@ func dynamic(
 
 	// so, it's possible to use Registry.Types() to get schema name
 	// but for received registrues this is not an options; and we
-	// are using schema name; also, it's possible to use
-	// schema reference; but we creating the Dynamic references once
+	// are using schema name; also, it's possible to use schema
+	// reference; but we are creating the Dynamic references once
 	// and who cares what method is better
 
 	var sch, err = up.Registry().SchemaByName(schemaName)
@@ -264,25 +256,4 @@ func dynamic(
 	}
 
 	return
-}
-
-func showFilledRoot(n *node.Node, r *registry.Root) {
-
-	// just print the Root objects tree
-
-	var pack, err = n.Container().Pack(r, nil)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var tree string
-	if tree, err = r.Tree(pack); err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("") // spacing
-	fmt.Println(tree)
-	fmt.Println("") // spacing
-
 }

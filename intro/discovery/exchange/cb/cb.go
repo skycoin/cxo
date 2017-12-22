@@ -17,7 +17,7 @@ import (
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 
-	"github.com/skycoin/cxo/intro/discovery" // types
+	"github.com/skycoin/cxo/intro" // types
 )
 
 // defaults
@@ -140,12 +140,12 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// return
 
 	var (
-		usr = discovery.User{
+		usr = intro.User{
 			Name: "Eva",
 			Age:  19,
 		}
 
-		feed = discovery.Feed{
+		feed = intro.Feed{
 			Head: "Eva's feed",
 			Info: "Feed of very useful information about Eva's life",
 		}
@@ -165,7 +165,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	var c = n.Container()
 
 	// secret key and registry
-	var up, err = c.Unpack(bsk, discovery.Registry)
+	var up, err = c.Unpack(bsk, intro.Registry)
 
 	if err != nil {
 		log.Fatal(err)
@@ -177,8 +177,8 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// Root -> []Dynamic{ User, feed }
 
 	r.Refs = []registry.Dynamic{
-		dynamic(up, "discovery.User", &usr),
-		dynamic(up, "discovery.Feed", &feed),
+		dynamic(up, "intro.User", &usr),
+		dynamic(up, "intro.Feed", &feed),
 	}
 
 	// let's save the "blank" feed
@@ -194,7 +194,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// now, let's add posts one by one
 	//
 
-	var tk = time.NewTicker(1 * time.Second)
+	var tk = time.NewTicker(5 * time.Second)
 
 	for i := 0; true; i++ {
 		select {
@@ -203,7 +203,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 		case <-tk.C:
 		}
 
-		err = feed.Posts.AppendValues(up, discovery.Post{
+		err = feed.Posts.AppendValues(up, intro.Post{
 			Head: fmt.Sprintf("Eva's post #%d", i),
 			Body: fmt.Sprintf("nothing happens #%d", i),
 		})

@@ -52,4 +52,7 @@ And finally, in another terminal launch the `cb` node
 go run $GOPATH/src/github.com/skycoin/cxo/intro/discovery/exchange/cb/cb.go
 ```
 
+
+The `ca` and the `cb` nodes show received Root objects
+
 ---
