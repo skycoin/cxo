@@ -16,6 +16,8 @@ B-feed: 030c398e49cb77e83baa3110f99a105a33e5caf4e63c4ff55dbbaabbc98159e792
 Both, `ca` and `cb` are listening, public and connected to discovery server.
 The discovery server connects the nodes between (one connection, actually).
 
+![image](into/discovery/exchange/discovery_exchange.png)
+
 ### Discovery
 
 [Skycoin messenger server](https://github.com/skycoin/net/tree/master/skycoin-messenger/server)

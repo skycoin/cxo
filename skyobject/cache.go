@@ -242,7 +242,6 @@ func (c *Cache) Registry(
 	}
 
 	if r, err = registry.DecodeRegistry(val); err != nil {
-		println("CACHE: DecodeRegistry failure:", rr.Short(), len(val), err.Error())
 		return
 	}
 
