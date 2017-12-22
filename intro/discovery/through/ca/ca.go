@@ -22,8 +22,7 @@ import (
 
 // defaults
 const (
-	Host string = "[::1]:8001" // default host address of the node
-	RPC  string = "[::1]:7001" // default RPC address
+	RPC string = "[::1]:7001" // default RPC address
 
 	Discovery string = "[::1]:8008" // discovery server
 )

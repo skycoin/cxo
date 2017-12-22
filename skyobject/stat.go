@@ -24,8 +24,9 @@ type Stat struct {
 	// for cleaning
 	CacheCleaning time.Duration
 
-	AllObjects  ObjectsStat
-	UsedObjects ObjectsStat
+	CacheObjects ObjectsStat // cached objects
+	AllObjects   ObjectsStat // all objects
+	UsedObjects  ObjectsStat // used objects
 
 	// RootsPerSecond is average vlaue of new
 	// Root objects per second.
@@ -87,6 +88,11 @@ func (c *Container) Stat() (s *Stat) {
 	s.Cache.WPS = c.Cache.stat.cWPS()
 
 	s.CacheCleaning = c.Cache.stat.cacheCleaning()
+
+	var amount, volume = c.amountVolume() // of cache
+
+	s.CacheObjects.Amount = statutil.Amount(amount)
+	s.CacheObjects.Volume = statutil.Volume(volume)
 
 	var all, used = c.db.CXDS().Amount()
 

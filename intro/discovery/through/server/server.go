@@ -17,7 +17,7 @@ import (
 
 // defaults
 const (
-	Host string = "[::1]:8000" // default host address of the node
+	Bind string = "[::1]:8000" // default host address of the node
 	RPC  string = "[::1]:7000" // default RPC address
 
 	Discovery string = "[::1]:8008" // discovery server
@@ -41,7 +41,7 @@ func main() {
 	var c = node.NewConfig()
 
 	c.RPC = RPC                                 // enable RPC
-	c.TCP.Listen = Host                         // listen
+	c.TCP.Listen = Bind                         // listen
 	c.TCP.Discovery = node.Addresses{Discovery} // conenct o discovery server
 
 	c.Public = true // share list of feeds

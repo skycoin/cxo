@@ -86,7 +86,7 @@ func (i *item) isWanted() (ok bool) {
 }
 
 func (i *item) isFilling() (ok bool) {
-	return len(i.val) == 0
+	return len(i.val) == 0 && i.fc > 0
 }
 
 // itemRegistry
@@ -102,9 +102,6 @@ type Cache struct {
 
 	c      *Container // back reference
 	enable bool       //
-
-	amountf int // filling items
-	amountw int // wanted items
 
 	amount int // number of items in the Cache
 	volume int // volume of items in the Cache
@@ -134,9 +131,6 @@ func (c *Container) initCache() {
 		float64(c.conf.CacheMaxVolume) * (1.0 - c.conf.CacheCleaning),
 	)
 
-	c.Cache.amountf = 0
-	c.Cache.amountw = 0
-
 	c.Cache.amount = 0 // cache amount
 	c.Cache.volume = 0 // cache volume
 
@@ -145,6 +139,13 @@ func (c *Container) initCache() {
 		c.conf.CacheRegistries)
 
 	c.Cache.stat = newCxdsStat(c.conf.RollAvgSamples)
+}
+
+func (c *Cache) amountVolume() (a, v int) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	return c.amount, c.volume
 }
 
 // reset the Cache
@@ -442,6 +443,9 @@ func (c *Cache) putItem(
 	it.touch(c.c.conf.CachePolicy)
 	c.is[key] = it
 
+	c.amount++
+	c.volume += len(val)
+
 	return
 }
 
@@ -482,6 +486,9 @@ func (c *Cache) putFillingItem(
 	it.cc = rc // real
 
 	it.touch(c.c.conf.CachePolicy)
+
+	c.amount++
+	c.volume += len(val)
 
 	return
 }
@@ -1016,6 +1023,10 @@ func (c *Cache) Unwant(
 		delete(it.fwant, gc)
 		if len(it.fwant) == 0 {
 			it.fwant = nil // GC
+			// not wanted, not filling, not regular
+			if it.fc == 0 && len(it.val) == 0 {
+				delete(c.is, key)
+			}
 		}
 	}
 
@@ -1092,6 +1103,12 @@ func (c *Cache) Finc(
 			return
 		}
 
+		if it.fc < 0 {
+			panic("Finc to negative for: " + key.Hex()[:7])
+		}
+
+		// the fc is zero
+
 		// else, the fc is 0 (remove if it's filling)
 
 		if it.isWanted() == true {
@@ -1101,6 +1118,8 @@ func (c *Cache) Finc(
 		if len(it.val) == 0 { // filling item (filling only)
 			delete(c.is, key)
 		}
+
+		// a filling items turns to be a regular (since the fc is zero)
 
 		// keep
 		it.touch(c.c.conf.CachePolicy)
@@ -1115,9 +1134,8 @@ func (c *Cache) Finc(
 		panic("Finc to negative for: " + key.Hex()[:7])
 	}
 
-	if it.fc == 0 && len(it.val) == 0 {
-		delete(c.is, key) // was a filling only item
-	}
+	// and if it.fc turns to be zero, then the
+	// incItem remvoes it
 
 	_, err = c.incItem(key, inc, it) // in db
 	return

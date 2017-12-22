@@ -53,6 +53,9 @@ intro/discovery/through/server/server
 intro/discovery/through/ca/ca
 intro/discovery/through/cb/cb
 
+intro/discovery/exchange/ca/ca
+intro/discovery/exchange/cb/cb
+
 # suffix for ignore files and directories temporary 
 
 *.go.ignore

@@ -1010,7 +1010,8 @@ func (i *Index) Close() (err error) {
 
 	i.stat.Close() // close statistic first
 
-	// TODO (kostyarin): access time
+	// TODO (kostyarin): access time (fuck it for now, the access time
+	//                   is not implemented as well)
 
 	return
 }

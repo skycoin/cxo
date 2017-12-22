@@ -684,6 +684,10 @@ func (c *client) printRootStat(rs skyobject.RootStat) {
 	fmt.Fprintln(out, "      seq: ", rs.Seq)
 }
 
+func round(f float64) (s string) {
+	return fmt.Sprintf("%.2f", f)
+}
+
 func (c *client) stat(in []string) (err error) {
 	if err = c.argsNo(in); err != nil {
 		return
@@ -695,13 +699,18 @@ func (c *client) stat(in []string) (err error) {
 
 	fmt.Fprintln(out, "  average filling duration:       ", s.Fillavg)
 
-	fmt.Fprintln(out, "  CXDS RPS:                       ", s.CXDS.RPS)
-	fmt.Fprintln(out, "  CXDS WPS:                       ", s.CXDS.WPS)
+	fmt.Fprintln(out, "  CXDS RPS:                       ", round(s.CXDS.RPS))
+	fmt.Fprintln(out, "  CXDS WPS:                       ", round(s.CXDS.WPS))
 
-	fmt.Fprintln(out, "  cache RPS:                      ", s.Cache.RPS)
-	fmt.Fprintln(out, "  cache WPS:                      ", s.Cache.WPS)
+	fmt.Fprintln(out, "  cache RPS:                      ", round(s.Cache.RPS))
+	fmt.Fprintln(out, "  cache WPS:                      ", round(s.Cache.WPS))
 
-	fmt.Fprintln(out, "  average cache celaning duration:", s.CacheCleaning)
+	fmt.Fprintln(out, "  average cache cleaning duration:", s.CacheCleaning)
+
+	fmt.Fprintln(out, "  amount of cached objects:       ",
+		s.CacheObjects.Amount.String())
+	fmt.Fprintln(out, "  volume of cached objects:       ",
+		s.CacheObjects.Volume.String())
 
 	fmt.Fprintln(out, "  amount of all objects:          ",
 		s.AllObjects.Amount.String())

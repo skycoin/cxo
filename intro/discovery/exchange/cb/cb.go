@@ -22,7 +22,7 @@ import (
 
 // defaults
 const (
-	Bind string = "[::1]:8002" // listen on
+	Bind string = "[::1]:8002" // default host address of the node
 	RPC  string = "[::1]:7002" // default RPC address
 
 	Discovery string = "[::1]:8008" // discovery server
@@ -55,7 +55,7 @@ func main() {
 	c.TCP.Listen = Bind // listen
 	c.TCP.Discovery = node.Addresses{Discovery}
 
-	c.Public = true // public server
+	c.Public = true
 
 	// use DB in memory for the example
 	c.Config.InMemoryDB = true
@@ -150,9 +150,9 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// Root object
 	var r = new(registry.Root)
 
-	r.Pub = bpk                                 // feed of the Root
-	r.Nonce = rand.Uint64()                     // head of the feed
-	r.Descriptor = []byte("through, version=1") // any data or nothing
+	r.Pub = bpk                                  // feed of the Root
+	r.Nonce = rand.Uint64()                      // head of the feed
+	r.Descriptor = []byte("exchange, version=1") // any data or nothing
 
 	//
 	// let's create and publish the first Root
@@ -190,7 +190,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// now, let's add posts one by one
 	//
 
-	var tk = time.NewTicker(5 * time.Second)
+	var tk = time.NewTicker(1 * time.Second)
 
 	for i := 0; true; i++ {
 		select {
@@ -234,8 +234,8 @@ func dynamic(
 
 	// so, it's possible to use Registry.Types() to get schema name
 	// but for received registrues this is not an options; and we
-	// are using schema name; also, it's possible to use
-	// schema reference; but we creating the Dynamic references once
+	// are using schema name; also, it's possible to use schema
+	// reference; but we creating the Dynamic references once
 	// and who cares what method is better
 
 	var sch, err = up.Registry().SchemaByName(schemaName)

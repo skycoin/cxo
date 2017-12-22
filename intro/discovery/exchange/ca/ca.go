@@ -22,21 +22,21 @@ import (
 
 // defaults
 const (
-	Bind string = "[::1]:8002" // listen on
-	RPC  string = "[::1]:7002" // default RPC address
+	Bind string = "[::1]:8001" // default host address of the node
+	RPC  string = "[::1]:7001" // default RPC address
 
 	Discovery string = "[::1]:8008" // discovery server
 )
 
 // interest feeds
 var (
-	// apk is feed the ca interest
-	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
-	// the bpk is feed the ca generates, the bsk is secret key
+	// the apk is feed the ca generates, the ask is secret key
 	// that used to sign Root objects of the feed, to proof
-	// that the Root objects really belongs to the bpk;
-	// short words, bpk is feed, bsk is owner of the feed
-	bpk, bsk = cipher.GenerateDeterministicKeyPair([]byte("B"))
+	// that the Root objects really belongs to the apk;
+	// short words, apk is feed, ask is owner of the feed
+	apk, ask = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	// bpk is feed the ca interest
+	bpk, _ = cipher.GenerateDeterministicKeyPair([]byte("B"))
 )
 
 // wait for SIGINT and return
@@ -55,7 +55,7 @@ func main() {
 	c.TCP.Listen = Bind // listen
 	c.TCP.Discovery = node.Addresses{Discovery}
 
-	c.Public = true // public server
+	c.Public = true
 
 	// use DB in memory for the example
 	c.Config.InMemoryDB = true
@@ -65,7 +65,7 @@ func main() {
 	c.Config.CacheMaxItemSize = 512
 
 	// prefix for logs
-	c.Logger.Prefix = "[cb] "
+	c.Logger.Prefix = "[ca] "
 
 	// uncomment to see all debug logs
 	//
@@ -113,7 +113,7 @@ func main() {
 	// it's possible to have a feed, but don't share it
 
 	//
-	// generate the B-feed
+	// generate the A-feed
 	//
 
 	// sync
@@ -137,22 +137,22 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 
 	var (
 		usr = discovery.User{
-			Name: "Eva",
+			Name: "Alice",
 			Age:  19,
 		}
 
 		feed = discovery.Feed{
-			Head: "Eva's feed",
-			Info: "Feed of very useful information about Eva's life",
+			Head: "Alcies' feed",
+			Info: "it's just an average feed",
 		}
 	)
 
 	// Root object
 	var r = new(registry.Root)
 
-	r.Pub = bpk                                 // feed of the Root
-	r.Nonce = rand.Uint64()                     // head of the feed
-	r.Descriptor = []byte("through, version=1") // any data or nothing
+	r.Pub = apk                                  // feed of the Root
+	r.Nonce = rand.Uint64()                      // head of the feed
+	r.Descriptor = []byte("exchange, version=1") // any data or nothing
 
 	//
 	// let's create and publish the first Root
@@ -161,7 +161,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	var c = n.Container()
 
 	// secret key and registry
-	var up, err = c.Unpack(bsk, discovery.Registry)
+	var up, err = c.Unpack(ask, discovery.Registry)
 
 	if err != nil {
 		log.Fatal(err)
@@ -190,7 +190,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	// now, let's add posts one by one
 	//
 
-	var tk = time.NewTicker(5 * time.Second)
+	var tk = time.NewTicker(1 * time.Second)
 
 	for i := 0; true; i++ {
 		select {
@@ -200,7 +200,7 @@ func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 		}
 
 		err = feed.Posts.AppendValues(up, discovery.Post{
-			Head: fmt.Sprintf("Eva's post #%d", i),
+			Head: fmt.Sprintf("Alices' post #%d", i),
 			Body: fmt.Sprintf("nothing happens #%d", i),
 		})
 
@@ -234,8 +234,8 @@ func dynamic(
 
 	// so, it's possible to use Registry.Types() to get schema name
 	// but for received registrues this is not an options; and we
-	// are using schema name; also, it's possible to use
-	// schema reference; but we creating the Dynamic references once
+	// are using schema name; also, it's possible to use schema
+	// reference; but we are creating the Dynamic references once
 	// and who cares what method is better
 
 	var sch, err = up.Registry().SchemaByName(schemaName)
