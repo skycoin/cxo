@@ -112,7 +112,7 @@ func main() {
 	// sync
 	var (
 		wg     sync.WaitGroup        // wait the generate goroutine
-		closed = make(chan struct{}) // closed by SIGING
+		closed = make(chan struct{}) // closed by SIGINT
 	)
 
 	wg.Add(1)

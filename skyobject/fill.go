@@ -343,6 +343,7 @@ func (f *Filler) getRegistry() (err error) {
 	var reg *registry.Registry
 
 	if reg, err = f.c.Registry(f.r.Reg); err != nil {
+		println("fill.go:346 FAILURE:", err)
 		return
 	}
 

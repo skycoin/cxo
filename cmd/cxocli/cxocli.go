@@ -42,6 +42,7 @@ var (
 		"share feed ",
 		"don't share feed ",
 		"list feeds ",
+		"is shareing ",
 
 		// tcp
 
@@ -66,6 +67,7 @@ var (
 		// all connections
 
 		"connections ",
+		"connections of feed ",
 
 		// root objects
 
@@ -261,6 +263,7 @@ func (c *client) mapping() map[string]func(in []string) (err error) {
 		"share feed":       c.share,
 		"don't share feed": c.dontShare,
 		"list feeds":       c.listFeeds,
+		"is shareing":      c.isShareing,
 
 		"tcp connect":     c.tcpConnect,
 		"tcp disconnect":  c.tcpDisconnet,
@@ -274,7 +277,8 @@ func (c *client) mapping() map[string]func(in []string) (err error) {
 		"udp unsubscribe": c.udpUnsubscribe,
 		"udp address":     c.udpAddress,
 
-		"connections": c.connections,
+		"connections":         c.connections,
+		"connections of feed": c.connectionsOfFeed,
 
 		"root info": c.rootInfo,
 		"root tree": c.rootTree,
@@ -318,6 +322,8 @@ func (c *client) executeCommand(in string) (quit bool, err error) {
 			prefix = in[:pl]
 		}
 	}
+
+	prefix = strings.TrimSpace(prefix)
 
 	var fn, ok = c.mapping()[prefix]
 
@@ -468,6 +474,23 @@ func (c *client) listFeeds(in []string) (err error) {
 	return
 }
 
+func (c *client) isShareing(in []string) (err error) {
+	var pk cipher.PubKey
+	if pk, err = c.argsFeed(in); err != nil {
+		return
+	}
+	var yep bool
+	if yep, err = c.r.Node().IsSharing(pk); err != nil {
+		return
+	}
+	if yep == true {
+		fmt.Fprintln(out, "  yes, it is")
+		return
+	}
+	fmt.Fprintln(out, "  no, it is not")
+	return
+}
+
 //
 // tcp
 //
@@ -576,6 +599,16 @@ func (c *client) udpAddress(in []string) (err error) {
 // connections
 //
 
+func printConnections(cs []string) {
+	if len(cs) == 0 {
+		fmt.Fprintln(out, "  no connections")
+		return
+	}
+	for _, c := range cs {
+		fmt.Fprintln(out, " ", c)
+	}
+}
+
 func (c *client) connections(in []string) (err error) {
 	if err = c.argsNo(in); err != nil {
 		return
@@ -584,13 +617,20 @@ func (c *client) connections(in []string) (err error) {
 	if cs, err = c.r.Node().Connections(); err != nil {
 		return
 	}
-	if len(cs) == 0 {
-		fmt.Fprintln(out, "  no connections")
+	printConnections(cs)
+	return
+}
+
+func (c *client) connectionsOfFeed(in []string) (err error) {
+	var pk cipher.PubKey
+	if pk, err = c.argsFeed(in); err != nil {
 		return
 	}
-	for _, c := range cs {
-		fmt.Fprintln(out, " ", c)
+	var cs []string
+	if cs, err = c.r.Node().ConnectionsOfFeed(pk); err != nil {
+		return
 	}
+	printConnections(cs)
 	return
 }
 
@@ -795,6 +835,8 @@ func (c *client) help(in []string) (err error) {
 
   connections
     show all connections
+  connections of feed <public key>
+    show connections of given feed
 
 
   root info <public key> <nonce> <seq>

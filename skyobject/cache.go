@@ -86,7 +86,7 @@ func (i *item) isWanted() (ok bool) {
 }
 
 func (i *item) isFilling() (ok bool) {
-	return len(i.val) == 0 && i.fc > 0
+	return len(i.val) == 0
 }
 
 // itemRegistry
@@ -242,6 +242,7 @@ func (c *Cache) Registry(
 	}
 
 	if r, err = registry.DecodeRegistry(val); err != nil {
+		println("CACHE: DecodeRegistry failure:", rr.Short(), len(val), err.Error())
 		return
 	}
 
@@ -565,6 +566,9 @@ func (c *Cache) get(
 			return c.getFilling(key, inc, it)
 		}
 
+		// the delete below can clean the val field
+		val = it.val
+
 		// remove item if it's cc is zero
 		if it.cc = incr(it.cc, inc); it.cc == 0 {
 			c.delete(key, it)
@@ -573,7 +577,6 @@ func (c *Cache) get(
 			it.touch(c.c.conf.CachePolicy)
 		}
 
-		val = it.val
 		rc = it.cc - it.fc // hard rc
 
 		return
@@ -741,6 +744,9 @@ func (c *Cache) Set(
 			return c.setFilling(key, val, inc, it)
 		}
 
+		// the delete below can clean the it.val
+		val = it.val
+
 		// remove item if it's cc is zero
 		if it.cc = incr(it.cc, inc); it.cc == 0 {
 			c.delete(key, it) // not effective cache set
@@ -749,9 +755,7 @@ func (c *Cache) Set(
 			it.touch(c.c.conf.CachePolicy)
 		}
 
-		val = it.val
 		rc = it.cc - it.fc // hard rc
-
 		return
 
 	}

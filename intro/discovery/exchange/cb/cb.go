@@ -60,6 +60,7 @@ func main() {
 	// use DB in memory for the example
 	c.Config.InMemoryDB = true
 
+	// change cache parameters for example
 	c.Config.CacheMaxAmount = 185
 	c.Config.CacheMaxVolume = 30 * 1024
 	c.Config.CacheMaxItemSize = 512
@@ -119,7 +120,7 @@ func main() {
 	// sync
 	var (
 		wg     sync.WaitGroup        // wait the generate goroutine
-		closed = make(chan struct{}) // closed by SIGING
+		closed = make(chan struct{}) // closed by SIGINT
 	)
 
 	wg.Add(1)
@@ -134,6 +135,9 @@ func main() {
 
 func generate(wg *sync.WaitGroup, closed <-chan struct{}, n *node.Node) {
 	defer wg.Done()
+
+	// time.Sleep(10 * time.Minute)
+	// return
 
 	var (
 		usr = discovery.User{

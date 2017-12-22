@@ -15,4 +15,5 @@ var (
 	ErrNoConnectionsToFillFrom = errors.New("no connections to fill from")
 	ErrMaxHeadsLimit           = errors.New("max heads limit")
 	ErrUnsubscribe             = errors.New("unsubscribe")
+	ErrBlankFeed               = errors.New("blank feed")
 )

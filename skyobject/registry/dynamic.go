@@ -164,6 +164,7 @@ func (d *Dynamic) Split(s Splitter) {
 	var sch, err = s.Registry().SchemaByReference(d.Schema)
 
 	if err != nil {
+		println("registry/dynamic.go:167 FAILURE:", err)
 		s.Fail(err)
 		return
 	}

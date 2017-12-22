@@ -148,12 +148,13 @@ func splitSchemaReference(
 
 		var el Schema
 		if el = sch.Elem(); el == nil {
-			s.Fail(fmt.Errorf("sSchema of Ref with nil element: %s", sch))
+			s.Fail(fmt.Errorf("Schema of Ref with nil element: %s", sch))
 			return
 		}
 
 		var ref Ref
 		if err = encoder.DeserializeRaw(val, &ref); err != nil {
+			println("registry/split.go:157 FAILURE:", err)
 			s.Fail(err)
 			return
 		}
@@ -170,6 +171,7 @@ func splitSchemaReference(
 
 		var refs Refs
 		if err = encoder.DeserializeRaw(val, &refs); err != nil {
+			println("registry/split.go:174 FAILURE:", err)
 			s.Fail(err)
 			return
 		}
@@ -180,6 +182,7 @@ func splitSchemaReference(
 
 		var dr Dynamic
 		if err = encoder.DeserializeRaw(val, &dr); err != nil {
+			println("registry/split.go:185 FAILURE:", err)
 			s.Fail(err)
 			return
 		}
@@ -222,6 +225,7 @@ func splitSlice(
 	)
 
 	if ln, err = getLength(val); err != nil {
+		println("registry/split.go:228 FAILURE:", err)
 		s.Fail(err)
 		return
 	}
@@ -264,6 +268,7 @@ func splitArraySlice(
 		}
 
 		if m, err = el.Size(val[shift:]); err != nil {
+			println("registry/split.go:271 FAILURE:", err)
 			s.Fail(err)
 			return
 		}
@@ -304,6 +309,7 @@ func splitStruct(
 		}
 
 		if z, err = fl.Schema().Size(val[shift:]); err != nil {
+			println("registry/split.go:312 FAILURE:", err)
 			s.Fail(err)
 			return
 		}

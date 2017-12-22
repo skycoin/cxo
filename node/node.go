@@ -482,6 +482,10 @@ func (n *Node) updateServiceDiscovery() {
 // (*Conn).Subscribe to do that.
 func (n *Node) Share(feed cipher.PubKey) (err error) {
 
+	if feed == (cipher.PubKey{}) {
+		return ErrBlankFeed
+	}
+
 	// add to the Container
 	if err = n.c.AddFeed(feed); err != nil {
 		return
@@ -569,11 +573,11 @@ func (n *Node) onFillingBreaks(r *registry.Root, reason error) {
 }
 
 // has connection to peer with given id (pk)
-func (n *Node) hasPeer(id cipher.PubKey) (yep bool) {
+func (n *Node) hasPeer(id cipher.PubKey) (c *Conn, yep bool) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	_, yep = n.ic[id]
+	c, yep = n.ic[id]
 	return
 }
 

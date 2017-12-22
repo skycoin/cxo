@@ -185,17 +185,18 @@ func (t *TCP) findServiceNodes(resp *discovery.QueryResp) {
 				continue // never happens
 			}
 
-			if t.n.hasPeer(ni.PubKey) == true {
-				continue // already connected to the peer
-			}
+			var (
+				c, yep = t.n.hasPeer(ni.PubKey)
+				err    error
+			)
 
-			var c, err = t.Connect(ni.Address) // block
-
-			if err != nil {
-				t.n.Debugf(DiscoveryPin, "can't Connect to tcp://%q: %v",
-					ni.Address,
-					err)
-				continue
+			if yep == false {
+				if c, err = t.Connect(ni.Address); err != nil { // block
+					t.n.Debugf(DiscoveryPin, "can't Connect to tcp://%q: %v",
+						ni.Address,
+						err)
+					continue
+				}
 			}
 
 			// block
@@ -419,7 +420,7 @@ func (u *UDP) ConnectToDiscoveryServer(address string) {
 	}
 
 	u.d.ConnectWithConfig(address, &discovery.ConnConfig{
-		SeedConfig: u.n.id,
+		//SeedConfig: u.n.id,
 
 		Reconnect:     true,
 		ReconnectWait: time.Second * 30,
@@ -452,17 +453,18 @@ func (u *UDP) findServiceNodes(resp *discovery.QueryResp) {
 				continue // never happens
 			}
 
-			if u.n.hasPeer(ni.PubKey) == true {
-				continue // already connected to the peer
-			}
+			var (
+				c, yep = u.n.hasPeer(ni.PubKey)
+				err    error
+			)
 
-			var c, err = u.Connect(ni.Address) // block
-
-			if err != nil {
-				u.n.Debugf(DiscoveryPin, "can't Connect to tcp://%q: %v",
-					ni.Address,
-					err)
-				continue
+			if yep == false {
+				if c, err = u.Connect(ni.Address); err != nil { // block
+					u.n.Debugf(DiscoveryPin, "can't Connect to udp://%q: %v",
+						ni.Address,
+						err)
+					continue
+				}
 			}
 
 			// block

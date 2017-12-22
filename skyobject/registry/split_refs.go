@@ -116,6 +116,7 @@ func (r *Refs) splitNode(
 		}
 
 		if err := r.loadNodeIfNeed(fp, br, depth-1); err != nil {
+			println("registry/split_refs.go:119 FAILURE:", err)
 			fp.s.Fail(err)
 			return
 		}

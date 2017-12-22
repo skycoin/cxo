@@ -75,13 +75,25 @@ func (r *RPCClientNode) Feeds() (fs []cipher.PubKey, err error) {
 
 // IsSharing a feed or not
 func (r *RPCClientNode) IsSharing(pk cipher.PubKey) (yep bool, err error) {
-	err = r.r.c.Call("node.IsSharing", struct{}{}, &yep)
+	err = r.r.c.Call("node.IsSharing", pk, &yep)
 	return
 }
 
 // Connections of the Node
 func (r *RPCClientNode) Connections() (cs []string, err error) {
 	err = r.r.c.Call("node.Connections", struct{}{}, &cs)
+	return
+}
+
+// ConnectionsOfFeed of the Node
+func (r *RPCClientNode) ConnectionsOfFeed(
+	pk cipher.PubKey, // :
+) (
+	cs []string, //      :
+	err error, //        :
+) {
+
+	err = r.r.c.Call("node.ConnectionsOfFeed", pk, &cs)
 	return
 }
 

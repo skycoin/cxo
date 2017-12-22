@@ -120,6 +120,25 @@ func (r *RPC) Connections(_ struct{}, cs *[]string) (_ error) {
 	return
 }
 
+// ConnectionsOfFeed is RPC method
+func (r *RPC) ConnectionsOfFeed(feed cipher.PubKey, cs *[]string) (_ error) {
+	var cf = r.n.ConnectionsOfFeed(feed)
+
+	if len(cf) == 0 {
+		*cs = []string{}
+		return
+	}
+
+	var lcs = make([]string, 0, len(cf))
+
+	for _, c := range cf {
+		lcs = append(lcs, c.String())
+	}
+
+	*cs = lcs
+	return
+}
+
 // Config is RPC method
 func (r *RPC) Config(_ struct{}, config *Config) (err error) {
 	*config = *r.n.config // copy
