@@ -59,6 +59,9 @@ intro/discovery/exchange/cb/cb
 intro/send_receive/src/src
 intro/send_receive/dst/dst
 
+intro/preview/seed/seed
+intro/preview/peer/peer
+
 # suffix for ignore files and directories temporary 
 
 *.go.ignore

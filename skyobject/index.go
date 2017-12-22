@@ -242,6 +242,52 @@ func (i *Index) findRoot(
 
 }
 
+func (i *Index) receivedRoot(
+	pk cipher.PubKey,
+	sig cipher.Sig,
+	val []byte,
+) (
+	r *registry.Root,
+	err error,
+) {
+
+	var hash = cipher.SumSHA256(val)
+	if err = cipher.VerifySignature(pk, sig, hash); err != nil {
+		return
+	}
+
+	if r, err = registry.DecodeRoot(val); err != nil {
+		return
+	}
+
+	r.Hash = hash // set the hash
+	r.Sig = sig   // set the signature
+
+	return
+}
+
+// PreviewRoot method used by node package to check
+// a root recevied for preview-request. The method
+// doesn't check feed, e.g. the ReceviedRoot method
+// can returns data.ErrNoSuchFeed error. This method
+// never return this error. And this method never set
+// IsFull fields to true, if this Container already
+// have this Root
+func (i *Index) PreviewRoot(
+	pk cipher.PubKey,
+	sig cipher.Sig,
+	val []byte,
+) (
+	r *registry.Root,
+	err error,
+) {
+
+	i.mx.Lock()
+	defer i.mx.Unlock()
+
+	return i.receivedRoot(pk, sig, val)
+}
+
 // ReceivedRoot called by the node package to
 // check a received root. The method verify hash
 // and signature of the Root. The method also
@@ -262,17 +308,10 @@ func (i *Index) ReceivedRoot(
 	i.mx.Lock()
 	defer i.mx.Unlock()
 
-	var hash = cipher.SumSHA256(val)
-	if err = cipher.VerifySignature(pk, sig, hash); err != nil {
+	if r, err = i.receivedRoot(pk, sig, val); err != nil {
+		r = nil // GC
 		return
 	}
-
-	if r, err = registry.DecodeRoot(val); err != nil {
-		return
-	}
-
-	r.Hash = hash // set the hash
-	r.Sig = sig   // set the signature
 
 	if _, err = i.findRoot(r.Pub, r.Nonce, r.Seq); err == nil {
 		r.IsFull = true

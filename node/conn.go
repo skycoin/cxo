@@ -313,7 +313,7 @@ func (c *Conn) Preview(
 	case *msg.Err:
 		return errors.New("error: " + x.Err)
 	case *msg.Root:
-		if r, err = c.n.c.ReceivedRoot(x.Feed, x.Sig, x.Value); err != nil {
+		if r, err = c.n.c.PreviewRoot(x.Feed, x.Sig, x.Value); err != nil {
 			return
 		}
 	default:
@@ -332,8 +332,8 @@ func (c *Conn) Preview(
 	return
 }
 
-// implements skyobject.Getter wrapping
-// the Conn
+// implements skyobject.Getter
+// wrapping the Conn
 type cget struct {
 	c *Conn
 }
@@ -833,7 +833,8 @@ func (c *Conn) handleRqPreview(seq uint32, rqp *msg.RqPreview) (_ error) {
 		Seq:   r.Seq,
 
 		Value: r.Encode(),
-		Sig:   r.Sig,
+
+		Sig: r.Sig,
 	})
 
 	return
