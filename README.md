@@ -44,29 +44,47 @@ go test -cover -race github.com/skycoin/cxo/...
 - `cmd` - apps
   - `cxocli` - CLI is admin RPC based tool to control any CXO-node
     ([wiki/CLI](https://github.com/skycoin/cxo/wiki/CLI)).
-  - `cxod` - an example CXO daemon that accepts all subscriptions
+  - `cxod` - an averga CXO daemon that accepts all subscriptions
+- `cxoutils` - basic utilities
 - `data` - database interfaces, objects and errors
   - `data/cxds` - CX data store is implementation of key-value store
   - `data/idxdb` - implementation of index DB
   - `data/tests` - tests for the `data` interfaces
 - `node` - TCP transport for CXO
-  - `node/gnet` - raw TCP transport
   - `node/log` - logger
   - `node/msg` - protocol messages
-- `skyobject` - CXO core: schemas, encode/decode, etc
+- `skyobject` - CXO core: encode/decode, etc
+  - `registry` - schemas, types, etc,
 
 And
 
-- `intro` - examples
-  - `intro/exchange` - three nodes example (doesn't ready)
-    [README.md](intro/exchange)
-<!-- - `intro/cxtweet` - CXO based command-line tweetter like app -->
+- [`intro`](./intro) - examples
 
 
 #### Formatting and Coding Style
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
+#### Versioning
+
+The CXO uses MAJOR.MINOR versions. Where MAJOR is
+- API cahgnes
+- protocol chagnes
+- data representation chagnes
+
+and MINOR is
+- small API changes
+- fixes
+- improvements
+
+Thus, DB files are not compatible between different major versions. Nodes
+with different major versions can't communicate. Saved data may have another
+representation.
+
+##### Versions
+
+- 2.1 d4e4ab573c438a965588a651ee1b76b8acbb3724
+- 3.0 master
 
 ### Dependencies
 
