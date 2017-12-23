@@ -10,6 +10,8 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
+const TM time.Duration = 100 * time.Millisecond
+
 func getTestConfigNotListen(prefix string) (c *Config) {
 	c = getTestConfig(prefix)
 	c.TCP.Listen = ""
@@ -44,26 +46,20 @@ func TestNode_Config(t *testing.T) {
 		n, err = NewNode(conf)
 	)
 
-	if err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, err)
 	defer n.Close()
 
-	if n.Config() != conf {
-		t.Error("wrong config")
-	}
+	assertTrue(t, n.Config() == conf, "wrong config")
 
 	var sc = skyobject.NewConfig()
 	sc.InMemoryDB = true
 
 	var c *skyobject.Container
-	if c, err = skyobject.NewContainer(sc); err != nil {
-		t.Fatal(err)
-	}
+	c, err = skyobject.NewContainer(sc)
+	assertNil(t, err)
 
-	if n, err = NewNodeContainer(conf, c); err != nil {
-		t.Fatal(err)
-	}
+	n, err = NewNodeContainer(conf, c)
+	assertNil(t, err)
 	defer n.Close()
 
 	if nc := n.Config(); nc != conf {
@@ -284,20 +280,20 @@ func TestNode_Publish(t *testing.T) {
 
 	select {
 	case <-gr1:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(TM):
 		t.Fatal("not received")
 	}
 
 	select {
 	case <-gr2:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(TM):
 		t.Fatal("not received")
 	}
 
 	select {
 	case <-gn1:
 		t.Fatal("received")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(TM):
 	}
 
 	// ok, now let's disconnect one by one and check
@@ -308,7 +304,7 @@ func TestNode_Publish(t *testing.T) {
 	assertNil(t, err)
 	c.Close()
 
-	<-time.After(100 * time.Millisecond)
+	<-time.After(TM)
 
 	assertIDs(t, ln.Connections(), sn1.ID(), sn2.ID())
 	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID(), sn2.ID())
@@ -320,7 +316,7 @@ func TestNode_Publish(t *testing.T) {
 	assertNil(t, err)
 	c.Close()
 
-	<-time.After(100 * time.Millisecond)
+	<-time.After(TM)
 
 	assertIDs(t, ln.Connections(), sn1.ID())
 	assertIDs(t, ln.ConnectionsOfFeed(pk), sn1.ID())
@@ -332,7 +328,7 @@ func TestNode_Publish(t *testing.T) {
 	assertNil(t, err)
 	c.Close()
 
-	<-time.After(100 * time.Millisecond)
+	<-time.After(TM)
 
 	assertIDs(t, ln.Connections())
 	assertIDs(t, ln.ConnectionsOfFeed(pk))
