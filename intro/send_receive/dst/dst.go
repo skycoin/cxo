@@ -103,7 +103,7 @@ func main() {
 	}
 
 	// As you can see, we are using conn.Subscribe. E.g. a connection
-	// means nothing without subscription. The Susbcribe methods calls
+	// means nothing without subscription. The Subscribe methods calls
 	// n.Share inside.
 
 	// wait for SIGINT

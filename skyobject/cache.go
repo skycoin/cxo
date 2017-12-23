@@ -321,7 +321,7 @@ func (c *Cache) delete(key cipher.SHA256, it *item) (err error) {
 	return
 }
 
-// clean the Cache down to lower boundry
+// clean the Cache down to lower boundary
 func (c *Cache) cleanDown(vol int) (err error) {
 
 	// stat (average cleaning time)
@@ -514,7 +514,7 @@ func incr(cc, inc int) (dcc int) {
 // Root object and it is guaranteed that the item has
 // entire subtree in the DB
 //
-// the guarantee is neccessary for fillers; a filler
+// the guarantee is necessary for fillers; a filler
 // can skip subtree (instead of digging it); but a
 // filler can not skip subtree if the subtree is a
 // subtree of another filler; because if the another
@@ -658,7 +658,7 @@ func (c *Cache) get(
 // IsCached returns true if items with given key is cached.
 // The item is not value and a cached item may not exist
 // in the cache and in DB too. If an item is cached, then
-// it should not be removed from DB. Becasue of write-behind
+// it should not be removed from DB. Because of write-behind
 // cacheing. Also, in some rare cases, a value can be
 // "resurrected" if it's cached (e.g. its rc will be increased
 // from zero).

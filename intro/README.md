@@ -8,10 +8,10 @@ The `intro` folder contains examples.
 - [`preview/`](./preview) - about feed preview
 - [`send_receive/`](./send_receive) - about source and destination, and how to
   decode values back to golang-values
-- [`skybrief/`](./skybrief) - breifly about skyobject
+- [`skybrief/`](./skybrief) - briefly about skyobject
 
 The `types.go` file implements basic types for these
-examples. And the file also implements regsitry of
+examples. And the file also implements registry of
 these types.
 
 In CXO SHA256 hash used instead of pointers and Merkle-tree

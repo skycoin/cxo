@@ -62,6 +62,8 @@ intro/send_receive/dst/dst
 intro/preview/seed/seed
 intro/preview/peer/peer
 
+intro/cleanup/cleanup
+
 # suffix for ignore files and directories temporary 
 
 *.go.ignore

@@ -76,8 +76,8 @@ func main() {
 	//
 	// we have to add the feed to the server; after the
 	// appending, the server sends list of its feeds to
-	// the discovery server and the dicovery server
-	// conencts other nodes to the server (other nodes,
+	// the discovery server and the discovery server
+	// connects other nodes to the server (other nodes,
 	// that share feeds apk and bpk)
 
 	if err = n.Share(apk); err != nil {

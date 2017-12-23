@@ -295,7 +295,7 @@ func cleanup(
 
 		// Remove all Root obejcts keeping last
 		// 5 for every feed and every head
-		if err = cxoutils.RemoveRootObjects(c, 1); err != nil {
+		if err = cxoutils.RemoveRootObjects(c, 5); err != nil {
 			log.Fatal(err)
 		}
 

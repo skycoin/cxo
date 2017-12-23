@@ -496,7 +496,7 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 	//                   updateServiceDiscovery that invoke
 	//                   send new list to discovery and so on
 	//
-	// :: supress the recursion ::
+	// :: suppress the recursion ::
 
 	if n.fs.addFeed(feed) == true {
 		n.updateServiceDiscovery()

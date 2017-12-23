@@ -217,7 +217,7 @@ type RPCClientRoot struct {
 	r *RPCClient
 }
 
-// Show breif information of Root object
+// Show brief information of Root object
 func (r *RPCClientRoot) Show(
 	feed cipher.PubKey,
 	nonce uint64,

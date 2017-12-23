@@ -121,7 +121,7 @@ func preview(conn *node.Conn, pk cipher.PubKey) {
 
 			fmt.Println(tree)
 
-			return // never subscirbe
+			return // never subscribe
 		})
 
 	if err != nil {

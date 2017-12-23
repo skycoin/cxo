@@ -217,7 +217,7 @@ func TestNode_Publish(t *testing.T) {
 	assertTrue(t, len(un1.ConnectionsOfFeed(pk)) == 0,
 		"unexpected connectionss")
 
-	// conenct to the listener (and subscribe / not susbcribe)
+	// conenct to the listener (and subscribe / not subscribe)
 
 	// sn1
 	var c *Conn
@@ -497,13 +497,13 @@ func TestNode_IsSharing(t *testing.T) {
 func TestNode_Stat(t *testing.T) {
 	// (s *Stat)
 
-	// TOOD (kostyarin): the lowest priority
+	// TODO (kostyarin): the lowest priority
 
 }
 
 func TestNode_Close(t *testing.T) {
 	// (err error)
 
-	// TOOD (kostyarin): the lowest priority
+	// TODO (kostyarin): the lowest priority
 
 }
