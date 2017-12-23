@@ -5,7 +5,8 @@ import (
 	"errors"
 )
 
-const Version = 1 // previous is 0
+// Version of the IdxDB API and data representation
+const Version = 2 // previous is 0
 
 // common errors
 var (

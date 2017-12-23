@@ -1,185 +1,247 @@
 package skyobject
 
 import (
+	"fmt"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-func testGetByHash(t *testing.T, db data.CXDS, hash cipher.SHA256,
-	obj interface{}) {
+// A User's information
+type User struct {
+	Name string // user's name
+	Age  uint32 // user's age
+}
 
-	val, _, _ := db.Get(hash)
-	if val == nil {
-		t.Fatal("nil val")
+// A Feed of the User
+type Feed struct {
+	Head  string        // head of the feed
+	Info  string        // brief information about the feed
+	Posts registry.Refs `skyobject:"schema=test.Post"` // posts
+}
+
+// A Post represnts post in the Feed
+type Post struct {
+	Head string // head of the Post
+	Body string // content of the Post
+}
+
+// Registry that contains User, Feed and Post types
+var testRegistry = registry.NewRegistry(func(r *registry.Reg) {
+	r.Register("test.User", User{})
+	r.Register("test.Feed", Feed{})
+	r.Register("test.Post", Post{})
+})
+
+func getTestConfig() (c *Config) {
+	c = NewConfig()
+	c.InMemoryDB = true
+	return
+}
+
+func getTestContainer() (c *Container) {
+	var err error
+	if c, err = NewContainer(getTestConfig()); err != nil {
+		panic(err)
 	}
-	if err := encoder.DeserializeRaw(val, obj); err != nil {
+	return
+}
+
+func assertNil(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func Test_filling(t *testing.T) {
-
-	pk, sk := cipher.GenerateKeyPair()
-
-	// emitter
-	ec := getCont()
-	defer ec.Close()
-
-	if err := ec.AddFeed(pk); err != nil {
-		t.Fatal(err)
+func assertTrue(t *testing.T, v bool, msg string) {
+	t.Helper()
+	if v == false {
+		t.Fatal(msg)
 	}
+}
 
-	pack, err := ec.NewRoot(pk, sk, 0, ec.CoreRegistry().Types())
-	if err != nil {
-		t.Fatal(err)
-	}
+func Test_fillinng(t *testing.T) {
 
-	plead := pack.Ref(User{"Alice", 21, nil})
-	pmemb := pack.Refs(
-		User{"U#01", 19, nil},
-		User{"U#02", 20, nil},
-		User{"U#03", 21, nil},
-		User{"U#04", 22, nil},
-		User{"U#05", 23, nil},
-		User{"U#06", 24, nil},
-		User{"U#07", 25, nil},
-		User{"U#08", 26, nil},
-		User{"U#09", 27, nil},
-		User{"U#10", 28, nil},
-		User{"U#11", 29, nil},
-		User{"U#12", 30, nil},
-		User{"U#13", 31, nil},
-		User{"U#14", 31, nil},
-		User{"U#15", 33, nil},
-		User{"U#16", 34, nil},
-		User{"U#16", 35, nil},
-		User{"U#17", 36, nil},
+	var (
+		sc, rc = getTestContainer(), getTestContainer()
+		pk, sk = cipher.GenerateKeyPair()
 	)
 
-	t.Log(pmemb.DebugString(false))
+	assertNil(t, sc.AddFeed(pk))
+	assertNil(t, rc.AddFeed(pk))
 
-	pcur := pack.Dynamic(Developer{"kostyarin", "logrusorgru"})
+	var up, err = sc.Unpack(sk, testRegistry)
+	assertNil(t, err)
 
-	pack.Append(Group{
-		Name:    "the Group",
-		Leader:  plead,
-		Members: pmemb,
-		Curator: pcur,
-	})
+	var r = new(registry.Root)
 
-	if err := pack.Save(); err != nil {
-		t.Fatal(err)
+	r.Pub = pk
+	r.Nonce = 9021
+
+	assertNil(t, sc.Save(up, r))
+	testFillRoot(t, sc, rc, r)
+	testFillDBs(t, sc, rc)
+
+	var usr = User{
+		Name: "Alice",
+		Age:  19,
 	}
 
-	er := pack.Root()
-
-	//
-	// explore the Root first
-	//
-
-	// group
-	dr := er.Refs[0]
-	gr := new(Group)
-	testGetByHash(t, ec.db.CXDS(), dr.Object, gr)
-	if gr.Name != "the Group" {
-		t.Fatal("wrong name")
+	r.Refs = []registry.Dynamic{
+		createDynamic(up, testRegistry, "test.User", &usr),
 	}
 
-	// leader
-	leader := new(User)
-	testGetByHash(t, ec.db.CXDS(), gr.Leader.Hash, leader)
-	if leader.Name != "Alice" {
-		t.Fatal("wrong name")
+	assertNil(t, sc.Save(up, r))
+	testFillRoot(t, sc, rc, r)
+	testFillDBs(t, sc, rc)
+
+	var feed = Feed{
+		Head: "Alices' feed",
+		Info: "an average feed",
 	}
 
-	// curator
-	curator := new(Developer)
-	testGetByHash(t, ec.db.CXDS(), gr.Curator.Object, curator)
-	if curator.Name != "kostyarin" {
-		t.Fatal("wrong name")
+	r.Refs = append(
+		r.Refs,
+		createDynamic(up, testRegistry, "test.Feed", &feed),
+	)
+
+	assertNil(t, sc.Save(up, r))
+	testFillRoot(t, sc, rc, r)
+	testFillDBs(t, sc, rc)
+
+	for i := 0; i < 100; i++ {
+
+		t.Log(i)
+
+		assertNil(t, feed.Posts.AppendValues(up, Post{
+			Head: fmt.Sprintf("Head #%d", i),
+			Body: fmt.Sprintf("Body #%d", i),
+		}))
+
+		assertNil(t, r.Refs[1].SetValue(up, &feed))
+
+		assertNil(t, sc.Save(up, r))
+		testFillRoot(t, sc, rc, r)
+		testFillDBs(t, sc, rc)
 	}
 
-	// refs
-	ers := new(encodedRefs)
-	testGetByHash(t, ec.db.CXDS(), gr.Members.Hash, ers)
+}
 
-	if ers.Degree != uint32(ec.conf.MerkleDegree) {
-		t.Fatal("wrong degree")
-	}
-	if ers.Length != 18 {
-		t.Fatal("wrong length")
-	}
-	if ers.Depth != 2 {
-		t.Fatal("wrong depth", ers.Depth)
-	}
-	if len(ers.Nested) != 1 {
-		t.Fatal("wrong nested length", len(ers.Nested))
-	}
+func testFillRoot(t *testing.T, sc, rc *Container, r *registry.Root) {
+	//t.Helper()
 
-	// nested node (split to 2)
-	//
+	var hs []cipher.SHA256 // hashes in order
 
-	//
-	//
-	//
+	assertNil(t, sc.Walk(r, func(key cipher.SHA256, _ int) (bool, error) {
+		hs = append(hs, key)
+		return true, nil
+	}))
 
-	// receiver
-	rc := getCont()
-	defer rc.Close()
+	var (
+		rq = make(chan cipher.SHA256, 10)
+		f  = rc.Fill(r, rq, 10)
+	)
 
-	if err := rc.AddFeed(pk); err != nil {
-		t.Fatal(err)
-	}
+	var wg sync.WaitGroup
 
-	rr, err := rc.AddEncodedRoot(er.Sig, er.Encode())
+	// the rq channel
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		for {
+			var key, ok = <-rq
+
+			if ok == false {
+				return
+			}
+
+			var val, _, err = sc.Get(key, 0)
+			assertNil(t, err)
+
+			_, err = rc.SetWanted(key, val)
+			assertNil(t, err)
+		}
+
+	}()
+
+	assertNil(t, f.Run())
+
+	close(rq)
+	wg.Wait()
+
+	var i int
+
+	assertNil(t, rc.Walk(r, func(key cipher.SHA256, _ int) (bool, error) {
+		assertTrue(t, key == hs[i], "wrong hash")
+		i++
+		return true, nil
+	}))
+
+	assertTrue(t, i == len(hs), "wrong number of hashes")
+
+}
+
+func createDynamic(
+	pack registry.Pack,
+	reg *registry.Registry,
+	name string,
+	obj interface{},
+) (
+	dr registry.Dynamic,
+) {
+
+	var sch, err = reg.SchemaByName(name)
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
 
-	bus := FillingBus{
-		WantQ: make(chan WCXO, 128),
-		FullQ: make(chan FullRoot, 128),
-		DropQ: make(chan DropRootError, 128),
+	err = dr.SetValue(pack, obj)
+	if err != nil {
+		panic(err)
 	}
 
-	fl := rc.NewFiller(rr, bus)
+	dr.Schema = sch.Reference()
+	return
+}
 
-	tc := time.After(time.Second)
-	var fr FullRoot
+func testFillDBs(t *testing.T, sc, rc *Container) {
+	t.Helper()
 
-Loop:
-	for {
-		select {
-		case wcxo := <-bus.WantQ:
-			t.Log("want", wcxo.Key.Hex()[:7])
-			val, _, err := ec.db.CXDS().Get(wcxo.Key)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if val == nil {
-				t.Fatal("val is nil")
-			}
-			// save receiver side
-			if _, err := rc.db.CXDS().Set(wcxo.Key, val); err != nil {
-				t.Fatal(err)
-			}
-			wcxo.GotQ <- val
-		case dre := <-bus.DropQ:
-			t.Fatal(dre.Err)
-		case fr = <-bus.FullQ:
-			break Loop
-		case <-tc:
-			t.Fatal("too long")
+	var (
+		ks  []cipher.SHA256
+		err error
+	)
+
+	assertNil(t, sc.db.CXDS().Iterate(
+		func(key cipher.SHA256, _ uint32, val []byte) (_ error) {
+			ks = append(ks, key)
+			return
+		}))
+
+	if len(ks) == 0 {
+		t.Fatal("no objects in DB")
+	}
+
+	for _, key := range ks {
+
+		var src, rrc int
+		_, src, err = sc.Get(key, 0)
+		assertNil(t, err)
+
+		_, rrc, err = rc.Get(key, 0)
+		assertNil(t, err)
+
+		if src != rrc {
+			t.Error("wrong rc", rrc, src, key.Hex()[:7])
 		}
 	}
 
-	t.Log(rc.Inspect(fr.Root))
-
-	_ = fl
-
+	if t.Failed() == true {
+		t.FailNow()
+	}
 }

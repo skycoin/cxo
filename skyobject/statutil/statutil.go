@@ -1,73 +1,63 @@
 package statutil
 
 import (
-	"sync"
-	"time"
+	"fmt"
+	"strings"
 )
 
-// RollAvg represents rolling (moving) average of time.Duration
-type RollAvg struct {
-	mx sync.Mutex
+// A Volume represents size of an
+// object or many objects in bytes.
+// The Volume based on uint32
+type Volume uint32
 
-	last time.Duration
-	roll func(time.Duration) time.Duration
+var units = [...]string{
+	"", "k", "M", "G", "T", "P", "E", "Z", "Y",
 }
 
-// Value returns current average value
-func (r *RollAvg) Value() time.Duration {
-	r.mx.Lock()
-	defer r.mx.Unlock()
+// String implements fmt.String interface
+// and returns human-readable string
+// represents the Volume. Prefixes for
+// the Volume means 1024 (instad of 1000).
+// E.g. 1kB is 1024B
+func (v Volume) String() (s string) {
 
-	return r.last
-}
+	fv := float64(v)
 
-// Add a time.Duration to the RollAvg. And get new
-// average value back
-func (r *RollAvg) Add(d time.Duration) (avg time.Duration) {
-	r.mx.Lock()
-	defer r.mx.Unlock()
-
-	r.last = r.roll(d)
-	return r.last
-}
-
-// AddStartTime is Add(time.Now().Sub(tp))
-func (r *RollAvg) AddStartTime(tp time.Time) (avg time.Duration) {
-	return r.Add(time.Now().Sub(tp))
-}
-
-// NewRollAvg creates new RollAvg using
-// given amount of samples. It panics if
-// the amount is zero or less
-func NewRollAvg(n int) (ra RollAvg) {
-
-	if n <= 0 {
-		panic("number of samples is too small")
+	var i int
+	for ; fv >= 1024.0; i++ {
+		fv /= 1024.0
 	}
 
-	var (
-		bins    = make([]float64, n)
-		average float64
-		i, c    int
-		mx      sync.Mutex
-	)
+	s = fmt.Sprintf("%.2f", fv)
+	s = strings.TrimRight(s, "0") // remove trailing zeroes (x.10, x.00)
+	s = strings.TrimRight(s, ".") // remove trailing dot (x.)
+	s += units[i] + "B"           //
 
-	ra.roll = func(d time.Duration) time.Duration {
-		mx.Lock()
-		defer mx.Unlock()
+	return
+}
 
-		if c < n {
-			c++
-		}
+// An Amount represents amount of
+// items. The Amount based on uint32
+type Amount uint32
 
-		x := float64(d)
+// String implements fmt.String interface
+// and returns human-readable string
+// represents the Amount. Prefixes for
+// the Amount means 1000. E.g. 1k is
+// 1000 items
+func (a Amount) String() (s string) {
 
-		average += (x - bins[i]) / float64(c)
-		bins[i] = x
-		i = (i + 1) % n
+	fa := float64(a)
 
-		return time.Duration(average)
+	var i int
+	for ; fa >= 1000.0; i++ {
+		fa /= 1000.0
 	}
+
+	s = fmt.Sprintf("%.2f", fa)
+	s = strings.TrimRight(s, "0") // remove trailing zeroes (x.10, x.00)
+	s = strings.TrimRight(s, ".") // remove trailing dot (x.)
+	s += units[i]                 //
 
 	return
 }

@@ -11,6 +11,12 @@ import (
 type memoryCXDS struct {
 	mx  sync.RWMutex
 	kvs map[cipher.SHA256]memoryObject
+
+	amountAll  int
+	amountUsed int
+
+	voluemAll  int
+	volumeUsed int
 }
 
 // object stored in memory
@@ -25,184 +31,182 @@ func NewMemoryCXDS() data.CXDS {
 	return &memoryCXDS{kvs: make(map[cipher.SHA256]memoryObject)}
 }
 
-// Get value by key
-func (m *memoryCXDS) Get(key cipher.SHA256) (val []byte, rc uint32, err error) {
-	m.mx.RLock()
-	defer m.mx.RUnlock()
+func (m *memoryCXDS) av(rc, nrc uint32, vol int) {
+
+	if rc == 0 { // was dead
+		if nrc > 0 { // an be resurrected
+			m.amountUsed++
+			m.volumeUsed += vol
+		}
+		return // else -> as is
+	}
+
+	// rc > 0 (was alive)
+
+	if nrc == 0 { // an be killed
+		m.amountUsed--
+		m.volumeUsed -= vol
+	}
+
+}
+
+func (m *memoryCXDS) incr(
+	key cipher.SHA256,
+	mo memoryObject,
+	rc uint32,
+	inc int,
+) (
+	nrc uint32,
+) {
+
+	switch {
+	case inc == 0:
+		nrc = rc // no changes
+		return
+	case inc < 0:
+		inc = -inc // change the sign
+
+		if uinc := uint32(inc); uinc >= rc {
+			nrc = 0
+		} else {
+			nrc = rc - uinc
+		}
+	case inc > 0:
+		nrc = rc + uint32(inc)
+	}
+
+	mo.rc = nrc
+	m.kvs[key] = mo
+
+	m.av(rc, nrc, len(mo.val))
+	return
+
+}
+
+// Get value and change rc
+func (m *memoryCXDS) Get(
+	key cipher.SHA256,
+	inc int,
+) (
+	val []byte,
+	rc uint32,
+	err error,
+) {
+
+	if inc == 0 { // read only
+		m.mx.RLock()
+		defer m.mx.RUnlock()
+	} else { // read-write
+		m.mx.Lock()
+		defer m.mx.Unlock()
+	}
 
 	if mo, ok := m.kvs[key]; ok {
 		val, rc = mo.val, mo.rc
+		rc = m.incr(key, mo, rc, inc)
 		return
 	}
 	err = data.ErrNotFound
 	return
 }
 
-// GetInc is Get + Inc
-func (m *memoryCXDS) GetInc(key cipher.SHA256) (val []byte, rc uint32,
-	err error) {
+// Set value and change rc
+func (m *memoryCXDS) Set(
+	key cipher.SHA256,
+	val []byte,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
 
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc++
-		val = mo.val
-		rc = mo.rc
-		m.kvs[key] = mo // save
-		return
+	if inc <= 0 {
+		panicf("invalid inc argument is Set: %d", inc)
 	}
-	err = data.ErrNotFound
-	return
-}
-
-// Set of Inc if exists
-func (m *memoryCXDS) Set(key cipher.SHA256, val []byte) (rc uint32, err error) {
-	m.mx.Lock()
-	defer m.mx.Unlock()
 
 	if len(val) == 0 {
 		err = ErrEmptyValue
 		return
 	}
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc++
-		m.kvs[key] = mo
-		rc = mo.rc
-		return
-	}
-	m.kvs[key] = memoryObject{1, val}
-	rc = 1
-	return
-}
-
-// Add is like Set, but it calculates key inside
-func (m *memoryCXDS) Add(val []byte) (key cipher.SHA256, rc uint32, err error) {
-	if len(val) == 0 {
-		err = ErrEmptyValue
-		return
-	}
-	key = getHash(val)
-	rc, err = m.Set(key, val)
-	return
-}
-
-// Inc increments references counter
-func (m *memoryCXDS) Inc(key cipher.SHA256) (rc uint32, err error) {
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc++
-		m.kvs[key] = mo
-		rc = mo.rc
-		return
-	}
-	err = data.ErrNotFound
-	return
-}
-
-// Dec decrements references counter and removes value if it turns 0
-func (m *memoryCXDS) Dec(key cipher.SHA256) (rc uint32, err error) {
-	m.mx.Lock()
-	defer m.mx.Unlock()
-
-	if mo, ok := m.kvs[key]; ok {
-		mo.rc--
-		rc = mo.rc
-		if mo.rc == 0 {
-			delete(m.kvs, key)
-			return
-		}
-		m.kvs[key] = mo
-		return
-	}
-	err = data.ErrNotFound
-	return
-}
-
-// DecGet is Get + Dec
-func (m *memoryCXDS) DecGet(key cipher.SHA256) (val []byte, rc uint32,
-	err error) {
 
 	m.mx.Lock()
 	defer m.mx.Unlock()
 
 	if mo, ok := m.kvs[key]; ok {
-		mo.rc--
-		rc = mo.rc
-		val = mo.val
-		if mo.rc == 0 {
-			delete(m.kvs, key)
-			return
-		}
-		m.kvs[key] = mo
+		rc = m.incr(key, mo, mo.rc, inc)
 		return
 	}
+
+	// created
+
+	m.amountAll++
+	m.voluemAll += len(val)
+
+	m.amountUsed++
+	m.volumeUsed += len(val)
+
+	rc = uint32(inc)
+	m.kvs[key] = memoryObject{rc, val}
+
+	return
+}
+
+// Inc changes rc
+func (m *memoryCXDS) Inc(
+	key cipher.SHA256,
+	inc int,
+) (
+	rc uint32,
+	err error,
+) {
+
+	if inc == 0 { // presence check
+		m.mx.RLock()
+		defer m.mx.RUnlock()
+	} else { // changes
+		m.mx.Lock()
+		defer m.mx.Unlock()
+	}
+
+	if mo, ok := m.kvs[key]; ok {
+		rc = m.incr(key, mo, mo.rc, inc)
+		return
+	}
+
 	err = data.ErrNotFound
 	return
 }
 
-// MultiGet returns many values by list of keys
-func (m *memoryCXDS) MultiGet(keys []cipher.SHA256) (vals [][]byte, err error) {
-	if len(keys) == 0 {
-		return
-	}
-	vals = make([][]byte, 0, len(keys))
+// Del deletes value unconditionally
+func (m *memoryCXDS) Del(key cipher.SHA256) (_ error) {
+	m.mx.Lock()
+	defer m.mx.Unlock()
 
-	m.mx.RLock()
-	defer m.mx.RUnlock()
+	var mo, ok = m.kvs[key]
 
-	for _, key := range keys {
-		if mo, ok := m.kvs[key]; ok {
-			vals = append(vals, mo.val)
-			continue
-		}
-		err = data.ErrNotFound
-		return
+	if ok == false {
+		return // not found
 	}
-	return
-}
 
-// MultiAdd appends all given values like the Add
-func (m *memoryCXDS) MultiAdd(vals [][]byte) (err error) {
-	for _, val := range vals {
-		if _, _, err = m.Add(val); err != nil {
-			return
-		}
+	if mo.rc > 0 {
+		m.amountUsed--
+		m.volumeUsed -= len(mo.val)
 	}
-	return
-}
 
-// MultiInc increments references counter for all values by given keys
-func (m *memoryCXDS) MultiInc(keys []cipher.SHA256) (err error) {
-	for _, key := range keys {
-		if _, err = m.Inc(key); err != nil {
-			return
-		}
-	}
-	return
-}
+	m.amountAll--
+	m.voluemAll -= len(mo.val)
 
-// MultiDec decrements all values by given keys
-func (m *memoryCXDS) MultiDec(keys []cipher.SHA256) (err error) {
-	for _, key := range keys {
-		if _, err = m.Dec(key); err != nil {
-			return
-		}
-	}
 	return
 }
 
 // Iterate all keys
-func (m *memoryCXDS) Iterate(iterateFunc func(cipher.SHA256,
-	uint32) error) (err error) {
+func (m *memoryCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 
-	m.mx.RLock()
-	defer m.mx.RUnlock()
+	m.mx.Lock()
+	defer m.mx.Unlock()
 
 	for k, mo := range m.kvs {
-		if err = iterateFunc(k, mo.rc); err != nil {
+		if err = iterateFunc(k, mo.rc, mo.val); err != nil {
 			if err == data.ErrStopIteration {
 				err = nil
 			}
@@ -211,6 +215,55 @@ func (m *memoryCXDS) Iterate(iterateFunc func(cipher.SHA256,
 	}
 
 	return
+}
+
+// IterateDel all keys deleteing
+func (m *memoryCXDS) IterateDel(
+	iterateFunc data.IterateObjectsDelFunc,
+) (
+	err error,
+) {
+
+	m.mx.Lock()
+	defer m.mx.Unlock()
+
+	var del bool
+
+	for k, mo := range m.kvs {
+		if del, err = iterateFunc(k, mo.rc, mo.val); err != nil {
+			if err == data.ErrStopIteration {
+				err = nil
+			}
+			return
+		}
+		if del == true {
+			delete(m.kvs, k)
+			if mo.rc > 0 {
+				m.amountUsed--
+				m.volumeUsed -= len(mo.val)
+			}
+			m.amountAll--
+			m.voluemAll -= len(mo.val)
+		}
+	}
+
+	return
+}
+
+// amoutn of objects
+func (m *memoryCXDS) Amount() (all, used int) {
+	m.mx.RLock()
+	defer m.mx.RUnlock()
+
+	return m.amountAll, m.amountUsed
+}
+
+// Volume of objects
+func (m *memoryCXDS) Volume() (all, used int) {
+	m.mx.RLock()
+	defer m.mx.RUnlock()
+
+	return m.voluemAll, m.volumeUsed
 }
 
 // Close DB

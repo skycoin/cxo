@@ -1,7 +1,12 @@
-// Package cxds represents stub for CXO data server.
-// The cxds is some kind of client of CX data server.
-// In future it will be replaced with real client.
-// API of this package close to goal and can be used
+// Package cxds implements cxo/data.CXDS
+// interface. E.g. the package provides data
+// store for CXO. The data store is key value
+// stroe, in which the key is SHA256 hash of
+// value. And every value has references
+// counter (rc). The counter set outside the
+// CXDS. The rc is number references to an
+// object. The CXDS never remove objects
+// with zero-rc.
 package cxds
 
 import (
@@ -11,23 +16,21 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 )
 
-const Version int = 1 // previous is 0
+// Version of the CXDS API and data representation
+const Version int = 2 // previous is 1
 
-// common errors
+// comon errors
 var (
-	ErrEmptyValue      = errors.New("empty value")
+	ErrEmptyValue = errors.New("empty value")
+
+	ErrWrongValueLength = errors.New("wrong value length")
+
 	ErrMissingMetaInfo = errors.New("missing meta information")
-	ErrMissingVersion  = errors.New("missing version in meta")
-	ErrOldVersion      = errors.New("db file of old version")      // cxodbfix
-	ErrNewVersion      = errors.New("db file newer then this CXO") // go get
+
+	ErrMissingVersion = errors.New("missing version in meta")
+	ErrOldVersion     = errors.New("db file of old version")      // cxodbfix
+	ErrNewVersion     = errors.New("db file newer then this CXO") // go get
 )
-
-var one []byte
-
-func init() {
-	one = make([]byte, 4)
-	binary.BigEndian.PutUint32(one, 1)
-}
 
 //
 func getRefsCount(val []byte) (rc uint32) {
@@ -35,16 +38,8 @@ func getRefsCount(val []byte) (rc uint32) {
 	return
 }
 
-// returns new uint32
-func incRefsCount(val []byte) (rc uint32) {
-	rc = binary.BigEndian.Uint32(val) + 1
-	binary.BigEndian.PutUint32(val, rc)
-	return
-}
-
-// returns new uint32
-func decRefsCount(val []byte) (rc uint32) {
-	rc = binary.BigEndian.Uint32(val) - 1
+//
+func setRefsCount(val []byte, rc uint32) {
 	binary.BigEndian.PutUint32(val, rc)
 	return
 }
@@ -55,8 +50,28 @@ func getHash(val []byte) (key cipher.SHA256) {
 
 // version
 
-func versionBytes() (vb []byte) {
-	vb = make([]byte, 4)
-	binary.BigEndian.PutUint32(vb, uint32(Version))
+func versionBytes() []byte {
+	return encodeUint32(uint32(Version))
+}
+
+func encodeUint32(u uint32) (ub []byte) {
+	ub = make([]byte, 4)
+	binary.BigEndian.PutUint32(ub, uint32(Version))
 	return
+}
+
+func decodeUint32(ub []byte) uint32 {
+	return binary.BigEndian.Uint32(ub)
+}
+
+// increment slice
+func incSlice(b []byte) {
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] == 0xff {
+			b[i] = 0
+			continue // increase next byte
+		}
+		b[i]++
+		return
+	}
 }

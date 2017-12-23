@@ -4,49 +4,49 @@ import (
 	"errors"
 	"net"
 	"net/rpc"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
-	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// A RPC is receiver type for net/rpc.
-// It used internally by Server and it's
-// exported because net/rpc requires
-// exported types. You don't need to
-// use the RPC manually
-type RPC struct {
-	l  net.Listener
-	rs *rpc.Server
-	ns *Node
-}
-
+// wrap the RPC
 type rpcServer struct {
-	*RPC
+	l net.Listener // underlying listener
+	r *rpc.Server  //
+	n *Node        // back reference
 }
 
-func newRPC(s *Node) (r *rpcServer) {
+// create RPC server
+func (n *Node) newRPC() (r *rpcServer) {
 	r = new(rpcServer)
-	r.RPC = new(RPC)
-	r.ns = s
-	r.rs = rpc.NewServer()
+	r.n = n
+	r.r = rpc.NewServer()
 	return
 }
 
-func (r *rpcServer) Start(address string) (err error) {
-	r.rs.RegisterName("cxo", r.RPC)
+func (r *rpcServer) Listen(address string) (err error) {
+
+	r.r.RegisterName("node", &RPC{r.n})
+
+	r.r.RegisterName("tcp", &TCPRPC{r.n})
+	r.r.RegisterName("udp", &UDPRPC{r.n})
+
+	r.r.RegisterName("root", &RootRPC{r.n})
+
 	if r.l, err = net.Listen("tcp", address); err != nil {
 		return
 	}
-	r.ns.await.Add(1)
-	go func(l net.Listener) {
-		defer r.ns.await.Done()
-		r.rs.Accept(l)
-	}(r.l)
+
+	r.n.await.Add(1)
+	go r.run()
+
 	return
+}
+
+func (r *rpcServer) run() {
+	defer r.n.await.Done()
+	r.r.Accept(r.l)
 }
 
 func (r *rpcServer) Address() (address string) {
@@ -63,363 +63,290 @@ func (r *rpcServer) Close() (err error) {
 	return
 }
 
+// A RPC represnet RPC server of the Node.
+// The RPC is exported because the net/rpc
+// package requires it. E.g. the RPC is
+// registered by the rpc package. The RPC
+// can't be used outside the Node.
 //
-// RPC methods
-//
-
-// AddFeed to the Node
-func (r *RPC) AddFeed(pk cipher.PubKey, _ *struct{}) error {
-	return r.ns.AddFeed(pk)
+// Short words, the RPC is internal
+type RPC struct {
+	n *Node // back reference
 }
 
-// DelFeed of the node
-func (r *RPC) DelFeed(pk cipher.PubKey, _ *struct{}) error {
-	return r.ns.DelFeed(pk)
+// Share is RPC method
+func (r *RPC) Share(pk cipher.PubKey, _ *struct{}) (err error) {
+	return r.n.Share(pk)
 }
 
-// ConnFeed used by RPC to subscribe or
-// unsubscribe a connection to/from
-// a feed
+// DontShare is RPC method
+func (r *RPC) DontShare(pk cipher.PubKey, _ *struct{}) (err error) {
+	return r.n.DontShare(pk)
+}
+
+// Feeds is RPC method
+func (r *RPC) Feeds(_ struct{}, fs *[]cipher.PubKey) (_ error) {
+	*fs = r.n.Feeds()
+	return
+}
+
+// IsSharing is RPC method
+func (r *RPC) IsSharing(pk cipher.PubKey, yep *bool) (_ error) {
+	*yep = r.n.IsSharing(pk)
+	return
+}
+
+// strings with all connections
+func (n *Node) connections() (cs []string) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	cs = make([]string, 0, len(n.pc)+len(n.ic))
+
+	for c := range n.pc {
+		cs = append(cs, c.String()+"(⌛)") // pending
+	}
+
+	for _, c := range n.ic {
+		cs = append(cs, c.String()+"(✓)") // established
+	}
+
+	return
+}
+
+// Connections is RPC method
+func (r *RPC) Connections(_ struct{}, cs *[]string) (_ error) {
+	*cs = r.n.connections()
+	return
+}
+
+// ConnectionsOfFeed is RPC method
+func (r *RPC) ConnectionsOfFeed(feed cipher.PubKey, cs *[]string) (_ error) {
+	var cf = r.n.ConnectionsOfFeed(feed)
+
+	if len(cf) == 0 {
+		*cs = []string{}
+		return
+	}
+
+	var lcs = make([]string, 0, len(cf))
+
+	for _, c := range cf {
+		lcs = append(lcs, c.String())
+	}
+
+	*cs = lcs
+	return
+}
+
+// Config is RPC method
+func (r *RPC) Config(_ struct{}, config *Config) (err error) {
+	*config = *r.n.config // copy
+	return
+
+}
+
+// Stat is RPC method
+func (r *RPC) Stat(_ struct{}, stat *Stat) (err error) {
+	*stat = *r.n.Stat()
+	return
+}
+
+// A TCPRPC represents RPC object
+// of TCP transport of the Node
+type TCPRPC struct {
+	n *Node
+}
+
+// Connect is RPC method
+func (t *TCPRPC) Connect(address string, _ *struct{}) (err error) {
+	_, err = t.n.TCP().Connect(address)
+	return
+}
+
+// Disconnect is RPC method
+func (t *TCPRPC) Disconnect(address string, _ *struct{}) (err error) {
+	if tcp := t.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(address); c != nil {
+			err = c.Close()
+		}
+	}
+	return
+}
+
+// A ConnFeed represents connection address and feed
 type ConnFeed struct {
-	Address string // remote address
+	Address string
 	Feed    cipher.PubKey
 }
 
-// Subscribe to a connection + feed
-func (r *RPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
-	if cf.Address == "" {
-		return errors.New("missing address")
-	}
-	if c := r.ns.Connection(cf.Address); c != nil {
-		return c.Subscribe(cf.Feed)
-	}
-	return errors.New("no such connection: " + cf.Address)
-}
-
-// Unsubscribe from a connection + feed
-func (r *RPC) Unsubscribe(cf ConnFeed, _ *struct{}) (_ error) {
-	if cf.Address == "" {
-		return errors.New("missing address")
-	}
-	if c := r.ns.Connection(cf.Address); c != nil {
-		c.Unsubscribe(cf.Feed)
-		return
-	}
-	return errors.New("no such connection: " + cf.Address)
-}
-
-// Feeds of a node
-func (r *RPC) Feeds(_ struct{}, list *[]cipher.PubKey) (_ error) {
-	*list = r.ns.Feeds()
-	return
-}
-
-// A ConnectionInfo used by RPC and
-// represents brief information about
-// a connection
-type ConnectionInfo struct {
-	Address    string
-	IsIncoming bool
-	IsPending  bool
-}
-
-// Connections of a node
-func (r *RPC) Connections(_ struct{}, list *[]ConnectionInfo) (_ error) {
-	gcs := r.ns.Pool().Connections()
-	if len(gcs) == 0 {
-		return
-	}
-
-	cs := make([]ConnectionInfo, 0, len(gcs))
-
-	for _, gc := range gcs {
-		cs = append(cs, ConnectionInfo{
-			Address:    gc.Address(),
-			IsIncoming: gc.IsIncoming(),
-			IsPending:  gc.Value() == nil,
-		})
-	}
-
-	*list = cs
-
-	return
-}
-
-// IncomingConnections of a node
-func (r *RPC) IncomingConnections(_ struct{},
-	list *[]ConnectionInfo) (_ error) {
-
-	gcs := r.ns.Pool().Connections()
-	if len(gcs) == 0 {
-		return
-	}
-
-	cs := make([]ConnectionInfo, 0, len(gcs))
-
-	for _, gc := range gcs {
-		if false == gc.IsIncoming() {
-			continue
+// Subscribe is RPC method
+func (t *TCPRPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
+	if tcp := t.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(cf.Address); c != nil {
+			return c.Subscribe(cf.Feed)
 		}
-		cs = append(cs, ConnectionInfo{
-			Address:    gc.Address(),
-			IsIncoming: true,
-			IsPending:  gc.Value() == nil,
-		})
+		return errors.New("no such connection")
 	}
-
-	*list = cs
-	return
+	return errors.New("to TCP transport")
 }
 
-// OutgoingConnections of a node
-func (r *RPC) OutgoingConnections(_ struct{},
-	list *[]ConnectionInfo) (_ error) {
-
-	gcs := r.ns.Pool().Connections()
-	if len(gcs) == 0 {
-		return
-	}
-
-	cs := make([]ConnectionInfo, 0, len(gcs))
-
-	for _, gc := range gcs {
-		if true == gc.IsIncoming() {
-			continue
-		}
-		cs = append(cs, ConnectionInfo{
-			Address:    gc.Address(),
-			IsIncoming: false,
-			IsPending:  gc.Value() == nil,
-		})
-	}
-
-	*list = cs
-	return
-}
-
-// Connect to a remote peer. The call blocks
-func (r *RPC) Connect(address string, _ *struct{}) (err error) {
-	_, err = r.ns.Connect(address)
-	return
-}
-
-// Disconnect from a remote peer
-func (r *RPC) Disconnect(address string, _ *struct{}) (err error) {
-	if c := r.ns.pool.Connection(address); c != nil {
-		return c.Close()
-	}
-	return errors.New("no such connection: " + address)
-}
-
-// Connection is RPC method that obtains, list
-// of feeds of connection by address
-func (r *RPC) Connection(address string, feeds *[]cipher.PubKey) (err error) {
-
-	if address == "" {
-		return errors.New("empty address")
-	}
-
-	c := r.ns.Connection(address)
-	if c == nil {
-		return errors.New("no such connection: " + address)
-	}
-
-	var list []cipher.PubKey
-
-	r.ns.fmx.Lock()
-	defer r.ns.fmx.Unlock()
-
-	for pk, cs := range r.ns.feeds {
-		if _, ok := cs[c]; ok {
-			list = append(list, pk)
-		}
-	}
-
-	*feeds = list
-	return
-}
-
-// Feed is RPC method that obtains, list
-// of connections that interest in given feed
-func (r *RPC) Feed(pk cipher.PubKey, conns *[]string) (err error) {
-	r.ns.fmx.Lock()
-	defer r.ns.fmx.Unlock()
-
-	var list []string
-
-	for cs := range r.ns.feeds[pk] {
-		list = append(list, cs.Address())
-	}
-
-	*conns = list
-	return
-}
-
-// ListeningAddress of Node
-func (r *RPC) ListeningAddress(_ struct{}, address *string) (_ error) {
-	*address = r.ns.pool.Address()
-	return
-}
-
-// A Info represents brief
-// information about a node,
-// excluding statistic
-type Info struct {
-	IsListening      bool      // is it listening
-	ListeningAddress string    // listening address
-	Discovery        Addresses // discovery addresses
-	IsPublicServer   bool      // is it a public server
-}
-
-// Info is RPC method that returns brief information about the Node
-func (r *RPC) Info(_ struct{}, info *Info) (_ error) {
-	*info = Info{
-		IsListening:      r.ns.conf.EnableListener,
-		ListeningAddress: r.ns.pool.Address(),
-		Discovery:        r.ns.conf.DiscoveryAddresses,
-		IsPublicServer:   r.ns.conf.PublicServer,
-	}
-	return
-}
-
-// A RootInfo used by RPC
-type RootInfo struct {
-	Time time.Time     // timestamp
-	Seq  uint64        // seq number
-	Hash cipher.SHA256 // Hash
-	Prev cipher.SHA256 // hash of previous or blank if seq is 0
-
-	CreateTime time.Time // db created at
-	AccessTime time.Time // db last access
-	RefsCount  uint32    // db refs count
-}
-
-func decodeRoot(val []byte) (r *skyobject.Root, err error) {
-	r = new(skyobject.Root)
-	if err = encoder.DeserializeRaw(val, r); err != nil {
-		r = nil
-	}
-	return
-}
-
-// Roots returns basic information about all root objects of a feed.
-// It returns (by RPC) list sorted from old roots to new
-func (r *RPC) Roots(feed cipher.PubKey, roots *[]RootInfo) (err error) {
-	ris := make([]RootInfo, 0)
-	err = r.ns.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		var rs data.Roots
-		if rs, err = feeds.Roots(feed); err != nil {
+// Unsubscribe is RPC method
+func (t *TCPRPC) Unsubscribe(cf ConnFeed, _ *struct{}) (err error) {
+	if tcp := t.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(cf.Address); c != nil {
+			c.Unsubscribe(cf.Feed)
 			return
 		}
-		return rs.Ascend(func(ir *data.Root) (err error) {
-			var ri RootInfo
-			ri.Hash = ir.Hash
-			ri.Seq = ir.Seq
+		return errors.New("no such connection")
+	}
+	return errors.New("to TCP transport")
+}
 
-			ri.CreateTime = time.Unix(0, ir.CreateTime)
-			ri.AccessTime = time.Unix(0, ir.AccessTime)
-
-			var val []byte
-			var rc uint32
-			if val, rc, err = r.ns.DB().CXDS().Get(ir.Hash); err != nil {
+// RemoteFeeds is RPC method
+func (t *TCPRPC) RemoteFeeds(address string, rfs *[]cipher.PubKey) (err error) {
+	if tcp := t.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(address); c != nil {
+			var rf []cipher.PubKey
+			if rf, err = c.RemoteFeeds(); err != nil {
 				return
 			}
+			*rfs = rf
+			return // nil
+		}
+		return errors.New("no such connection")
+	}
+	return errors.New("to TCP transport")
+}
 
-			ri.RefsCount = rc
+// Address is RPC method
+func (t *TCPRPC) Address(_ struct{}, address *string) (_ error) {
+	if tcp := t.n.getTCP(); tcp != nil {
+		*address = tcp.Address()
+		return
+	}
+	return errors.New("to TCP transport")
+}
 
-			var r *skyobject.Root
-			if r, err = decodeRoot(val); err != nil {
-				return
-			}
+// A UDPRPC represents RPC object
+// of UDP transport of the Node
+type UDPRPC struct {
+	n *Node
+}
 
-			ri.Time = time.Unix(0, r.Time)
-			ri.Prev = r.Prev
+// Connect is RPC method
+func (u *UDPRPC) Connect(address string, _ *struct{}) (err error) {
+	_, err = u.n.TCP().Connect(address)
+	return
+}
 
-			ris = append(ris, ri)
+// Disconnect is RPC method
+func (u *UDPRPC) Disconnect(address string, _ *struct{}) (err error) {
+	if tcp := u.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(address); c != nil {
+			err = c.Close()
+		}
+	}
+	return
+}
+
+// Subscribe is RPC method
+func (u *UDPRPC) Subscribe(cf ConnFeed, _ *struct{}) (err error) {
+	if tcp := u.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(cf.Address); c != nil {
+			return c.Subscribe(cf.Feed)
+		}
+		return errors.New("no such connection")
+	}
+	return errors.New("to UDP transport")
+}
+
+// Unsubscribe is RPC method
+func (u *UDPRPC) Unsubscribe(cf ConnFeed, _ *struct{}) (err error) {
+	if tcp := u.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(cf.Address); c != nil {
+			c.Unsubscribe(cf.Feed)
 			return
-		})
-	})
-	if err != nil {
+		}
+		return errors.New("no such connection")
+	}
+	return errors.New("to UDP transport")
+}
+
+// RemoteFeeds is RPC method
+func (u *UDPRPC) RemoteFeeds(address string, rfs *[]cipher.PubKey) (err error) {
+	if tcp := u.n.getTCP(); tcp != nil {
+		if c := tcp.getConn(address); c != nil {
+			var rf []cipher.PubKey
+			if rf, err = c.RemoteFeeds(); err != nil {
+				return
+			}
+			*rfs = rf
+			return // nil
+		}
+		return errors.New("no such connection")
+	}
+	return errors.New("to UDP transport")
+}
+
+// Address is RPC method
+func (u *UDPRPC) Address(_ struct{}, address *string) (_ error) {
+	if tcp := u.n.getTCP(); tcp != nil {
+		*address = tcp.Address()
 		return
 	}
-	*roots = ris
+	return errors.New("to UDP transport")
+}
+
+// A RootRPC represents RPC object
+// of Root objects of the Node
+type RootRPC struct {
+	n *Node
+}
+
+// A RootSelector represents Root selector
+type RootSelector struct {
+	Feed  cipher.PubKey
+	Nonce uint64
+	Seq   uint64
+}
+
+// Show Root (RPC method)
+func (r *RootRPC) Show(rs RootSelector, z *registry.Root) (err error) {
+	var x *registry.Root
+	if x, err = r.n.c.Root(rs.Feed, rs.Nonce, rs.Seq); err != nil {
+		return
+	}
+
+	*z = *x
 	return
 }
 
-// A SelectRoot used by RPC to
-// select Root object
-type SelectRoot struct {
-	Pub      cipher.PubKey // feed
-	Seq      uint64        // seq number
-	LastFull bool          // ignore the seq and print last full of the feed
-}
+// Tree of Root (RPC method)
+func (r *RootRPC) Tree(rs RootSelector, tree *string) (err error) {
 
-// Tree prints objects tree of chosen root object (chosen by pk+seq)
-func (r *RPC) Tree(sel SelectRoot, tree *string) (err error) {
-	var root *skyobject.Root
-	if sel.LastFull == true {
-		root, err = r.ns.so.LastRoot(sel.Pub)
-	} else {
-		root, err = r.ns.so.Root(sel.Pub, sel.Seq)
-	}
-	if err != nil {
+	var x *registry.Root
+	if x, err = r.n.c.Root(rs.Feed, rs.Nonce, rs.Seq); err != nil {
 		return
 	}
-	if root == nil {
-		*tree = "<not found>"
+
+	var p registry.Pack
+	if p, err = r.n.c.Pack(x, nil); err != nil {
+		return
 	}
-	*tree = r.ns.so.Inspect(root)
+
+	var t string
+	t, err = x.Tree(p)
+	*tree = t
 	return
 }
 
-// A Stat represents Node statistic
-type Stat struct {
-	CXO  skyobject.Stat // skyobject stat
-	Node struct {
-		FillAvg     time.Duration // avg filling time of filled roots
-		DropAvg     time.Duration // avg filling time of dropped roots
-		Connections int           // amount of connections
-		Feeds       int           // amount of feeds
-	} // node stat
-}
-
-func (s *Node) feesLen() int {
-	s.fmx.Lock()
-	defer s.fmx.Unlock()
-
-	return len(s.feeds)
-}
-
-func (s *Node) connsLen() int {
-	s.fmx.Lock()
-	defer s.fmx.Unlock()
-
-	return len(s.conns)
-}
-
-// Stat of database
-func (r *RPC) Stat(_ struct{}, stat *Stat) (err error) {
-
-	var st Stat
-	if st.CXO, err = r.ns.so.Stat(); err != nil {
+// Last Root of given Feed (RPC method)
+func (r *RootRPC) Last(feed cipher.PubKey, z *registry.Root) (err error) {
+	var x *registry.Root
+	if x, err = r.n.c.LastRoot(feed, r.n.c.ActiveHead(feed)); err != nil {
 		return
 	}
-
-	st.Node.Connections = r.ns.connsLen()
-	st.Node.Feeds = r.ns.feesLen()
-	st.Node.FillAvg = r.ns.fillavg.Value()
-	st.Node.DropAvg = r.ns.dropavg.Value()
-
-	*stat = st
-	return
-}
-
-// Terminate remote Node if allowed by its configurations
-func (r *RPC) Terminate(_ struct{}, _ *struct{}) (err error) {
-	if !r.ns.conf.RemoteClose {
-		err = errors.New("not allowed")
-		return
-	}
-	r.ns.Close()
+	*z = *x
 	return
 }

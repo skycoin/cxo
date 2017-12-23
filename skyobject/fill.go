@@ -1,460 +1,352 @@
 package skyobject
 
 import (
-	"fmt"
-	"reflect"
 	"sync"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
-	"github.com/skycoin/skycoin/src/cipher/encoder"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-//
-// TODO (kostyarin): announce
-//
-
-// A WCXO is internal
-type WCXO struct {
-	Key  cipher.SHA256 // hash of wanted CX object
-	GotQ chan []byte   // channel to sent requested CX object
-
-	Announce []cipher.SHA256 // announce get
-}
-
-// A FillingBus is internal
-type FillingBus struct {
-	WantQ chan WCXO
-	FullQ chan FullRoot
-	DropQ chan DropRootError
-}
-
-// A Filler is internal
+// A Filler implemnets registry.Splitter interface
+// and used for filling.
 type Filler struct {
+	c *Container
+	r *registry.Root
 
-	// references from host
+	reg *registry.Registry
 
-	bus FillingBus
+	rq chan<- cipher.SHA256
 
-	// own fields
+	mx   sync.Mutex
+	incs map[cipher.SHA256]int
+	pre  map[cipher.SHA256]struct{} // prerequested by RC
 
-	c *Container // back reference
+	limit chan struct{} // max
 
-	r   *Root     // filling Root
-	reg *Registry // registry of the Root
+	errq chan error
 
-	incrs []cipher.SHA256 // decrement on fail
-
-	gotq chan []byte // reply
-
-	tp time.Time
+	await sync.WaitGroup
 
 	closeq chan struct{}
 	closeo sync.Once
 }
 
-// NewFiller creates new filler instance
-func (c *Container) NewFiller(r *Root, bus FillingBus) (fl *Filler) {
+//
+// methods of the registry.Splitter
+//
 
-	c.Debugln(FillVerbosePin, "NewFiller", r.Short())
+// Registry of the Filler
+func (f *Filler) Registry() (reg *registry.Registry) {
+	return f.reg
+}
 
-	fl = new(Filler)
+func (f *Filler) get(
+	key cipher.SHA256,
+	inc int,
+) (
+	val []byte,
+	rc int,
+	err error,
+) {
 
-	fl.c = c
+	// try to get from DB first
+	val, rc, err = f.c.Get(key, inc) // incrementing the rc to hold the object
 
-	fl.bus = bus
+	if err == nil {
+		if inc > 0 {
+			rc = f.inc(key, rc) // ++
+		}
+		return
+	}
 
-	fl.r = r
-	fl.gotq = make(chan []byte, 1)
+	if err != data.ErrNotFound {
+		fatal("DB failure:", err) // fatality
+	}
 
-	fl.closeq = make(chan struct{})
+	err = nil // clear if it's data.ErrNotFound
 
-	fl.tp = time.Now() // time point
+	// not found
+	var gc = make(chan Object, 1) // wait for the object
 
-	go fl.fill()
+	f.c.Want(key, gc, inc)
+	defer f.c.Unwant(key, gc) // to be memory safe
+
+	// requset the object using the rq channel
+	if f.requset(key) == false {
+		return
+	}
+
+	select {
+	case obj := <-gc:
+		if err = obj.Err; err != nil {
+			return
+		}
+		val = obj.Val
+		if inc > 0 {
+			rc = f.inc(key, obj.RC)
+		} else {
+			rc = obj.RC
+		}
+	case <-f.closeq:
+		err = ErrTerminated
+	}
+
 	return
 }
 
-// Root returns underlying filling Root object
-func (f *Filler) Root() *Root {
-	return f.r
-}
-
-func (f *Filler) drop(err error) {
-	f.c.Debugln(FillVerbosePin, "(*Filler).drop", f.r.Short(), err)
-
-	f.bus.DropQ <- DropRootError{f.tp, f.r, f.incrs, err}
-}
-
-func (f *Filler) full() {
-	f.c.Debugln(FillVerbosePin, "(*Filler).full", f.r.Short())
-	// don't save: delegate it for node, because the node
-	// can be unsubscribed from the feed and we should
-	// return proper error
-	f.bus.FullQ <- FullRoot{f.tp, f.r, f.incrs}
-	f.c.Debugf(FillPin, "%s filled after %v, %d objects", f.r.Short(),
-		time.Now().Sub(f.tp), len(f.incrs))
-}
-
-func (f *Filler) fill() {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).fill", f.r.Short())
-
-	var err error
-
-	// first of all we should save the Root itself
-	if _, err = f.c.db.CXDS().Set(f.r.Hash, f.r.Encode()); err != nil {
-		f.Terminate(err)
-	}
-	f.incrs = append(f.incrs, f.r.Hash) // saved
-
-	if f.r.Reg == (RegistryRef{}) {
-		f.Terminate(ErrEmptyRegistryRef)
+// Pre used to prerequest an item to get it late. The Get increments
+// filling rc in the Cache. And to not increment the rc twice for
+// an item this method used. The method doesn't return value, because
+// nobobdy need it. The Pre used to obtain "hard rc" of an item
+func (f *Filler) Pre(key cipher.SHA256) (rc int, err error) {
+	if _, rc, err = f.get(key, 1); err != nil {
 		return
 	}
 
-	var val []byte
-	var ok bool
+	f.mx.Lock()
+	defer f.mx.Unlock()
 
-	// registry
-
-	if val, ok = f.get(cipher.SHA256(f.r.Reg)); !ok {
-		return // drop
-	}
-
-	if f.reg, err = DecodeRegistry(val); err != nil {
-		f.Terminate(err)
-		return
-	}
-
-	for _, dr := range f.r.Refs {
-		if err = f.fillDynamic(dr); err != nil {
-			f.Terminate(err)
-			return
-		}
-	}
-
-	f.full()
+	f.pre[key] = struct{}{} // set
+	return
 }
 
-// Request given object from remove peer. If announce is not
-// blank, then request them too, but don't sent them through
-// the got-channel
-func (f *Filler) request(key cipher.SHA256,
-	announce ...cipher.SHA256) (val []byte, ok bool) {
+func (f *Filler) isPrerequested(key cipher.SHA256) (ok bool) {
+	f.mx.Lock()
+	defer f.mx.Unlock()
 
+	_, ok = f.pre[key]
+	return
+}
+
+// Get object from DB or request it usung provided
+// channel. The Get increments references counter
+// of value
+func (f *Filler) Get(key cipher.SHA256) (val []byte, rc int, err error) {
+
+	var inc = 1
+
+	if f.isPrerequested(key) == true {
+		inc = 0 // prerequested
+	}
+
+	val, rc, err = f.get(key, inc)
+	return
+}
+
+// Fail used to terminate the Filler with
+// provided error
+func (f *Filler) Fail(err error) {
 	select {
-	case f.bus.WantQ <- WCXO{key, f.gotq, announce}:
+	case f.errq <- err:
 	case <-f.closeq:
-		return
 	}
+}
+
+//
+// internal methods
+//
+
+// if the item was requested by this filler,
+// then we can force split* methods to skip it
+// even if the item relates to this filling
+// Root only (is not hard)
+func (f *Filler) inc(key cipher.SHA256, drc int) (rc int) {
+	f.mx.Lock()
+	defer f.mx.Unlock()
+
+	rc = drc
+
+	var finc, ok = f.incs[key]
+
+	if ok == true {
+		rc++
+	}
+
+	f.incs[key] = finc + 1 // +1 want (+1 finc)
+	return
+}
+
+func (f *Filler) requset(key cipher.SHA256) (ok bool) {
+
 	select {
-	case val = <-f.gotq:
-		f.incrs = append(f.incrs, key)
+	case f.rq <- key:
 		ok = true
 	case <-f.closeq:
 	}
 	return
 }
 
-func (f *Filler) get(key cipher.SHA256,
-	announce ...cipher.SHA256) (val []byte, ok bool) {
-
-	// we should get and increment refs count because it's filling
-
-	var err error
-	if val, _, err = f.c.DB().CXDS().GetInc(key); val != nil {
-		return val, true // found
-	}
-	if err != data.ErrNotFound {
-		f.Terminate(err) // database error
-		return           // nil, false
-	}
-	return f.request(key, announce...)
-}
-
-// Terminate filling by given reason
-func (f *Filler) Terminate(err error) {
+// Close terminates the Split walking and waits for
+// goroutines the split creates
+func (f *Filler) Close() {
 	f.closeo.Do(func() {
-		f.drop(err)
 		close(f.closeq)
+		f.await.Wait()
 	})
 }
 
-func (f *Filler) fillDynamic(dr Dynamic) (err error) {
+// Fill given Root returns Filler that fills given
+// Root object. To request objects, the DB doesn't
+// have, given rq channel used. The Fill used by
+// the node package to fill Root objects. The filler
+// must be closed after using
+func (c *Container) Fill(
+	r *registry.Root, //        : the Root to fill
+	rq chan<- cipher.SHA256, // : request object from peers
+	maxParall int, //           : max subtrees processing at the same time
+) (
+	f *Filler, //               : the Filler
+) {
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDynamic", f.r.Short(),
-		dr.Short())
+	f = new(Filler)
 
-	if !dr.IsValid() {
-		return ErrInvalidDynamicReference
+	f.c = c
+	f.r = r
+
+	f.rq = rq
+	f.incs = make(map[cipher.SHA256]int)
+	f.pre = make(map[cipher.SHA256]struct{})
+
+	if maxParall > 0 {
+		f.limit = make(chan struct{}, maxParall)
 	}
-	if dr.IsBlank() {
-		return
-	}
-	var sch Schema
-	if sch, err = f.reg.SchemaByReference(dr.SchemaRef); err != nil {
-		return
-	}
-	return f.fillRef(sch, dr.Object)
-}
 
-func (f *Filler) fillRef(sch Schema, ref cipher.SHA256) (err error) {
+	f.errq = make(chan error, 1)
+	f.closeq = make(chan struct{})
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillRef", f.r.Short(), ref.Hex()[:7])
-
-	if ref == (cipher.SHA256{}) {
-		return // blank (represents nil)
-	}
-	var val []byte
-	var ok bool
-	if val, ok = f.get(ref); !ok {
-		return
-	}
-	return f.fillData(sch, val)
-}
-
-func (f *Filler) fillData(sch Schema, val []byte) (err error) {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillData", f.r.Short(), sch.String())
-
-	if !sch.HasReferences() {
-		return
-	}
-	if sch.IsReference() {
-		return f.fillDataRefsSwitch(sch, val)
-	}
-	switch sch.Kind() {
-	case reflect.Array:
-		return f.fillDataArray(sch, val)
-	case reflect.Slice:
-		return f.fillDataSlice(sch, val)
-	case reflect.Struct:
-		return f.fillDataStruct(sch, val)
-	}
-	return fmt.Errorf("schema is not reference, array, slice or struct but"+
-		"HasReferences() returns true: %s", sch)
-}
-
-func (f *Filler) fillDataArray(sch Schema, val []byte) (err error) {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataArray", f.r.Short(),
-		sch.String())
-
-	ln := sch.Len()  // length of the array
-	el := sch.Elem() // schema of element
-	if el == nil {
-		err = fmt.Errorf("nil schema of element of array: %s", sch)
-		return
-	}
-	return f.rangeArraySlice(el, ln, val)
-}
-
-func (f *Filler) fillDataSlice(sch Schema, val []byte) (err error) {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataSlice", f.r.Short(),
-		sch.String())
-
-	var ln int
-	if ln, err = getLength(val); err != nil {
-		return
-	}
-	el := sch.Elem() // schema of element
-	if el == nil {
-		err = fmt.Errorf("nil schema of element of slice: %s", sch)
-		return
-	}
-	return f.rangeArraySlice(el, ln, val[4:])
-}
-
-func (f *Filler) fillDataStruct(sch Schema, val []byte) (err error) {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataStruct", f.r.Short(),
-		sch.String())
-
-	var shift, s int
-	for i, fl := range sch.Fields() {
-		if shift > len(val) {
-			err = fmt.Errorf("unexpected end of encoded struct <%s>, "+
-				"field number: %d, field name: %q, schema of field: %s",
-				sch.String(),
-				i,
-				fl.Name(),
-				fl.Schema().String())
-			return
-		}
-		if s, err = fl.Schema().Size(val[shift:]); err != nil {
-			return
-		}
-		if err = f.fillData(fl.Schema(), val[shift:shift+s]); err != nil {
-			return
-		}
-		shift += s
-	}
 	return
 }
 
-func (f *Filler) rangeArraySlice(el Schema, ln int, val []byte) (err error) {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).rangeArraySlice", f.r.Short(),
-		ln, el.String())
-
-	var shift, m int
-	for i := 0; i < ln; i++ {
-		if shift > len(val) {
-			err = fmt.Errorf("unexpected end of encoded  array or slice "+
-				"of <%s>, length: %d, index: %d", el, ln, i)
-			return
+func (f *Filler) apply() {
+	for key, inc := range f.incs {
+		if err := f.c.Finc(key, inc); err != nil {
+			panic("DB failure: " + err.Error()) // TODO: handle the error
 		}
-		if m, err = el.Size(val[shift:]); err != nil {
-			return
-		}
-		if err = f.fillData(el, val[shift:shift+m]); err != nil {
-			return
-		}
-		shift += m
 	}
-	return
 }
 
-func (f *Filler) fillDataRefsSwitch(sch Schema, val []byte) error {
+func (f *Filler) reject() {
+	for key, inc := range f.incs {
+		if err := f.c.Finc(key, -inc); err != nil {
+			panic("DB failure: " + err.Error()) // TODO: handle the error
+		}
+	}
+}
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataRefSwitch", f.r.Short(),
-		sch.String())
+func (f *Filler) acquire() (parall bool) {
 
-	switch rt := sch.ReferenceType(); rt {
-	case ReferenceTypeSingle:
-		return f.fillDataRef(sch, val)
-	case ReferenceTypeSlice:
-		return f.fillDataRefs(sch, val)
-	case ReferenceTypeDynamic:
-		return f.fillDataDynamic(val)
+	if f.limit == nil { // no limit
+		parall = true
+		return
+	}
+
+	select {
+	case f.limit <- struct{}{}: // limit
+		parall = true
 	default:
-		return fmt.Errorf("[ERR] reference with invalid ReferenceType: %d", rt)
+		// limit reached
 	}
+
+	return
+
 }
 
-func (f *Filler) fillDataRef(sch Schema, val []byte) (err error) {
+// Go performs some task dependig on parallelism.
+func (f *Filler) Go(fn func()) {
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataRef", f.r.Short(),
-		sch.String())
+	if f.acquire() == true {
 
-	var ref Ref
-	if err = encoder.DeserializeRaw(val, &ref); err != nil {
+		// parallel
+
+		f.await.Add(1)
+		go func() {
+			defer f.await.Done()
+			<-f.limit // release
+			fn()
+		}()
+
 		return
 	}
-	el := sch.Elem()
-	if el == nil {
-		err = fmt.Errorf("[ERR] schema of Reference [%s] without element: %s",
-			ref.Short(),
-			sch)
-		return
-	}
-	return f.fillRef(el, ref.Hash)
+
+	// otherwise, in the very goroutine
+
+	fn()
+
 }
 
-func (f *Filler) fillDataRefs(sch Schema, val []byte) (err error) {
+// Run the Filler. The Run method blocks
+// until finish or first error
+func (f *Filler) Run() (err error) {
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataRefs", f.r.Short(),
-		sch.String())
+	// save Root
 
-	var refs Refs
-	if err = encoder.DeserializeRaw(val, &refs); err != nil {
-		return
-	}
-	if refs.IsBlank() {
+	if _, err = f.c.Set(f.r.Hash, f.r.Encode(), 1); err != nil {
 		return
 	}
 
-	el := sch.Elem()
-	if el == nil {
-		err = fmt.Errorf("[ERR] schema of Refs [%s] without element: %s",
-			refs.Short(),
-			sch)
-		return
-	}
+	f.inc(f.r.Hash, 0) // increment
 
-	var ok bool
-	if val, ok = f.get(refs.Hash); !ok {
-		return
-	}
-	var ers encodedRefs
-	if err = encoder.DeserializeRaw(val, &ers); err != nil {
-		return
-	}
-	return f.fillRefsNode(ers.Depth, ers.Nested, el)
-}
-
-func (f *Filler) fillRefsNode(depth uint32, hs []cipher.SHA256,
-	sch Schema) (err error) {
-
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillRefsNode", f.r.Short(), depth,
-		len(hs), sch.String())
-
-	if depth == 0 { // the leaf
-		for _, hash := range hs {
-			if err = f.fillRef(sch, hash); err != nil {
-				return
-			}
+	defer func() {
+		if err != nil {
+			f.r.IsFull = false // reset
+			f.reject()
+		} else {
+			f.apply()
 		}
+	}()
+
+	if err = f.getRegistry(); err != nil {
 		return
 	}
-	// the branch
-	for _, hash := range hs {
-		if hash == (cipher.SHA256{}) {
-			continue
-		}
-		val, ok := f.get(hash)
-		if !ok {
-			return
-		}
-		var ern encodedRefsNode
-		if err = encoder.DeserializeRaw(val, &ern); err != nil {
-			return
-		}
-		if err = f.fillRefsNode(depth-1, ern.Nested, sch); err != nil {
-			return
-		}
+
+	for _, dr := range f.r.Refs {
+
+		// the closure is data-race protection
+		func(dr registry.Dynamic) {
+			f.Go(func() { dr.Split(f) })
+		}(dr)
+
 	}
+
+	var done = make(chan struct{})
+
+	go func() {
+		f.await.Wait() // wait group
+		close(done)
+	}()
+
+	select {
+	case err = <-f.errq:
+	case <-done:
+		f.r.IsFull = true // full!
+		_, err = f.c.AddRoot(f.r)
+	}
+
+	f.Close()
 
 	return
 }
 
-func (f *Filler) fillDataDynamic(val []byte) (err error) {
+func (f *Filler) getRegistry() (err error) {
 
-	f.c.Debugln(FillVerbosePin, "(*Filler).fillDataDynamic")
+	if f.r.Reg == (registry.RegistryRef{}) {
+		return ErrBlankRegistryRef
+	}
 
-	var dr Dynamic
-	if err = encoder.DeserializeRaw(val, &dr); err != nil {
+	// incrementing
+	if _, _, err = f.Get(cipher.SHA256(f.r.Reg)); err != nil {
 		return
 	}
-	return f.fillDynamic(dr)
 
-}
+	var reg *registry.Registry
 
-// StartTime returns time while the Filler starts
-func (f *Filler) StartTime() time.Time {
-	return f.tp
-}
+	if reg, err = f.c.Registry(f.r.Reg); err != nil {
+		return
+	}
 
-// A DropRootError is internal
-type DropRootError struct {
-	Tp    time.Time       // start time
-	Root  *Root           // the Root in person
-	Incrs []cipher.SHA256 // objects to decrement
-	Err   error           // reason
-}
+	f.reg = reg
 
-// Error implements error interface
-func (d *DropRootError) Error() string {
-	return fmt.Sprintf("drop Root %s: %v", d.Root.Short(), d.Err)
-}
-
-// A FullRoot is internal
-type FullRoot struct {
-	Tp    time.Time       // start time
-	Root  *Root           // the Root in person
-	Incrs []cipher.SHA256 // objects to decrement
+	return
 }

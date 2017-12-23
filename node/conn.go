@@ -1,960 +1,841 @@
 package node
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
+	"github.com/skycoin/net/factory"
+
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/msg"
 	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// connections related errors
-var (
-	ErrWriteQueueFull              = errors.New("write queue full")
-	ErrWrongResponseID             = errors.New("wrong response ID")
-	ErrWrongMsgType                = errors.New("wrong message type")
-	ErrWrongResponseMsgType        = errors.New("wrong response messag type")
-	ErrIncompatibleProtocolVersion = errors.New("incompatible protocol version")
-	ErrWrongResponse               = errors.New("wrong response")
-)
-
-// A Conn represents connection of Node
+// A Conn represent connection of the Node
 type Conn struct {
-	s *Node // back reference for logs
+	*factory.Connection
 
-	gc *gnet.Conn // underlying *gnet.Conn
+	// lock
+	mx sync.Mutex
 
-	// not threads safe fields
+	incoming bool // is incoming or not
 
-	// subscriptions of the Conn to resubscribe OnDial
-	subs map[cipher.PubKey]*sentRoot
-	rr   map[msg.ID]*waitResponse // request-response
+	n      *Node         // back reference
+	peerID cipher.PubKey // peer id
 
-	events  chan event  // events of the Conn
-	timeout chan msg.ID // timeouts
+	// request - response
+	seq  uint32                    // messege seq number (for request-response)
+	reqs map[uint32]chan<- msg.Msg // requests
 
-	pings map[msg.ID]chan struct{}
+	// # stat
+	//
+	// TODO (kostyarin): stat without mutexes to do not slow down the connection
+	//
+	// ------
 
-	// send a held Root to peer, the Root
-	// should be unheld after use
-	sendRoot chan *skyobject.Root
+	sendq chan<- []byte // channel from factory.Connection
 
-	// filling
-
-	wantq    chan skyobject.WCXO             // request wanted CX object
-	requests map[cipher.SHA256][]chan []byte // wait reply
-
-	// must drain
-	full chan skyobject.FullRoot      // fill Root objects
-	drop chan skyobject.DropRootError // root reference with error (reason)
-
-	// filling Roots (hash of Root -> *Filler)
-	fillers map[cipher.SHA256]*skyobject.Filler
-
-	// synchronisation internals
-
-	// done means that all finialization performed
-	// and handling goroutine exists
-	done chan struct{}
+	await  sync.WaitGroup // wait for receiving loop
+	closeq chan struct{}  //
+	closeo sync.Once      // close once
 }
 
-type sentRoot struct {
-	// current Root object that
-	// remote node is filling
-	current *skyobject.Root
-	// next Root object that will be sent
-	// after the current one
-	next *skyobject.Root
-}
-
-// unhold current and next
-func (s *sentRoot) unhold(so *skyobject.Container) {
-	if sc := s.current; sc != nil {
-		so.Unhold(sc.Pub, sc.Seq)
-	}
-	if sn := s.next; sn != nil {
-		so.Unhold(sn.Pub, sn.Seq)
-	}
-}
-
-func (s *Node) newConn(gc *gnet.Conn) (c *Conn) {
+func (n *Node) newConnection(
+	fc *factory.Connection,
+	isIncoming bool,
+) (
+	c *Conn,
+) {
 
 	c = new(Conn)
 
-	c.s = s
-	c.gc = gc
+	c.Connection = fc
+	c.incoming = isIncoming
 
-	// TODO (kostyarin): make all the 128s and 8s below configurable
+	c.n = n
 
-	c.subs = make(map[cipher.PubKey]*sentRoot)
-	c.rr = make(map[msg.ID]*waitResponse)
-	c.events = make(chan event, 128)
-	c.timeout = make(chan msg.ID, 128)
-	c.pings = make(map[msg.ID]chan struct{})
-	c.sendRoot = make(chan *skyobject.Root, 8)
+	c.reqs = make(map[uint32]chan<- msg.Msg)
 
-	c.wantq = make(chan skyobject.WCXO, 128)
-	c.requests = make(map[cipher.SHA256][]chan []byte)
-	c.full = make(chan skyobject.FullRoot, 8)      // saved
-	c.drop = make(chan skyobject.DropRootError, 8) // need to drop
-	c.fillers = make(map[cipher.SHA256]*skyobject.Filler)
+	c.sendq = fc.GetChanOut()
+	c.closeq = make(chan struct{})
 
-	c.done = make(chan struct{})
+	n.addPendingConn(c)
+
+	//
+	// the next step is c.handshake() and c.run()
+	//
 
 	return
+}
+
+// start handling
+func (c *Conn) run() {
+	c.await.Add(1)
+	go c.receiving()
+}
+
+func (c *Conn) decodeRaw(raw []byte) (seq, rseq uint32, m msg.Msg, err error) {
+
+	if len(raw) < 9 {
+		err = errors.New("invlaid messege received: too short")
+		return
+	}
+
+	seq = binary.LittleEndian.Uint32(raw)
+	raw = raw[4:]
+
+	rseq = binary.LittleEndian.Uint32(raw)
+	raw = raw[4:]
+
+	m, err = msg.Decode(raw)
+	return
+}
+
+//
+// info
+//
+
+// PeerID is id of remote peer that used
+// for internals and unique
+func (c *Conn) PeerID() (id cipher.PubKey) {
+	return c.peerID
+}
+
+// IsIncoming returns true if this Conn is
+// incoming and accepted by listener
+func (c *Conn) IsIncoming() (ok bool) {
+	return c.incoming
+}
+
+// IsOutgoing is inverse of the IsIncoming
+func (c *Conn) IsOutgoing() (ok bool) {
+	return c.incoming == false
+}
+
+// Node returns related Node
+func (c *Conn) Node() (node *Node) {
+	return c.n
 }
 
 // Address returns remote address
-func (c *Conn) Address() string {
-	return c.gc.Address()
+// represetned as string
+func (c *Conn) Address() (address string) {
+	return c.GetRemoteAddr().String()
 }
 
-// Node returns related node
-func (c *Conn) Node() (n *Node) {
-	return c.s
+// Feeds returns list of feeds this connection
+// share with peer
+func (c *Conn) Feeds() (feeds []cipher.PubKey) {
+	return c.n.fs.feedsOfConnection(c)
+
 }
 
-// Gnet returns underlying *gnet.Conn
-func (c *Conn) Gnet() *gnet.Conn {
-	return c.gc
-}
+func connString(isIncoming, isTCP bool, addr string) (s string) {
 
-// Close the Conn. It doesn't wait for
-// closing returning immediately
-func (c *Conn) Close() (err error) {
-
-	c.s.Debugf(ConnPin, "[%s] Close", c.gc.Address())
-
-	err = c.gc.Close()
-	return
-}
-
-// Send given msg.Msg to peer
-func (c *Conn) Send(m msg.Msg) error {
-	c.s.Debugf(ConnPin, "[%s] Send %T ", c.gc.Address(), m)
-
-	return c.SendRaw(msg.Encode(m))
-}
-
-// SendRoot object to peer. This can be ignored if
-// peer is now filling newer Root
-func (c *Conn) SendRoot(r *skyobject.Root) (_ error) {
-	c.s.Debugf(FillPin, "[%s] SendRoot %s", c.Address(), r.Short())
-
-	c.s.so.Hold(r.Pub, r.Seq)
-	select {
-	case c.sendRoot <- r:
-	case <-c.gc.Closed():
-		c.s.so.Unhold(r.Pub, r.Seq)
-		return ErrConnClosed
+	if isIncoming == true {
+		s = "↓ "
+	} else {
+		s = "↑ "
 	}
-	return
+
+	if isTCP == true {
+		s += "tcp://"
+	} else {
+		s += "udp://"
+	}
+
+	return s + addr
 }
 
-// SendRaw encoded message to peer
-func (c *Conn) SendRaw(rm []byte) (err error) {
+// String returns string "-> network://remote_address"
+// for example: "-> tcp://127.0.0.1:8887". Where the
+// arrow is "->" for incoming connections and is "<-"
+// for outgoing
+func (c *Conn) String() (s string) {
+	return connString(c.incoming, c.IsTCP(), c.Address())
+}
 
-	c.s.Debugf(ConnPin, "[%s] SendRaw %d bytes", c.gc.Address(), len(rm))
+//
+// requests
+//
 
-	select {
-	case c.gc.SendQueue() <- rm:
-	case <-c.gc.Closed():
-		err = ErrConnClosed
+// RemoteFeeds requests list of feeds that remote peer share.
+// It's possible if the remote peer is public server, otherwise
+// it returns "not a public server" error. The request has
+// timeout configured by Config
+func (c *Conn) RemoteFeeds() (feeds []cipher.PubKey, err error) {
+
+	var reply msg.Msg
+
+	if reply, err = c.sendRequest(&msg.RqList{}); err != nil {
+		return
+	}
+
+	switch x := reply.(type) {
+
+	case *msg.List:
+
+		feeds = x.Feeds
+
+	case *msg.Err:
+
+		err = errors.New(x.Err)
+
 	default:
-		c.gc.Close()
-		err = ErrWriteQueueFull
+
+		err = fmt.Errorf("invalid response type %T", reply)
+
 	}
+
 	return
 }
 
-func (c *Conn) enqueueEvent(evt event) {
-	select {
-	case c.events <- evt:
-	case <-c.gc.Closed():
-	}
+func (c *Conn) sendRoot(r *registry.Root) {
+	c.sendMsg(c.nextSeq(), 0, &msg.Root{
+		Feed:  r.Pub,
+		Nonce: r.Nonce,
+		Seq:   r.Seq,
+
+		Value: r.Encode(),
+
+		Sig: r.Sig,
+	})
 }
 
-// SendPing to peer. It's impossible if
-// PingInterval of Config of related Node
-// is zero
-func (c *Conn) SendPing() {
-	if c.s.conf.PingInterval <= 0 {
-		return
-	}
-	c.enqueueEvent(&sendPingEvent{make(chan struct{})})
-}
-
-type waitResponse struct {
-	req  msg.Msg       // request
-	rspn chan msg.Msg  // response (nil if no message required)
-	err  chan error    // some err (must not be nil)
-	ttm  chan struct{} // teminate timeout (nil if not timeout set)
-}
-
-// ID of the req Msg
-func (c *Conn) sendRequest(id msg.ID, req msg.Msg,
-	cerr chan error, rspn chan msg.Msg) (wr *waitResponse, err error) {
-
-	wr = new(waitResponse)
-	wr.req = req
-	wr.rspn = rspn
-	wr.err = cerr
-	wr.ttm = make(chan struct{})
-
-	c.rr[id] = wr
-
-	// TODO (kostyarin): send queue can't be zero size-channel
-	if err = c.Send(req); err != nil {
-		delete(c.rr, id)
-		return
-	}
-
-	if rt := c.s.conf.ResponseTimeout; rt > 0 {
-		wr.ttm = make(chan struct{})
-		go c.waitTimeout(id, wr, rt)
-	}
-	return
-}
-
-func (c *Conn) waitTimeout(id msg.ID, wr *waitResponse, rt time.Duration) {
-
-	tm := time.NewTimer(rt)
-	defer tm.Stop()
-
-	select {
-	case <-wr.ttm:
-		return
-	case <-tm.C:
-		select {
-		case c.timeout <- id:
-		case <-c.gc.Closed():
-		}
-	}
-
-}
-
-// Subscribe starts exchanging given feed with peer.
-// It's blocking call. The Subscribe adds feed to
-// related node, even if it returns error (and only
-// if given public key is valid)
-func (c *Conn) Subscribe(pk cipher.PubKey) (err error) {
-	if err = pk.Verify(); err != nil {
-		return
-	}
-	if err = c.s.AddFeed(pk); err != nil {
-		return
-	}
-	errc := make(chan error)
-	c.subscribeEvent(pk, errc)
-	return <-errc
-}
-
-// Unsubscribe stops exchanging given feed with peer.
-// It's non-blocking call
-func (c *Conn) Unsubscribe(pk cipher.PubKey) {
-	c.unsubscribeEvent(pk)
-}
-
-// ListOfFeeds of peer if it's public. It's blocking call
-func (c *Conn) ListOfFeeds() (list []cipher.PubKey, err error) {
-	errc := make(chan error)
-	rspn := make(chan msg.Msg)
-	c.listOfFeedsEvent(rspn, errc)
-	select {
-	case err = <-errc:
-		return
-	case m := <-rspn:
-		lof, ok := m.(*msg.ListOfFeeds)
-		if !ok {
-			err = ErrWrongResponseMsgType
-			return
-		}
-		list = lof.List
-	}
-	return
-}
-
-func (c *Conn) handshake() (err error) {
-
-	c.s.Debugf(ConnPin, "[%s] acceptHandshake", c.gc.Address())
-
-	if c.gc.IsIncoming() {
-		return c.acceptHandshake()
-	}
-	return c.performHandshake()
-}
-
-func (c *Conn) acceptHandshake() (err error) {
-
-	c.s.Debugf(ConnPin, "[%s] acceptHandshake", c.gc.Address())
-
-	var tc <-chan time.Time
-
-	if pi := c.s.conf.PingInterval; pi > 0 {
-		tm := time.NewTimer(pi)
-		defer tm.Stop()
-
-		tc = tm.C
-	}
-
-	select {
-	case raw := <-c.gc.ReceiveQueue():
-		var m msg.Msg
-		if m, err = msg.Decode(raw); err != nil {
-			return
-		}
-		if hello, ok := m.(*msg.Hello); ok {
-			if hello.Protocol == msg.Version {
-				return c.Send(c.s.src.Accept(hello))
-			}
-			return c.Send(c.s.src.Reject(hello,
-				ErrIncompatibleProtocolVersion.Error()))
-		}
-		return ErrWrongResponseMsgType
-
-	// handshake timeout
-	case <-tc:
-		return ErrTimeout
-
-	case <-c.gc.Closed():
-		return ErrConnClosed
-	}
-}
-
-func (c *Conn) performHandshake() (err error) {
-
-	c.s.Debugf(ConnPin, "[%s] performHandshake", c.gc.Address())
-
-	hello := c.s.src.Hello()
-
-	if err = c.Send(hello); err != nil {
-		return
-	}
-
-	var tc <-chan time.Time
-
-	if pi := c.s.conf.PingInterval; pi > 0 {
-		tm := time.NewTimer(pi)
-		defer tm.Stop()
-
-		tc = tm.C
-	}
-
-	select {
-	case raw := <-c.gc.ReceiveQueue():
-		var m msg.Msg
-		if m, err = msg.Decode(raw); err != nil {
-			return
-		}
-		switch tt := m.(type) {
-		case *msg.Accept:
-			if tt.ResponseFor == hello.ID {
-				return
-			}
-			return ErrWrongResponseID
-		case *msg.Reject:
-			return errors.New(tt.Err)
-		default:
-			return ErrWrongResponseMsgType
-		}
-
-	//  handshake timeout
-	case <-tc:
-		return ErrTimeout
-
-	case <-c.gc.Closed():
-		return ErrConnClosed
-	}
-
-}
-
-func (c *Conn) onCreateCallback() {
-	if occ := c.s.conf.OnCreateConnection; occ != nil {
-		go occ(c) // don't block
-	}
-}
-
-func (c *Conn) onCloseCallback() {
-	if occ := c.s.conf.OnCloseConnection; occ != nil {
-		go occ(c) // don't block
-	}
-}
-
-func (c *Conn) terminateFillers() {
-
-	c.s.Debugf(FillPin, "[%s] terminate fillers", c.Address())
-	defer c.s.Debugf(FillPin, "[%s] fillers have been terminated", c.Address())
-
-	go c.closeFillers()
-	for {
-		if len(c.fillers) == 0 {
-			return // all done
-		}
-		select {
-		case dre := <-c.drop:
-			c.dropRoot(dre)
-		case fr := <-c.full:
-			c.rootFilled(fr)
-		}
-	}
-}
-
-func (c *Conn) unholdSent() {
-	for _, sent := range c.subs {
-		sent.unhold(c.s.so)
-	}
-}
-
-func (c *Conn) drainSendRoot() {
-	for {
-		select {
-		case r := <-c.sendRoot:
-			c.s.so.Unhold(r.Pub, r.Seq)
-		default:
-			return
-		}
-
-	}
-}
-
-func (c *Conn) handle(hs chan<- error) {
-	c.s.Debugf(ConnPin, "[%s] start handling", c.gc.Address())
-	defer c.s.Debugf(ConnPin, "[%s] stop handling", c.gc.Address())
-
-	defer c.s.await.Done()
-	defer close(c.done)
-
-	var err error
-
-	if err = c.handshake(); err != nil {
-		if false == c.gc.IsIncoming() {
-			// send to (*Node).Connect() or to (*Node).ConnectOrGet()
-			hs <- err
-			return
-		}
-		c.s.Printf("[%s] handshake failed: %v", c.gc.Address(), err)
-		return
-	}
-
-	if false == c.gc.IsIncoming() {
-		close(hs) // release the hs
-	}
-
-	defer c.s.delConnFromWantedObjects(c)
-	defer c.drainSendRoot() // unhold roots in the sendRoot channel
-
-	c.s.addConn(c)
-	defer c.s.delConn(c)
-
-	c.onCreateCallback()
-	defer c.onCloseCallback()
+// send last Root to peer
+func (c *Conn) sendLastRoot(pk cipher.PubKey) {
 
 	var (
-		closed   = c.gc.Closed()
-		receive  = c.gc.ReceiveQueue()
-		events   = c.events
-		timeout  = c.timeout
-		sendRoot = c.sendRoot
-
-		raw []byte
-		m   msg.Msg
-		evt event
-		id  msg.ID
-		r   *skyobject.Root
+		activeHead = c.n.c.ActiveHead(pk)
+		r, err     = c.n.c.LastRoot(pk, activeHead)
 	)
 
-	defer c.terminateFillers()
-
-	defer c.unholdSent() // release sent Root objects
-
-	for {
-		select {
-
-		// root objects
-		case r = <-sendRoot:
-			if sent, ok := c.subs[r.Pub]; ok {
-				if sc := sent.current; sc == nil {
-					sent.current = r
-					c.Send(c.s.src.Root(r))
-				} else if r.Seq <= sc.Seq {
-					c.s.so.Unhold(r.Pub, r.Seq)
-					continue // drop older or the same
-				} else if sn := sent.next; sn == nil {
-					sent.next = r // keep next
-				} else if r.Seq <= sn.Seq {
-					c.s.so.Unhold(r.Pub, r.Seq)
-					continue // drop older or the same
-				} else {
-					c.s.so.Unhold(sn.Pub, sn.Seq)
-					sent.next = r // replace next with newer
-				}
-			} else {
-				c.s.so.Unhold(r.Pub, r.Seq) // drop it otherwise
-			}
-
-		// events
-		case evt = <-events:
-			evt.Handle(c)
-
-		case id = <-timeout:
-			if wr, ok := c.rr[id]; ok {
-				delete(c.rr, id)
-				wr.err <- ErrTimeout // terminated by timeout
-			}
-			// already
-
-		// receive
-		case raw = <-receive:
-			if m, err = msg.Decode(raw); err != nil {
-				c.s.Printf("[ERR] [%s] error decoding message: %v",
-					c.gc.Address(), err)
-				return
-			}
-			if err = c.handleMsg(m); err != nil {
-				c.s.Printf("[ERR] [%s] error handling message: %v",
-					c.gc.Address(), err)
-				return
-			}
-
-		// filling
-		case dre := <-c.drop: // drop root
-			c.dropRoot(dre)
-		case fr := <-c.full:
-			c.rootFilled(fr)
-		case wcxo := <-c.wantq:
-			c.addRequestedObjectToWaitingList(wcxo)
-			c.Send(c.s.src.RequestObject(wcxo.Key))
-
-		// closing
-		case <-closed:
-			return
-		}
-	}
-
-}
-
-func (c *Conn) dropRootRelated(r *skyobject.Root, incrs []cipher.SHA256,
-	reason error) {
-
-	if ofb := c.s.conf.OnFillingBreaks; ofb != nil {
-		ofb(c, r, reason)
-	}
-
-	// the Root is not saved in database but some related objects
-	// have been saved and we have to decrement them all
-
-	// actually the Root is saved, but it's not saved in index
-
-	if err := c.s.db.CXDS().MultiDec(incrs); err != nil {
-		c.s.Printf("[ERR] [%s] can't drop Root %s related objects: %v",
-			c.Address(), r.Short(), err)
-	}
-
-	c.Send(c.s.src.RootDone(r.Pub, r.Seq)) // notify peer
-}
-
-func (c *Conn) dropRoot(dre skyobject.DropRootError) {
-
-	c.s.Debugf(FillPin, "[%s] dropRoot %s: %v", c.gc.Address(),
-		dre.Root.Short(), dre.Err)
-
-	c.s.dropavg.AddStartTime(dre.Tp) // stat
-
-	c.delFillingRoot(dre.Root)
-	c.dropRootRelated(dre.Root, dre.Incrs, dre.Err)
-
-}
-
-func (c *Conn) rootFilled(fr skyobject.FullRoot) {
-	c.s.Debugf(FillPin, "[%s] rootFilled %s", c.Address(), fr.Root.Short())
-
-	c.delFillingRoot(fr.Root)
-
-	// we have to be sure that this connection
-	// is subscribed to feed of this Root
-	if _, ok := c.subs[fr.Root.Pub]; !ok {
-
-		// drop the Root and remove all related saved objects,
-		// because we are not subscribed to the feed anymore
-
-		c.s.dropavg.AddStartTime(fr.Tp) // stat
-		c.dropRootRelated(fr.Root, fr.Incrs, ErrUnsubscribed)
+	if err == nil {
+		c.sendRoot(r)
 		return
 	}
 
-	// (1) hold Root
-	// (2) defered unhold
-	// (3) add it to index DB
-	// (4) perform callback
+	c.n.Debugf(MsgSendPin, "[%s] sendLastRoot %s: no Root objects found (%d)",
+		c.String(), pk.Hex()[:7], activeHead)
 
-	c.s.so.Hold(fr.Root.Pub, fr.Root.Seq)
-	defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq)
+}
 
-	err := c.s.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		var rs data.Roots
-		if rs, err = feeds.Roots(fr.Root.Pub); err != nil {
-			return
-		}
-		return rs.Set(&data.Root{
-			Seq:  fr.Root.Seq,
-			Prev: fr.Root.Prev,
-			Hash: fr.Root.Hash,
-			Sig:  fr.Root.Sig,
-		})
-	})
+// Subscribe to gievn feed of remote peer. The Subscribe adds
+// feed to the Node if the Node doesn't have the feed calling
+// the (*Node).Share method. If request fails, then the feed
+// is not removed. E.g. if the Subscribe method returns error
+// then it probably adds given feed to the Node, but request
+// fails. Or it can returns error of the (*Node).Share
+func (c *Conn) Subscribe(feed cipher.PubKey) (err error) {
+
+	// add the feed to node
+
+	if err = c.n.Share(feed); err != nil {
+		return
+	}
+
+	var reply msg.Msg
+
+	if reply, err = c.sendRequest(&msg.Sub{Feed: feed}); err != nil {
+		return
+	}
+
+	switch x := reply.(type) {
+
+	case *msg.Ok:
+	// success
+
+	case *msg.Err:
+		err = errors.New(x.Err)
+
+	default:
+		err = fmt.Errorf("invalid response type %T", reply)
+
+	}
 
 	if err != nil {
-		// can't add this Root to DB, so, let's drop it
-		c.s.Debugf(FillPin, "[ERR] [%s] can't save Root in IdxDB: %v",
-			c.Address(), err)
-		c.s.dropavg.AddStartTime(fr.Tp) // stat
-		c.dropRootRelated(fr.Root, fr.Incrs, err)
 		return
 	}
 
-	c.s.fillavg.AddStartTime(fr.Tp) // stat
-
-	if orf := c.s.conf.OnRootFilled; orf != nil {
-		c.s.so.Hold(fr.Root.Pub, fr.Root.Seq) // hold for the callback
-		go func() {
-			defer c.s.so.Unhold(fr.Root.Pub, fr.Root.Seq) // unhold
-			fr.Root.IsFull = true
-			orf(c, fr.Root)
-		}()
-	}
-
-	c.Send(c.s.src.RootDone(fr.Root.Pub, fr.Root.Seq)) // notify peer
+	c.n.fs.addConnFeed(c, feed)
+	c.sendLastRoot(feed)
+	return
 }
 
-func (c *Conn) handlePong(pong *msg.Pong) {
-	c.s.Debugf(ConnPin, "[%s] handlePong: %d", c.gc.Address(),
-		pong.ResponseFor.Uint64())
-
-	if ttm, ok := c.pings[pong.ResponseFor]; ok {
-		close(ttm) // ok
-		return
-	}
-	c.s.Debugf(ConnPin, "[%s] unexpected Pong received", c.Address())
-}
-
-func (c *Conn) handlePing(ping *msg.Ping) {
-	c.s.Debugf(ConnPin, "[%s] handlePing: %d", c.gc.Address(),
-		ping.ID.Uint64())
-
-	c.Send(c.s.src.Pong(ping))
-}
-
-func (c *Conn) sendLastFull(pk cipher.PubKey) {
-	if r, err := c.s.so.LastRoot(pk); err == nil {
-		c.SendRoot(r)
-		c.s.so.Unhold(pk, r.Seq) // LastRoot holds the Root
-	}
-}
-
-func (c *Conn) handleSubscribe(subs *msg.Subscribe) {
-	c.s.Debugf(SubscrPin, "[%s] handleSubscribe: %s", c.gc.Address(),
-		subs.Feed.Hex()[:7])
-
-	if osr := c.s.conf.OnSubscribeRemote; osr != nil {
-		if reject := osr(c, subs.Feed); reject != nil {
-			c.s.Debugf(SubscrPin, "[%s] remote subscription rejected: %v",
-				c.Address(), reject)
-			c.Send(c.s.src.RejectSubscription(subs))
-			return
-		}
-	}
-
-	if c.s.addConnToFeed(c, subs.Feed) == false {
-		c.Send(c.s.src.RejectSubscription(subs))
-		return
-	}
-	if _, ok := c.subs[subs.Feed]; !ok {
-		c.subs[subs.Feed] = &sentRoot{} // add to internal list
-	}
-	c.Send(c.s.src.AcceptSubscription(subs))
-	c.sendLastFull(subs.Feed)
-}
-
+// just send the messege
 func (c *Conn) unsubscribe(pk cipher.PubKey) {
-	c.s.delConnFromFeed(c, pk) // delete from Node feed->conns mapping
-	if sent, ok := c.subs[pk]; ok {
-		sent.unhold(c.s.so) // unhold sent and prepared to sending
-		delete(c.subs, pk)  // delete from resubscriptions
-	}
-	c.delFillingRootsOfFeed(pk) // stop filling
+	c.sendMsg(c.nextSeq(), 0, &msg.Unsub{
+		Feed: pk,
+	})
 }
 
-func (c *Conn) handleUnsubscribe(unsub *msg.Unsubscribe) {
-	c.s.Debugf(HandlePin, "[%s] handleUnsubscribe: %s", c.gc.Address(),
-		unsub.Feed.Hex()[:7])
-
-	if our := c.s.conf.OnUnsubscribeRemote; our != nil {
-		our(c, unsub.Feed)
-	}
-
-	c.unsubscribe(unsub.Feed)
+// Unsubscribe from given feed of remote peer
+func (c *Conn) Unsubscribe(feed cipher.PubKey) {
+	c.n.fs.delConnFeed(c, feed)
+	c.unsubscribe(feed) // notify peer
+	return
 }
 
-func (c *Conn) handleAcceptSubscription(as *msg.AcceptSubscription) {
-	c.s.Debugf(HandlePin, "[%s] handleAcceptSubscription: %s",
-		c.gc.Address(), as.Feed.Hex()[:7])
+// PreviewFunc used by (*Conn).Preview method. The function
+// receive registry.Pack and lates Root object. The Pack
+// used to get objects from DB or from remote peer. If the
+// function returns true, then the Node and the Connection
+// will be subscribed to the feed. Given Pack and given Root
+// can't be used outside the function.
+type PreviewFunc func(pack registry.Pack, r *registry.Root) (subscribe bool)
 
-	if wr, ok := c.rr[as.ResponseFor]; ok {
-		if wr.ttm != nil {
-			close(wr.ttm) // terminate timeout goroutine
-		}
-		if sub, ok := wr.req.(*msg.Subscribe); !ok {
-			wr.err <- ErrWrongResponseMsgType
-		} else if sub.Feed != as.Feed {
-			wr.err <- ErrWrongResponse
-		} else {
-			wr.err <- nil // ok
-		}
+// Preview a feed of remote peer. The request is blocking.
+// The Preview gets latest Root of given feed from remote
+// peer and uses the peer to obtain objects this node does
+// not have.
+func (c *Conn) Preview(
+	feed cipher.PubKey, //      : feed to preview
+	previewFunc PreviewFunc, // : the function
+) (
+	err error, //               : first error
+) {
 
-		if c.s.addConnToFeed(c, as.Feed) == false {
-			return // don't share the feed anymore
-		}
-		if _, ok := c.subs[as.Feed]; !ok {
-			c.subs[as.Feed] = &sentRoot{} // add to internal list
-		}
-		c.sendLastFull(as.Feed)
-
-	} else {
-		c.s.Printf("[ERR] [%s] unexpected AcceptSubscription msg", c.Address())
-	}
-	delete(c.rr, as.ResponseFor)
-}
-
-func (c *Conn) handleRejectSubscription(rs *msg.RejectSubscription) {
-	c.s.Debugf(HandlePin, "[%s] handleRejectSubscription: %s",
-		c.gc.Address(), rs.Feed.Hex()[:7])
-
-	if wr, ok := c.rr[rs.ResponseFor]; ok {
-		if wr.ttm != nil {
-			close(wr.ttm) // terminate timeout goroutine
-		}
-		if sub, ok := wr.req.(*msg.Subscribe); !ok {
-			wr.err <- ErrWrongResponseMsgType
-		} else if sub.Feed != rs.Feed {
-			wr.err <- ErrWrongResponse
-		} else {
-			wr.err <- ErrSubscriptionRejected
-		}
-		delete(c.rr, rs.ResponseFor)
-	} else {
-		c.s.Printf("[ERR] [%s] unexpected RejectSubscription msg", c.Address())
-	}
-}
-
-func (c *Conn) handleRequestListOfFeeds(rlof *msg.RequestListOfFeeds) {
-	c.s.Debugf(HandlePin, "[%s] handleRequestListOfFeeds", c.gc.Address())
-
-	if c.s.conf.PublicServer == false {
-		c.Send(c.s.src.NonPublicServer(rlof))
-		return
-	}
-	c.Send(c.s.src.ListOfFeeds(rlof, c.s.Feeds()))
-}
-
-func (c *Conn) handleListOfFeeds(lof *msg.ListOfFeeds) {
-	c.s.Debugf(HandlePin, "[%s] handleListOfFeeds", c.gc.Address())
-
-	if wr, ok := c.rr[lof.ResponseFor]; ok {
-		if wr.ttm != nil {
-			close(wr.ttm) // terminate timeout goroutine
-		}
-		if _, ok := wr.req.(*msg.RequestListOfFeeds); !ok {
-			wr.err <- ErrWrongResponseMsgType
-		} else {
-			wr.rspn <- lof
-		}
-		delete(c.rr, lof.ResponseFor)
-	} else {
-		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg", c.Address())
-	}
-}
-
-func (c *Conn) handleNonPublicServer(nps *msg.NonPublicServer) {
-	c.s.Debugf(HandlePin, "[%s] handleNonPublicServer", c.gc.Address())
-
-	if wr, ok := c.rr[nps.ResponseFor]; ok {
-		if wr.ttm != nil {
-			close(wr.ttm) // terminate timeout goroutine
-		}
-		if _, ok := wr.req.(*msg.RequestListOfFeeds); !ok {
-			wr.err <- ErrWrongResponseMsgType
-		} else {
-			wr.err <- ErrNonPublicPeer
-		}
-		delete(c.rr, nps.ResponseFor)
-	} else {
-		c.s.Printf("[ERR] [%s] unexpected ListOfFeeds msg", c.Address())
-	}
-}
-
-func (c *Conn) handleRoot(rm *msg.Root) {
-	c.s.Debugf(HandlePin, "[%s] handleRoot {%s:%d}", c.gc.Address(),
-		rm.Feed.Hex()[:7], rm.Seq)
-
-	r, err := c.s.so.AddEncodedRoot(rm.Sig, rm.Value)
-	if err != nil {
-		c.Send(c.s.src.RootDone(rm.Feed, rm.Seq)) // done
-		c.s.Printf("[ERR] [%s] error adding received Root: %v", c.Address(),
-			err)
+	var reply msg.Msg
+	if reply, err = c.sendRequest(&msg.RqPreview{Feed: feed}); err != nil {
 		return
 	}
 
-	// send the Root forward for all
-	c.s.broadcastRoot(r, c)
+	var r *registry.Root
 
-	if r.IsFull { // we already have the Root and it's full
-		c.Send(c.s.src.RootDone(rm.Feed, rm.Seq)) // done
+	switch x := reply.(type) {
+	case *msg.Err:
+		return errors.New("error: " + x.Err)
+	case *msg.Root:
+		if r, err = c.n.c.PreviewRoot(x.Feed, x.Sig, x.Value); err != nil {
+			return
+		}
+	default:
+		return fmt.Errorf("invalid msg type received: %T", reply)
+	}
 
-		// don't call OnRootRecived and OnRootFilled callbacks
+	var p *skyobject.Preview
+	if p, err = c.n.c.Preview(r, c.getter()); err != nil {
 		return
 	}
 
-	if orr := c.s.conf.OnRootReceived; orr != nil {
-		go orr(c, r)
+	if previewFunc(p, r) == true {
+		err = c.Subscribe(feed)
 	}
 
-	c.fillRoot(r)
+	return
 }
 
-func (c *Conn) handleRootDone(rd *msg.RootDone) {
-	c.s.Debugf(HandlePin, "[%s] handleRootDone {%s:%d}", c.gc.Address(),
-		rd.Feed.Hex()[:7], rd.Seq)
+// implements skyobject.Getter
+// wrapping the Conn
+type cget struct {
+	c *Conn
+}
 
-	sent, ok := c.subs[rd.Feed]
-	if !ok {
-		c.s.Debugf(FillPin,
-			"[%s] wrong RootDone message received (not subscribed)",
-			c.Address())
+func (c *cget) Get(key cipher.SHA256) (val []byte, err error) {
+
+	var reply msg.Msg
+	if reply, err = c.c.sendRequest(&msg.RqObject{Key: key}); err != nil {
 		return
 	}
 
-	if sc := sent.current; sc.Seq == rd.Seq {
-		c.s.so.Unhold(sc.Pub, sc.Seq) // unhold
-		sent.current = nil            // clear
-		// if there is next
-		if sn := sent.next; sn != nil {
-			sent.current = sn                  // next turns current
-			sent.next = nil                    // next turns vacant
-			c.Send(c.s.src.Root(sent.current)) // send it
+	switch x := reply.(type) {
+	case *msg.Object:
+		if cipher.SumSHA256(x.Value) != key {
+			return nil, errors.New("wrong object received (different hash)")
 		}
-		return
+		val = x.Value
+	case *msg.Err:
+		return nil, errors.New("error: " + x.Err)
+	default:
+		return nil, fmt.Errorf("invalid msg type received: %T", reply)
 	}
 
-	c.s.Debugf(FillPin, "[%s] wrong RootDone message received (unknown seq)",
-		c.Address())
+	return
+}
+
+func (c *Conn) getter() (cg skyobject.Getter) {
+	return &cget{c}
+}
+
+//
+// terminate
+//
+
+// close and release
+func (c *Conn) close(reason error) error {
+	c.closeo.Do(func() {
+		c.n.delConnection(c)
+		close(c.closeq)      // close the channel
+		c.Connection.Close() // close
+		c.await.Wait()       // wait for goroutines
+
+		c.n.onDisconenct(c, reason) // callback
+	})
+	return reason
+}
+
+// Close the Conn
+func (c *Conn) Close() (err error) {
+	return c.close(nil)
+}
+
+func (c *Conn) nextSeq() uint32 {
+	return atomic.AddUint32(&c.seq, 1)
+}
+
+func (c *Conn) encodeMsg(seq, rseq uint32, m msg.Msg) (raw []byte) {
+
+	var em = m.Encode()
+
+	raw = make([]byte, 8, 8+len(em))
+
+	binary.LittleEndian.PutUint32(raw, seq)
+	binary.LittleEndian.PutUint32(raw[4:], rseq)
+
+	raw = append(raw, em...)
+
 	return
 
 }
 
-func (c *Conn) handleRequestObject(ro *msg.RequestObject) {
-	c.s.Debugf(HandlePin, "[%s] handleRequestObject: %s", c.gc.Address(),
-		ro.Key.Hex()[:7])
+func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) {
 
-	if val, _, _ := c.s.db.CXDS().Get(ro.Key); val != nil {
-		c.Send(c.s.src.Object(val))
-		return
-	}
+	c.n.Debugf(MsgSendPin, "[%s] send %d %T", c.String(), rseq, m)
 
-	// add to list of requested objects, waiting for incoming objects
-	// to send it later
-	c.s.wantObject(ro.Key, c)
+	c.sendRaw(c.encodeMsg(seq, rseq, m))
 }
 
-func (c *Conn) handleObject(o *msg.Object) {
+func (c *Conn) sendRaw(raw []byte) {
 
-	key := cipher.SumSHA256(o.Value)
+	select {
+	case c.sendq <- raw:
+	case <-c.closeq:
+	}
 
-	c.s.Debugf(HandlePin, "[%s] handleObject: %s", c.gc.Address(),
-		key.Hex()[:7])
+}
 
-	if rs, ok := c.requests[key]; ok {
+func (c *Conn) fatality(args ...interface{}) {
 
-		// store in CXDS
-		if _, err := c.s.db.CXDS().Set(key, o.Value); err != nil {
-			c.s.Printf(
-				"[CRIT] [%s] can't set received object: %v, terminating...",
-				c.Address(), err)
-			go c.s.Close() // terminate all
+	var err = errors.New(fmt.Sprint(args...))
+
+	c.n.Print("[ERR] ", err)
+	c.close(err)
+}
+
+func (c *Conn) receiving() {
+
+	c.n.Debugf(ConnPin, "[%s] receiving", c.String())
+
+	defer c.Close()      //
+	defer c.await.Done() //
+
+	var (
+		receiveq = c.GetChanIn()
+		closeq   = c.closeq
+
+		seq, rseq uint32
+		m         msg.Msg
+		err       error
+
+		raw []byte
+		ok  bool
+	)
+
+	for {
+
+		select {
+
+		case raw, ok = <-receiveq:
+
+			if ok == false {
+				return // closed
+			}
+
+			// [ 4 seq ][ 4 rseq ][ 1 msg type ]
+
+			if len(raw) < 9 {
+				c.fatality("invalid messege received: samll size")
+				return
+			}
+
+			// seq of the Msg
+			seq = binary.LittleEndian.Uint32(raw)
+			raw = raw[4:]
+
+			// response for a seq or zero
+			rseq = binary.LittleEndian.Uint32(raw)
+			raw = raw[4:]
+
+			if m, err = msg.Decode(raw); err != nil {
+				c.fatality("can't decode received messege: ", err)
+				return
+			}
+
+			c.n.Debugf(MsgReceivePin, "[%s] receive %T", c.String(), m)
+
+			// the messege can be a response for a request
+			if rq, ok := c.isResponse(rseq); ok == true {
+				rq <- m
+				continue
+			}
+
+			if err = c.handle(seq, m); err != nil {
+				c.fatality("error handling messege: ", err)
+				return
+			}
+
+		case <-closeq:
 			return
+
 		}
 
-		// awake fillers
-		for _, gotq := range rs {
-			// the gotq has 1 length and this sending is not blocking
-			gotq <- o.Value
-		}
-		delete(c.requests, key)
-
-		// notify another conections that has been requested
-		// for this object
-		c.s.gotObject(key, o)
-
-	} else {
-		c.s.Debugf(FillPin, "[%s] got object the node doesn't want: %s",
-			c.Address(), key.Hex()[:7])
-		return
 	}
 
 }
 
-func (c *Conn) handleMsg(m msg.Msg) (err error) {
+func (c *Conn) isResponse(rseq uint32) (rq chan<- msg.Msg, ok bool) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
 
-	c.s.Debugf(HandlePin, "[%s] handleMsg %T", c.gc.Address(), m)
+	rq, ok = c.reqs[rseq]
+	return
+}
 
-	switch tt := m.(type) {
+func (c *Conn) addRequest(seq uint32, rq chan<- msg.Msg) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
 
-	case *msg.Pong:
-		c.handlePong(tt)
-	case *msg.Ping:
-		c.handlePing(tt)
+	c.reqs[seq] = rq
+}
+
+func (c *Conn) delRequest(seq uint32) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	delete(c.reqs, seq)
+}
+
+func (c *Conn) responseTimeout() (rt time.Duration) {
+	if c.IsTCP() == true {
+		rt = c.n.config.TCP.ResponseTimeout
+	} else {
+		rt = c.n.config.UDP.ResponseTimeout
+	}
+	return
+}
+
+func (c *Conn) sendRequest(m msg.Msg) (reply msg.Msg, err error) {
+
+	c.n.Debugf(MsgSendPin, "[%s] sendRequest %T", c.String(), m)
+
+	var (
+		tr *time.Timer
+		tc <-chan time.Time
+	)
+
+	if rt := c.responseTimeout(); rt > 0 {
+		tr = time.NewTimer(rt)
+		tc = tr.C
+
+		defer tr.Stop()
+	}
+
+	var (
+		rq  = make(chan msg.Msg, 1)
+		seq = c.nextSeq()
+	)
+
+	c.addRequest(seq, rq)
+	defer c.delRequest(seq)
+
+	c.sendMsg(seq, 0, m)
+
+	select {
+	case reply = <-rq:
+		return
+
+	case <-tc:
+		return nil, ErrTimeout
+
+	case <-c.closeq:
+		return nil, ErrClosed
+	}
+
+}
+
+func (c *Conn) sendErr(rseq uint32, err error) {
+	c.sendMsg(c.nextSeq(), rseq, &msg.Err{Err: err.Error()})
+}
+
+func (c *Conn) sendOk(rseq uint32) {
+	c.sendMsg(c.nextSeq(), rseq, &msg.Ok{})
+}
+
+// handle messeges except responses and handshakes
+func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
+
+	switch x := m.(type) {
 
 	// subscriptions
 
-	case *msg.Subscribe:
-		c.handleSubscribe(tt)
-	case *msg.Unsubscribe:
-		c.handleUnsubscribe(tt)
+	case *msg.Sub: // <- Sub (feed)
+		return c.handleSub(seq, x)
 
-	// subscriptions reply
-
-	case *msg.AcceptSubscription:
-		c.handleAcceptSubscription(tt)
-	case *msg.RejectSubscription:
-		c.handleRejectSubscription(tt)
+	case *msg.Unsub: // <- Unsub (feed)
+		return c.handleUnsub(seq, x)
 
 	// public server features
 
-	case *msg.RequestListOfFeeds:
-		c.handleRequestListOfFeeds(tt)
-	case *msg.ListOfFeeds:
-		c.handleListOfFeeds(tt)
-	case *msg.NonPublicServer:
-		c.handleNonPublicServer(tt)
+	case *msg.RqList: // <- RqList ()
+		return c.handleRqList(seq, x)
 
-	// root, registry, data and requests
+	// the *List is response and handled outside the handle()
 
-	case *msg.Root:
-		c.handleRoot(tt)
-	case *msg.RootDone:
-		c.handleRootDone(tt)
+	// root (push)
 
-	case *msg.RequestObject:
-		c.handleRequestObject(tt)
-	case *msg.Object:
-		c.handleObject(tt)
+	case *msg.Root: // <- Root (feed, nonce, seq, sig, val)
+		return c.handleRoot(x)
+
+	// objects
+
+	case *msg.RqObject: // <- RqO (key, prefetch)
+		c.await.Add(1)
+		go c.handleRqObject(seq, x)
+		return
+
+	// preview
+
+	case *msg.RqPreview: // -> RqPreview (feed)
+		return c.handleRqPreview(seq, x)
+
+	//
+	// delayed messeges (ignore them)
+	//
+	// the delayed messeges are responses that received
+	// after timeout, e.g. the requst is closed with
+	// ErrTimeout and noone waits them
+
+	case *msg.Object: // -> O (delayed)
+	case *msg.Err: // -> Err (delayed)
+	case *msg.Ok: // -> Ok (delayed)
+	case *msg.List: // -> List (delayed)
 
 	default:
-		err = ErrWrongMsgType
+
+		return fmt.Errorf("invalid messege type %T", m)
+
 	}
+
+	return
+
+}
+
+// subscribe (with reply)
+func (c *Conn) handleSub(seq uint32, sub *msg.Sub) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleSub %s",
+		c.String(), sub.Feed.Hex()[:7])
+
+	// don't allow blank
+
+	if sub.Feed == (cipher.PubKey{}) {
+		return errors.New("blank public key") // fatal (invalid request)
+	}
+
+	// check first
+	if c.n.fs.hasConnFeed(c, sub.Feed) == true {
+		c.sendOk(seq) // already subscribed
+		return
+	}
+
+	// callback
+	var reject = c.n.onSubscribeRemote(c, sub.Feed)
+
+	// reject subscription by callback
+	if reject != nil {
+		c.sendErr(seq, reject)
+		return
+	}
+
+	// the callback can subscibe the node to the feed,
+	// and anyway we can't subscribe to a feed we don't
+	// share
+
+	if c.n.fs.hasFeed(sub.Feed) == false {
+		c.sendErr(seq, errors.New("do not share the feed"))
+		return
+	}
+
+	// ok
+
+	c.n.fs.addConnFeed(c, sub.Feed)
+	c.sendOk(seq)
+
+	c.sendLastRoot(sub.Feed) // and push last Root
+
+	return
+}
+
+// unsubscribe (no reply)
+func (c *Conn) handleUnsub(seq uint32, unsub *msg.Unsub) (err error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleUnsub %s",
+		c.String(), unsub.Feed.Hex()[:7])
+
+	if unsub.Feed == (cipher.PubKey{}) {
+		return errors.New("invalid request Unsub blank feed") // fatal
+	}
+
+	c.n.fs.delConnFeed(c, unsub.Feed) // delete
+	return
+}
+
+// request list of feeds
+func (c *Conn) handleRqList(seq uint32, rq *msg.RqList) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqList", c.String())
+
+	if c.n.config.Public == false {
+		c.sendErr(seq, ErrNotPublic)
+		return
+	}
+
+	c.sendMsg(c.nextSeq(), seq, &msg.List{
+		Feeds: c.n.Feeds(),
+	})
+
+	return
+}
+
+// got Root (preview Root objects are handled by request-responnse, not here)
+func (c *Conn) handleRoot(root *msg.Root) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRoot %s/%d/%d",
+		c.String(), root.Feed.Hex()[:7], root.Nonce, root.Seq)
+
+	// check seq first (avoid verify-signature for old unwanted Root objects)
+
+	var last, err = c.n.c.LastRootSeq(root.Feed, root.Nonce) // last is full
+
+	switch err {
+	case data.ErrNoSuchFeed:
+
+		return // unexpected Root
+
+	case data.ErrNoSuchHead, data.ErrNotFound:
+
+		// go dow
+
+	default: // nil (found)
+
+		if last >= root.Seq {
+			return // we have newer one
+		}
+
+	}
+
+	var r *registry.Root
+
+	r, err = c.n.c.ReceivedRoot(root.Feed, root.Sig, root.Value)
+
+	if err != nil {
+		c.n.Printf("[ERR] [%s] received Root error: %s", c.String(), err)
+		return // keep connection ?
+	}
+
+	// do nothing, because the Node already have this Root
+	if r.IsFull == true {
+		return
+	}
+
+	// fill the Root only if the node and the connection
+	// subscribed to feed of the Root
+	c.n.fs.receivedRoot(c, r)
+	return
+}
+
+// async
+func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
+	defer c.await.Done()
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqObject %s", c.String(),
+		rq.Key.Hex()[:7])
+
+	var (
+		gc = make(chan skyobject.Object, 1)
+
+		tm *time.Timer
+		tc <-chan time.Time
+	)
+
+	// TODO (kostyarin): the request holds resources and in good case
+	//                   it's ok, but it's possible to DDoS the Node
+	//                   perfoкming many trash request
+
+	// TODO (kostyarin): get the object or subscribe for the object
+	//                   only if it is wanted (to think)
+
+	if err := c.n.c.Want(rq.Key, gc, 0); err != nil {
+		c.n.Fatal("DB failure: ", err)
+	}
+	defer c.n.c.Unwant(rq.Key, gc) // to be memory safe
+
+	select {
+	case obj := <-gc:
+		// got
+		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
+		return
+	default:
+		// wait
+	}
+
+	if rt := c.responseTimeout(); rt > 0 {
+		tm = time.NewTimer(rt)
+		tc = tm.C
+
+		defer tm.Stop()
+	}
+
+	select {
+	case obj := <-gc:
+		c.sendMsg(c.nextSeq(), seq, &msg.Object{Value: obj.Val})
+	case <-tc:
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{}) // timeout
+	case <-c.closeq:
+		// closed
+	}
+
+	return
+}
+
+func (c *Conn) handleRqPreview(seq uint32, rqp *msg.RqPreview) (_ error) {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqPreview %s", c.String(),
+		rqp.Feed.Hex()[:7])
+
+	var r, err = c.n.c.LastRoot(rqp.Feed, c.n.c.ActiveHead(rqp.Feed))
+
+	if err != nil {
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{Err: err.Error()})
+		return
+	}
+
+	c.sendMsg(c.nextSeq(), seq, &msg.Root{
+		Feed:  r.Pub,
+		Nonce: r.Nonce,
+		Seq:   r.Seq,
+
+		Value: r.Encode(),
+
+		Sig: r.Sig,
+	})
 
 	return
 }

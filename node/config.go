@@ -3,80 +3,28 @@ package node
 import (
 	"flag"
 	"fmt"
-	"io"
-	"net"
-	"os"
-	"os/user"
-	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/gnet"
 	"github.com/skycoin/cxo/node/log"
 	"github.com/skycoin/cxo/skyobject"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// defaults
+// default configurations
 const (
-
-	// server defaults
-
-	EnableRPC      bool   = true        // default RPC pin
-	Listen         string = ""          // default listening address
-	EnableListener bool   = true        // listen by default
-	RemoteClose    bool   = false       // default remote-closing pin
-	RPCAddress     string = "[::]:8878" // default RPC address
-	InMemoryDB     bool   = false       // default database placement pin
-
-	// PingInterval is default interval by which server send pings
-	// to connections that doesn't communicate. Actually, the
-	// interval can be increased x2
-	PingInterval    time.Duration = 2 * time.Second
-	ResponseTimeout time.Duration = 5 * time.Second // default
-	PublicServer    bool          = false           // default
-
-	// default tree is
-	//   server: ~/.skycoin/cxo/{cxds.db, idx.db}
-
-	skycoinDataDir = ".skycoin"
-	cxoSubDir      = "cxo"
+	Prefix          string        = "[node] "
+	MaxConnections  int           = 1000 * 1000
+	MaxFillingTime  time.Duration = 10 * time.Minute
+	MaxHeads        int           = 10
+	ListenTCP       string        = ":8870"
+	ListenUDP       string        = "" // don't listen
+	RPCAddress      string        = ":8871"
+	ResponseTimeout time.Duration = 59 * time.Second
+	Pings           time.Duration = 118 * time.Second
+	Public          bool          = false
 )
-
-// log pins
-const (
-	MsgPin       log.Pin = 1 << iota // msgs
-	SubscrPin                        // subscriptions
-	ConnPin                          // connect/disconnect
-	RootPin                          // root receive etc
-	FillPin                          // fill/drop
-	HandlePin                        // handle a message
-	DiscoveryPin                     // discovery
-)
-
-// default DB file names
-const (
-	CXDS  string = "cxds.db"
-	IdxDB string = "idx.db"
-)
-
-// DataDir returns path to default data directory
-func DataDir() string {
-	usr, err := user.Current()
-	if err != nil {
-		panic(err) // fatal
-	}
-	if usr.HomeDir == "" {
-		panic("empty home dir")
-	}
-	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir)
-}
-
-func initDataDir(dir string) error {
-	return os.MkdirAll(dir, 0700)
-}
 
 // Addresses are discovery addresses
 type Addresses []string
@@ -92,239 +40,367 @@ func (a *Addresses) Set(addr string) error {
 	return nil
 }
 
-// A Config represents configurations
-// of a Node. The config contains configurations
-// for gnet.Pool and  for log.Logger. If logger of
-// gnet.Config is nil, then logger of Config
-// will be used
-type Config struct {
-	gnet.Config // pool configurations
+// OnRootReceivedFunc represents callback that
+// called when new Root objects received. It's
+// possible to reject a receved Root returning
+// error by this function.
+//
+// The callback never called if (1) node has a
+// newer Root, (2) node already have the Root,
+// (3) node or connection doesn't interest the
+// Root.
+//
+// If a Root received then it doesn't mean that
+// the Root will be filled and if this callback
+// called then it can be silently dropped by
+// some reasons.
+//
+// Short words, the callback called if a received
+// Root is going to be filled
+type OnRootReceivedFunc func(c *Conn, r *registry.Root) (reject error)
 
-	Log log.Config // logger configurations (logger of Node)
+// OnRootFilledFunc represents callback that
+// called when new Root filled and can be used.
+// The callback called once per Root.
+type OnRootFilledFunc func(n *Node, r *registry.Root)
 
-	// Skyobject configuration
-	Skyobject *skyobject.Config
+// OnFillingBreaksFunc represents callback that
+// called when a new Root object can't be filled.
+// The callback called with non-full Root (that
+// can't be used), and with filling error.
+// There is no way to resume the filling. If
+// a remote peer push this Root object again,
+// then the Root can be filled (or can be not).
+type OnFillingBreaksFunc func(n *Node, r *registry.Root, err error)
 
-	// EnableRPC server
-	EnableRPC bool
-	// RPCAddress if enabled
-	RPCAddress string
-	// Listen on address (empty for
-	// arbitrary assignment)
+// OnConnectFunc represents callback that called
+// when a connection created and established. It's
+// possible to terminate connection returning error
+type OnConnectFunc func(c *Conn) (terminate error)
+
+// OnDisconnectFunc represents callback that called
+// when a connection closed. The callback called
+// with closing reason. The reason is nil if the
+// connection closed manually. The Conn argument
+// is closed connection that can't be used (e.g.
+// is can be used partially).
+type OnDisconnectFunc func(c *Conn, reason error)
+
+// OnSubscribeRemoteFunc represents callback that
+// called when a remote peer subscribes to some
+// feed of the Node. The Node accepts the subscription
+// if the Node share the feed. You can add the feed
+// to the Node inside the callback to allow the
+// subscription even if the Node doesn't share the
+// feed. Also, you can reject this subscription
+// returning error
+type OnSubscribeRemoteFunc func(c *Conn, feed cipher.PubKey) (reject error)
+
+// OnUnsubscribeRemoteFunc represent callback that
+// called when a remote peer unsubscribes from
+// some feed. The callback have informative role
+// only
+type OnUnsubscribeRemoteFunc func(c *Conn, feed cipher.PubKey)
+
+// NetConfig represents configurations of
+// a TCP or UDP network
+type NetConfig struct {
+	// Listen is listening address. Blank string
+	// disables listening. Use ":0" to listen on all
+	// interfaces (and ipv4 + ipv6 if possible) with
+	// OS-choosed ports.
 	Listen string
-	// EnableListener turns on/off listening
-	EnableListener bool
 
-	// RemoteClose allows closing the
-	// server using RPC
-	RemoteClose bool
+	// Discovery is lsit of addresses of a discovery
+	// severs to connect to. The discovery servers
+	// used to connect Nodes between to share feeds
+	// they interested in
+	Discovery Addresses
 
-	// PingInterval used to ping clients
-	// Set to 0 to disable pings
-	PingInterval time.Duration
-
-	// ResponseTimeout used by methods that requires response.
-	// Zero timeout means infinity. Negative timeout causes panic
+	// ResponseTimeout is timeout for requests (see
+	// (*Conn).Subscribe, (*Conn).Unsubscribe and
+	// (*Conn).RemoteFeeds). And for pings too.
+	// Set it to zero, for infinity waiting. The
+	// timeout doesn't close connections. A request
+	// returns ErrTimeout if time is out.
 	ResponseTimeout time.Duration
 
-	// InMemoryDB uses database in memory.
-	// See also DB field
-	InMemoryDB bool
-	// DBPath is path to database file.
-	// Because DB consist of two files,
-	// the DBPath will be concated with
-	// extensions ".cxds" and ".idx".
-	// See also DB field. If it's
-	DBPath string
-	// DataDir is directory with data files
-	// this directory contains default DB
-	// and if it's not blank string, then
-	// node creates the diretory if it does
-	// not exist. If the DBPath is blank
-	// then and database is not in memory
-	// then the Node will use (or create and
-	// use) databases under the DataDir. Even
-	// if the DataDir is blank string (e.g.
-	// current work directory). They named
-	// "cxds.db" and "idx.db". See also
-	// DB field
-	DataDir string
-
-	// PublicServer never keeps secret feeds it share
-	PublicServer bool
-
-	// ServiceDiscovery addresses
-	DiscoveryAddresses Addresses
-
-	//
-	// callbacks
-	//
-
-	// connections create/close, this callbacks
-	// perform in own goroutines
-
-	OnCreateConnection func(c *Conn)
-	OnCloseConnection  func(c *Conn)
-
-	// subscribe/unsubscribe from a remote peer
-
-	// OnSubscribeRemote called while a remote peer wants to
-	// subscribe to feed of this (local) node. This callback
-	// never called if subscription rejected by any reason.
-	// If this callback returns a non-nil error the subscription
-	// will be rejected, even if it's ok. This callback should
-	// not block, because it performs inside message handling
-	// goroutine and long freeze breaks connection
-	OnSubscribeRemote func(c *Conn, feed cipher.PubKey) (reject error)
-	// OnUnsubscribeRemote called while a remote peer wants
-	// to unsubscribe from feed of this (local) node. This
-	// callback never called if remote peer is not susbcribed.
-	// This callback should not block, because it performs inside
-	// message handling goroutine and long freeze breaks connection
-	OnUnsubscribeRemote func(c *Conn, feed cipher.PubKey)
-
-	// root objects
-
-	// OnRootReceived is callback that called
-	// when Client receive new Root object.
-	// The callback never called for rejected
-	// Roots (including "already exists"). This callback
-	// performs in own goroutine. You can't use
-	// Root of this callback anywhere because it
-	// is not saved and filled yet. This callback doesn't
-	// called if received a Root already exists
-	OnRootReceived func(c *Conn, root *skyobject.Root)
-	// OnRootFilled is callback that called when
-	// Client finishes filling received Root object.
-	// This callback performs in own goroutine. The
-	// Root is full and held during this callabck.
-	// You can use it anywhere
-	OnRootFilled func(c *Conn, root *skyobject.Root)
-	// OnFillingBreaks occurs when a filling Root
-	// can't be filled up because connection breaks.
-	// The Root will be removed after this callback
-	// with all related objects. The Root is not full
-	// and can't be used in skyobject methods.This
-	// callback should not block because it performs
-	// in handling goroutine
-	OnFillingBreaks func(c *Conn, root *skyobject.Root, err error)
-
-	// database
-
-	// DB is database you can provide to use instead of
-	// default. If this argument is nil (default) then
-	// default DB will be created. Otherwise this
-	// DB will be used. But node closes this DB on
-	// close anyway
-	DB *data.DB
+	// Pings is interval for pinging peers. The Node
+	// sends pings only if connections not used for
+	// reading and writing. E.g. a ping will be sent
+	// if connection not used Pings - ResponseTimout
+	// time (for reading or writing). Thus the Pings
+	// should be at least two times greater then the
+	// ResponseTimeout. Set it to zero to disable pings.
+	// It's possible to ping a connections manually
+	// calling the (*Conn).Ping method. If peer doesn't
+	// response for a ping, then connection will be
+	// closed with ErrTimeout.
+	Pings time.Duration
 }
 
-// NewConfig returns Config
-// filled with default values
-func NewConfig() (sc Config) {
-	sc.Config = gnet.NewConfig()
-	sc.Log = log.NewConfig()
-	sc.Skyobject = skyobject.NewConfig()
-	sc.EnableRPC = EnableRPC
-	sc.RPCAddress = RPCAddress
-	sc.Listen = Listen
-	sc.EnableListener = EnableListener
-	sc.RemoteClose = RemoteClose
-	sc.PingInterval = PingInterval
-	sc.InMemoryDB = InMemoryDB
-	sc.DataDir = DataDir()
-	sc.DBPath = ""
-	sc.ResponseTimeout = ResponseTimeout
-	sc.PublicServer = PublicServer
-	sc.Config.OnDial = OnDialFilter
+// A Config represents configurations
+// of the Node. To create Config filled
+// with default values use NewConfig
+// method. The recommended way of creating
+// Config is the NewConfig. This Config
+// contains skyobject.Config.
+type Config struct {
+
+	// Logger contains configurations of logger
+	Logger log.Config
+
+	// Config is configurations of skyobject.Container.
+	// Use nil for defaults.
+	*skyobject.Config
+
+	// MaxConnections is limit of connections.
+	// Set it to zero to disable the limit.
+	MaxConnections int
+
+	// MaxHeads is limit of heads per feed. A head
+	// allocates some resources in the Node. And
+	// this limit required to protect the Node against
+	// misuse and against intentional DoS attacks. A
+	// user can generate infinity number of heads.
+	// This limit dismiss heads Root objects of
+	// which received most early. It's impossible to
+	// know which heads will be rejected, and which
+	// not. But in reality, it is not a problem.
+	//
+	// For example, if a node subscribed to feed A,
+	// and a peer receive 10 Root object one by one
+	// with different heads. And, if the MaxHeads
+	// limit is 5, then first 5 received Root objects
+	// will be rejected when last 5 received.
+	//
+	// In reality, this porblem can't occur or be
+	// a real problem
+	//
+	// Set the limit to zero, to turn it off.
+	MaxHeads int
+
+	// MaxFillingTime is time limit for filling of
+	// a Root object. If a Root object fills too
+	// long (longe then this limit), then it will
+	// be dropped. Set it to zero to disable the
+	// limit.
+	MaxFillingTime time.Duration
+
+	// RPC is RPC listening address. Empty string
+	// disables RPC.
+	RPC string
+
+	//
+	// Networks
+	//
+
+	// TCP configurations
+	TCP NetConfig
+
+	// UDP configurations
+	UDP NetConfig
+
+	//
+	// Connection callbacks
+	//
+
+	// OnConenct is callback for new established
+	// connections. See OnConnectFunc for details.
+	OnConnect OnConnectFunc
+	// OnDisconenct is callback for closed
+	// connections. See OnDisconnectFunc for details.
+	OnDisconnect OnDisconnectFunc
+
+	//
+	// Dsicovery
+	//
+
+	// Public is flag that used to make the Node
+	// public. In middle case a Node never share
+	// lsit of feeds it knows. But a public node
+	// share the list. E.g. the list can be
+	// requested from a peer. (See also
+	// (*Conn).RemoteFeeds method). The Public
+	// allows to use Discovery (see below) if the
+	// Public is true.
+	Public bool
+
+	//
+	// Subscription related callbacks
+	//
+
+	// OnSubscribeRemote is callback for remote
+	// subscriptions. See OnSubscribeRemote for
+	// details
+	OnSubscribeRemote OnSubscribeRemoteFunc
+
+	// OnUnsubscribeRemote is callback for remote
+	// unsubscriptions. See OnUnsubscribeRemote for
+	// details
+	OnUnsubscribeRemote OnUnsubscribeRemoteFunc
+
+	//
+	// Root related callbacks
+	//
+
+	// All callbacks called from goroutine of
+	// connection and should not block executing,
+	// because it can slow down or block handling
+	// incoming messeges from the connection.
+
+	// OnRootReceived is a callback that called
+	// when new Root object received. See
+	// OnRootReceivedFunc for details.
+	OnRootReceived OnRootReceivedFunc
+
+	// OnRootFilled is a callback that called
+	// when new Root object filled and can be
+	// used. See OnRootFilledFunc for details.
+	OnRootFilled OnRootFilledFunc
+
+	// OnRootFilled is a callback that called
+	// when new Root object filled and can be
+	// used. See OnRootFilledFunc for details.
+	OnFillingBreaks OnFillingBreaksFunc
+}
+
+// NewConfig returns new Config with
+// default values
+func NewConfig() (c *Config) {
+
+	c = new(Config)
+
+	// logger
+	c.Logger.Prefix = Prefix
+
+	// container
+	c.Config = skyobject.NewConfig()
+
+	// node
+	c.MaxConnections = MaxConnections
+	c.MaxFillingTime = MaxFillingTime
+	c.MaxHeads = MaxHeads
+
+	c.TCP.Listen = ListenTCP
+	c.TCP.Pings = Pings
+	c.TCP.ResponseTimeout = ResponseTimeout
+
+	c.UDP.Listen = ListenUDP
+	c.UDP.ResponseTimeout = ResponseTimeout
+
+	c.RPC = RPCAddress
+	c.Public = Public
+
 	return
+
 }
 
-// FromFlags obtains value from command line flags.
-// Call the method before `flag.Parse` for example
+// FromFlags used to get values for the
+// Config from comand line flags. Take a
+// look the example bleow
 //
-//     c := node.NewConfig()
+//     var c = node.NewConfig()
+//
+//     // change values of the Config
+//     // if you want
+//
 //     c.FromFlags()
+//
+//     // other work with flags if need
+//
 //     flag.Parse()
 //
-func (s *Config) FromFlags() {
-	s.Config.FromFlags()
-	s.Log.FromFlags()
+func (c *Config) FromFlags() {
 
-	flag.BoolVar(&s.EnableRPC,
+	// logger configs
+	c.Logger.FromFlags()
+
+	// contaienr
+	if c.Config != nil {
+		c.Config.FromFlags()
+	}
+
+	// node
+
+	flag.IntVar(&c.MaxConnections,
+		"max-connections",
+		c.MaxConnections,
+		"max connections, incoming and outgoing, tcp and udp")
+
+	flag.DurationVar(&c.MaxFillingTime,
+		"max-filling-time",
+		c.MaxFillingTime,
+		"max time to fill a Root")
+
+	flag.IntVar(&c.MaxHeads,
+		"max-heads",
+		c.MaxHeads,
+		"max heads of a feed allowed")
+
+	flag.StringVar(&c.RPC,
 		"rpc",
-		s.EnableRPC,
-		"enable RPC server")
-	flag.StringVar(&s.RPCAddress,
-		"rpc-address",
-		s.RPCAddress,
-		"address of RPC server")
-	flag.StringVar(&s.Listen,
-		"address",
-		s.Listen,
-		"listening address (pass empty string to arbitrary assignment by OS)")
-	flag.BoolVar(&s.EnableListener,
-		"enable-listening",
-		s.EnableListener,
-		"enable listening pin")
-	flag.BoolVar(&s.RemoteClose,
-		"remote-close",
-		s.RemoteClose,
-		"allow closing the server using RPC")
-	flag.DurationVar(&s.PingInterval,
-		"ping",
-		s.PingInterval,
-		"interval to send pings (0 = disable)")
-	flag.BoolVar(&s.InMemoryDB,
-		"mem-db",
-		s.InMemoryDB,
-		"use in-memory database")
-	flag.StringVar(&s.DataDir,
-		"data-dir",
-		s.DataDir,
-		"directory with data")
-	flag.StringVar(&s.DBPath,
-		"db-path",
-		s.DBPath,
-		"path to database")
-	flag.DurationVar(&s.ResponseTimeout,
-		"response-tm",
-		s.ResponseTimeout,
-		"response timeout (0 = infinity)")
-	flag.BoolVar(&s.PublicServer,
-		"public-server",
-		s.PublicServer,
-		"make the server public")
-	flag.Var(&s.DiscoveryAddresses,
-		"discovery-address",
-		"address of service discovery")
+		c.RPC,
+		"RPC listening address")
 
-	// TODO: skyobject.Configs from flags
+	// TCP
 
-	return
+	flag.StringVar(&c.TCP.Listen,
+		"tcp",
+		c.TCP.Listen,
+		"tcp listening address")
+
+	flag.DurationVar(&c.TCP.ResponseTimeout,
+		"tcp-response-timeout",
+		c.TCP.ResponseTimeout,
+		"response timeout of TCP connections")
+
+	flag.DurationVar(&c.TCP.Pings,
+		"tcp-pings",
+		c.TCP.Pings,
+		"pings interval of TCP connections")
+
+	// UDP
+
+	flag.StringVar(&c.UDP.Listen,
+		"udp",
+		c.UDP.Listen,
+		"udp listening address")
+
+	flag.DurationVar(&c.UDP.ResponseTimeout,
+		"udp-response-timeout",
+		c.UDP.ResponseTimeout,
+		"response timeout of UDP connections")
+
+	flag.DurationVar(&c.UDP.Pings,
+		"udp-pings",
+		c.UDP.Pings,
+		"pings interval of UDP connections")
+
+	// public
+
+	flag.BoolVar(&c.Public,
+		"public",
+		c.Public,
+		"public server")
+
 }
 
-// OnDialFilter is gnet.OnDial callback that rejects redialing if
-// remote peer closes connection
-func OnDialFilter(c *gnet.Conn, err error) (reject error) {
-	if ne, ok := err.(net.Error); ok {
-		if ne.Temporary() {
-			return // nil
+// Validate configurations. The Validate doesn't
+// validates addresses (TCP, UDP or RPC)
+func (c *Config) Validate() (err error) {
+
+	// nothing to validate in the Logger configurations
+
+	// container
+	if c.Config != nil {
+		if err = c.Config.Validate(); err != nil {
+			return
 		}
-		if oe, ok := err.(*net.OpError); ok {
-			// reading fails with EOF if remote peer closes connection,
-			// but writing ...
-			if se, ok := oe.Err.(*os.SyscallError); ok {
-				if errno, ok := se.Err.(syscall.Errno); ok {
-					if errno == 0x68 {
-						// "connection reset by peer"
-						return err // reject
-					}
-				}
-			}
-		}
-	} else if err == io.EOF { // connection has been closed by peer
-		return err // reject
 	}
-	return // nil (unknowm case)
+
+	// nothing to validate in the Node configs
+
+	return
+
 }

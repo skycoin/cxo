@@ -46,16 +46,23 @@ cover.html
 
 cmd/cxocli/cxocli
 cmd/cxod/cxod
-cmd/cxodbfix/cxodbfix
 
-intro/pass_through/server/server
-intro/pass_through/pipe/pipe
-intro/pass_through/client/client
-intro/cxtweet/cxtweet
+intro/skybrief/skybrief
 
-# tests directory
+intro/discovery/through/server/server
+intro/discovery/through/ca/ca
+intro/discovery/through/cb/cb
 
-node/test/
+intro/discovery/exchange/ca/ca
+intro/discovery/exchange/cb/cb
+
+intro/send_receive/src/src
+intro/send_receive/dst/dst
+
+intro/preview/seed/seed
+intro/preview/peer/peer
+
+intro/cleanup/cleanup
 
 # suffix for ignore files and directories temporary 
 

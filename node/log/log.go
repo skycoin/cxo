@@ -41,19 +41,24 @@ func NewConfig() (c Config) {
 // the debug flag set to false, then -debug-pins ignored and
 // the pins set to No.
 func (c *Config) FromFlags() {
+
 	flag.StringVar(&c.Prefix,
 		"log-prefix",
 		c.Prefix,
 		"provide log-prefix")
+
 	flag.BoolVar(&c.Debug,
 		"debug",
 		c.Debug,
 		"print debug logs")
+
 	var pins uint
+
 	flag.UintVar(&pins,
 		"debug-pins",
 		uint(c.Pins),
 		"debug pins (default all)")
+
 	c.Pins = Pin(pins)
 }
 

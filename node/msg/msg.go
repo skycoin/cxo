@@ -10,45 +10,55 @@ import (
 	"github.com/skycoin/skycoin/src/cipher/encoder"
 )
 
+// protocol
+//
+// [1 byte] - type
+// [ .... ] - encoded message
+//
+
 // Version is current protocol version
-const Version uint16 = 2
+const Version uint16 = 3
 
 // be sure that all messages implements Msg interface compiler time
 var (
-	// ping-, pongs
 
-	_ Msg = &Ping{} // <- Ping
-	_ Msg = &Pong{} // -> Pong
+	// pings
+
+	_ Msg = &Ping{} // -> Ping
+	_ Msg = &Pong{} // <- Pong
 
 	// handshake
 
-	_ Msg = &Hello{}  // <- Hello  (address, protocol version)
-	_ Msg = &Accept{} // -> Accept (address)
-	_ Msg = &Reject{} // -> Reject (address, error message)
+	_ Msg = &Syn{} // <- Syn (node id, protocol version)
+	_ Msg = &Ack{} // -> Ack (peer id)
+
+	// common replies
+
+	_ Msg = &Ok{}  // -> Ok ()
+	_ Msg = &Err{} // -> Err (error message)
 
 	// subscriptions
 
-	_ Msg = &Subscribe{}   // <- S
-	_ Msg = &Unsubscribe{} // <- U
-
-	// subscriptions reply
-
-	_ Msg = &AcceptSubscription{} // -> AS
-	_ Msg = &RejectSubscription{} // -> RS (error)
+	_ Msg = &Sub{}   // <- Sub (feed)
+	_ Msg = &Unsub{} // <- Unsub (feed)
 
 	// public server features
 
-	_ Msg = &RequestListOfFeeds{} // <- RLoF
-	_ Msg = &ListOfFeeds{}        // -> LoF
-	_ Msg = &NonPublicServer{}    // -> NPS
+	_ Msg = &RqList{} // <- GetList ()
+	_ Msg = &List{}   // -> Lsit  (feeds)
 
-	// root, registry, data and requests
+	// root (push and done)
 
-	_ Msg = &Root{}     // <- Root
-	_ Msg = &RootDone{} // ->
+	_ Msg = &Root{} // <- Root (feed, nonce, seq, sig, val)
 
-	_ Msg = &RequestObject{} // <- RqO
-	_ Msg = &Object{}        // -> O
+	// objects
+
+	_ Msg = &RqObject{} // <- RqO (key, prefetch)
+	_ Msg = &Object{}   // -> O   (val, vals)
+
+	// preview
+
+	_ Msg = &RqPreview{} // -> RqPreview (feed)
 )
 
 //
@@ -57,164 +67,203 @@ var (
 
 // A Msg is common interface for CXO messages
 type Msg interface {
-	Type() Type // type of the message to encode
+	Type() Type     // type of the message to encode
+	Encode() []byte // encode the message to []byte prefixed with the Type
 }
 
-// A Ping is service message and used
-// by server to ping clients
-type Ping struct {
-	ID ID
-}
+//
+// pings
+//
+
+// A Ping messege
+type Ping struct{}
 
 // Type implements Msg interface
 func (*Ping) Type() Type { return PingType }
 
-// Pong is service message and used
-// by client to reply for PingMsg
-type Pong struct {
-	ResponseFor ID
+// Encode the Ping
+func (*Ping) Encode() []byte {
+	return []byte{
+		byte(PingType),
+	}
 }
+
+// A Pong messege
+type Pong struct{}
 
 // Type implements Msg interface
 func (*Pong) Type() Type { return PongType }
 
-// A Hello is handshake initiator message
-type Hello struct {
-	ID       ID
+// Encode the Pong
+func (*Pong) Encode() []byte {
+	return []byte{
+		byte(PongType),
+	}
+}
+
+//
+// handshake
+//
+
+// A Syn is handshake initiator message
+type Syn struct {
 	Protocol uint16
-	Address  cipher.Address // reserved for future
+	NodeID   cipher.PubKey // node id
 }
 
 // Type implements Msg interface
-func (*Hello) Type() Type { return HelloType }
+func (*Syn) Type() Type { return SynType }
 
-// An Accept is response for the Hello
-// if handshake has been accepted
-type Accept struct {
-	ResponseFor ID
-	Address     cipher.Address // reserved for future
+// Encode the Syn
+func (s *Syn) Encode() []byte { return encode(s) }
+
+// An Ack is response for the Syn
+// if handshake has been accepted.
+// Otherwise, the Err returned
+type Ack struct {
+	NodeID cipher.PubKey // node id
 }
 
 // Type implements Msg interface
-func (*Accept) Type() Type { return AcceptType }
+func (*Ack) Type() Type { return AckType }
 
-// A Reject is response for the Hello
-// if subscription has not been accepted
-type Reject struct {
-	ResponseFor ID
-	Address     cipher.Address // reserved for future
-	Err         string         // reason
+// Encode the Ack
+func (a *Ack) Encode() []byte { return encode(a) }
+
+//
+// common
+//
+
+// An Ok is common success reply
+type Ok struct{}
+
+// Type implements Msg interface
+func (*Ok) Type() Type { return OkType }
+
+// Encode the Ok
+func (*Ok) Encode() []byte {
+	return []byte{
+		byte(OkType),
+	}
+}
+
+// A Err is common error reply
+type Err struct {
+	Err string // reason
 }
 
 // Type implements Msg interface
-func (*Reject) Type() Type { return RejectType }
+func (*Err) Type() Type { return ErrType }
 
-// A Subscribe ...
-type Subscribe struct {
-	ID   ID
+// Encode the Err
+func (e *Err) Encode() []byte { return encode(e) }
+
+//
+// subscriptions
+//
+
+// A Sub message is request for subscription
+type Sub struct {
 	Feed cipher.PubKey
 }
 
 // Type implements Msg interface
-func (*Subscribe) Type() Type { return SubscribeType }
+func (*Sub) Type() Type { return SubType }
 
-// An Unsubscribe ...
-type Unsubscribe struct {
-	ID   ID
+// Encode the Sub
+func (s *Sub) Encode() []byte {
+	return append(
+		[]byte{
+			byte(SubType),
+		},
+		s.Feed[:]...,
+	)
+}
+
+// An Unsub used to notify remote peer about
+// unsubscribing from a feed
+type Unsub struct {
 	Feed cipher.PubKey
 }
 
 // Type implements Msg interface
-func (*Unsubscribe) Type() Type { return UnsubscribeType }
+func (*Unsub) Type() Type { return UnsubType }
 
-// An AcceptSubscription ...
-type AcceptSubscription struct {
-	ResponseFor ID
-	Feed        cipher.PubKey
+// Encode the Unsub
+func (u *Unsub) Encode() []byte {
+	return append(
+		[]byte{
+			byte(UnsubType),
+		},
+		u.Feed[:]...,
+	)
+}
+
+//
+// list of feeds
+//
+
+// A RqList is request of list of feeds
+type RqList struct{}
+
+// Type implements Msg interface
+func (*RqList) Type() Type { return RqListType }
+
+// Encode the RqList
+func (*RqList) Encode() []byte {
+	return []byte{
+		byte(RqListType),
+	}
+}
+
+// A List is reply for RqList
+type List struct {
+	Feeds []cipher.PubKey
 }
 
 // Type implements Msg interface
-func (*AcceptSubscription) Type() Type {
-	return AcceptSubscriptionType
-}
+func (*List) Type() Type { return ListType }
 
-// A RejectSubscription ...
-type RejectSubscription struct {
-	ResponseFor ID
-	Feed        cipher.PubKey
-}
+// Encode the List
+func (l *List) Encode() []byte { return encode(l) }
 
-// Type implements Msg interface
-func (*RejectSubscription) Type() Type {
-	return RejectSubscriptionType
-}
-
-// A RequestListOfFeeds is transport message to obtain list of
-// feeds from a public server
-type RequestListOfFeeds struct {
-	ID ID
-}
-
-// Type implements Msg interface
-func (*RequestListOfFeeds) Type() Type {
-	return RequestListOfFeedsType
-}
-
-// A ListOfFeeds is reply for ListOfFeed
-type ListOfFeeds struct {
-	ResponseFor ID
-	List        []cipher.PubKey
-}
-
-// Type implements Msg interface
-func (*ListOfFeeds) Type() Type { return ListOfFeedsType }
-
-// A NonPublicServer is reply for ListOfFeed while requested
-// server is not public
-type NonPublicServer struct {
-	ResponseFor ID
-}
-
-// Type implements Msg interface
-func (*NonPublicServer) Type() Type { return NonPublicServerType }
+//
+// root (push an done)
+//
 
 // A Root sent from one node to another one
 // to update root object of feed described in
 // Feed field of the message
 type Root struct {
-	Feed  cipher.PubKey
-	Seq   uint64     // for node internals
-	Value []byte     // encoded Root in person
-	Sig   cipher.Sig // signature
+	Feed  cipher.PubKey // feed }
+	Nonce uint64        // head } Root selector
+	Seq   uint64        // seq  }
+
+	Value []byte // encoded Root in person
+
+	Sig cipher.Sig // signature
 }
 
 // Type implements Msg interface
 func (*Root) Type() Type { return RootType }
 
-// A RootDone is response for the Root.
-// A node that receives a Root object requires
-// some time to fill or drop it. After that
-// it sends the RootDone back to notify
-// peer that this Root object no longer
-// needed. E.g. a node holds a Root before
-// sending, to prevent removing. And the
-// node have to know when peer fills this
-// root or drops it.
-type RootDone struct {
-	Feed cipher.PubKey // feed
-	Seq  uint64        // seq of the Root
+// Encode the Root
+func (r *Root) Encode() []byte { return encode(r) }
+
+//
+// objects
+//
+
+// A RqObject represents a Msg that request a data by hash
+type RqObject struct {
+	Key cipher.SHA256 // request
 }
 
 // Type implements Msg interface
-func (*RootDone) Type() Type { return RootDoneType }
+func (*RqObject) Type() Type { return RqObjectType }
 
-// A RequestObject represents a Msg that request a data by hash
-type RequestObject struct {
-	Key cipher.SHA256
-}
-
-// Type implements Msg interface
-func (*RequestObject) Type() Type { return RequestObjectType }
+// Encode the RqObject
+func (r *RqObject) Encode() []byte { return encode(r) }
 
 // An Object reperesents encoded object
 type Object struct {
@@ -223,6 +272,24 @@ type Object struct {
 
 // Type implements Msg interface
 func (*Object) Type() Type { return ObjectType }
+
+// Encode the Object
+func (o *Object) Encode() []byte { return encode(o) }
+
+//
+// preview
+//
+
+// RqPreview is request for feeds preview
+type RqPreview struct {
+	Feed cipher.PubKey
+}
+
+// Type implements Msg interface
+func (*RqPreview) Type() Type { return RqPreviewType }
+
+// Encode the RqPreview
+func (r *RqPreview) Encode() []byte { return encode(r) }
 
 //
 // Type / Encode / Deocode / String()
@@ -233,26 +300,27 @@ type Type uint8
 
 // Types
 const (
-	PingType Type = 1 + iota // Ping 1
-	PongType                 // Pong 2
+	PingType = 1 + iota // 1
+	PongType            // 2
 
-	HelloType  // Hello  3
-	AcceptType // Accept 4
-	RejectType // Reject 5
+	SynType // 3
+	AckType // 4
 
-	SubscribeType          // Subscribe           6
-	UnsubscribeType        // Unsubscribe         7
-	AcceptSubscriptionType // AcceptSubscription  8
-	RejectSubscriptionType // RejectSubscription  9
+	OkType  // 5
+	ErrType // 6
 
-	RequestListOfFeedsType // RequestListOfFeeds  10
-	ListOfFeedsType        // ListOfFeeds         11
-	NonPublicServerType    // NonPublicServer     12
+	SubType   // 7
+	UnsubType // 8
 
-	RootType          // Root           10
-	RootDoneType      // RootDone       11
-	RequestObjectType // RequestObject  12
-	ObjectType        // Object         13
+	RqListType // 9
+	ListType   // 10
+
+	RootType // 11
+
+	RqObjectType // 12
+	ObjectType   // 13
+
+	RqPreviewType // 14
 )
 
 // Type to string mapping
@@ -260,23 +328,24 @@ var msgTypeString = [...]string{
 	PingType: "Ping",
 	PongType: "Pong",
 
-	HelloType:  "Hello",
-	AcceptType: "Accept",
-	RejectType: "Reject",
+	SynType: "Syn",
+	AckType: "Ack",
 
-	SubscribeType:          "Subscribe",
-	UnsubscribeType:        "Unsubscribe",
-	AcceptSubscriptionType: "AcceptSubscription",
-	RejectSubscriptionType: "RejectSubscription",
+	OkType:  "Ok",
+	ErrType: "Err",
 
-	RequestListOfFeedsType: "RequestListOfFeeds",
-	ListOfFeedsType:        "ListOfFeeds",
-	NonPublicServerType:    "NonPublicServer",
+	SubType:   "Sub",
+	UnsubType: "Unsub",
 
-	RootType:          "Root",
-	RootDoneType:      "RootDone",
-	RequestObjectType: "RequestObject",
-	ObjectType:        "Object",
+	RqListType: "RqList",
+	ListType:   "List",
+
+	RootType: "Root",
+
+	RqObjectType: "RqObject",
+	ObjectType:   "Object",
+
+	RqPreviewType: "RqPreview",
 }
 
 // String implements fmt.Stringer interface
@@ -291,47 +360,40 @@ var forwardRegistry = [...]reflect.Type{
 	PingType: reflect.TypeOf(Ping{}),
 	PongType: reflect.TypeOf(Pong{}),
 
-	HelloType:  reflect.TypeOf(Hello{}),
-	AcceptType: reflect.TypeOf(Accept{}),
-	RejectType: reflect.TypeOf(Reject{}),
+	SynType: reflect.TypeOf(Syn{}),
+	AckType: reflect.TypeOf(Ack{}),
 
-	SubscribeType:          reflect.TypeOf(Subscribe{}),
-	UnsubscribeType:        reflect.TypeOf(Unsubscribe{}),
-	AcceptSubscriptionType: reflect.TypeOf(AcceptSubscription{}),
-	RejectSubscriptionType: reflect.TypeOf(RejectSubscription{}),
+	OkType:  reflect.TypeOf(Ok{}),
+	ErrType: reflect.TypeOf(Err{}),
 
-	RequestListOfFeedsType: reflect.TypeOf(RequestListOfFeeds{}),
-	ListOfFeedsType:        reflect.TypeOf(ListOfFeeds{}),
-	NonPublicServerType:    reflect.TypeOf(NonPublicServer{}),
+	SubType:   reflect.TypeOf(Sub{}),
+	UnsubType: reflect.TypeOf(Unsub{}),
 
-	RootType:          reflect.TypeOf(Root{}),
-	RootDoneType:      reflect.TypeOf(RootDone{}),
-	RequestObjectType: reflect.TypeOf(RequestObject{}),
-	ObjectType:        reflect.TypeOf(Object{}),
+	RqListType: reflect.TypeOf(RqList{}),
+	ListType:   reflect.TypeOf(List{}),
+
+	RootType: reflect.TypeOf(Root{}),
+
+	RqObjectType: reflect.TypeOf(RqObject{}),
+	ObjectType:   reflect.TypeOf(Object{}),
+
+	RqPreviewType: reflect.TypeOf(RqPreview{}),
 }
 
-// An ErrInvalidType represents decoding error when
+// An InvalidTypeError represents decoding error when
 // incoming message is malformed and its type invalid
-type ErrInvalidType struct {
-	msgType Type
+type InvalidTypeError struct {
+	typ Type
 }
 
 // Type return Type which cause the error
-func (e ErrInvalidType) Type() Type {
-	return e.msgType
+func (e InvalidTypeError) Type() Type {
+	return e.typ
 }
 
 // Error implements builting error interface
-func (e ErrInvalidType) Error() string {
-	return fmt.Sprint("invalid message type: ", e.msgType.String())
-}
-
-// Encode given message to []byte prefixed by Type
-func Encode(msg Msg) (p []byte) {
-	p = append(
-		[]byte{byte(msg.Type())},
-		encoder.Serialize(msg)...)
-	return
+func (e InvalidTypeError) Error() string {
+	return fmt.Sprint("invalid message type: ", e.typ.String())
 }
 
 var (
@@ -344,28 +406,49 @@ var (
 	ErrIncomplieDecoding = errors.New("incomplete decoding")
 )
 
+// encode given message to []byte prefixed by Type
+func encode(msg Msg) (p []byte) {
+	p = append(
+		[]byte{
+			byte(msg.Type()),
+		},
+		encoder.Serialize(msg)...,
+	)
+	return
+}
+
 // Decode encoded Type-prefixed data to message.
-// It can returns encoding errors or ErrInvalidType
+// It can returns encoding errors or InvalidTypeError
 func Decode(p []byte) (msg Msg, err error) {
+
 	if len(p) < 1 {
 		err = ErrEmptyMessage
 		return
 	}
-	mt := Type(p[0])
+
+	var mt = Type(p[0])
+
 	if mt <= 0 || int(mt) >= len(forwardRegistry) {
-		err = ErrInvalidType{mt}
+		err = InvalidTypeError{mt}
 		return
 	}
-	typ := forwardRegistry[mt]
-	val := reflect.New(typ)
-	var n int
+
+	var (
+		typ = forwardRegistry[mt]
+		val = reflect.New(typ)
+
+		n int
+	)
+
 	if n, err = encoder.DeserializeRawToValue(p[1:], val); err != nil {
 		return
 	}
+
 	if n+1 != len(p) {
 		err = ErrIncomplieDecoding
 		return
 	}
+
 	msg = val.Interface().(Msg)
 	return
 }

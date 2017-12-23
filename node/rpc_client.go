@@ -4,12 +4,39 @@ import (
 	"net/rpc"
 
 	"github.com/skycoin/skycoin/src/cipher"
+
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// A RPCClient represents RPC client to
-// control and explore a Node
+// A RPCClient represents client for
+// RPC methods of the Node
 type RPCClient struct {
 	c *rpc.Client
+}
+
+// Close client
+func (r *RPCClient) Close() (err error) {
+	return r.c.Close()
+}
+
+// Node related methods
+func (r *RPCClient) Node() (n *RPCClientNode) {
+	return &RPCClientNode{r}
+}
+
+// TCP related methods
+func (r *RPCClient) TCP() (t *RPCClientTCP) {
+	return &RPCClientTCP{r}
+}
+
+// UDP related methods
+func (r *RPCClient) UDP() (t *RPCClientUDP) {
+	return &RPCClientUDP{r}
+}
+
+// Root objects related methods
+func (r *RPCClient) Root() (t *RPCClientRoot) {
+	return &RPCClientRoot{r}
 }
 
 // NewRPCClient creates RPC client connected to RPC server with
@@ -24,133 +51,214 @@ func NewRPCClient(address string) (rc *RPCClient, err error) {
 	return
 }
 
-// AddFeed to the Node. If given feed already exists, then this
-// method does nothing
-func (r *RPCClient) AddFeed(pk cipher.PubKey) error {
-	return r.c.Call("cxo.AddFeed", pk, &struct{}{})
+// An RPCClientNode implements RPC
+// methods related to the Node
+type RPCClientNode struct {
+	r *RPCClient
 }
 
-// DelFeed from the Node. The method never
-// returns 'not found' error
-func (r *RPCClient) DelFeed(pk cipher.PubKey) error {
-	return r.c.Call("cxo.DelFeed", pk, &struct{}{})
+// Share given feed
+func (r *RPCClientNode) Share(pk cipher.PubKey) (err error) {
+	return r.r.c.Call("node.Share", pk, &struct{}{})
 }
 
-// Subscribe to feed. If address is empty string, then it make
-// the node susbcribed to the feed. Otherwise, it subscribes
-// to feed of a peer
-func (r *RPCClient) Subscribe(address string, feed cipher.PubKey) (err error) {
-	var cf ConnFeed
-	cf.Address = address
-	cf.Feed = feed
-	err = r.c.Call("cxo.Subscribe", cf, &struct{}{})
+// DontShare given feed
+func (r *RPCClientNode) DontShare(pk cipher.PubKey) (err error) {
+	return r.r.c.Call("node.DontShare", pk, &struct{}{})
+}
+
+// Feeds that the Node is shareing
+func (r *RPCClientNode) Feeds() (fs []cipher.PubKey, err error) {
+	err = r.r.c.Call("node.Feeds", struct{}{}, &fs)
 	return
 }
 
-// Unsubscribe from a feed. If address is empty string then it
-// unsubscribes from feed entirely. Otherwise, from a feed of
-// a peer
-func (r *RPCClient) Unsubscribe(address string,
-	feed cipher.PubKey) (err error) {
-
-	var cf ConnFeed
-	cf.Address = address
-	cf.Feed = feed
-	err = r.c.Call("cxo.Unsubscribe", cf, &struct{}{})
+// IsSharing a feed or not
+func (r *RPCClientNode) IsSharing(pk cipher.PubKey) (yep bool, err error) {
+	err = r.r.c.Call("node.IsSharing", pk, &yep)
 	return
 }
 
-// Feeds returns list of feeds the node subscribed to
-func (r *RPCClient) Feeds() (list []cipher.PubKey, err error) {
-	err = r.c.Call("cxo.Feeds", struct{}{}, &list)
+// Connections of the Node
+func (r *RPCClientNode) Connections() (cs []string, err error) {
+	err = r.r.c.Call("node.Connections", struct{}{}, &cs)
 	return
 }
 
-// Connections return list of all connections
-func (r *RPCClient) Connections() (list []ConnectionInfo, err error) {
-	err = r.c.Call("cxo.Connections", struct{}{}, &list)
+// ConnectionsOfFeed of the Node
+func (r *RPCClientNode) ConnectionsOfFeed(
+	pk cipher.PubKey, // :
+) (
+	cs []string, //      :
+	err error, //        :
+) {
+
+	err = r.r.c.Call("node.ConnectionsOfFeed", pk, &cs)
 	return
 }
 
-// IncomingConnections returns list of all incoming connections
-func (r *RPCClient) IncomingConnections() (list []ConnectionInfo, err error) {
-	err = r.c.Call("cxo.IncomingConnections", struct{}{}, &list)
+// Config of the Node
+func (r *RPCClientNode) Config() (config *Config, err error) {
+	var c Config
+	if err = r.r.c.Call("node.Config", struct{}{}, &c); err != nil {
+		return
+	}
+	return &c, nil
+}
+
+// Stat obtains statistic of the Node
+func (r *RPCClientNode) Stat() (stat *Stat, err error) {
+	var s Stat
+	if err = r.r.c.Call("node.Stat", struct{}{}, &s); err != nil {
+		return
+	}
+	return &s, nil
+}
+
+// A RPCClientTCP implements RPC
+// methods related to TCP transport
+type RPCClientTCP struct {
+	r *RPCClient
+}
+
+// Connect to given TCP address
+func (r *RPCClientTCP) Connect(address string) (err error) {
+	return r.r.c.Call("tcp.Connect", address, &struct{}{})
+}
+
+// Disconnect from peer
+func (r *RPCClientTCP) Disconnect(address string) (err error) {
+	return r.r.c.Call("tcp.Disconnect", address, &struct{}{})
+}
+
+// Subscribe to feed of peer
+func (r *RPCClientTCP) Subscribe(address string, pk cipher.PubKey) (err error) {
+	return r.r.c.Call("tcp.Subscribe", ConnFeed{address, pk}, &struct{}{})
+}
+
+// Unsubscribe from feed of peer
+func (r *RPCClientTCP) Unsubscribe(
+	address string,
+	pk cipher.PubKey,
+) (
+	err error,
+) {
+	return r.r.c.Call("tcp.Unsubscribe", ConnFeed{address, pk}, &struct{}{})
+}
+
+// RemoteFeeds of peer
+func (r *RPCClientTCP) RemoteFeeds(
+	address string, //      :
+) (
+	rfs []cipher.PubKey, // :
+	err error, //           :
+) {
+	err = r.r.c.Call("tcp.RemoteFeeds", address, &rfs)
 	return
 }
 
-// OutgoingConnections returns list of all outgoing connections
-func (r *RPCClient) OutgoingConnections() (list []ConnectionInfo, err error) {
-	err = r.c.Call("cxo.OutgoingConnections", struct{}{}, &list)
+// Address of TCP listener
+func (r *RPCClientTCP) Address() (address string, err error) {
+	err = r.r.c.Call("tcp.Address", struct{}{}, &address)
 	return
 }
 
-// Connect to a peer
-func (r *RPCClient) Connect(address string) (err error) {
-	err = r.c.Call("cxo.Connect", address, &struct{}{})
+// A RPCClientUDP implements RPC
+// methods related to UDP transport
+type RPCClientUDP struct {
+	r *RPCClient
+}
+
+// Connect to peer
+func (r *RPCClientUDP) Connect(address string) (err error) {
+	return r.r.c.Call("udp.Connect", address, &struct{}{})
+}
+
+// Disconnect from peer
+func (r *RPCClientUDP) Disconnect(address string) (err error) {
+	return r.r.c.Call("udp.Disconnect", address, &struct{}{})
+}
+
+// Subscribe to feed of peer
+func (r *RPCClientUDP) Subscribe(address string, pk cipher.PubKey) (err error) {
+	return r.r.c.Call("udp.Subscribe", ConnFeed{address, pk}, &struct{}{})
+}
+
+// Unsubscribe from feed of peer
+func (r *RPCClientUDP) Unsubscribe(
+	address string,
+	pk cipher.PubKey,
+) (
+	err error,
+) {
+	return r.r.c.Call("udp.Unsubscribe", ConnFeed{address, pk}, &struct{}{})
+}
+
+// RemoteFeeds of peer
+func (r *RPCClientUDP) RemoteFeeds(
+	address string, //      :
+) (
+	rfs []cipher.PubKey, // :
+	err error, //           :
+) {
+	err = r.r.c.Call("udp.RemoteFeeds", address, &rfs)
 	return
 }
 
-// Disconnect from a peer
-func (r *RPCClient) Disconnect(address string) (err error) {
-	err = r.c.Call("cxo.Disconnect", address, &struct{}{})
+// Address of UDP listener
+func (r *RPCClientUDP) Address() (address string, err error) {
+	err = r.r.c.Call("udp.Address", struct{}{}, &address)
 	return
 }
 
-// Connection returns list of feeds of given connection
-func (r *RPCClient) Connection(address string) (feeds []cipher.PubKey,
-	err error) {
+// A RPCClientRoot implements RPC
+// methods related to Root objects
+type RPCClientRoot struct {
+	r *RPCClient
+}
 
-	err = r.c.Call("cxo.Connection", address, &feeds)
+// Show brief information of Root object
+func (r *RPCClientRoot) Show(
+	feed cipher.PubKey,
+	nonce uint64,
+	seq uint64,
+) (
+	z *registry.Root,
+	err error,
+) {
+
+	var x registry.Root
+	err = r.r.c.Call("root.Show", RootSelector{feed, nonce, seq}, &x)
+	if err != nil {
+		return
+	}
+	return &x, nil
+}
+
+// Tree of Root object
+func (r *RPCClientRoot) Tree(
+	feed cipher.PubKey,
+	nonce uint64,
+	seq uint64,
+) (
+	tree string,
+	err error,
+) {
+	err = r.r.c.Call("root.Tree", RootSelector{feed, nonce, seq}, &tree)
 	return
 }
 
-// Feed returns all connections of given feed
-func (r *RPCClient) Feed(pk cipher.PubKey) (addresses []string, err error) {
-	err = r.c.Call("cxo.Feed", pk, &addresses)
-	return
-}
+// Last Root object
+func (r *RPCClientRoot) Last(
+	feed cipher.PubKey,
+) (
+	z *registry.Root,
+	err error,
+) {
 
-// ListeningAddress of the Node
-func (r *RPCClient) ListeningAddress() (address string, err error) {
-	err = r.c.Call("cxo.ListeningAddress", struct{}{}, &address)
-	return
-}
-
-// Info returns brief information about a Node
-func (r *RPCClient) Info() (info *Info, err error) {
-	info = new(Info)
-	err = r.c.Call("cxo.Info", struct{}{}, info)
-	return
-}
-
-// Roots returns brief information about all root objects of a feed
-func (r *RPCClient) Roots(feed cipher.PubKey) (ris []RootInfo, err error) {
-	err = r.c.Call("cxo.Roots", feed, &ris)
-	return
-}
-
-// Tree returns stringified objects tree of a root object. The
-// method useful for inspecting
-func (r *RPCClient) Tree(pk cipher.PubKey, seq uint64,
-	lastFull bool) (tree string, err error) {
-
-	err = r.c.Call("cxo.Tree", SelectRoot{pk, seq, lastFull}, &tree)
-	return
-}
-
-// Stat returns statistic
-func (r *RPCClient) Stat() (stat Stat, err error) {
-	r.c.Call("cxo.Stat", struct{}{}, &stat)
-	return
-}
-
-// Terminate the node if allowed
-func (r *RPCClient) Terminate() (err error) {
-	err = r.c.Call("cxo.Terminate", struct{}{}, &struct{}{})
-	return
-}
-
-// Close the RPCClient
-func (r *RPCClient) Close() error {
-	return r.c.Close()
+	var x registry.Root
+	if err = r.r.c.Call("root.Last", feed, &x); err != nil {
+		return
+	}
+	return &x, nil
 }

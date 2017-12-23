@@ -3,37 +3,22 @@ CXDS
 
 [![GoDoc](https://godoc.org/github.com/skycoin/cxo/data/cxds?status.svg)](https://godoc.org/github.com/skycoin/cxo/data/cxds)
 
-CXDS is CX data store. The package is stub and will be replaced with
-client library for CX data server. API of the package is close to goal
-and can be used without caring about future.
-
-The CXDS based on [boltdb](github.com/boltdb/bolt) and
-[buntdb](github.com/tidwall/buntdb). E.g. it can be used as long time store
-on HDD (SSD or vinil disks). And there is in-memory store for test.
+CXDS is CX data store. The CXDS is implementation of
+[data.CXDS](https://godoc.org/github.com/skycoin/cxo/data#CXDS). There are
+on-drive CXDS based on [boltdb](github.com/boltdb/bolt) and in-memory CXDS
+based on golang mutexes and map.
 
 
 ## Schema
 
-Schema is simple.
+Schema is simple
 
 ```
-hash - > object
+hash - > {rc, object}
 ```
 
-Where the hash is SHA256 hash of the object. And the object is any
-object encoded to `[]byte`
-
-
-## Binary internals
-
-Every object is
-
-```
-[4 byte: refs count][encode object]
-```
-
-Where `4 byte: refs count` is little-endian encoded `uint32` that represents
-references count for this object.
-
+Where the `hash` is SHA256 hash of the object. The object is any non-blank
+`[]byte`. And the `rc` is references counter. The `rc` is number of other
+objects that point to this one
 
 ---

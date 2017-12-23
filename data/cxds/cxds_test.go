@@ -1,7 +1,6 @@
 package cxds
 
 import (
-	"encoding/binary"
 	"os"
 	"testing"
 
@@ -9,20 +8,11 @@ import (
 	"github.com/skycoin/cxo/data/tests"
 )
 
-const testFileName = "test.db.goignore"
+const testFileName = "test.db.go.ignore"
 
 func testShouldNotPanic(t *testing.T) {
 	if pc := recover(); pc != nil {
 		t.Error("unexpected panic:", pc)
-	}
-}
-
-func Test_one(t *testing.T) {
-	if len(one) != 4 {
-		t.Fatal("wrong length of the one")
-	}
-	if binary.BigEndian.Uint32(one) != 1 {
-		t.Error("the one is not a one")
 	}
 }
 
@@ -78,21 +68,6 @@ func TestCXDS_Set(t *testing.T) {
 	})
 }
 
-func TestCXDS_Add(t *testing.T) {
-	// Add(val []byte) (key cipher.SHA256, rc uint32, err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSAdd(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSAdd(t, ds)
-	})
-}
-
 func TestCXDS_Inc(t *testing.T) {
 	// Inc(key cipher.SHA256) (rc uint32, err error)
 
@@ -105,81 +80,6 @@ func TestCXDS_Inc(t *testing.T) {
 		defer os.Remove(testFileName)
 		defer ds.Close()
 		tests.CXDSInc(t, ds)
-	})
-}
-
-func TestCXDS_Dec(t *testing.T) {
-	// Dec(key cipher.SHA256) (rc uint32, err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSDec(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSDec(t, ds)
-	})
-}
-
-func TestCXDS_MultiGet(t *testing.T) {
-	// MultiGet(keys []cipher.SHA256) (vals [][]byte, err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSMultiGet(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSMultiGet(t, ds)
-	})
-}
-
-func TestCXDS_MultiAdd(t *testing.T) {
-	// MultiAdd(vals [][]byte) (err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSMultiAdd(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSMultiAdd(t, ds)
-	})
-}
-
-func TestCXDS_MultiInc(t *testing.T) {
-	// MultiGet(keys []cipher.SHA256) (vals [][]byte, err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSMultiInc(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSMultiInc(t, ds)
-	})
-}
-
-func TestCXDS_MultiDec(t *testing.T) {
-	// MultiAdd(vals [][]byte) (err error)
-
-	t.Run("memory", func(t *testing.T) {
-		tests.CXDSMultiDec(t, NewMemoryCXDS())
-	})
-
-	t.Run("drive", func(t *testing.T) {
-		ds := testDriveDS(t)
-		defer os.Remove(testFileName)
-		defer ds.Close()
-		tests.CXDSMultiDec(t, ds)
 	})
 }
 

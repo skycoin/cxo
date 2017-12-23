@@ -14,36 +14,118 @@ func testKeyValue(s string) (key cipher.SHA256, val []byte) {
 	return
 }
 
+func testIncs() []int {
+	return []int{-1, 0, 1}
+}
+
+func shouldNotExistInCXDS(t *testing.T, ds data.CXDS, key cipher.SHA256) {
+	t.Helper()
+	if _, rc, err := ds.Get(key, 0); err == nil {
+		t.Error("missing error")
+	} else if err != data.ErrNotFound {
+		t.Error("unexpected error:", err)
+	} else if rc != 0 {
+		t.Error("wrong rc:", rc)
+	}
+}
+
+func shouldExistInCXDS(
+	t *testing.T,
+	ds data.CXDS,
+	key cipher.SHA256,
+	rc uint32,
+	val []byte,
+) {
+
+	t.Helper()
+
+	if gval, grc, err := ds.Get(key, 0); err != nil {
+		t.Error(err)
+	} else if grc != rc {
+		t.Errorf("wrong rc %d, want %d", grc, rc)
+	} else if want, got := string(val), string(gval); want != got {
+		t.Errorf("wrong value: want %q, got %q", want, got)
+	}
+}
+
+func shouldPanic(t *testing.T) {
+	t.Helper()
+
+	if recover() == nil {
+		t.Error("missing panic")
+	}
+}
+
 // CXDSGet tests Get method of CXDS
 func CXDSGet(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
 
 	t.Run("not exist", func(t *testing.T) {
-		if val, rc, err := ds.Get(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		} else if val != nil {
-			t.Error("not nil")
+
+		for _, inc := range testIncs() {
+			if val, rc, err := ds.Get(key, inc); err == nil {
+				t.Error("missing error")
+			} else if err != data.ErrNotFound {
+				t.Error("unexpected error:", err)
+			} else if rc != 0 {
+				t.Error("wrong rc", rc)
+			} else if val != nil {
+				t.Error("not nil")
+			}
 		}
 	})
 
-	if _, err := ds.Set(key, value); err != nil {
+	if _, err := ds.Set(key, value, 1); err != nil {
 		t.Error(err)
 		return
 	}
 
 	t.Run("existing", func(t *testing.T) {
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
-		} else if rc != 1 {
-			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
-		}
+
+		t.Run("inc 0", func(t *testing.T) {
+			if val, rc, err := ds.Get(key, 0); err != nil {
+				t.Error(err)
+			} else if rc != 1 {
+				t.Error("wrong rc", rc)
+			} else if want, got := string(value), string(val); want != got {
+				t.Errorf("wrong value: want %q, got %q", want, got)
+			}
+		})
+
+		t.Run("inc 1", func(t *testing.T) {
+			if val, rc, err := ds.Get(key, 1); err != nil {
+				t.Error(err)
+			} else if rc != 2 {
+				t.Error("wrong rc", rc)
+			} else if want, got := string(value), string(val); want != got {
+				t.Errorf("wrong value: want %q, got %q", want, got)
+			}
+		})
+
+		t.Run("dec 1", func(t *testing.T) {
+			if val, rc, err := ds.Get(key, -1); err != nil {
+				t.Error(err)
+			} else if rc != 1 {
+				t.Error("wrong rc", rc)
+			} else if want, got := string(value), string(val); want != got {
+				t.Errorf("wrong value: want %q, got %q", want, got)
+			}
+		})
+
+		t.Run("remove", func(t *testing.T) {
+			for i := 0; i < 2; i++ {
+				if val, rc, err := ds.Get(key, -1); err != nil {
+					t.Error(err)
+				} else if rc != 0 {
+					t.Error("wrong rc", rc)
+				} else if want, got := string(value), string(val); want != got {
+					t.Errorf("wrong value: want %q, got %q", want, got)
+				}
+				shouldExistInCXDS(t, ds, key, 0, value)
+			}
+		})
+
 	})
 
 }
@@ -53,79 +135,41 @@ func CXDSSet(t *testing.T, ds data.CXDS) {
 
 	key, value := testKeyValue("something")
 
-	t.Run("new", func(t *testing.T) {
-		if rc, err := ds.Set(key, value); err != nil {
-			t.Error(err)
-		} else if rc != 1 {
-			t.Error("wrong rc", rc)
-		}
+	t.Run("zero", func(t *testing.T) {
+		defer shouldPanic(t)
+		ds.Set(key, value, 0)
+	})
 
-		if val, rc, err := ds.Get(key); err != nil {
+	t.Run("negaive", func(t *testing.T) {
+		defer shouldPanic(t)
+		ds.Set(key, value, -1)
+	})
+
+	t.Run("new", func(t *testing.T) {
+		if rc, err := ds.Set(key, value, 1); err != nil {
 			t.Error(err)
 		} else if rc != 1 {
 			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
 		}
+		shouldExistInCXDS(t, ds, key, 1, value)
 	})
 
 	t.Run("twice", func(t *testing.T) {
-		if rc, err := ds.Set(key, value); err != nil {
+		if rc, err := ds.Set(key, value, 1); err != nil {
 			t.Error(err)
 		} else if rc != 2 {
 			t.Error("wrong rc", rc)
 		}
-
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
-		} else if rc != 2 {
-			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
-		}
+		shouldExistInCXDS(t, ds, key, 2, value)
 	})
 
-}
-
-// CXDSAdd tests Add method of CXDS
-func CXDSAdd(t *testing.T, ds data.CXDS) {
-
-	key, value := testKeyValue("something")
-
-	t.Run("new", func(t *testing.T) {
-		if k, rc, err := ds.Add(value); err != nil {
+	t.Run("three times", func(t *testing.T) {
+		if rc, err := ds.Set(key, value, 2); err != nil {
 			t.Error(err)
-		} else if rc != 1 {
+		} else if rc != 4 {
 			t.Error("wrong rc", rc)
-		} else if k != key {
-			t.Error("wrong key returned")
 		}
-
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
-		} else if rc != 1 {
-			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
-		}
-	})
-
-	t.Run("twice", func(t *testing.T) {
-		if k, rc, err := ds.Add(value); err != nil {
-			t.Error(err)
-		} else if rc != 2 {
-			t.Error("wrong rc", rc)
-		} else if k != key {
-			t.Error("wrong key returned")
-		}
-
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
-		} else if rc != 2 {
-			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
-		}
+		shouldExistInCXDS(t, ds, key, 4, value)
 	})
 
 }
@@ -133,390 +177,79 @@ func CXDSAdd(t *testing.T, ds data.CXDS) {
 // CXDSInc tests Inc method of CXDS
 func CXDSInc(t *testing.T, ds data.CXDS) {
 
-	key, value := testKeyValue("something")
+	var key, value = testKeyValue("something")
 
 	t.Run("not exist", func(t *testing.T) {
-		if rc, err := ds.Inc(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		}
-
-		if val, rc, err := ds.Get(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		} else if got := string(val); got != "" {
-			t.Errorf("unexpected value %q", got)
-		}
-	})
-
-	if _, err := ds.Set(key, value); err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("exist", func(t *testing.T) {
-		if rc, err := ds.Inc(key); err != nil {
-			t.Error(err)
-		} else if rc != 2 {
-			t.Error("wrong rc", rc)
-		}
-
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
-		} else if rc != 2 {
-			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
-		}
-	})
-
-}
-
-// CXDSDec tests Dec method of CXDS
-func CXDSDec(t *testing.T, ds data.CXDS) {
-
-	key, value := testKeyValue("something")
-
-	t.Run("not exist", func(t *testing.T) {
-		if rc, err := ds.Dec(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		}
-
-		if val, rc, err := ds.Get(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		} else if got := string(val); got != "" {
-			t.Errorf("unexpected value %q", got)
-		}
-	})
-
-	if _, err := ds.Set(key, value); err != nil {
-		t.Error(err)
-		return
-	}
-
-	if _, err := ds.Inc(key); err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("decrement", func(t *testing.T) {
-		if rc, err := ds.Dec(key); err != nil {
-			t.Error(err)
-		} else if rc != 1 {
-			t.Error("wrong rc", rc)
-		}
-
-		if val, rc, err := ds.Get(key); err != nil {
-			t.Error(err)
-		} else if rc != 1 {
-			t.Error("wrong rc", rc)
-		} else if want, got := string(value), string(val); want != got {
-			t.Errorf("wrong value: want %q, got %q", want, got)
-		}
-	})
-
-	t.Run("delete", func(t *testing.T) {
-		if rc, err := ds.Dec(key); err != nil {
-			t.Error(err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		}
-
-		if val, rc, err := ds.Get(key); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
-		} else if got := string(val); got != "" {
-			t.Errorf("unexpected value %q", got)
-		}
-	})
-
-}
-
-// CXDSMultiGet tests MultiGet method of CXDS
-func CXDSMultiGet(t *testing.T, ds data.CXDS) {
-
-	k1, v1 := testKeyValue("something")
-	k2, v2 := testKeyValue("another one")
-
-	keys := []cipher.SHA256{k1, k2}
-	values := [][]byte{v1, v2}
-
-	t.Run("not exist", func(t *testing.T) {
-		if _, err := ds.MultiGet(keys); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		}
-	})
-
-	for i, k := range keys {
-		if _, err := ds.Set(k, values[i]); err != nil {
-			t.Error(err)
-			return
-		}
-	}
-
-	t.Run("exists", func(t *testing.T) {
-		if vals, err := ds.MultiGet(keys); err != nil {
-			t.Error(err)
-		} else {
-			if want, got := len(keys), len(vals); want != got {
-				t.Errorf("wrong number of values returned: want %d, got %d",
-					want, got)
-				return
-			}
-			for i, val := range vals {
-				if want, got := string(values[i]), string(val); want != got {
-					t.Errorf("wrong %d value: want %q, got %q", i, want, got)
-				}
-			}
-		}
-	})
-
-	mix := []cipher.SHA256{
-		k1,
-		cipher.SumSHA256([]byte("mi")),
-		k2,
-		cipher.SumSHA256([]byte("ix")),
-	}
-
-	t.Run("mix", func(t *testing.T) {
-		if _, err := ds.MultiGet(mix); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error(err)
-		}
-	})
-
-}
-
-// CXDSMultiAdd tests MultiAdd method of CXDS
-func CXDSMultiAdd(t *testing.T, ds data.CXDS) {
-
-	k1, v1 := testKeyValue("something")
-	k2, v2 := testKeyValue("another one")
-
-	keys := []cipher.SHA256{k1, k2}
-	values := [][]byte{v1, v2}
-
-	t.Run("new", func(t *testing.T) {
-		if err := ds.MultiAdd(values); err != nil {
-			t.Error(err)
-			return
-		}
-
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 1 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-	t.Run("overwrite", func(t *testing.T) {
-		if err := ds.MultiAdd(values); err != nil {
-			t.Error(err)
-			return
-		}
-
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 2 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-}
-
-// CXDSMultiInc tests MultiInc method of CXDS
-func CXDSMultiInc(t *testing.T, ds data.CXDS) {
-
-	k1, v1 := testKeyValue("something")
-	k2, v2 := testKeyValue("another one")
-
-	keys := []cipher.SHA256{k1, k2}
-	values := [][]byte{v1, v2}
-
-	if err := ds.MultiAdd(values); err != nil {
-		t.Error(err)
-		return
-	}
-
-	t.Run("first", func(t *testing.T) {
-		if err := ds.MultiInc(keys); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// value must not be changes by MultiInc
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 2 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-	t.Run("second", func(t *testing.T) {
-		if err := ds.MultiInc(keys); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// value must not be changes by MultiInc
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 3 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-	mix := []cipher.SHA256{
-		k1,
-		cipher.SumSHA256([]byte("mi")),
-		k2,
-		cipher.SumSHA256([]byte("ix")),
-	}
-
-	t.Run("mix", func(t *testing.T) {
-		// MultiInc shoud silently ignore unexisting values
-		if err := ds.MultiInc(mix); err == nil {
-			t.Error("misisng error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		}
-
-		// value must not be changes by MultiInc
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if false == (rc == 4 || rc == 3) {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-}
-
-// CXDSMultiDec tests MultiDec method of CXDS
-func CXDSMultiDec(t *testing.T, ds data.CXDS) {
-
-	k1, v1 := testKeyValue("something")
-	k2, v2 := testKeyValue("another one")
-
-	keys := []cipher.SHA256{k1, k2}
-	values := [][]byte{v1, v2}
-
-	if err := ds.MultiAdd(values); err != nil {
-		t.Error(err)
-		return
-	}
-
-	for i := 0; i < 2; i++ {
-		// otherwise, the MultiDec below removes values
-		if err := ds.MultiInc(keys); err != nil {
-			t.Error(err)
-			return
-		}
-	}
-
-	t.Run("first", func(t *testing.T) {
-		if err := ds.MultiDec(keys); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// value must not be changes by MultiInc
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 2 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-	t.Run("second", func(t *testing.T) {
-		if err := ds.MultiDec(keys); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// value must not be changes by MultiInc
-		for i, k := range keys {
-			if val, rc, err := ds.Get(k); err != nil {
-				t.Error(err)
-			} else if rc != 1 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(values[i]), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
-			}
-		}
-	})
-
-	mix := []cipher.SHA256{
-		cipher.SumSHA256([]byte("mi")),
-		k1,
-		cipher.SumSHA256([]byte("ix")),
-		k2,
-	}
-
-	t.Run("mix", func(t *testing.T) {
-		if err := ds.MultiDec(mix); err == nil {
-			t.Error("missing error")
-		} else if err != data.ErrNotFound {
-			t.Error("unexpected error:", err)
-		}
-	})
-
-	t.Run("delete", func(t *testing.T) {
-		if err := ds.MultiDec(keys); err != nil {
-			t.Error(err)
-			return
-		}
-
-		// value must not be changes by MultiInc
-		for _, k := range keys {
-			if _, _, err := ds.Get(k); err == nil {
+		for _, inc := range testIncs() {
+			if rc, err := ds.Inc(key, inc); err == nil {
 				t.Error("missing error")
 			} else if err != data.ErrNotFound {
 				t.Error("unexpected error:", err)
+			} else if rc != 0 {
+				t.Error("wrong rc", rc)
 			}
+			shouldNotExistInCXDS(t, ds, key)
+		}
+	})
+
+	if _, err := ds.Set(key, value, 1); err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Run("zero", func(t *testing.T) {
+		if rc, err := ds.Inc(key, 0); err != nil {
+			t.Error(err)
+		} else if rc != 1 {
+			t.Error("wrong rc", rc)
+		}
+		shouldExistInCXDS(t, ds, key, 1, value)
+	})
+
+	t.Run("inc", func(t *testing.T) {
+		if rc, err := ds.Inc(key, 1); err != nil {
+			t.Error(err)
+		} else if rc != 2 {
+			t.Error("wrong rc", rc)
+		}
+		shouldExistInCXDS(t, ds, key, 2, value)
+	})
+
+	t.Run("dec", func(t *testing.T) {
+		if rc, err := ds.Inc(key, -1); err != nil {
+			t.Error(err)
+		} else if rc != 1 {
+			t.Error("wrong rc", rc)
+		}
+		shouldExistInCXDS(t, ds, key, 1, value)
+	})
+
+	t.Run("inc 2", func(t *testing.T) {
+		if rc, err := ds.Inc(key, 2); err != nil {
+			t.Error(err)
+		} else if rc != 3 {
+			t.Error("wrong rc", rc)
+		}
+		shouldExistInCXDS(t, ds, key, 3, value)
+	})
+
+	t.Run("dec 2", func(t *testing.T) {
+		if rc, err := ds.Inc(key, -2); err != nil {
+			t.Error(err)
+		} else if rc != 1 {
+			t.Error("wrong rc", rc)
+		}
+		shouldExistInCXDS(t, ds, key, 1, value)
+	})
+
+	t.Run("remove", func(t *testing.T) {
+		for i := 0; i < 2; i++ {
+			if rc, err := ds.Inc(key, -1); err != nil {
+				t.Error(err)
+			} else if rc != 0 {
+				t.Error("wrong rc", rc)
+			}
+			shouldExistInCXDS(t, ds, key, 0, value)
 		}
 	})
 

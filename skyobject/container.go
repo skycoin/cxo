@@ -1,351 +1,374 @@
 package skyobject
 
 import (
-	"errors"
-	"fmt"
+	"log"
+	"path/filepath"
 
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
-	"github.com/skycoin/cxo/node/log"
-	"github.com/skycoin/cxo/skyobject/statutil"
+	"github.com/skycoin/cxo/data/cxds"
+	"github.com/skycoin/cxo/data/idxdb"
+	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// common errors
-var (
-	ErrStopIteration            = errors.New("stop iteration")
-	ErrInvalidArgument          = errors.New("invalid argument")
-	ErrMissingTypes             = errors.New("missing Types maps")
-	ErrMissingDirectMapInTypes  = errors.New("missing Direct map in Types")
-	ErrMissingInverseMapInTypes = errors.New("missing Inverse map in Types")
-	ErrEmptyRegistryRef         = errors.New("empty registry reference")
-	ErrNotFound                 = errors.New("not found")
-	ErrEmptyRootHash            = errors.New("empty hash of Root")
-	ErrMissingDB                = errors.New(
-		"skyobject.NewContainer: missing *data.DB")
-)
-
-// A Container represents overlay for database
-// and all related to CX objects. The Container
-// manages DB, Registries, Root objects. The
-// Container also provides a way to create, explore
-// and modify Root objects, add/remove feeds, etc
-type Container struct {
-	log.Logger
-
-	conf Config   // configurations
-	db   *data.DB // database
-
-	coreRegistry *Registry // core registry or nil
-
-	rootsHolder // hold Roots
-
-	// stat
-	packSave statutil.RollAvg
-	cleanUp  statutil.RollAvg // TODO (kostyarin): cleaning up
+func init() {
+	log.SetFlags(log.Lshortfile)
 }
 
-// NewContainer creates new Container instance by given DB
-// and configurations. The DB must be used by this container
-// exclusively (e.g. no one another Container should use the DB).
-// The db argument must not be nil. If conf argument is nil,
-// then default configurations used (see NewConfig for details).
-// This function also panics if given configs contains invalid
-// values
-func NewContainer(db *data.DB, conf *Config) (c *Container, err error) {
+// A Container represents
+type Container struct {
+	Cache // cache of the Container
+	Index // memory mapped IdxDB
 
-	if db == nil {
-		err = ErrMissingDB
-		return
-	}
+	db *data.DB // database
+
+	conf *Config // configurations
+
+	// human readable (used by node for debugging)
+	cxPath, idxPath string
+}
+
+// HumanCXDSPath returns human readable path
+// to CXDS. It used by the node package for
+// dbug logs
+func (c *Container) HumanCXDSPath() string {
+	return c.cxPath
+}
+
+// HumanIdxDBPath returns human readable path
+// to IdxDB. It used by the node package for
+// dbug logs
+func (c *Container) HumanIdxDBPath() string {
+	return c.idxPath
+}
+
+// NewContainer creates Container instance using provided
+// Config. If the Config is nil, then default config is
+// used (see NewConfig function)
+func NewContainer(conf *Config) (c *Container, err error) {
 
 	if conf == nil {
-		conf = NewConfig()
-	}
-
-	if err = conf.Validate(); err != nil {
-		return
+		conf = NewConfig() // default
 	}
 
 	c = new(Container)
-	c.Logger = log.NewLogger(conf.Log)
 
-	c.db = db
-	c.conf = *conf // copy configs
+	c.conf = conf // keep
 
-	if conf.Registry != nil {
-		c.coreRegistry = conf.Registry
+	if err = c.createDB(conf); err != nil {
+		return
 	}
 
-	c.rootsHolder.holded = make(map[holdedRoot]int)
+	defer func() {
+		if err != nil {
+			c.db.Close()         // ignore error
+			c.Cache.stat.Close() // release resources
+		}
+	}()
 
-	c.packSave = statutil.NewRollAvg(conf.RollAvgSamples)
-	c.cleanUp = statutil.NewRollAvg(conf.RollAvgSamples)
+	// check size of objects
+	if err = c.checkSize(); err != nil {
+		return
+	}
+
+	// initialize cache
+	c.initCache()
+
+	if err = c.Index.load(c); err != nil {
+		return
+	}
+
+	return // done
+}
+
+func (c *Container) createDB(conf *Config) (err error) {
+
+	if conf.DataDir != "" {
+		if err = mkdirp(conf.DataDir); err != nil {
+			return
+		}
+	}
+
+	var db *data.DB
+
+	if conf.DB != nil {
+
+		c.cxPath, c.idxPath = "<used provided DB>", "<used provided DB>"
+		db = conf.DB
+
+	} else if conf.InMemoryDB == true {
+
+		c.cxPath, c.idxPath = "<in memory>", "<in memory>"
+		db = data.NewDB(cxds.NewMemoryCXDS(), idxdb.NewMemeoryDB())
+
+	} else {
+
+		if conf.DBPath == "" {
+			c.cxPath = filepath.Join(conf.DataDir, CXDS)
+			c.idxPath = filepath.Join(conf.DataDir, IdxDB)
+		} else {
+			c.cxPath = conf.DBPath + ".cxds"
+			c.idxPath = conf.DBPath + ".idx"
+		}
+
+		var cx data.CXDS
+		var idx data.IdxDB
+
+		if cx, err = cxds.NewDriveCXDS(c.cxPath); err != nil {
+			return
+		}
+
+		if idx, err = idxdb.NewDriveIdxDB(c.idxPath); err != nil {
+			cx.Close()
+			return
+		}
+
+		db = data.NewDB(cx, idx)
+
+	}
+
+	c.db = db
+
 	return
 }
 
-// DB returns underlying *data.DB
-func (c *Container) DB() *data.DB {
+type rcs struct {
+	rc uint32 // saved rc (DB)
+	cc uint32 // correct rc (determined by walking)
+}
+
+type cxdsRCs struct {
+	hr map[cipher.SHA256]rcs // hash -> {rc, actual rc}
+
+	amount uint32 // stat
+	volume uint32 // stat
+}
+
+func (c *Container) getHashRCs() (cr *cxdsRCs, err error) {
+	cr = new(cxdsRCs)
+	cr.hr = make(map[cipher.SHA256]rcs)
+
+	err = c.db.CXDS().Iterate(
+		func(hash cipher.SHA256, rc uint32, val []byte) (err error) {
+
+			cr.amount++                   // stat
+			cr.volume += uint32(len(val)) // stat
+
+			cr.hr[hash] = rcs{rc: rc}
+			return
+		})
+
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func (c *Container) getPack(reg *registry.Registry) (pack *Pack) {
+	pack = new(Pack)
+
+	pack.deg = c.conf.Degree
+	pack.reg = reg
+	pack.c = c
+
+	return
+}
+
+func (c *Container) initRoot(cr *cxdsRCs, rootHash cipher.SHA256) (err error) {
+
+	var val []byte
+	if val, _, err = c.Get(rootHash, 0); err != nil {
+		return
+	}
+
+	var r *registry.Root
+	if r, err = registry.DecodeRoot(val); err != nil {
+		return
+	}
+
+	if val, _, err = c.Get(cipher.SHA256(r.Reg), 0); err != nil {
+		return
+	}
+
+	var reg *registry.Registry
+	if reg, err = registry.DecodeRegistry(val); err != nil {
+		return
+	}
+
+	var pack = c.getPack(reg)
+
+	err = r.Walk(pack,
+		func(
+			hash cipher.SHA256,
+			_ int,
+		) (
+			deepper bool,
+			err error,
+		) {
+
+			var rc, ok = cr.hr[hash]
+			if ok == false {
+				err = data.ErrNotFound
+				return
+			}
+			rc.cc++
+			deepper = rc.cc == 1 // go deepper for first look
+			cr.hr[hash] = rc
+			return
+
+		})
+
+	return
+
+}
+
+func (c *Container) checkSize() (err error) {
+
+	if c.conf.CheckSizes == false {
+		return
+	}
+
+	err = c.db.CXDS().Iterate(
+		func(key cipher.SHA256, _ uint32, _ []byte) (err error) {
+			var val []byte
+			if val, _, err = c.db.CXDS().Get(key, 0); err != nil {
+				return
+			}
+			if len(val) > c.conf.MaxObjectSize {
+				return &ObjectIsTooLargeError{key}
+			}
+			return
+		})
+
+	return
+
+}
+
+// DB of the Container.
+func (c *Container) DB() (db *data.DB) {
 	return c.db
 }
 
-// CoreRegistry of the Container or nil if
-// the Container created without a Registry
-func (c *Container) CoreRegistry() *Registry {
-	c.Debugln(VerbosePin, "CoreRegistry", c.coreRegistry != nil)
+// Walk walks throug given Root calling given
+// walkFunc for every object of the Root including
+// hash of the Root and Registry (depending on the
+// deepper reply of the WalkFunc).
+//
+// The Walk obtains objects of the Root from DB
+func (c *Container) Walk(
+	r *registry.Root,
+	walkFunc registry.WalkFunc,
+) (
+	err error,
+) {
 
-	return c.coreRegistry
+	var reg *registry.Registry
+	if reg, err = c.Registry(r.Reg); err != nil {
+		return
+	}
+
+	var pack = c.getPack(reg)
+
+	return c.walkRoot(pack, r, walkFunc)
 }
 
-// Registry by RegistryRef. The method can returns database error or
-// idxdb.ErrNotfound if requested registry has not been found
-func (c *Container) Registry(rr RegistryRef) (r *Registry, err error) {
-	c.Debugln(VerbosePin, "Registry", rr.Short())
+func (c *Container) walkRoot(
+	pack registry.Pack,
+	r *registry.Root,
+	walkFunc registry.WalkFunc,
+) (
+	err error,
+) {
 
+	defer func() {
+		if err == registry.ErrStopIteration {
+			err = nil
+		}
+	}()
+
+	// hash of the Root is first (ignore deepper)
+	if _, err = walkFunc(r.Hash, 0); err != nil {
+		return
+	}
+
+	// registry is second (ignore deepper)
+	if _, err = walkFunc(cipher.SHA256(r.Reg), 0); err != nil {
+		return
+	}
+
+	return r.Walk(pack, walkFunc)
+}
+
+// Config returns configs of the Container.
+// The Config must not be modified
+func (c *Container) Config() (conf *Config) {
+	return c.conf
+}
+
+func (c *Container) rootByHash(
+	hash cipher.SHA256,
+) (
+	r *registry.Root,
+	err error,
+) {
 	var val []byte
-	if val, _, err = c.DB().CXDS().Get(cipher.SHA256(rr)); err != nil {
+	if val, _, err = c.Get(hash, 0); err != nil {
 		return
 	}
-	r, err = DecodeRegistry(val)
+
+	r, err = registry.DecodeRoot(val)
+	r.Hash = hash
 	return
 }
 
-// Unpack given Root object. Use flags by your needs
-//
-//     r, err := c.Root(pk, 500)
-//     if err != nil {
-//         // handle error
-//         return
-//     }
-//
-//     theFlagsIUsuallyUse := EntireTree | HashTableIndex
-//
-//     pack, err := c.Unpack(r, theFlagsIUsuallyUse, c.CoreRegistry().Types(),
-//         cipher.SecKey{})
-//     if err != nil {
-//         // handle error
-//         return
-//     }
-//
-//     // use the pack
-//
-// The sk argument should not be empty if you want to modify the Root
-// and publish changes. In any other cases it is not necessary and can be
-// passed like cipher.SecKey{}. If the sk is empty then ViewOnly flag
-// will be set
-//
-// The Unpack holds given Root object. Thus, you have to Close the
-// Pack after use. Feel free to close it many times. But keep in
-// mind that after closing Pack can't be used
-func (c *Container) Unpack(r *Root, flags Flag, types *Types,
-	sk cipher.SecKey) (pack *Pack, err error) {
+// RootByHash returns Root by its hash, that is
+// obvious. Errors the method can returns are
+// data.ErrNotfound or decoding error
+func (c *Container) RootByHash(
+	hash cipher.SHA256,
+) (
+	r *registry.Root,
+	err error,
+) {
 
-	// check arguments
-
-	if r == nil {
-		c.Debugln(VerbosePin, "Unpack nil")
-		err = ErrInvalidArgument
+	if r, err = c.rootByHash(hash); err != nil {
 		return
 	}
 
-	// debug log
-	c.Debugln(VerbosePin, "Unpack", r.Pub.Hex()[:7], r.Seq)
+	// signature
 
-	if err = r.Pub.Verify(); err != nil {
-		err = fmt.Errorf("invalid public key of given Root: %v", err)
+	var dr *data.Root
+	if dr, err = c.dataRoot(r.Pub, r.Nonce, r.Seq); err != nil {
 		return
 	}
 
-	if sk == (cipher.SecKey{}) {
-		flags = flags | ViewOnly // can't modify
+	r.Sig = dr.Sig
+	r.IsFull = true
+	return
+}
+
+// Close the Container and related DB. The DB
+// will be closed, even if the Container created
+// with user-provided DB.
+func (c *Container) Close() (err error) {
+
+	// the Cache.Close closes CXDS
+	if err = c.Cache.Close(); err == nil {
+		err = c.db.Close()
 	} else {
-		if err = sk.Verify(); err != nil {
-			err = fmt.Errorf("invalid secret key: %v", err)
-			return
-		}
-	}
-
-	if types == nil {
-		err = ErrMissingTypes
-		return
-	} else if types.Direct == nil {
-		err = ErrMissingDirectMapInTypes
-		return
-	} else if types.Inverse == nil {
-		err = ErrMissingInverseMapInTypes
-		return
-	}
-
-	// check registry presence
-
-	if r.Reg == (RegistryRef{}) {
-		err = ErrEmptyRegistryRef
-		return
-	}
-
-	pack = new(Pack)
-	pack.r = r
-
-	if c.coreRegistry == nil {
-		err = errors.New("missing core registry")
-		pack = nil // release for GC
-		return
-	}
-
-	if r.Reg != c.coreRegistry.Reference() {
-		err = errors.New("Root not points to core registry of the Continer")
-		return
-	}
-
-	pack.reg = c.coreRegistry
-
-	// create the pack
-
-	pack.flags = flags
-	pack.types = types
-
-	pack.unsaved = make(map[cipher.SHA256][]byte)
-
-	pack.c = c
-	pack.sk = sk
-
-	if err = pack.init(); err != nil { // initialize
-		pack = nil // release for GC
-		return
-	}
-
-	if flags&freshRoot == 0 {
-		c.Hold(r.Pub, r.Seq)
+		c.db.Close() // ignore error
 	}
 
 	return
 
 }
 
-// NewRoot associated with core registry
-func (c *Container) NewRoot(pk cipher.PubKey, sk cipher.SecKey, flags Flag,
-	types *Types) (pack *Pack, err error) {
-
-	c.Debugln(VerbosePin, "NewRoot", pk.Hex()[:7])
-
-	if c.coreRegistry == nil {
-		err = errors.New("can't create new Root: missing core Registry")
-		return
-	}
-
-	if sk == (cipher.SecKey{}) {
-		err = errors.New("empty secret key")
-		return
-	}
-
-	r := new(Root)
-	r.Pub = pk
-	r.Reg = c.coreRegistry.Reference()
-	return c.Unpack(r, flags|freshRoot, types, sk)
+func fatal(args ...interface{}) {
+	log.Fatalln(args...)
 }
 
-// Close the Container. The
-// closing doesn't close DB
-func (c *Container) Close() error {
-	c.Debug(VerbosePin, "Close()")
-
-	// TODO (kostyarin): cleaning up
-	return nil
-}
-
-//
-// feeds
-//
-
-// AddFeed add feed to DB. The method never returns to
-// make the Container able to handle Root object related to
-// the feed. The feed stored in DB. This method never
-// returns "already exists" errors
-func (c *Container) AddFeed(pk cipher.PubKey) error {
-	c.Debugln(VerbosePin, "AddFeed", pk.Hex()[:7])
-
-	return c.DB().IdxDB().Tx(func(feeds data.Feeds) error {
-		return feeds.Add(pk)
-	})
-}
-
-// DelFeed deletes feed and all related Root objects and objects
-// related to the Root objects (if this objects not used by some other feeds).
-// The method never returns "not found" errors. The method returns error
-// if there are held Root objects of the feed. Close all Pack
-// instances that uses Root objects of the feed to release them
-func (c *Container) DelFeed(pk cipher.PubKey) error {
-	c.Debugln(VerbosePin, "DelFeed", pk.Hex()[:7])
-
-	return c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
-
-		if false == feeds.Has(pk) {
-			return // nothing to delete
-		}
-
-		var rs data.Roots
-		if rs, err = feeds.Roots(pk); err != nil {
-			return
-		}
-
-		if rs.Len() == 0 {
-			return feeds.Del(pk) // delete empty feed
-		}
-
-		// remove all Root objects first
-		// (and decrement refs count of all related objects)
-		// checking out held Roots
-
-		err = rs.Ascend(func(ir *data.Root) (err error) {
-			if err = c.CanRemove(pk, ir.Seq); err != nil {
-				return
-			}
-
-			if err = c.decrementAll(ir); err != nil {
-				return
-			}
-
-			return rs.Del(ir.Seq) // delete the Root
-		})
-
-		if err != nil {
-			return
-		}
-
-		return feeds.Del(pk)
-	})
-}
-
-// DelRoot deletes Root of given feed with given seq number. If the Root
-// doesn't exists, then this method doesn't returns an error. Even if the feed
-// does not exist
-func (c *Container) DelRoot(pk cipher.PubKey, seq uint64) (err error) {
-	c.Debugln(VerbosePin, "DelRoot", pk.Hex()[:7])
-
-	return c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
-		if false == feeds.Has(pk) {
-			return // nothing to delete
-		}
-		var rs data.Roots
-		if rs, err = feeds.Roots(pk); err != nil {
-			return
-		}
-		if rs.Len() == 0 {
-			return feeds.Del(pk) // delete empty feed
-		}
-		var ir *data.Root
-		if ir, err = rs.Get(seq); err != nil {
-			if err == data.ErrNotFound {
-				err = nil
-			}
-			return
-		}
-		if err = c.CanRemove(pk, ir.Seq); err != nil {
-			return
-		}
-		if err = c.decrementAll(ir); err != nil {
-			return
-		}
-		return rs.Del(ir.Seq) // delete the Root
-	})
+func fatalf(format string, args ...interface{}) {
+	log.Fatalf(format, args...)
 }

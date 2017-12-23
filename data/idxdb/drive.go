@@ -86,6 +86,7 @@ func NewDriveIdxDB(fileName string) (idx data.IdxDB, err error) {
 		_, err = tx.CreateBucketIfNotExists(feedsBucket)
 		return
 	})
+
 	if err != nil {
 		b.Close()
 		return
@@ -119,12 +120,16 @@ func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 
 // Del deltes feed if the feed is empty
 func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
-	if f := d.bk.Bucket(pk[:]); f == nil {
-		return // not exists
-	} else if f.Stats().KeyN == 0 {
-		return d.bk.DeleteBucket(pk[:]) // empty
+
+	var fs *bolt.Bucket
+
+	if fs = d.bk.Bucket(pk[:]); fs == nil {
+
+		return data.ErrNoSuchFeed
+
 	}
-	return data.ErrFeedIsNotEmpty // can't remove non-empty feed
+
+	return d.bk.DeleteBucket(pk[:])
 }
 
 // Iterate over all feeds
@@ -159,17 +164,94 @@ func incSlice(b []byte) {
 }
 
 // Has performs presence check
-func (d *driveFeeds) Has(pk cipher.PubKey) bool {
-	return d.bk.Bucket(pk[:]) != nil
+func (d *driveFeeds) Has(pk cipher.PubKey) (ok bool, _ error) {
+	ok = d.bk.Bucket(pk[:]) != nil
+	return
 }
 
-// Roots returns bucket of Root object of given feed
-func (d *driveFeeds) Roots(pk cipher.PubKey) (rs data.Roots, err error) {
-	bk := d.bk.Bucket(pk[:])
+// Heads returns bucket of Heads of given feed
+func (d *driveFeeds) Heads(pk cipher.PubKey) (rs data.Heads, err error) {
+	var bk = d.bk.Bucket(pk[:])
 	if bk == nil {
 		return nil, data.ErrNoSuchFeed
 	}
+	return &driveHeads{bk}, nil
+}
+
+func (d *driveFeeds) Len() (length int) {
+	return d.bk.Stats().BucketN - 1
+}
+
+type driveHeads struct {
+	bk *bolt.Bucket
+}
+
+func nonceToBytes(nonce uint64) (b []byte) {
+	b = make([]byte, 8)
+	binary.BigEndian.PutUint64(b, nonce)
+	return
+}
+
+func nonceFromBytes(b []byte) (nonce uint64) {
+	nonce = binary.BigEndian.Uint64(b)
+	return
+}
+
+func (d *driveHeads) Roots(nonce uint64) (rs data.Roots, err error) {
+	var bk *bolt.Bucket
+	if bk = d.bk.Bucket(nonceToBytes(nonce)); bk == nil {
+		return nil, data.ErrNoSuchHead
+	}
 	return &driveRoots{bk}, nil
+}
+
+func (d *driveHeads) Add(nonce uint64) (rs data.Roots, err error) {
+	var bk *bolt.Bucket
+	bk, err = d.bk.CreateBucketIfNotExists(nonceToBytes(nonce))
+	if err != nil {
+		return
+	}
+	return &driveRoots{bk}, nil
+}
+
+// Del head with given nonce
+func (d *driveHeads) Del(nonce uint64) (err error) {
+
+	var nonceb = nonceToBytes(nonce)
+
+	if head := d.bk.Bucket(nonceb); head == nil {
+		return data.ErrNoSuchHead
+	}
+
+	return d.bk.DeleteBucket(nonceb)
+}
+
+// Has head with given nonce
+func (d *driveHeads) Has(nonce uint64) (ok bool, _ error) {
+	ok = d.bk.Bucket(nonceToBytes(nonce)) != nil
+	return
+}
+
+// Iterate over heads
+func (d *driveHeads) Iterate(iterateFunc data.IterateHeadsFunc) (err error) {
+
+	var c = d.bk.Cursor()
+
+	for nonceb, _ := c.First(); nonceb != nil; nonceb, _ = c.Next() {
+		if err = iterateFunc(nonceFromBytes(nonceb)); err != nil {
+			break
+		}
+	}
+
+	if err == data.ErrStopIteration {
+		err = nil
+	}
+
+	return
+}
+
+func (d *driveHeads) Len() (length int) {
+	return d.bk.Stats().BucketN - 1
 }
 
 type driveRoots struct {
@@ -179,11 +261,13 @@ type driveRoots struct {
 // Ascend iterates over all Root objects ascending order
 func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 
-	var seq uint64
-	var r = new(data.Root)
-	var sb = make([]byte, 8)
+	var (
+		seq uint64
+		r   = new(data.Root)
+		sb  = make([]byte, 8)
 
-	c := d.bk.Cursor()
+		c = d.bk.Cursor()
+	)
 
 	for seqb, er := c.First(); seqb != nil; seqb, er = c.Seek(seqb) {
 
@@ -210,9 +294,10 @@ func (d *driveRoots) Ascend(iterateFunc data.IterateRootsFunc) (err error) {
 // Descend iterates over all Root objects descending order
 func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 
-	var r = new(data.Root)
-
-	c := d.bk.Cursor()
+	var (
+		r = new(data.Root)
+		c = d.bk.Cursor()
+	)
 
 	for seqb, er := c.Last(); seqb != nil; {
 
@@ -230,6 +315,7 @@ func (d *driveRoots) Descend(iterateFunc data.IterateRootsFunc) (err error) {
 		c.Seek(seqb)        // rewind
 		seqb, er = c.Prev() // prev
 	}
+
 	return
 }
 
@@ -246,23 +332,27 @@ func (d *driveRoots) Set(r *data.Root) (err error) {
 	seqb = utob(r.Seq)
 
 	if val = d.bk.Get(seqb); len(val) == 0 {
+
 		// not found
-		r.UpdateAccessTime()
-		r.CreateTime = r.AccessTime
+		r.Access = time.Now().UnixNano()
+		r.Create = r.Access
+
 		return d.bk.Put(seqb, r.Encode())
 	}
 
 	// found
-	nr := new(data.Root)
+	var nr = new(data.Root)
 
 	if err = nr.Decode(val); err != nil {
 		panic(err)
 	}
 
-	r.AccessTime = nr.AccessTime
-	r.CreateTime = nr.CreateTime
+	r.Create = nr.Create // "reply"
+	r.Access = nr.Access // "reply"
 
-	nr.UpdateAccessTime()
+	// touch
+	nr.Access = time.Now().UnixNano()
+
 	return d.bk.Put(seqb, nr.Encode())
 }
 
@@ -273,22 +363,40 @@ func (d *driveRoots) Del(seq uint64) (err error) {
 
 // Get Root object by seq
 func (d *driveRoots) Get(seq uint64) (r *data.Root, err error) {
-	seqb := utob(seq)
-	val := d.bk.Get(seqb)
+
+	var (
+		seqb = utob(seq)
+		val  = d.bk.Get(seqb)
+	)
+
 	if len(val) == 0 {
 		err = data.ErrNotFound
 		return
 	}
+
 	r = new(data.Root)
-	if err := r.Decode(val); err != nil {
+
+	if err = r.Decode(val); err != nil {
 		panic(err)
 	}
+
+	var access = r.Access // keep
+
+	r.Access = time.Now().UnixNano()
+
+	if err = d.bk.Put(seqb, r.Encode()); err != nil {
+		return
+	}
+
+	r.Access = access // set previous access time instead of current
+
 	return
 }
 
 // Has performs precense check using seq
-func (d *driveRoots) Has(seq uint64) (yep bool) {
-	return len(d.bk.Get(utob(seq))) > 0
+func (d *driveRoots) Has(seq uint64) (yep bool, _ error) {
+	yep = len(d.bk.Get(utob(seq))) > 0
+	return
 }
 
 // Len returns amount of Root objects

@@ -3,7 +3,6 @@ package data
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -14,8 +13,9 @@ func testRoot(s string) (r *Root) {
 	_, sk := cipher.GenerateDeterministicKeyPair([]byte("test"))
 
 	r = new(Root)
-	r.AccessTime = 996
-	r.CreateTime = 998
+	r.Access = 996
+	r.Create = 998
+	r.Time = 995
 
 	r.Seq = 0
 	r.Prev = cipher.SHA256{}
@@ -56,20 +56,6 @@ func TestRoot_Decode(t *testing.T) {
 
 }
 
-func TestRoot_UpdateAccessTime(t *testing.T) {
-	// UpdateAccessTime()
-
-	r := testRoot("r1")
-	start := time.Now().UnixNano()
-	r.UpdateAccessTime()
-	end := time.Now().UnixNano()
-	if r.AccessTime < start {
-		t.Error("not updated")
-	} else if r.AccessTime > end {
-		t.Error("wrong time", r.AccessTime, end)
-	}
-}
-
 func TestRoot_Validate(t *testing.T) {
 
 	r := testRoot("seed")
@@ -106,29 +92,18 @@ func TestRoot_Validate(t *testing.T) {
 		t.Error("missing error")
 	}
 
-}
-
-func TestVolume_String(t *testing.T) {
-	// String() (s string)
-
-	type vs struct {
-		vol Volume
-		s   string
+	// zero Time
+	r.Time = 0
+	if err := r.Validate(); err == nil {
+		t.Error("missing error")
 	}
 
-	for i, vs := range []vs{
-		{0, "0B"},
-		{1023, "1023B"},
-		{1024, "1kB"},
-		{1030, "1.01kB"},
-		{1224, "1.2kB"},
-		{1424, "1.39kB"},
-		{10241024, "9.77MB"},
-	} {
-		if vs.vol.String() != vs.s {
-			t.Errorf("wrong %d: %d - %s", i, vs.vol, vs.vol.String())
-		} else {
-			t.Logf("      %d: %d - %s", i, vs.vol, vs.vol.String())
-		}
+	// valid
+
+	r = testRoot("seed")
+
+	if err := r.Validate(); err != nil {
+		t.Error(err)
 	}
+
 }

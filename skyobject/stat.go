@@ -6,211 +6,199 @@ import (
 	"github.com/skycoin/skycoin/src/cipher"
 
 	"github.com/skycoin/cxo/data"
+	"github.com/skycoin/cxo/skyobject/statutil"
 )
 
-// A Stat represents detailed DB statistic
+// A Stat represents statistic of the Container
 type Stat struct {
-	// Objects is total amount of all objects
-	Objects ObjectsStat
-	// Shared objects is part of the total objects
-	// that used by many Root objects
-	Shared ObjectsStat
 
-	// Feeds contains detailed statistic per feed
+	// CXDS is statistic of CXDS key-value store.
+	CXDS ReadWriteStat
+	// Cache contains read-write statistic of the
+	// Cache. The Cache statistic collect only
+	// effective reads and writes (where data
+	// requested of changed in the Cache without
+	// DB access).
+	Cache ReadWriteStat
+	// CacheCleaning is average pause of Cache
+	// for cleaning
+	CacheCleaning time.Duration
+
+	CacheObjects ObjectsStat // cached objects
+	AllObjects   ObjectsStat // all objects
+	UsedObjects  ObjectsStat // used objects
+
+	// RootsPerSecond is average vlaue of new
+	// Root objects per second.
+	RootsPerSecond float64
+
+	// Feeds contains statistic of feeds
 	Feeds map[cipher.PubKey]FeedStat
-
-	Save    time.Duration // average saving time
-	CleanUp time.Duration // average cleaning time (not implemented yet)
-	Stat    time.Duration // duration of the Stat collecting
 }
 
-// Percents returns percent of shared objects. Amount and Volume
-func (s *Stat) Percents() (sap, svp float64) {
-	return sharedPercent(&s.Shared, &s.Objects)
-}
-
-// An ObjectsStat represents objects DB statistic
+// An ObjectsStat represents
+// statistics of objects
 type ObjectsStat struct {
-	Volume data.Volume // size
-	Amount uint32      // amount
+	Amount statutil.Amount
+	Volume statutil.Volume
 }
 
-// percent of shard
-func sharedPercent(shd, objs *ObjectsStat) (sap, svp float64) {
-	if objs.Amount > 0 { // avoid NaN
-		sap = float64(shd.Amount) / float64(objs.Amount)
-	}
-	if objs.Volume > 0 { // avoid NaN
-		svp = float64(shd.Volume) / float64(objs.Volume)
-	}
-	return
+// A ReadWriteStat represents read-write statistic
+type ReadWriteStat struct {
+	RPS float64 // reads per second
+	WPS float64 // writes per second
 }
 
-// A FeedStat represents detailed
-// statistic about a feed
+// A FeedStat represents statistic
+// of a feed
 type FeedStat struct {
-	// Objects is amount of all objects used by
-	// this feed
-	Objects ObjectsStat
-	// Shared objects if amount of objects
-	// used by many Root objects of this feed
-	Shared ObjectsStat
-	// Roots contains detailed statistic
-	// for every Root of this feed
-	Roots map[uint64]RootStat
+	// Hads contains statistic of heads
+	Heads map[uint64]HeadStat
 }
 
-// Percents returns percent of shared objects. Amount and Volume
-func (f *FeedStat) Percents() (sap, svp float64) {
-	return sharedPercent(&f.Shared, &f.Objects)
+// A HeadStat represents statistic of
+// a head
+type HeadStat struct {
+	// Len is total amount of Root
+	// objects of this head
+	Len int
+
+	// First Root of the head
+	First RootStat
+	// Last is Root of the head
+	Last RootStat
 }
 
-// A RootStat represents detailed statistic
-// of a Root object
+// A RootStat represetns brief informaion about a Root
 type RootStat struct {
-	// Total objects used by this Root
-	Objects ObjectsStat
-	// Shared is part of the total amount.
-	// It is amount of objects used by many
-	// Root objects of this feed
-	Shared ObjectsStat
+	Time time.Time     // timestamp
+	Seq  uint64        // seq number
+	Hash cipher.SHA256 // hash of the Root
 }
 
-// Percents returns percent of shared objects. Amount and Volume
-func (r *RootStat) Percents() (sap, svp float64) {
-	return sharedPercent(&r.Shared, &r.Objects)
+// Stat retusn statistic of the Container
+func (c *Container) Stat() (s *Stat) {
+
+	s = new(Stat)
+
+	s.CXDS.RPS = c.Cache.stat.dbRPS()
+	s.CXDS.WPS = c.Cache.stat.dbWPS()
+
+	s.Cache.RPS = c.Cache.stat.cRPS()
+	s.Cache.WPS = c.Cache.stat.cWPS()
+
+	s.CacheCleaning = c.Cache.stat.cacheCleaning()
+
+	var amount, volume = c.amountVolume() // of cache
+
+	s.CacheObjects.Amount = statutil.Amount(amount)
+	s.CacheObjects.Volume = statutil.Volume(volume)
+
+	var all, used = c.db.CXDS().Amount()
+
+	s.AllObjects.Amount = statutil.Amount(all)
+	s.UsedObjects.Amount = statutil.Amount(used)
+
+	all, used = c.db.CXDS().Volume()
+
+	s.AllObjects.Volume = statutil.Volume(all)
+	s.UsedObjects.Volume = statutil.Volume(used)
+
+	s.RootsPerSecond = c.Index.stat.rootsPerSecond()
+
+	s.Feeds = c.Index.feedsStat()
+
+	return
 }
 
-type objStat struct {
-	rc  uint32
-	vol data.Volume
-}
+func (i *Index) feedsStat() (s map[cipher.PubKey]FeedStat) {
 
-// Stat returns detailed statistic. The call requires
-// iterating over all objects. Thus, the call is slow
-func (c *Container) Stat() (s Stat, err error) {
+	i.mx.Lock()
+	defer i.mx.Unlock()
 
-	tp := time.Now()
+	s = make(map[cipher.PubKey]FeedStat)
 
-	// s.Object, s.Shared
+	// ignore error
+	i.c.db.IdxDB().Tx(func(feeds data.Feeds) (err error) {
 
-	objs := make(map[cipher.SHA256]objStat)
+		//
+		// range feeds
+		//
 
-	err = c.DB().CXDS().Iterate(func(key cipher.SHA256, rc uint32) (err error) {
-		val, _, _ := c.DB().CXDS().Get(key)
-		objs[key] = objStat{rc, data.Volume(len(val))}
-		return
-	})
-	if err != nil {
-		return
-	}
+		for pk, hs := range i.feeds {
 
-	for _, obj := range objs {
-		s.Objects.Amount++
-		s.Objects.Volume += obj.vol
-		if obj.rc > 1 {
-			s.Shared.Amount++
-			s.Shared.Volume += obj.vol
-		}
-	}
+			var (
+				sf    FeedStat
+				heads data.Heads
+			)
 
-	// s.Feeds
-
-	s.Feeds = make(map[cipher.PubKey]FeedStat)
-
-	err = c.DB().IdxDB().Tx(func(feeds data.Feeds) (err error) {
-
-		// range over all feeds
-		return feeds.Iterate(func(pk cipher.PubKey) (err error) {
-
-			var roots data.Roots
-			if roots, err = feeds.Roots(pk); err != nil {
-				return
+			if heads, err = feeds.Heads(pk); err != nil {
+				continue // ignore error
 			}
 
-			var fs FeedStat
-			if fs, err = c.getFeedStat(roots, objs); err != nil {
-				return
+			sf.Heads = make(map[uint64]HeadStat)
+
+			//
+			// range heads
+			//
+
+			for nonce, last := range hs.h {
+
+				var (
+					sh    HeadStat
+					roots data.Roots
+				)
+
+				if last == nil {
+					sf.Heads[nonce] = sh // blank head
+				}
+
+				if roots, err = heads.Roots(nonce); err != nil {
+					continue // ignore error
+				}
+
+				sh.Len = roots.Len()
+
+				// first
+
+				if sh.Len > 1 {
+
+					roots.Ascend(func(dr *data.Root) (err error) {
+
+						sh.First.Seq = dr.Seq
+						sh.First.Time = time.Unix(0, dr.Time)
+						sh.First.Hash = dr.Hash
+
+						return data.ErrStopIteration
+					})
+
+				}
+
+				// last
+
+				sh.Last.Seq = last.Seq
+				sh.Last.Time = time.Unix(0, last.Time)
+				sh.Last.Hash = last.Hash
+
+				sf.Heads[nonce] = sh
+
 			}
 
-			s.Feeds[pk] = fs
-			return
-		})
+			s[pk] = sf
 
-	})
+			//
+			// end
+			//
 
-	if err != nil {
-		return
-	}
-
-	s.Save = c.packSave.Value()
-	s.CleanUp = c.cleanUp.Value()
-	s.Stat = time.Now().Sub(tp)
-	return
-}
-
-func (c *Container) getFeedStat(roots data.Roots,
-	objs map[cipher.SHA256]objStat) (fs FeedStat, err error) {
-
-	fs.Roots = make(map[uint64]RootStat)
-
-	// feed-already
-	falr := make(map[cipher.SHA256]struct{})
-
-	err = roots.Ascend(func(ir *data.Root) (err error) {
-		var rs RootStat
-		if rs, err = c.getRootStat(ir, objs, &fs, falr); err != nil {
-			return
-		}
-		fs.Roots[ir.Seq] = rs
-		return
-	})
-	if err != nil {
-		return
-	}
-	return
-}
-
-func (c *Container) getRootStat(ir *data.Root, objs map[cipher.SHA256]objStat,
-	fs *FeedStat, falr map[cipher.SHA256]struct{}) (rs RootStat, err error) {
-
-	already := make(map[cipher.SHA256]struct{})
-
-	err = c.findRefs(ir, func(key cipher.SHA256) (deepper bool, _ error) {
-
-		if _, ok := already[key]; ok {
-			return // don't go deepper
 		}
 
-		already[key] = struct{}{}
-
-		deepper = true
-
-		o := objs[key]
-
-		rs.Objects.Amount++
-		rs.Objects.Volume += o.vol
-		if o.rc > 1 {
-			rs.Shared.Amount++
-			rs.Shared.Volume += o.vol
-		}
-
-		// add to FeedStat
-		if _, ok := falr[key]; ok {
-			return // already
-		}
-
-		falr[key] = struct{}{}
-
-		fs.Objects.Amount++
-		fs.Objects.Volume += o.vol
-		if o.rc > 1 {
-			fs.Shared.Amount++
-			fs.Shared.Volume += o.vol
-		}
+		//
+		// end
+		//
 
 		return
 	})
 
 	return
+
 }
