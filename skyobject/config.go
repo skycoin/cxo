@@ -160,15 +160,6 @@ type Config struct {
 	// objects alrge then MaxObjectSize limit. But, the
 	// checking stops on first error.
 	CheckSizes bool
-	// ReinitDB forces to reinitialize database. A database
-	// can be broken if previous time the CXO application
-	// was closed by panic, log.Fatal, unexpected os.Exit
-	// or similar. The CXO uses Write-Behind cache and this
-	// cache synchronizes with DB during closing. In this
-	// "fatal" cases DB will be reinitialized automatically.
-	// This option forces the reinit even if DB closed
-	// safetly
-	ReinitDB bool
 	// InMemoryDB uses database in memory. The option is
 	// usability trick for test. If DB field (see blow) is
 	// nil and this field is treu, then default database in
