@@ -200,7 +200,7 @@ func (d *driveCXDS) saveStat() (err error) {
 	d.mx.Lock()
 	defer d.mx.Unlock()
 
-	return d.b.View(func(tx *bolt.Tx) (err error) {
+	return d.b.Update(func(tx *bolt.Tx) (err error) {
 
 		var info = tx.Bucket(metaBucket)
 
@@ -571,7 +571,7 @@ func (d *driveCXDS) Volume() (all, used int) {
 // Close DB
 func (d *driveCXDS) Close() (err error) {
 
-	if err = d.saveStat(); err != nil {
+	if err = d.saveStat(); err != nil && err != bolt.ErrDatabaseNotOpen {
 		d.b.Close() // drop error
 		return
 	}

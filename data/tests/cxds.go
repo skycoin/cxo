@@ -19,6 +19,7 @@ func testIncs() []int {
 }
 
 func shouldNotExistInCXDS(t *testing.T, ds data.CXDS, key cipher.SHA256) {
+	t.Helper()
 	if _, rc, err := ds.Get(key, 0); err == nil {
 		t.Error("missing error")
 	} else if err != data.ErrNotFound {
@@ -36,6 +37,8 @@ func shouldExistInCXDS(
 	val []byte,
 ) {
 
+	t.Helper()
+
 	if gval, grc, err := ds.Get(key, 0); err != nil {
 		t.Error(err)
 	} else if grc != rc {
@@ -46,6 +49,8 @@ func shouldExistInCXDS(
 }
 
 func shouldPanic(t *testing.T) {
+	t.Helper()
+
 	if recover() == nil {
 		t.Error("missing panic")
 	}
@@ -109,14 +114,16 @@ func CXDSGet(t *testing.T, ds data.CXDS) {
 		})
 
 		t.Run("remove", func(t *testing.T) {
-			if val, rc, err := ds.Get(key, -1); err != nil {
-				t.Error(err)
-			} else if rc != 0 {
-				t.Error("wrong rc", rc)
-			} else if want, got := string(value), string(val); want != got {
-				t.Errorf("wrong value: want %q, got %q", want, got)
+			for i := 0; i < 2; i++ {
+				if val, rc, err := ds.Get(key, -1); err != nil {
+					t.Error(err)
+				} else if rc != 0 {
+					t.Error("wrong rc", rc)
+				} else if want, got := string(value), string(val); want != got {
+					t.Errorf("wrong value: want %q, got %q", want, got)
+				}
+				shouldExistInCXDS(t, ds, key, 0, value)
 			}
-			shouldNotExistInCXDS(t, ds, key)
 		})
 
 	})
@@ -236,12 +243,14 @@ func CXDSInc(t *testing.T, ds data.CXDS) {
 	})
 
 	t.Run("remove", func(t *testing.T) {
-		if rc, err := ds.Inc(key, -1); err != nil {
-			t.Error(err)
-		} else if rc != 0 {
-			t.Error("wrong rc", rc)
+		for i := 0; i < 2; i++ {
+			if rc, err := ds.Inc(key, -1); err != nil {
+				t.Error(err)
+			} else if rc != 0 {
+				t.Error("wrong rc", rc)
+			}
+			shouldExistInCXDS(t, ds, key, 0, value)
 		}
-		shouldNotExistInCXDS(t, ds, key)
 	})
 
 }

@@ -97,26 +97,6 @@ func FeedsDel(t *testing.T, idx data.IdxDB) {
 		}
 	})
 
-	if addFeed(t, idx, pk); t.Failed() {
-		return
-	}
-	if addHead(t, idx, pk, nonce); t.Failed() {
-		return
-	}
-
-	t.Run("not empty", func(t *testing.T) {
-		err := idx.Tx(func(feeds data.Feeds) (_ error) {
-			if err := feeds.Del(pk); err == nil {
-				t.Error("missing error")
-			} else if err != data.ErrFeedIsNotEmpty {
-				t.Error("unexpected error:", err)
-			}
-			return
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	})
 }
 
 // FeedsIterate is test case for Feeds.Iterate
