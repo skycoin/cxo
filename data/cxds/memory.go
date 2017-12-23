@@ -238,6 +238,12 @@ func (m *memoryCXDS) IterateDel(
 		}
 		if del == true {
 			delete(m.kvs, k)
+			if mo.rc > 0 {
+				m.amountUsed--
+				m.volumeUsed -= len(mo.val)
+			}
+			m.amountAll--
+			m.voluemAll -= len(mo.val)
 		}
 	}
 

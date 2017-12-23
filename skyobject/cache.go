@@ -544,6 +544,64 @@ func (c *Cache) getFilling(
 	return
 }
 
+// like the Get, but don't put item into the
+// cache if it's not in the cache and don't
+// touch the item
+func (c *Cache) getNoCache(
+	key cipher.SHA256,
+	inc int,
+) (
+	val []byte,
+	rc int,
+	err error,
+) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	var it, ok = c.is[key]
+
+	if ok == true {
+		if it.isWanted() == true {
+			return nil, 0, data.ErrNotFound
+		}
+
+		// nothing wrong with caching a filling item
+
+		if it.isFilling() == true {
+			return c.getFilling(key, inc, it)
+		}
+
+		// the delete below can clean the val field
+		val = it.val
+
+		// remove item if it's cc is zero
+		if it.cc = incr(it.cc, inc); it.cc == 0 {
+			c.delete(key, it)
+		} else {
+			c.stat.addCacheGet(inc) // effective cache get
+		}
+
+		rc = it.cc - it.fc // hard rc
+		return
+	}
+
+	// not found in the Cache
+
+	var urc uint32
+	val, urc, err = c.db().Get(key, inc)
+	c.stat.addDBGet(inc)
+
+	if err != nil {
+		return
+	}
+
+	rc = int(urc) // hard rc
+
+	// don't put to cache
+	return
+}
+
 // under lock
 func (c *Cache) get(
 	key cipher.SHA256,
@@ -591,7 +649,27 @@ func (c *Cache) get(
 		return
 	}
 
-	err = c.putItem(key, val, int(urc))
+	rc = int(urc) // hard rc
+
+	err = c.putItem(key, val, rc)
+	return
+}
+
+// IsCached returns true if items with given key is cached.
+// The item is not value and a cached item may not exist
+// in the cache and in DB too. If an item is cached, then
+// it should not be removed from DB. Becasue of write-behind
+// cacheing. Also, in some rare cases, a value can be
+// "resurrected" if it's cached (e.g. its rc will be increased
+// from zero).
+//
+// Use this method cleaning up DB.
+func (c *Cache) IsCached(key cipher.SHA256) (yep bool) {
+
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	_, yep = c.is[key]
 	return
 }
 
@@ -673,8 +751,10 @@ func (c *Cache) setWanted(
 		return // DB failure
 	}
 
+	rc = int(urc) - (wincs + it.fc) // hard rc
+
 	// send hard rc to wanters
-	var obj = Object{key, val, int(urc) - (wincs + it.fc), nil}
+	var obj = Object{key, val, rc, nil}
 
 	for gc := range it.fwant {
 		sendWanted(gc, obj)
@@ -1138,7 +1218,7 @@ func (c *Cache) Finc(
 	}
 
 	// and if it.fc turns to be zero, then the
-	// incItem remvoes it
+	// incItem removes it
 
 	_, err = c.incItem(key, inc, it) // in db
 	return

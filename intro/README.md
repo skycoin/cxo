@@ -3,11 +3,12 @@ intro
 
 The `intro` folder contains examples.
 
+- [`cleanup`](./cleanup) - about removing old and ownerless objects
 - [`discovery/`](./discovery) - about discovery server
-- [`skybrief/`](./skybrief) - breifly about skyobject
 - [`preview/`](./preview) - about feed preview
 - [`send_receive/`](./send_receive) - about source and destination, and how to
   decode values back to golang-values
+- [`skybrief/`](./skybrief) - breifly about skyobject
 
 The `types.go` file implements basic types for these
 examples. And the file also implements regsitry of

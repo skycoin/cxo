@@ -63,8 +63,7 @@ func (u *Unpack) Add(val []byte) (key cipher.SHA256, err error) {
 
 // Unpack creates Unpack using given registry. Use
 // the Unapck to modify a Root object and to save
-// cahnges after. For every Root new, separate
-// Unpack required
+// cahnges after.
 func (c *Container) Unpack(
 	sk cipher.SecKey,
 	reg *registry.Registry,
@@ -218,7 +217,7 @@ func (c *Container) Save(up *Unpack, r *registry.Root) (err error) {
 		return
 	}
 
-	// make rc of related object actual
+	// make rc of related objects actual
 
 	for key, ui := range up.m {
 

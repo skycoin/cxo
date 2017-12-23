@@ -1,3 +1,17 @@
+// Package cxoutils implements common utilities for
+// CXO, that can be used, or can be not used by
+// end-user. The package implements methods to
+// remove old Root objects and to remvoe ownerless
+// objects from databases.
+//
+// The CXO never remove objects, even if an obejcts
+// is not used anymore. And every object has rc
+// (references counter). If the rc is zero, then
+// this object is ownerless and can be removed.
+//
+// And the same for Root objects. The CXO keeps all
+// Root obejcts. But who interest old, replaced Root
+// objects?
 package cxoutils
 
 import (
@@ -27,10 +41,11 @@ func RemoveRootObjects(c *skyobject.Container, keepLast int) (err error) {
 		for _, nonce := range heads {
 			var seq uint64
 			if seq, err = c.LastRootSeq(pk, nonce); err != nil {
-				continue // not a real error
+				err = nil // clear
+				continue  // not a real error
 			}
 
-			if seq <= uint64(keepLast) {
+			if seq < uint64(keepLast) {
 				continue
 			}
 
@@ -40,6 +55,7 @@ func RemoveRootObjects(c *skyobject.Container, keepLast int) (err error) {
 
 				if err = c.DelRoot(pk, nonce, goDown); err != nil {
 					if err == data.ErrNotFound {
+						err = nil // clear error
 						continue HeadLoop
 					}
 					return // a failure (CXDS not found error?)
@@ -50,6 +66,7 @@ func RemoveRootObjects(c *skyobject.Container, keepLast int) (err error) {
 			// seq = 0 (goDown == 0)
 			if err = c.DelRoot(pk, nonce, 0); err != nil {
 				if err == data.ErrNotFound {
+					err = nil // clear error
 					continue HeadLoop
 				}
 
@@ -71,11 +88,11 @@ func RemoveObjects(c *skyobject.Container) (err error) {
 	var db = c.DB().CXDS()
 
 	err = db.IterateDel(
-		func(_ cipher.SHA256, rc uint32, _ []byte) (bool, error) {
-			return rc == 0, nil
+		func(key cipher.SHA256, rc uint32, _ []byte) (bool, error) {
+			return (rc == 0) && (c.IsCached(key) == false), nil
 		})
 
 	return
 }
 
-// TODO (kostyarin): RemoveObjects with "down to" feature
+// TODO (kostyarin): RemoveObjects with "down to" or "timeout" feature

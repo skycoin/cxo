@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -27,6 +28,8 @@ var (
 )
 
 type driveCXDS struct {
+	mx sync.Mutex // lock amounts and volumes
+
 	amountAll  int // amount of all objects
 	amountUsed int // amount of used objects
 
@@ -144,6 +147,9 @@ func NewDriveCXDS(fileName string) (ds data.CXDS, err error) {
 
 func (d *driveCXDS) loadStat() (err error) {
 
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	return d.b.View(func(tx *bolt.Tx) (err error) {
 
 		var (
@@ -191,6 +197,9 @@ func (d *driveCXDS) loadStat() (err error) {
 
 func (d *driveCXDS) saveStat() (err error) {
 
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	return d.b.View(func(tx *bolt.Tx) (err error) {
 
 		var info = tx.Bucket(metaBucket)
@@ -230,6 +239,9 @@ func (d *driveCXDS) saveStat() (err error) {
 
 func (d *driveCXDS) av(rc, nrc uint32, vol int) {
 
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	if rc == 0 { // was dead
 		if nrc > 0 { // an be resurrected
 			d.amountUsed++
@@ -240,7 +252,7 @@ func (d *driveCXDS) av(rc, nrc uint32, vol int) {
 
 	// rc > 0 (was alive)
 
-	if nrc == 0 { // an be killed
+	if nrc == 0 { // and be killed
 		d.amountUsed--
 		d.volumeUsed -= vol
 	}
@@ -278,7 +290,9 @@ func (d *driveCXDS) incr(
 	repl = append(repl, val...)
 	err = o.Put(key[:], repl)
 
-	d.av(rc, nrc, len(val))
+	if rc != nrc {
+		d.av(rc, nrc, len(val))
+	}
 
 	return
 }
@@ -326,6 +340,14 @@ func panicf(format string, args ...interface{}) {
 	panic(fmt.Sprintf(format, args...))
 }
 
+func (d *driveCXDS) addAll(vol int) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	d.amountAll++
+	d.volumeAll += vol
+}
+
 // Set value and its references counter
 func (d *driveCXDS) Set(
 	key cipher.SHA256,
@@ -355,8 +377,7 @@ func (d *driveCXDS) Set(
 		if len(got) == 0 {
 
 			// created
-			d.amountAll++
-			d.volumeAll += len(val)
+			d.addAll(len(val))
 
 			rc, err = d.incr(o, key[:], val, 0, 1)
 			return
@@ -408,6 +429,20 @@ func (d *driveCXDS) Inc(
 	return
 }
 
+func (d *driveCXDS) del(rc uint32, vol int) {
+
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	if rc > 0 {
+		d.amountUsed--
+		d.volumeUsed -= vol
+	}
+
+	d.amountAll--
+	d.volumeAll -= vol
+}
+
 // Del deletes value unconditionally
 func (d *driveCXDS) Del(
 	key cipher.SHA256,
@@ -426,17 +461,12 @@ func (d *driveCXDS) Del(
 			return // not found
 		}
 
-		var rc, vol = getRefsCount(got), len(got) - 4
-
-		if rc > 0 {
-			d.amountUsed--
-			d.volumeUsed -= vol
+		if err = o.Delete(key[:]); err != nil {
+			return
 		}
 
-		d.amountAll--
-		d.amountAll -= vol
-
-		return o.Delete(key[:])
+		d.del(getRefsCount(got), len(got)-4)
+		return // nil
 	})
 
 	return
@@ -483,6 +513,7 @@ func (d *driveCXDS) IterateDel(
 
 		var (
 			key cipher.SHA256
+			rc  uint32
 			c   = tx.Bucket(objsBucket).Cursor()
 			del bool
 		)
@@ -494,7 +525,9 @@ func (d *driveCXDS) IterateDel(
 
 			copy(key[:], k)
 
-			if del, err = iterateFunc(key, getRefsCount(v), v[4:]); err != nil {
+			rc = getRefsCount(v)
+
+			if del, err = iterateFunc(key, rc, v[4:]); err != nil {
 				if err == data.ErrStopIteration {
 					err = nil
 				}
@@ -505,6 +538,8 @@ func (d *driveCXDS) IterateDel(
 				if err = c.Delete(); err != nil {
 					return
 				}
+
+				d.del(rc, len(v)-4) // stat
 			}
 
 			incSlice(key[:]) // next
@@ -519,11 +554,17 @@ func (d *driveCXDS) IterateDel(
 
 // Amount of objects
 func (d *driveCXDS) Amount() (all, used int) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	return d.amountAll, d.amountUsed
 }
 
 // Volume of objects (only values)
 func (d *driveCXDS) Volume() (all, used int) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
 	return d.volumeAll, d.volumeUsed
 }
 

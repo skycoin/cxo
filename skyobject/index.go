@@ -798,15 +798,15 @@ func (i *Index) delRoot(
 			return
 		}
 
-		var has bool
-		if has, err = rs.Has(seq); err != nil {
-			return
+		var dr *data.Root
+		if dr, err = rs.Get(seq); err != nil {
+			return // DB failure or  'not found'
 		}
 
-		if has == false {
-			err = data.ErrNotFound
-			return
-		}
+		// keep hash of the Root to remove
+		// from CXDS with all related objects
+
+		rootHash = dr.Hash
 
 		// if found, then the ir is not nil, because the head is not
 		// blank and we keep last Root of every head in the Index
@@ -820,7 +820,7 @@ func (i *Index) delRoot(
 
 		// we have to find last, since we delete it
 		err = rs.Descend(func(dr *data.Root) (err error) {
-			ir = dr
+			ir = dr         // last
 			removed = false // replaced, not removed
 			return data.ErrStopIteration
 		})
@@ -844,7 +844,7 @@ func (i *Index) delRoot(
 		hs.setActive()
 	}
 
-	return ir.Hash, nil
+	return
 }
 
 // delRootLock is delRoot with lock
@@ -892,7 +892,7 @@ func (i *Index) delPackWalkFunc(
 		// use Get instead of Inc(hash, -1) to get value
 		// if it will be deleted by the -1
 
-		if val, rc, err = i.c.Get(hash, -1); err != nil {
+		if val, rc, err = i.c.getNoCache(hash, -1); err != nil {
 			return
 		}
 
