@@ -12,10 +12,6 @@ vendor/
 *.[568vq]
 [568vq].out
 
-# dep package manager files
-Gopkg.lock
-Gopkg.toml
-
 *.cgo1.go
 *.cgo2.c
 _cgo_defun.c
@@ -64,7 +60,7 @@ intro/preview/peer/peer
 
 intro/cleanup/cleanup
 
-# suffix for ignore files and directories temporary 
+# suffix for ignore files and directories temporary
 
 *.go.ignore
 
