@@ -33,6 +33,12 @@ Test all packages
 go test -cover -race github.com/skycoin/cxo/...
 ```
 
+### Docker
+
+```
+docker run -ti --rm -p 8870:8870 -p 8871:8871 skycoin/cxo
+```
+
 
 ### Development
 

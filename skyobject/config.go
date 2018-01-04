@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
+	"runtime"
 
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/log"
@@ -55,16 +55,34 @@ const (
 	cxoSubDir      = "cxo"
 )
 
+// UserHome returns the current user home path
+func UserHome() string {
+	// os/user relies on cgo which is disabled when cross compiling
+	// use fallbacks for various OSes instead
+	// usr, err := user.Current()
+	// if err == nil {
+	//     return usr.HomeDir
+	// }
+	if runtime.GOOS == "windows" {
+		home := os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+		if home == "" {
+			home = os.Getenv("USERPROFILE")
+		}
+		return home
+	}
+
+	return os.Getenv("HOME")
+}
+
 // DataDir returns path to default data directory
 func DataDir() string {
-	usr, err := user.Current()
-	if err != nil {
-		panic(err) // fatal
-	}
-	if usr.HomeDir == "" {
+	homeDir := UserHome()
+
+	if homeDir == "" {
 		panic("empty home dir")
 	}
-	return filepath.Join(usr.HomeDir, skycoinDataDir, cxoSubDir)
+
+	return filepath.Join(homeDir, skycoinDataDir, cxoSubDir)
 }
 
 // mkdir -p dir
