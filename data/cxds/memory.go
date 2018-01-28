@@ -217,7 +217,7 @@ func (m *memoryCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 	return
 }
 
-// IterateDel all keys deleteing
+// IterateDel all keys deleting
 func (m *memoryCXDS) IterateDel(
 	iterateFunc data.IterateObjectsDelFunc,
 ) (
@@ -250,7 +250,7 @@ func (m *memoryCXDS) IterateDel(
 	return
 }
 
-// amoutn of objects
+// amount of objects
 func (m *memoryCXDS) Amount() (all, used int) {
 	m.mx.RLock()
 	defer m.mx.RUnlock()

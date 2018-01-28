@@ -40,7 +40,7 @@ type Feeds interface {
 // heads of a feed
 type IterateHeadsFunc func(nonce uint64) (err error)
 
-// A Heads represens all heads of a feed
+// A Heads represents all heads of a feed
 type Heads interface {
 	// Roots of head with given nonce. If given
 	// head doesn't exists then, this method
@@ -87,13 +87,13 @@ type Roots interface {
 	// Set adds new Root object to the DB. If an
 	// object already exists, then the Set touch
 	// it updating acess time. In this case, the
-	// set changes Access field of the gvien Root.
+	// set changes Access field of the given Root.
 	// If Root doesn't exist, then the Set sets
 	// Create field too. Thus, the method modifies
 	// given Root in any case. E.g. if Root exists
-	// then fields Create and Acess of given Root
+	// then fields Create and Access of given Root
 	// will be changed to saved. But Access field
-	// of saved Roto will be changed to now
+	// of saved Root will be changed to now
 	Set(r *Root) (err error)
 
 	// Del Root by seq number. The Del never returns

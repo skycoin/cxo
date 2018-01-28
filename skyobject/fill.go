@@ -9,7 +9,7 @@ import (
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
-// A Filler implemnets registry.Splitter interface
+// A Filler implements registry.Splitter interface
 // and used for filling.
 type Filler struct {
 	c *Container

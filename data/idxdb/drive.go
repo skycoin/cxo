@@ -118,7 +118,7 @@ func (d *driveFeeds) Add(pk cipher.PubKey) (err error) {
 	return
 }
 
-// Del deltes feed if the feed is empty
+// Del deletes feed if the feed is empty
 func (d *driveFeeds) Del(pk cipher.PubKey) (err error) {
 
 	var fs *bolt.Bucket

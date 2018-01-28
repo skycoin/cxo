@@ -1,16 +1,16 @@
 // Package cxoutils implements common utilities for
 // CXO, that can be used, or can be not used by
 // end-user. The package implements methods to
-// remove old Root objects and to remvoe ownerless
+// remove old Root objects and to remove ownerless
 // objects from databases.
 //
-// The CXO never remove objects, even if an obejcts
+// The CXO never remove objects, even if an objects
 // is not used anymore. And every object has rc
 // (references counter). If the rc is zero, then
 // this object is ownerless and can be removed.
 //
 // And the same for Root objects. The CXO keeps all
-// Root obejcts. But who interest old, replaced Root
+// Root objects. But who interest old, replaced Root
 // objects?
 package cxoutils
 

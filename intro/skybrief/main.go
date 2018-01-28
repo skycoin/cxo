@@ -15,7 +15,7 @@ func init() {
 	log.SetFlags(log.Lshortfile)
 }
 
-// A User represetns user info
+// A User represents user info
 type User struct {
 	Name   string
 	Age    uint32

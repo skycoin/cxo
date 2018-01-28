@@ -19,7 +19,7 @@ Both, `ca` and `cb` are not listening and can't connect between. But the
 too.
 
 In the example, the `server` is something like proxy or super-seed. The `ca`
-receive B-feed through the `server` and `cb` receive A-feed throut the same
+receive B-feed through the `server` and `cb` receive A-feed through the same
 `server`.
 
 All nodes connected to discovery server and the `server` (not discovery server)

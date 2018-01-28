@@ -68,7 +68,7 @@ func main() {
 	}
 	defer n.Close() // close
 
-	// conenct to the seed
+	// connect to the seed
 
 	var conn *node.Conn
 	if conn, err = n.TCP().Connect(Seed); err != nil {

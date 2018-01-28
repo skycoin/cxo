@@ -234,7 +234,7 @@ func dynamic(
 ) {
 
 	// so, it's possible to use Registry.Types() to get schema name
-	// but for received registrues this is not an options; and we
+	// but for received registries this is not an options; and we
 	// are using schema name; also, it's possible to use schema
 	// reference; but we are creating the Dynamic references once
 	// and who cares what method is better

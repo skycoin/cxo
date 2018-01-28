@@ -15,7 +15,7 @@ examples. And the file also implements registry of
 these types.
 
 In CXO SHA256 hash used instead of pointers and Merkle-tree
-instead of slices. And all values should be encoddable (e.g.
+instead of slices. And all values should be encodable (e.g.
 `int` -> `uint32` or any other).
 
 

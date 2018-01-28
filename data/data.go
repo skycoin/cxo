@@ -54,7 +54,7 @@ func NewDB(cxds CXDS, idxdb IdxDB) *DB {
 	return &DB{cxds, idxdb}
 }
 
-// A Root represetns meta information
+// A Root represents meta information
 // of a saved skyobject.Root
 type Root struct {
 	Create int64 // received or saved at

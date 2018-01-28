@@ -73,9 +73,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 #### Versioning
 
 The CXO uses MAJOR.MINOR versions. Where MAJOR is
-- API cahgnes
-- protocol chagnes
-- data representation chagnes
+- API changes
+- protocol changes
+- data representation changes
 
 and MINOR is
 - small API changes
