@@ -502,7 +502,7 @@ func (d *driveCXDS) Iterate(iterateFunc data.IterateObjectsFunc) (err error) {
 	return
 }
 
-// IterateDel all keys dleting
+// IterateDel all keys deleting
 func (d *driveCXDS) IterateDel(
 	iterateFunc data.IterateObjectsDelFunc,
 ) (

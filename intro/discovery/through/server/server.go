@@ -1,6 +1,6 @@
 package main
 
-// the server dosn't import the through package and knows
+// the server doesn't import the through package and knows
 // nothing about its types and registries; but the server
 // can collect and share any objects (any feeds)
 

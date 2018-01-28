@@ -89,7 +89,7 @@ func main() {
 	}
 	defer n.Close() // close
 
-	// conenct to the src node
+	// connect to the src node
 
 	var conn *node.Conn
 	if conn, err = n.TCP().Connect(Src); err != nil {

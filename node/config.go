@@ -42,7 +42,7 @@ func (a *Addresses) Set(addr string) error {
 
 // OnRootReceivedFunc represents callback that
 // called when new Root objects received. It's
-// possible to reject a receved Root returning
+// possible to reject a received Root returning
 // error by this function.
 //
 // The callback never called if (1) node has a
@@ -213,7 +213,7 @@ type Config struct {
 	OnDisconnect OnDisconnectFunc
 
 	//
-	// Dsicovery
+	// Discovery
 	//
 
 	// Public is flag that used to make the Node

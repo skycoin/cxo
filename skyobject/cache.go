@@ -659,7 +659,7 @@ func (c *Cache) get(
 // The item is not value and a cached item may not exist
 // in the cache and in DB too. If an item is cached, then
 // it should not be removed from DB. Because of write-behind
-// cacheing. Also, in some rare cases, a value can be
+// caching. Also, in some rare cases, a value can be
 // "resurrected" if it's cached (e.g. its rc will be increased
 // from zero).
 //
@@ -961,7 +961,7 @@ func (c *Cache) inc(
 
 }
 
-// Inc used to cahnge rc of an existing value
+// Inc used to change rc of an existing value
 func (c *Cache) Inc(
 	key cipher.SHA256, // :
 	inc int, //           :
@@ -980,7 +980,7 @@ func (c *Cache) Inc(
 // filling related methods
 //
 
-// Want subscribes to object. If obejct already exists
+// Want subscribes to object. If object already exists
 // then it will be sent through given channel. If the Want
 // called many times with the same channel, then requested
 // object will be received once. The Want used for filling
@@ -989,7 +989,7 @@ func (c *Cache) Inc(
 // to notify the cache that this object now is part of a
 // full Root objects. Or to notify the cache that filling
 // breaks and inc of the object decrements. The cache never
-// blocks sending to cahnnels, thus, the cahnnel should be
+// blocks sending to channels, thus, the channel should be
 // buffered.
 func (c *Cache) Want(
 	key cipher.SHA256,

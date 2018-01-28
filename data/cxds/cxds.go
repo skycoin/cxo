@@ -1,7 +1,7 @@
 // Package cxds implements cxo/data.CXDS
 // interface. E.g. the package provides data
 // store for CXO. The data store is key value
-// stroe, in which the key is SHA256 hash of
+// store, in which the key is SHA256 hash of
 // value. And every value has references
 // counter (rc). The counter set outside the
 // CXDS. The rc is number references to an

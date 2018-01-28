@@ -225,7 +225,7 @@ func dynamic(
 ) {
 
 	// so, it's possible to use Registry.Types() to get schema name
-	// but for received registrues this is not an options; and we
+	// but for received registries this is not an options; and we
 	// are using schema name; also, it's possible to use schema
 	// reference; but we are creating the Dynamic references once
 	// and who cares what method is better
@@ -293,7 +293,7 @@ func cleanup(
 		fmt.Println("  cleaning Root objects....")
 		var tp = time.Now() // time point
 
-		// Remove all Root obejcts keeping last
+		// Remove all Root objects keeping last
 		// 5 for every feed and every head
 		if err = cxoutils.RemoveRootObjects(c, 5); err != nil {
 			log.Fatal(err)

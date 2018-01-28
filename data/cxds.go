@@ -39,7 +39,7 @@ type CXDS interface {
 
 	// Get and change references counter (rc). If the
 	// inc argument is zero then the rc will be leaved
-	// as is. If value with given key doen't exist, then
+	// as is. If value with given key doesn't exist, then
 	// the Get method returns (nil, 0, data.ErrNotFound).
 	// Use negative inc argument to reduce the rc and
 	// positive to increase it
@@ -63,7 +63,7 @@ type CXDS interface {
 	// Use ErrStopIteration to stop an iteration.
 	Iterate(iterateFunc IterateObjectsFunc) (err error)
 
-	// IterateDel used to remove obejts
+	// IterateDel used to remove objects
 	IterateDel(iterateFunc IterateObjectsDelFunc) (err error)
 
 	// Del removes object with given key unconditionally.
