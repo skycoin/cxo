@@ -8,14 +8,10 @@ CXO 对象存储系统
 [![Telegram group link](telegram-group.svg)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
 
 
-
-The CXO is objects system, goal of which is sharing any objects. The CXO
-is low level and designed to build application on top of it
-
 CXO 是一个对象系统，它的作用是用来分享不同的对象。CXO是一个底层的平台，可以在它的上面构建更多的应用。
 
 
-（注解：对象存储，也叫做基于对象的存储，是用来描述解决和处理离散单元的方法的通用术语，这些离散单元被称作为对象。
+（注：对象存储，也叫做基于对象的存储，是用来描述解决和处理离散单元的方法的通用术语，这些离散单元被称作为对象。
 就像“文件”一样，“对象”包含数据，但是和文件不同的是，对象在一个层结构中不会再有层级结构。每个对象都在一个被称作存储池的扁平地址空间的同一级别里，一个对象不会属于另一个对象的下一级。
 文件和对象都有与它们所包含的数据相关的元数据，但是对象是以扩展元数据为特征的。每个对象都被分配一个唯一的标识符，允许一个服务器或者最终用户来检索对象，而不必知道数据的物理地址。这种方法对于在云计算环境中自动化和简化数据存储有帮助。）
 
@@ -31,10 +27,6 @@ CXO 是一个对象系统，它的作用是用来分享不同的对象。CXO是�
 包含相关信息（尚未完善）
 
 ### 安装与版本
-
-  to use particular version of the
-CXO. The master branch of the repository points to latest stable release.
-Actually, it points to alpha-release for now.
 
 使用[dep](https://github.com/golang/dep)特定版本来使用CXO。存储库的主分支指向最新的稳定版本。实际上，它现在是alpha发布。
 
