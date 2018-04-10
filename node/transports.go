@@ -127,21 +127,27 @@ func (t *TCP) Discovery() (d *discovery.MessengerFactory) {
 	return t.d
 }
 
-func (t *TCP) createDiscovery() (d *discovery.MessengerFactory) {
+// create or get related *discovery.MessengerFactory instance
+func (t *TCP) discovery() (d *discovery.MessengerFactory) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	if t.d == nil {
 
-		t.d = discovery.NewMessengerFactory()
+		var d *discovery.MessengerFactory
+
+		d = discovery.NewMessengerFactory()
 
 		if t.n.config.Logger.Debug == true {
 			if t.n.config.Logger.Pins&DiscoveryPin != 0 {
-				t.d.SetLoggerLevel(discovery.DebugLevel)
+				d.SetLoggerLevel(discovery.DebugLevel)
 			} else {
-				t.d.SetLoggerLevel(discovery.ErrorLevel)
+				d.SetLoggerLevel(discovery.ErrorLevel) // change to panic?
 			}
 		}
+
+		t.d = d
+
 	}
 
 	return t.d
@@ -149,20 +155,19 @@ func (t *TCP) createDiscovery() (d *discovery.MessengerFactory) {
 
 // ConnectToDiscoveryServer connects to given discovery server.
 // If Discovery is nil, then it will be created
-func (t *TCP) ConnectToDiscoveryServer(address string) {
+func (t *TCP) ConnectToDiscoveryServer(address string) (err error) {
 
-	t.createDiscovery().ConnectWithConfig(address, &discovery.ConnConfig{
-		//SeedConfig: t.n.id,
+	err = t.discovery().ConnectWithConfig(address, &discovery.ConnConfig{
+		SeedConfig: t.n.id,
 
 		Reconnect:     true,
 		ReconnectWait: time.Second * 30,
-
-		Creator: t.d,
 
 		FindServiceNodesByKeysCallback: t.findServiceNodes,
 		OnConnected:                    t.onDiscoveryConnected,
 	})
 
+	return
 }
 
 //
@@ -400,37 +405,47 @@ func (u *UDP) Discovery() (d *discovery.MessengerFactory) {
 	return u.d
 }
 
-// ConnectToDiscoveryServer connects to given discovery server.
-// If Discovery is nil, then it will be created
-func (u *UDP) ConnectToDiscoveryServer(address string) {
-
+// create or get related *discovery.MessengerFactory instance
+func (u *UDP) discovery() (d *discovery.MessengerFactory) {
 	u.mx.Lock()
 	defer u.mx.Unlock()
 
 	if u.d == nil {
-		u.d = discovery.NewMessengerFactory()
+
+		var d *discovery.MessengerFactory
+
+		d = discovery.NewMessengerFactory()
 
 		if u.n.config.Logger.Debug == true {
 			if u.n.config.Logger.Pins&DiscoveryPin != 0 {
-				u.d.SetLoggerLevel(discovery.DebugLevel)
+				d.SetLoggerLevel(discovery.DebugLevel)
 			} else {
-				u.d.SetLoggerLevel(discovery.ErrorLevel)
+				d.SetLoggerLevel(discovery.ErrorLevel) // change to panic?
 			}
 		}
+
+		u.d = d
+
 	}
 
-	u.d.ConnectWithConfig(address, &discovery.ConnConfig{
-		//SeedConfig: u.n.id,
+	return u.d
+}
+
+// ConnectToDiscoveryServer connects to given discovery server.
+// If Discovery is nil, then it will be created
+func (u *UDP) ConnectToDiscoveryServer(address string) (err error) {
+
+	err = u.discovery().ConnectWithConfig(address, &discovery.ConnConfig{
+		SeedConfig: u.n.id,
 
 		Reconnect:     true,
 		ReconnectWait: time.Second * 30,
-
-		Creator: u.d,
 
 		FindServiceNodesByKeysCallback: u.findServiceNodes,
 		OnConnected:                    u.onDiscoveryConnected,
 	})
 
+	return
 }
 
 //

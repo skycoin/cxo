@@ -2,22 +2,51 @@
 
 
 [[projects]]
+  name = "github.com/DiSiqueira/GoTree"
+  packages = ["."]
+  revision = "50d8646f901831fc9d2cab391a61b5662039af36"
+  version = "1.0.0"
+
+[[projects]]
+  name = "github.com/aws/aws-sdk-go"
+  packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/sdkio","internal/sdkrand","internal/shareddefaults","private/protocol","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/xml/xmlutil","service/sqs","service/sts"]
+  revision = "7f68df2a5baf19398d17def23a514a6e617e5937"
+  version = "v1.13.28"
+
+[[projects]]
   name = "github.com/boltdb/bolt"
   packages = ["."]
   revision = "2f1ce7a837dcb8da3ec595b1dac9d0632f0f99e8"
   version = "v1.3.1"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/disiqueira/gotree"
+  name = "github.com/go-ini/ini"
   packages = ["."]
-  revision = "4c287e3603a85571820a6a8ad100a45002150053"
+  revision = "5e9692864e22d02ac79e2fa499cffb00520b4fea"
+  version = "v1.34.0"
 
 [[projects]]
   branch = "master"
   name = "github.com/google/btree"
   packages = ["."]
-  revision = "316fb6d3f031ae8f4d457c6c5186b9e3ded70435"
+  revision = "e89373fe6b4a7413d7acd6da1725b83ef713e6e4"
+
+[[projects]]
+  name = "github.com/jmespath/go-jmespath"
+  packages = ["."]
+  revision = "0b12d6b5"
+
+[[projects]]
+  name = "github.com/klauspost/cpuid"
+  packages = ["."]
+  revision = "ae7887de9fa5d2db4eaa8174a7eff2c1ac00f2da"
+  version = "v1.1"
+
+[[projects]]
+  name = "github.com/klauspost/reedsolomon"
+  packages = ["."]
+  revision = "6bb6130ff6a76a904c1841707d65603aec9cc288"
+  version = "v1.6"
 
 [[projects]]
   branch = "master"
@@ -38,6 +67,12 @@
   version = "v1"
 
 [[projects]]
+  name = "github.com/oschwald/maxminddb-golang"
+  packages = ["."]
+  revision = "c5bec84d1963260297932a1b7a1753c8420717a7"
+  version = "v1.3.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/petar/GoLLRB"
   packages = ["llrb"]
@@ -47,41 +82,47 @@
   branch = "master"
   name = "github.com/peterh/liner"
   packages = ["."]
-  revision = "3681c2a912330352991ecdd642f257efe5b85518"
+  revision = "6106ee4fe3e8435f18cd10e34557e5e50f0e792a"
+
+[[projects]]
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
   packages = ["."]
-  revision = "d682213848ed68c0a260ca37d6dd5ace8423f5ba"
-  version = "v1.0.4"
+  revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
+  version = "v1.0.5"
 
 [[projects]]
   branch = "master"
   name = "github.com/skycoin/net"
-  packages = ["client","conn","factory","msg","server","skycoin-messenger/factory"]
-  revision = "afefeb5eb5323036d4da5cfab5805c9e5e2ac288"
+  packages = ["client","conn","factory","msg","server","skycoin-messenger/factory","util","util/producer"]
+  revision = "da53c822edc61578f5e6019f5eb910b30308a9f1"
 
 [[projects]]
   name = "github.com/skycoin/skycoin"
   packages = ["src/cipher","src/cipher/base58","src/cipher/chacha20","src/cipher/encoder","src/cipher/go-bip39","src/cipher/ripemd160","src/cipher/secp256k1-go","src/cipher/secp256k1-go/secp256k1-go2","src/util/logging"]
-  revision = "4a11cd3a2841bbb555734c6889838fefabfa1b41"
-  version = "v0.21.1"
+  revision = "84098d9ef5cdfa86d325509cf200dd7e45b4a1b4"
+  version = "v0.22.0"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["pbkdf2","ssh/terminal"]
-  revision = "0fcca4842a8d74bfddc2c96a073bd2a4d2a7a2e8"
+  revision = "b2aa35443fbc700ab74c586ae79b81c171851023"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix","windows"]
-  revision = "83801418e1b59fb1880e363299581ee543af32ca"
+  revision = "1d206c9fa8975fb4cf00df1dc8bf3283dc24ba0e"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c96d3e66920d0b0759178e4eaa3489ce948ebf8cd60782728a1692eb4f589223"
+  inputs-digest = "f99360e7a949e976fb593ee85433c9263169bcebfde5556f8680dd45a05395b8"
   solver-name = "gps-cdcl"
   solver-version = 1

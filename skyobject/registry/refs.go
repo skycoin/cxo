@@ -3,7 +3,7 @@ package registry
 import (
 	"fmt"
 
-	"github.com/disiqueira/gotree"
+	"github.com/DiSiqueira/GoTree"
 
 	"github.com/skycoin/skycoin/src/cipher"
 	"github.com/skycoin/skycoin/src/cipher/encoder"
@@ -1706,7 +1706,7 @@ func (r *Refs) Tree(
 		gt.Name += " (not loaded)"
 	}
 
-	tree = gotree.StringTree(gt)
+	tree = gotree.StringTree(&gt)
 	return
 }
 
@@ -1716,7 +1716,7 @@ func (r *Refs) treeNode(
 	rn *refsNode, //               : the node
 	depth int, //                  : depth of the node
 ) (
-	items []gotree.GTStructure, // : items of the node
+	items []*gotree.GTStructure, // : items of the node
 	err error, //                  : error if any
 ) {
 
@@ -1725,12 +1725,12 @@ func (r *Refs) treeNode(
 	if depth == 0 {
 
 		if len(rn.leafs) == 0 {
-			items = []gotree.GTStructure{{Name: "(empty)"}}
+			items = []*gotree.GTStructure{&gotree.GTStructure{Name: "(empty)"}}
 			return
 		}
 
 		for _, el := range rn.leafs {
-			items = append(items, gotree.GTStructure{
+			items = append(items, &gotree.GTStructure{
 				Name: el.Hash.Hex()[:7], // short
 			})
 		}
@@ -1749,7 +1749,7 @@ func (r *Refs) treeNode(
 		}
 
 		if br.isLoaded() == false {
-			items = append(items, gotree.GTStructure{
+			items = append(items, &gotree.GTStructure{
 				Name: br.hash.Hex()[:7] + " (not loaded)",
 			})
 			continue
@@ -1764,7 +1764,7 @@ func (r *Refs) treeNode(
 			return
 		}
 
-		items = append(items, item)
+		items = append(items, &item)
 
 	}
 

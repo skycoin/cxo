@@ -32,26 +32,18 @@ server connects them to the `server`.
 
 ### Discovery
 
-[Skycoin messenger server](https://github.com/skycoin/net/tree/master/skycoin-messenger/server)
+Original discovery server placed at `github.com/skycoin/skywire/cmdx/discovery`,
+but for this examples used modified version of the discovery that uses
+random seed for every start (and doesn't keep it) and SQlite3 DB in memory.
 
 ### Run
 
-#### Prepare
-
-Get fresh version of the discovery server
-
-```
-go get -d -u github.com/skycoin/net/skycoin-messenger/server
-```
-
-#### Start
-
 Four terminals required.
 
-Launch the skycoin messenger server using "[::1]:8008" address in first terminal
+Launch the discovery server using "[::1]:8008" address in first terminal
 ```
-go run $GOPATH/src/github.com/skycoin/net/skycoin-messenger/server/main.go \
-    -address [::1]:8008
+go run $GOPATH/src/github.com/skycoin/cxo/intro/discovery/discovery \
+    -a [::1]:8008
 ```
 
 Launch the `server` first

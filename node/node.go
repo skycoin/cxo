@@ -176,11 +176,19 @@ func NewNodeContainer(
 	// discoveries
 
 	for _, address := range conf.TCP.Discovery {
-		n.TCP().ConnectToDiscoveryServer(address)
+		if err := n.TCP().ConnectToDiscoveryServer(address); err != nil {
+			n.Debugln(DiscoveryPin,
+				"error connecting to TCP discovery server:",
+				err)
+		}
 	}
 
 	for _, address := range conf.UDP.Discovery {
-		n.UDP().ConnectToDiscoveryServer(address)
+		if err := n.UDP().ConnectToDiscoveryServer(address); err != nil {
+			n.Debugln(DiscoveryPin,
+				"error connecting to UDP discovery server:",
+				err)
+		}
 	}
 
 	// TODO (kostyarin): pings (move to connection)
