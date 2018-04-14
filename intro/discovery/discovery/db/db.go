@@ -38,6 +38,16 @@ func Close() (err error) {
 func createTables() (err error) {
 
 	//
+	// foreign keys (disabled by default)
+	//
+
+	const enableForeignKeys = `PRAGMA foreign_keys = ON;`
+
+	if _, err = sql.Exec(enableForeignKeys); err != nil {
+		return
+	}
+
+	//
 	// node table
 	//
 
