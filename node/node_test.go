@@ -144,7 +144,7 @@ func onRootReceivedToChannel(
 	channel = make(chan *registry.Root, 1)
 
 	callback = func(_ *Conn, r *registry.Root) (_ error) {
-		cn <- r
+		channel <- r
 		return
 	}
 	return
