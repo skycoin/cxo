@@ -278,22 +278,29 @@ func TestNode_Publish(t *testing.T) {
 
 	// check out channels
 
-	select {
-	case <-gr1:
-	case <-time.After(TM):
-		t.Fatal("not received")
-	}
+	var after = time.After(TM)
 
 	select {
+	case <-gr1:
+		select {
+		case <-gr2:
+		case <-after:
+			t.Fatal("not received")
+		}
 	case <-gr2:
-	case <-time.After(TM):
+		select {
+		case <-gr1:
+		case <-after:
+			t.Fatal("not received")
+		}
+	case <-after:
 		t.Fatal("not received")
 	}
 
 	select {
 	case <-gn1:
 		t.Fatal("received")
-	case <-time.After(TM):
+	case <-after:
 	}
 
 	// ok, now let's disconnect one by one and check

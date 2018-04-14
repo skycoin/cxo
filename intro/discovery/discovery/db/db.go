@@ -43,7 +43,7 @@ func createTables() (err error) {
 
 	const enableForeignKeys = `PRAGMA foreign_keys = ON;`
 
-	if _, err = sql.Exec(enableForeignKeys); err != nil {
+	if _, err = engine.Exec(enableForeignKeys); err != nil {
 		return
 	}
 
