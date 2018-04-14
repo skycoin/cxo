@@ -134,6 +134,22 @@ func assertIDs(t *testing.T, cs []*Conn, ids ...cipher.PubKey) {
 	}
 }
 
+func onRootReceivedToChannel(
+	chanBufferSize int, //                         :
+) (
+	channel chan *registry.Root, //                :
+	callback func(*Conn, *registry.Root) error, // :
+) {
+
+	channel = make(chan *registry.Root, 1)
+
+	callback = func(_ *Conn, r *registry.Root) (_ error) {
+		cn <- r
+		return
+	}
+	return
+}
+
 func TestNode_Publish(t *testing.T) {
 	// (r *registry.Root)
 
@@ -144,10 +160,7 @@ func TestNode_Publish(t *testing.T) {
 	var (
 		ln = getTestNode("server")
 
-		gr1 = make(chan *registry.Root, 1) // sc1
-		gr2 = make(chan *registry.Root, 1) // sc2
-
-		gn1 = make(chan *registry.Root, 1) // should not receive (uc1)
+		gr1, gr2, gn1 chan *registry.Root // sc1, sc2, uc1 (should not receive)
 
 		sc1 = getTestConfigNotListen("sc1") // subscriber
 		sc2 = getTestConfigNotListen("sc2") // subscriber
@@ -159,18 +172,9 @@ func TestNode_Publish(t *testing.T) {
 
 	// handle received roots
 
-	sc1.OnRootReceived = func(_ *Conn, r *registry.Root) (_ error) {
-		gr1 <- r
-		return
-	}
-	sc2.OnRootReceived = func(_ *Conn, r *registry.Root) (_ error) {
-		gr2 <- r
-		return
-	}
-	uc1.OnRootReceived = func(_ *Conn, r *registry.Root) (_ error) {
-		gn1 <- r
-		return
-	}
+	gr1, sc1.OnRootReceived = onRootReceivedToChannel(1)
+	gr2, sc2.OnRootReceived = onRootReceivedToChannel(1)
+	gn1, uc1.OnRootReceived = onRootReceivedToChannel(1)
 
 	// create clients (subscribed, subscribed, and not subscribed)
 
