@@ -24,7 +24,6 @@
 [[constraint]]
   name = "github.com/DiSiqueira/GoTree"
   revision = "50d8646f901831fc9d2cab391a61b5662039af36"
-  version = "1.0.0"
 
 [[constraint]]
   name = "github.com/boltdb/bolt"
