@@ -2,6 +2,7 @@
 
 
 [中文文档](./README-CN.md)
+[по русски](./README-RU.md)
 
 
 CX Object System
