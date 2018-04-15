@@ -92,53 +92,66 @@ representation.
 
 ##### Versions
 
-- 1.0 - not defined
-- <details>
-  <summary>2.1</summary>
+<!-- 1.0 -->
 
-  - git tag: `v2.1`
-  - commit: `d4e4ab573c438a965588a651ee1b76b8acbb3724`
+<details>
+<summary>1.0</summary>
 
-  Gopkg.toml
+not defined
 
-  ```toml
-  [[constraint]]
-  name = "github.com/skycoin/cxo"
-  revision = "d4e4ab573c438a965588a651ee1b76b8acbb3724"
-  ```
+</details>
 
-  or
+<!-- 2.1 -->
 
-  ```toml
-  [[constraint]]
-  name = "github.com/skycoin/cxo"
-  version = "v2.1"
-  ```
+<details>
+<summary>2.1</summary>
 
-  </details>
-- <details>
-  <summary>3.0</summary>
+- git tag: `v2.1`
+- commit: `d4e4ab573c438a965588a651ee1b76b8acbb3724`
 
-  - git tag: `v3.0`
-  - commit: `e9ba25286b101ebe1687592649d0ffaed0d32966`
+Gopkg.toml
 
-  Gopkg.toml
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+revision = "d4e4ab573c438a965588a651ee1b76b8acbb3724"
+```
 
-  ```toml
-  [[constraint]]
-  name = "github.com/skycoin/cxo"
-  revision = "e9ba25286b101ebe1687592649d0ffaed0d32966"
-  ```
+or
 
-  or
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+version = "v2.1"
+```
 
-  ```toml
-  [[constraint]]
-  name = "github.com/skycoin/cxo"
-  version = "v3.0"
-  ```
+</details>
 
-  </details>
+<!-- 3.0 -->
+
+<details>
+<summary>3.0</summary>
+
+- git tag: `v3.0`
+- commit: `e9ba25286b101ebe1687592649d0ffaed0d32966`
+
+Gopkg.toml
+
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+revision = "e9ba25286b101ebe1687592649d0ffaed0d32966"
+```
+
+or
+
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+version = "v3.0"
+```
+
+</details>
 
 ### Dependencies
 
