@@ -1,7 +1,7 @@
 ![cxo logo](https://user-images.githubusercontent.com/26845312/32426759-2a7c367c-c282-11e7-87bc-9f0a936046af.png)
 
 
-[中文文档](./README-CN.md)
+[中文文档](./README-CN.md) |
 [English](./README.md)
 
 
