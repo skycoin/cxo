@@ -133,14 +133,14 @@ version = "v2.1"
 <summary>3.0</summary>
 
 - git tag: `v3.0`
-- commit: `e9ba25286b101ebe1687592649d0ffaed0d32966`
+- commit: `8bc2f995634cd46d1266e2120795b04b025e0d62`
 
 Gopkg.toml
 
 ```toml
 [[constraint]]
 name = "github.com/skycoin/cxo"
-revision = "e9ba25286b101ebe1687592649d0ffaed0d32966"
+revision = "8bc2f995634cd46d1266e2120795b04b025e0d62"
 ```
 
 or

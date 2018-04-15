@@ -93,8 +93,66 @@ docker run -ti --rm -p 8870:8870 -p 8871:8871 skycoin/cxo
 
 ##### 版本
 
-- 2.1 d4e4ab573c438a965588a651ee1b76b8acbb3724
-- 3.0 master
+<!-- 1.0 -->
+
+<details>
+<summary>1.0</summary>
+
+not defined
+
+</details>
+
+<!-- 2.1 -->
+
+<details>
+<summary>2.1</summary>
+
+- git tag: `v2.1`
+- commit: `d4e4ab573c438a965588a651ee1b76b8acbb3724`
+
+Gopkg.toml
+
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+revision = "d4e4ab573c438a965588a651ee1b76b8acbb3724"
+```
+
+or
+
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+version = "v2.1"
+```
+
+</details>
+
+<!-- 3.0 -->
+
+<details>
+<summary>3.0</summary>
+
+- git tag: `v3.0`
+- commit: `8bc2f995634cd46d1266e2120795b04b025e0d62`
+
+Gopkg.toml
+
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+revision = "8bc2f995634cd46d1266e2120795b04b025e0d62"
+```
+
+or
+
+```toml
+[[constraint]]
+name = "github.com/skycoin/cxo"
+version = "v3.0"
+```
+
+</details>
 
 ### 依赖
 
