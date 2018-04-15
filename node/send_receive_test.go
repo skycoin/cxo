@@ -82,27 +82,60 @@ func assertNil(t *testing.T, err error) {
 	}
 }
 
-func Test_send_receive(t *testing.T) {
+func onRootFilledToChannel(
+	chanBufferSize int, //                   :
+) (
+	channel chan *registry.Root, //          :
+	callback func(*Node, *registry.Root), // :
+) {
 
-	var (
-		fr           = make(chan *registry.Root, 100)
-		onRootFilled = func(_ *Node, r *registry.Root) { fr <- r }
+	channel = make(chan *registry.Root, 1)
 
-		sn = getTestNode("sender")
+	callback = func(_ *Node, r *registry.Root) {
+		channel <- r
+		return
+	}
+	return
+}
 
-		rconf = getTestConfig("receiver")
-	)
+func onRootReceivedTestLog(
+	t *testing.T,
+) (
+	orrtl func(c *Conn, r *registry.Root) (_ error),
+) {
 
-	rconf.TCP.Listen = ""             // don't listen
-	rconf.UDP.Listen = ""             // don't listen
-	rconf.OnRootFilled = onRootFilled // callback
-	rconf.OnRootReceived = func(c *Conn, r *registry.Root) (_ error) {
+	orrtl = func(c *Conn, r *registry.Root) (_ error) {
 		t.Logf("[%s] root received %s", c.String(), r.Short())
 		return
 	}
-	rconf.OnFillingBreaks = func(n *Node, r *registry.Root, err error) {
+
+	return
+}
+
+func onFillingBreaksTestLog(
+	t *testing.T, //                               :
+) (
+	ofbtl func(*Node, *registry.Root, error), // :
+) {
+
+	ofbtl = func(n *Node, r *registry.Root, err error) {
 		t.Logf("filling of %s breaks by %v", r.Short(), err)
 	}
+	return
+}
+
+func Test_send_receive(t *testing.T) {
+
+	var (
+		fr, onRootFilled = onRootFilledToChannel(100)
+		sn               = getTestNode("sender")
+		rconf            = getTestConfig("receiver")
+	)
+
+	rconf.TCP.Listen, rconf.UDP.Listen = "", ""       // don't listen
+	rconf.OnRootFilled = onRootFilled                 // callback
+	rconf.OnRootReceived = onRootReceivedTestLog(t)   // log
+	rconf.OnFillingBreaks = onFillingBreaksTestLog(t) // log
 
 	var rn, err = NewNode(rconf)
 
@@ -155,17 +188,21 @@ func Test_send_receive(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	<-time.After(TM)
+
 	// subscribe the connection
 	if err = c.Subscribe(pk); err != nil {
 		t.Fatal(err)
 	}
+
+	<-time.After(TM)
 
 	var rr *registry.Root // received Root
 
 	// wait the Root
 	select {
 	case rr = <-fr:
-	case <-time.After(10 * time.Second):
+	case <-time.After(4 * TM):
 
 		t.Log("Root :    ", r.Hash.Hex()[:7])
 		t.Log("Registry: ", r.Reg.Short())
@@ -229,24 +266,15 @@ func dynamicByValue(
 func Test_send_receive_refs(t *testing.T) {
 
 	var (
-		fr           = make(chan *registry.Root, 100)
-		onRootFilled = func(_ *Node, r *registry.Root) { fr <- r }
-
-		sn = getTestNode("sender")
-
-		rconf = getTestConfig("receiver")
+		fr, onRootFilled = onRootFilledToChannel(100)
+		sn               = getTestNode("sender")
+		rconf            = getTestConfig("receiver")
 	)
 
-	rconf.TCP.Listen = ""             // don't listen
-	rconf.UDP.Listen = ""             // don't listen
-	rconf.OnRootFilled = onRootFilled // callback
-	rconf.OnRootReceived = func(c *Conn, r *registry.Root) (_ error) {
-		t.Logf("[%s] root received %s", c.String(), r.Short())
-		return
-	}
-	rconf.OnFillingBreaks = func(n *Node, r *registry.Root, err error) {
-		t.Logf("filling of %s breaks by %v", r.Short(), err)
-	}
+	rconf.TCP.Listen, rconf.UDP.Listen = "", ""       // don't listen
+	rconf.OnRootFilled = onRootFilled                 // callback
+	rconf.OnRootReceived = onRootReceivedTestLog(t)   // log
+	rconf.OnFillingBreaks = onFillingBreaksTestLog(t) // log
 
 	var rn, err = NewNode(rconf)
 
@@ -315,17 +343,21 @@ func Test_send_receive_refs(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	<-time.After(TM)
+
 	// subscribe the connection
 	if err = c.Subscribe(pk); err != nil {
 		t.Fatal(err)
 	}
+
+	<-time.After(TM)
 
 	var rr *registry.Root // received Root
 
 	// wait the Root
 	select {
 	case rr = <-fr:
-	case <-time.After(10 * time.Second):
+	case <-time.After(64 * TM):
 
 		t.Log("Root :    ", r.Hash.Hex()[:7])
 		t.Log("Registry: ", r.Reg.Short())
