@@ -47,7 +47,8 @@ docker run -ti --rm -p 8870:8870 -p 8871:8871 skycoin/cxo
 
 ### Development
 
-- [telegram group](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
+- [telegram group (eng.)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
+- [telegram group (rus.)](https://t.me/joinchat/EUlzX0a5byZxH5MdnAOLLA)
 
 #### Modules
 
