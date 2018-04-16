@@ -10,7 +10,9 @@ CX Object System
 
 [![Build Status](https://travis-ci.org/skycoin/cxo.svg)](https://travis-ci.org/skycoin/cxo)
 [![GoReportCard](https://goreportcard.com/badge/skycoin/cxo)](https://goreportcard.com/report/skycoin/cxo)
-[![Telegram group link](telegram-group.svg)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
+[![Telegram group](telegram-group.svg)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
+[![Google Groups](https://img.shields.io/badge/google%20groups-skycoincxo-blue.svg)](https://groups.google.com/forum/#!forum/skycoincxo)
+
 
 The CXO is objects system, goal of which is sharing any objects. The CXO
 is low level and designed to build application on top of it
@@ -49,6 +51,7 @@ docker run -ti --rm -p 8870:8870 -p 8871:8871 skycoin/cxo
 
 - [telegram group (eng.)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
 - [telegram group (rus.)](https://t.me/joinchat/EUlzX0a5byZxH5MdnAOLLA)
+- [google group (eng.)](https://groups.google.com/forum/#!forum/skycoincxo)
 
 #### Modules
 

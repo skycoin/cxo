@@ -11,6 +11,7 @@ CXO - система обмена объектами на основе блок�
 [![Build Status](https://travis-ci.org/skycoin/cxo.svg)](https://travis-ci.org/skycoin/cxo)
 [![GoReportCard](https://goreportcard.com/badge/skycoin/cxo)](https://goreportcard.com/report/skycoin/cxo)
 [![Telegram group link](telegram-group.svg)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
+[![Google Groups](https://img.shields.io/badge/google%20groups-skycoincxo-blue.svg)](https://groups.google.com/forum/#!forum/skycoincxo)
 
 CXO - это система объектов, цель которой - обмен любыми объектами (включая
 дерево объектов, и обновления в этих деревьях и так далее). CXO - это
@@ -18,7 +19,7 @@ CXO - это система объектов, цель которой - обме
 
 ### Быстрый старт и API документация
 
-Смотри [CXO wiki (англ.)](https://github.com/skycoin/cxo/wiki/Get-Started)
+Смотри [CXO wiki (рус.)](https://github.com/skycoin/cxo/wiki/Get-Started-(Rus)-%D0%9D%D0%B0%D1%87%D0%B0%D0%BB%D0%BE)
 
 ### API документация
 
@@ -49,6 +50,7 @@ docker run -ti --rm -p 8870:8870 -p 8871:8871 skycoin/cxo
 
 - [группа в Телеграм (англ.)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
 - [группа в Телеграм (рус.)](https://t.me/joinchat/EUlzX0a5byZxH5MdnAOLLA)
+- [Google Groups (eng.)](https://groups.google.com/forum/#!forum/skycoincxo)
 
 #### Модули
 
