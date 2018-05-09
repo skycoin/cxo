@@ -146,8 +146,7 @@ type NetConfig struct {
 // Config is the NewConfig. This Config
 // contains skyobject.Config.
 type Config struct {
-	// SecKey allows to provide secret key,
-	// that will be used by to sign objects.
+	// SecKey allows to provide secret key.
 	// Public key, derived from provided secret
 	// key will be use as node's ID.
 	SecKey cipher.SecKey
