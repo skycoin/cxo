@@ -1,6 +1,7 @@
 package node
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -123,8 +124,19 @@ func NewNodeContainer(
 
 	n = new(Node)
 
-	n.id = discovery.NewSeedConfig()
+	// Generate random secret key or use one from config
+	var defSK cipher.SecKey
+	if conf.SecKey == defSK {
+		n.id = discovery.NewSeedConfig()
+	} else {
+		if err := conf.SecKey.Verify(); err != nil {
+			return nil, fmt.Errorf("invalid secret key - %s", err)
+		}
+		n.id = discovery.SecKeyToSeedConfig(conf.SecKey)
+	}
+
 	n.idpk, _ = cipher.PubKeyFromHex(n.id.PublicKey)
+
 	n.c = c
 	n.fs = newNodeFeeds(n)
 	n.ic = make(map[cipher.PubKey]*Conn)
