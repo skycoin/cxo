@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -37,9 +38,10 @@ type Node struct {
 	// feeds and connections
 	//
 
-	fs *nodeFeeds              // feeds
-	ic map[cipher.PubKey]*Conn // node id (pk) -> connection
-	pc map[*Conn]struct{}      // pending connections
+	fs *nodeFeeds                      // feeds
+	ic map[cipher.PubKey]*Conn         // node id (pk) -> connection
+	pc map[*Conn]struct{}              // pending connections
+	st map[cipher.PubKey]*SwarmTracker // swarm trackers
 
 	//
 	// transports
@@ -394,6 +396,15 @@ func (n *Node) acceptConnection(fc *factory.Connection) {
 	n.Debugf(NewInConnPin, "[%s] accept",
 		connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
 
+	if n.connCap() == 0 {
+		// TODO: log error
+		return
+	}
+	if n.pendingConnCap() == 0 {
+		// TODO: log error
+		return
+	}
+
 	if _, err := n.wrapConnection(fc, true); err != nil {
 
 		n.Printf("[ERR] [%s] handshake error: %v",
@@ -414,6 +425,28 @@ func (n *Node) delPendingConnClose(c *Conn) {
 	delete(n.pc, c)
 	c.Connection.Close()
 
+}
+
+func (n *Node) connCap() int {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if len(n.ic) >= n.config.MaxConnections {
+		return 0
+	}
+
+	return n.config.MaxConnections - len(n.ic)
+}
+
+func (n *Node) pendingConnCap() int {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if len(n.pc) >= n.config.MaxPendingConnections {
+		return 0
+	}
+
+	return n.config.MaxPendingConnections - len(n.pc)
 }
 
 func (n *Node) wrapConnection(
@@ -623,11 +656,14 @@ func (n *Node) Stat() (s *Stat) {
 // of (skyobject.Container).Close once.
 func (n *Node) Close() (err error) {
 	n.closeo.Do(func() {
-
 		close(n.closeq)
 
 		n.mx.Lock()
 		defer n.mx.Unlock()
+
+		for _, t := range n.st {
+			t.shutdown()
+		}
 
 		err = n.c.Close()
 
@@ -648,4 +684,50 @@ func (n *Node) Close() (err error) {
 	})
 
 	return
+}
+
+func (n *Node) StartSwarmTracker(
+	feed cipher.PubKey, cfg SwarmTrackerConfig) error {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if _, ok := n.st[feed]; ok {
+		return errors.New("swarm tracker already running")
+	}
+
+	t := newSwarmTracker(cfg)
+	go t.run()
+
+	n.st[feed] = t
+
+	return nil
+}
+
+func (n *Node) StopSwarmTracker(feed cipher.PubKey) error {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	t, ok := n.st[feed]
+	if !ok {
+		return errors.New("swarm tracker is not running")
+	}
+
+	t.shutdown()
+
+	delete(n.st, feed)
+
+	return nil
+}
+
+func (n *Node) SwarmTracker(feed cipher.PubKey) (*SwarmTracker, error) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	s, ok := n.st[feed]
+	if !ok {
+		return nil, errors.New("swarm tracker is not running")
+	}
+
+	return s, nil
 }
