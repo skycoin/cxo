@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -95,6 +96,13 @@ func (t *TCP) addAcceptedConnection(c *Conn) {
 // with given address already exists, then the Connect returns this
 // existing connection.
 func (t *TCP) Connect(address string) (c *Conn, err error) {
+
+	if t.n.connCap() == 0 {
+		return nil, errors.New("maximum nubmber of connections exceeded")
+	}
+	if t.n.pendingConnCap() == 0 {
+		return nil, errors.New("maximium number of pending connections exceeded")
+	}
 
 	t.mx.Lock()
 	defer t.mx.Unlock()
