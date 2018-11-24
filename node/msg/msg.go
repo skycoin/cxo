@@ -59,6 +59,10 @@ var (
 	// preview
 
 	_ Msg = &RqPreview{} // -> RqPreview (feed)
+
+	// peer exchange
+	_ Msg = &RqPeers{}
+	_ Msg = &Peers{}
 )
 
 //
@@ -286,10 +290,45 @@ type RqPreview struct {
 }
 
 // Type implements Msg interface
-func (*RqPreview) Type() Type { return RqPreviewType }
+func (r *RqPreview) Type() Type { return RqPreviewType }
 
 // Encode the RqPreview
 func (r *RqPreview) Encode() []byte { return encode(r) }
+
+//
+// peer exchange
+//
+
+// RqPeers is request of peers
+type RqPeers struct {
+	Feed cipher.PubKey
+}
+
+// Type implements Msg interface
+func (r *RqPeers) Type() Type { return RqPeersType }
+
+// Encode the RqPeers
+func (r *RqPeers) Encode() []byte { return encode(r) }
+
+// PeerInfo contains information peer
+type PeerInfo struct {
+	PubKey   cipher.PubKey
+	Metadata []byte
+	TCPAddr  string
+	UDPAddr  string
+}
+
+// Peers is reply to RqPeers
+type Peers struct {
+	Feed cipher.PubKey
+	List []PeerInfo
+}
+
+// Type implemensts Msg interface
+func (ps *Peers) Type() Type { return PeersType }
+
+// Encode the Peers
+func (ps *Peers) Encode() []byte { return encode(ps) }
 
 //
 // Type / Encode / Deocode / String()
@@ -321,6 +360,9 @@ const (
 	ObjectType   // 13
 
 	RqPreviewType // 14
+
+	RqPeersType // 15
+	PeersType   // 16
 )
 
 // Type to string mapping
@@ -346,6 +388,9 @@ var msgTypeString = [...]string{
 	ObjectType:   "Object",
 
 	RqPreviewType: "RqPreview",
+
+	RqPeersType: "RqPeers",
+	PeersType:   "Peers",
 }
 
 // String implements fmt.Stringer interface
@@ -378,6 +423,9 @@ var forwardRegistry = [...]reflect.Type{
 	ObjectType:   reflect.TypeOf(Object{}),
 
 	RqPreviewType: reflect.TypeOf(RqPreview{}),
+
+	RqPeersType: reflect.TypeOf(RqPeers{}),
+	PeersType:   reflect.TypeOf(Peers{}),
 }
 
 // An InvalidTypeError represents decoding error when

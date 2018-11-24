@@ -839,3 +839,22 @@ func (c *Conn) handleRqPreview(seq uint32, rqp *msg.RqPreview) (_ error) {
 
 	return
 }
+
+func (c *Conn) handleRqPeers(seq uint32, rqp *msg.RqPeers) error {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqPeers %s", c.String(),
+		rqp.Feed.Hex()[:7])
+
+	s, err := c.n.SwarmTracker(rqp.Feed)
+	if err != nil {
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{Err: err.Error()})
+		return err
+	}
+
+	c.sendMsg(c.nextSeq(), seq, &msg.Peers{
+		Feed: rqp.Feed,
+		List: s.peersForExchange(),
+	})
+
+	return nil
+}
