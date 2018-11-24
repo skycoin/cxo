@@ -139,6 +139,47 @@ type NetConfig struct {
 	Pings time.Duration
 }
 
+type OnPeerAddedFunc func(p Peer)
+
+type OnPeerUpdatedFunc func(p Peer)
+
+type OnPeerRemovedFunc func(p Peer)
+
+// SwarmTrackerConfig represents configuration of feed's swarm tracker
+type SwarmTrackerConfig struct {
+	MaxPeers        uint64
+	RequestPeerRate time.Duration
+
+	PeerExpirePeriod  time.Duration
+	ClearOldPeersRate time.Duration
+
+	MaxConns         uint64
+	OutgoingConnRate time.Duration
+
+	PeersPerResponse uint64
+
+	OnPeerAdded   OnPeerAddedFunc
+	OnPeerUpdate  OnPeerUpdatedFunc
+	OnPeerRemoved OnPeerRemovedFunc
+}
+
+func DefaultSwarmTrackerConfig() SwarmTrackerConfig {
+	cfg := SwarmTrackerConfig{
+		MaxPeers:        1000,
+		RequestPeerRate: time.Minute,
+
+		PeerExpirePeriod:  time.Hour * 24 * 7,
+		ClearOldPeersRate: time.Minute * 10,
+
+		MaxConns:         1000,
+		OutgoingConnRate: time.Second * 5,
+
+		PeersPerResponse: 30,
+	}
+
+	return cfg
+}
+
 // A Config represents configurations
 // of the Node. To create Config filled
 // with default values use NewConfig
@@ -161,6 +202,10 @@ type Config struct {
 	// MaxConnections is limit of connections.
 	// Set it to zero to disable the limit.
 	MaxConnections int
+
+	// MaxPendingConnections is limit of pending connections.
+	// Set it to zero to disable the limit.
+	MaxPendingConnections int
 
 	// MaxHeads is limit of heads per feed. A head
 	// allocates some resources in the Node. And
