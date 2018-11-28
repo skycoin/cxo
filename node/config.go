@@ -145,8 +145,10 @@ type OnPeerUpdatedFunc func(p Peer)
 
 type OnPeerRemovedFunc func(p Peer)
 
-// SwarmTrackerConfig represents configuration of feed's swarm tracker
-type SwarmTrackerConfig struct {
+// SwarmConfig defines on how node finds peers, belonging
+// to the same swarm, and how it interacts with them later.
+// Nodes can belong to one swarm if they share the same feed.
+type SwarmConfig struct {
 	MaxPeers        uint64
 	RequestPeerRate time.Duration
 
@@ -163,8 +165,8 @@ type SwarmTrackerConfig struct {
 	OnPeerRemoved OnPeerRemovedFunc
 }
 
-func DefaultSwarmTrackerConfig() SwarmTrackerConfig {
-	cfg := SwarmTrackerConfig{
+func DefaultSwarmConfig() SwarmConfig {
+	cfg := SwarmConfig{
 		MaxPeers:        1000,
 		RequestPeerRate: time.Minute,
 

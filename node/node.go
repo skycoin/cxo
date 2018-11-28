@@ -38,10 +38,10 @@ type Node struct {
 	// feeds and connections
 	//
 
-	fs *nodeFeeds                      // feeds
-	ic map[cipher.PubKey]*Conn         // node id (pk) -> connection
-	pc map[*Conn]struct{}              // pending connections
-	st map[cipher.PubKey]*SwarmTracker // swarm trackers
+	fs *nodeFeeds               // feeds
+	ic map[cipher.PubKey]*Conn  // node id (pk) -> connection
+	pc map[*Conn]struct{}       // pending connections
+	ss map[cipher.PubKey]*Swarm // swarms
 
 	//
 	// transports
@@ -661,8 +661,8 @@ func (n *Node) Close() (err error) {
 		n.mx.Lock()
 		defer n.mx.Unlock()
 
-		for _, t := range n.st {
-			t.shutdown()
+		for _, s := range n.ss {
+			s.shutdown()
 		}
 
 		err = n.c.Close()
@@ -686,45 +686,45 @@ func (n *Node) Close() (err error) {
 	return
 }
 
-func (n *Node) StartSwarmTracker(
-	feed cipher.PubKey, cfg SwarmTrackerConfig) error {
+func (n *Node) JoinSwarm(
+	feed cipher.PubKey, cfg SwarmConfig) error {
 
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if _, ok := n.st[feed]; ok {
-		return errors.New("swarm tracker already running")
+	if _, ok := n.ss[feed]; ok {
+		return errors.New("node is aldreay in swarm")
 	}
 
-	t := newSwarmTracker(cfg)
-	go t.run()
+	s := newSwarm(cfg)
+	go s.run()
 
-	n.st[feed] = t
+	n.ss[feed] = s
 
 	return nil
 }
 
-func (n *Node) StopSwarmTracker(feed cipher.PubKey) error {
+func (n *Node) LeaveSwarm(feed cipher.PubKey) error {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	t, ok := n.st[feed]
+	s, ok := n.ss[feed]
 	if !ok {
-		return errors.New("swarm tracker is not running")
+		return errors.New("node is not in swarm")
 	}
 
-	t.shutdown()
+	s.shutdown()
 
-	delete(n.st, feed)
+	delete(n.ss, feed)
 
 	return nil
 }
 
-func (n *Node) SwarmTracker(feed cipher.PubKey) (*SwarmTracker, error) {
+func (n *Node) Swarm(feed cipher.PubKey) (*Swarm, error) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	s, ok := n.st[feed]
+	s, ok := n.ss[feed]
 	if !ok {
 		return nil, errors.New("swarm tracker is not running")
 	}

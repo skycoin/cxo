@@ -70,9 +70,9 @@ func (p *Peer) seen() {
 	p.LastSeen = time.Now()
 }
 
-// SwarmTracker
-type SwarmTracker struct {
-	cfg  SwarmTrackerConfig
+// Swarm
+type Swarm struct {
+	cfg  SwarmConfig
 	feed cipher.PubKey
 
 	node *Node
@@ -85,9 +85,9 @@ type SwarmTracker struct {
 	peers map[cipher.PubKey]Peer
 }
 
-func newSwarmTracker(cfg SwarmTrackerConfig) *SwarmTracker {
+func newSwarm(cfg SwarmConfig) *Swarm {
 	// Set default configuration if necessary
-	dcfg := DefaultSwarmTrackerConfig()
+	dcfg := DefaultSwarmConfig()
 
 	if cfg.MaxPeers == 0 {
 		cfg.MaxPeers = dcfg.MaxPeers
@@ -111,27 +111,27 @@ func newSwarmTracker(cfg SwarmTrackerConfig) *SwarmTracker {
 		cfg.PeersPerResponse = dcfg.PeersPerResponse
 	}
 
-	t := &SwarmTracker{
+	s := &Swarm{
 		cfg:   cfg,
 		quit:  make(chan struct{}),
 		done:  make(chan struct{}),
 		peers: make(map[cipher.PubKey]Peer),
 	}
 
-	return t
+	return s
 }
 
-func (t *SwarmTracker) AddPeer(
+func (s *Swarm) AddPeer(
 	pk cipher.PubKey, meta []byte, tcp, udp string) error {
 
 	if err := validatePeer(pk, tcp, udp); err != nil {
 		return fmt.Errorf("invalid peer: %s", err)
 	}
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if uint64(len(t.peers)) >= t.cfg.MaxPeers {
+	if uint64(len(s.peers)) >= s.cfg.MaxPeers {
 		return fmt.Errorf("maximum number of peers exceeded")
 	}
 
@@ -142,78 +142,78 @@ func (t *SwarmTracker) AddPeer(
 		UDPAddr:  udp,
 		LastSeen: time.Now(),
 	}
-	t.peers[pk] = p
+	s.peers[pk] = p
 
 	return nil
 }
 
-func (t *SwarmTracker) RemovePeer(pk cipher.PubKey) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (s *Swarm) RemovePeer(pk cipher.PubKey) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if _, ok := t.peers[pk]; !ok {
+	if _, ok := s.peers[pk]; !ok {
 		return errPeerNotFound
 	}
 
-	delete(t.peers, pk)
+	delete(s.peers, pk)
 
 	return nil
 }
 
-func (t *SwarmTracker) Peers() []Peer {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+func (s *Swarm) Peers() []Peer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	peers := make([]Peer, 0, len(t.peers))
-	for _, p := range t.peers {
+	peers := make([]Peer, 0, len(s.peers))
+	for _, p := range s.peers {
 		peers = append(peers, p)
 	}
 
 	return peers
 }
 
-func (t *SwarmTracker) run() {
+func (s *Swarm) run() {
 	var (
-		requestPeers  = time.Tick(t.cfg.RequestPeerRate)
-		clearOldPeers = time.Tick(t.cfg.ClearOldPeersRate)
-		outgoingConn  = time.Tick(t.cfg.OutgoingConnRate)
+		requestPeers  = time.Tick(s.cfg.RequestPeerRate)
+		clearOldPeers = time.Tick(s.cfg.ClearOldPeersRate)
+		outgoingConn  = time.Tick(s.cfg.OutgoingConnRate)
 	)
 
 LOOP:
 	for {
 		select {
-		case <-t.quit:
+		case <-s.quit:
 			break LOOP
 		default:
 		}
 
 		select {
 		case <-requestPeers:
-			if t.needPeers() {
-				t.requestPeers()
+			if s.needPeers() {
+				s.requestPeers()
 			}
 
 		case <-clearOldPeers:
-			t.clearOldPeers()
+			s.clearOldPeers()
 
 		case <-outgoingConn:
-			if count, ok := t.needConns(); ok {
-				t.createOutgoingConns(count)
+			if count, ok := s.needConns(); ok {
+				s.createOutgoingConns(count)
 			}
 		}
 	}
 
-	close(t.done)
+	close(s.done)
 }
 
-func (t *SwarmTracker) shutdown() {
-	close(t.quit)
-	<-t.done
+func (s *Swarm) shutdown() {
+	close(s.quit)
+	<-s.done
 }
 
-func (t *SwarmTracker) requestPeers() {
+func (s *Swarm) requestPeers() {
 	var (
-		conns = t.node.ConnectionsOfFeed(t.feed)
+		conns = s.node.ConnectionsOfFeed(s.feed)
 		wg    sync.WaitGroup
 	)
 
@@ -225,52 +225,52 @@ func (t *SwarmTracker) requestPeers() {
 
 			// Send request
 			req := &msg.RqPeers{
-				Feed: t.feed,
+				Feed: s.feed,
 			}
 			resp, err := c.sendRequest(req)
 			if err != nil {
 				// TODO: log error
-				// TODO: maybe call t.incPeerRetryTimes(c.PeerID())
+				// TODO: maybe call s.incPeerRetryTimes(c.PeerID())
 				return
 			}
 
 			// Handle response
 			switch m := resp.(type) {
 			case *msg.Peers:
-				if m.Feed != t.feed {
+				if m.Feed != s.feed {
 					// TODO: log error
-					// TODO: maybe call t.incPeerRetryTimes(c.PeerID())
+					// TODO: maybe call s.incPeerRetryTimes(c.PeerID())
 				}
-				t.addPeers(m.List)
+				s.addPeers(m.List)
 
 			case *msg.Err:
 				// TODO: log error
-				// TODO: maybe call t.incPeerRetryTimes(c.PeerID())
+				// TODO: maybe call s.incPeerRetryTimes(c.PeerID())
 
 			default:
 				// TODO: log error
-				// TODO: maybe call t.incPeerRetryTimes(c.PeerID())
+				// TODO: maybe call s.incPeerRetryTimes(c.PeerID())
 			}
 
 		}(conns[i])
 	}
 }
 
-func (t *SwarmTracker) needPeers() bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+func (s *Swarm) needPeers() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	result := t.cfg.MaxPeers > 0 &&
-		uint64(len(t.peers)) < t.cfg.MaxPeers
+	result := s.cfg.MaxPeers > 0 &&
+		uint64(len(s.peers)) < s.cfg.MaxPeers
 
 	return result
 }
 
-func (t *SwarmTracker) addPeers(peers []msg.PeerInfo) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (s *Swarm) addPeers(peers []msg.PeerInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if t.cfg.MaxPeers > 0 && t.cfg.MaxPeers <= uint64(len(t.peers)) {
+	if s.cfg.MaxPeers > 0 && s.cfg.MaxPeers <= uint64(len(s.peers)) {
 		// TODO: log warning
 		return
 	}
@@ -291,63 +291,63 @@ func (t *SwarmTracker) addPeers(peers []msg.PeerInfo) {
 	mathrand.Shuffle(len(peers), func(i, j int) {
 		peers[i], peers[j] = peers[j], peers[i]
 	})
-	if t.cfg.MaxPeers > 0 {
-		rcap := t.cfg.MaxPeers - uint64(len(t.peers))
+	if s.cfg.MaxPeers > 0 {
+		rcap := s.cfg.MaxPeers - uint64(len(s.peers))
 		peers = peers[:rcap]
 	}
 
 	// Update existing peers and add new one
 	for _, pi := range peers {
-		p, ok := t.peers[pi.PubKey]
+		p, ok := s.peers[pi.PubKey]
 		if !ok {
 			p.seen()
 			if ok = p.update(pi); ok {
-				if t.cfg.OnPeerUpdate != nil {
-					go t.cfg.OnPeerUpdate(p)
+				if s.cfg.OnPeerUpdate != nil {
+					go s.cfg.OnPeerUpdate(p)
 				}
 			}
 		} else {
 			p = msgToPeer(pi)
-			if t.cfg.OnPeerAdded != nil {
-				go t.cfg.OnPeerAdded(p)
+			if s.cfg.OnPeerAdded != nil {
+				go s.cfg.OnPeerAdded(p)
 			}
 		}
 
-		t.peers[p.PubKey] = p
+		s.peers[p.PubKey] = p
 	}
 }
 
-func (t *SwarmTracker) clearOldPeers() {
+func (s *Swarm) clearOldPeers() {
 	now := time.Now()
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	for _, p := range t.peers {
-		if now.Sub(p.LastSeen) > t.cfg.PeerExpirePeriod {
-			delete(t.peers, p.PubKey)
-			if t.cfg.OnPeerRemoved != nil {
-				go t.cfg.OnPeerRemoved(p)
+	for _, p := range s.peers {
+		if now.Sub(p.LastSeen) > s.cfg.PeerExpirePeriod {
+			delete(s.peers, p.PubKey)
+			if s.cfg.OnPeerRemoved != nil {
+				go s.cfg.OnPeerRemoved(p)
 			}
 		}
 	}
 }
 
-func (t *SwarmTracker) needConns() (uint64, bool) {
+func (s *Swarm) needConns() (uint64, bool) {
 	var (
-		connCap     = uint64(t.node.connCap())
-		pendConnCap = uint64(t.node.pendingConnCap())
-		feedConns   = uint64(len(t.node.ConnectionsOfFeed(t.feed)))
+		connCap     = uint64(s.node.connCap())
+		pendConnCap = uint64(s.node.pendingConnCap())
+		feedConns   = uint64(len(s.node.ConnectionsOfFeed(s.feed)))
 	)
 
 	if connCap == 0 ||
 		pendConnCap == 0 ||
-		feedConns >= t.cfg.MaxConns {
+		feedConns >= s.cfg.MaxConns {
 
 		return 0, false
 	}
 
-	needFeedConns := t.cfg.MaxConns - feedConns
+	needFeedConns := s.cfg.MaxConns - feedConns
 	if needFeedConns >= connCap {
 		return connCap, true
 	}
@@ -355,9 +355,9 @@ func (t *SwarmTracker) needConns() (uint64, bool) {
 	return needFeedConns, true
 }
 
-func (t *SwarmTracker) createOutgoingConns(count uint64) {
+func (s *Swarm) createOutgoingConns(count uint64) {
 	conns := make(map[cipher.PubKey]struct{})
-	for _, c := range t.node.Connections() {
+	for _, c := range s.node.Connections() {
 		conns[c.PeerID()] = struct{}{}
 	}
 
@@ -367,7 +367,7 @@ func (t *SwarmTracker) createOutgoingConns(count uint64) {
 			return !ok
 		}
 
-		peers = t.randomPeers(int(count), hasConn)
+		peers = s.randomPeers(int(count), hasConn)
 
 		wg sync.WaitGroup
 	)
@@ -383,19 +383,19 @@ func (t *SwarmTracker) createOutgoingConns(count uint64) {
 				err  error
 			)
 
-			conn, err = t.node.TCP().Connect(p.TCPAddr)
+			conn, err = s.node.TCP().Connect(p.TCPAddr)
 			if err != nil {
 				// TODO: log error
 			} else {
-				if err = conn.Subscribe(t.feed); err != nil {
+				if err = conn.Subscribe(s.feed); err != nil {
 					// TODO: log error
 				}
 			}
 
 			if err != nil {
-				t.incPeerRetryTimes(conn.PeerID())
+				s.incPeerRetryTimes(conn.PeerID())
 			} else {
-				t.resetPeerRetryTimes(conn.PeerID())
+				s.resetPeerRetryTimes(conn.PeerID())
 			}
 		}(peers[i])
 	}
@@ -403,43 +403,43 @@ func (t *SwarmTracker) createOutgoingConns(count uint64) {
 
 type peerFilter func(Peer) bool
 
-func (t *SwarmTracker) incPeerRetryTimes(pk cipher.PubKey) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (s *Swarm) incPeerRetryTimes(pk cipher.PubKey) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	p, ok := t.peers[pk]
+	p, ok := s.peers[pk]
 	if !ok {
 		return errPeerNotFound
 	}
 
 	p.RetryTimes++
-	t.peers[pk] = p
+	s.peers[pk] = p
 
 	return nil
 }
 
-func (t *SwarmTracker) resetPeerRetryTimes(pk cipher.PubKey) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (s *Swarm) resetPeerRetryTimes(pk cipher.PubKey) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	p, ok := t.peers[pk]
+	p, ok := s.peers[pk]
 	if !ok {
 		return errPeerNotFound
 	}
 
 	p.RetryTimes--
-	t.peers[pk] = p
+	s.peers[pk] = p
 
 	return nil
 }
 
-func (t *SwarmTracker) peersForExchange() []msg.PeerInfo {
+func (s *Swarm) peersForExchange() []msg.PeerInfo {
 	var (
 		zeroRetries = func(p Peer) bool {
 			return p.RetryTimes == 0
 		}
 
-		peers = t.randomPeers(int(t.cfg.PeersPerResponse), zeroRetries)
+		peers = s.randomPeers(int(s.cfg.PeersPerResponse), zeroRetries)
 
 		peerMsg = make([]msg.PeerInfo, len(peers))
 	)
@@ -451,8 +451,8 @@ func (t *SwarmTracker) peersForExchange() []msg.PeerInfo {
 	return peerMsg
 }
 
-func (t *SwarmTracker) randomPeers(count int, filters ...peerFilter) []Peer {
-	filteredPeers := t.filterPeers(filters...)
+func (s *Swarm) randomPeers(count int, filters ...peerFilter) []Peer {
+	filteredPeers := s.filterPeers(filters...)
 
 	if count > len(filteredPeers) {
 		count = len(filteredPeers)
@@ -469,14 +469,14 @@ func (t *SwarmTracker) randomPeers(count int, filters ...peerFilter) []Peer {
 	return peers
 }
 
-func (t *SwarmTracker) filterPeers(filters ...peerFilter) []Peer {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+func (s *Swarm) filterPeers(filters ...peerFilter) []Peer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	var peers []Peer
 
 PeerLoop:
-	for _, p := range t.peers {
+	for _, p := range s.peers {
 		for _, f := range filters {
 			if !f(p) {
 				continue PeerLoop
