@@ -302,15 +302,11 @@ func (s *Swarm) addPeers(peers []msg.PeerInfo) {
 		if !ok {
 			p.seen()
 			if ok = p.update(pi); ok {
-				if s.cfg.OnPeerUpdate != nil {
-					go s.cfg.OnPeerUpdate(p)
-				}
+				s.onPeerUpdated(p)
 			}
 		} else {
 			p = msgToPeer(pi)
-			if s.cfg.OnPeerAdded != nil {
-				go s.cfg.OnPeerAdded(p)
-			}
+			s.onPeerAdded(p)
 		}
 
 		s.peers[p.PubKey] = p
@@ -326,10 +322,26 @@ func (s *Swarm) clearOldPeers() {
 	for _, p := range s.peers {
 		if now.Sub(p.LastSeen) > s.cfg.PeerExpirePeriod {
 			delete(s.peers, p.PubKey)
-			if s.cfg.OnPeerRemoved != nil {
-				go s.cfg.OnPeerRemoved(p)
-			}
+			s.onPeerRemoved(p)
 		}
+	}
+}
+
+func (s *Swarm) onPeerAdded(p Peer) {
+	if s.node.config.OnPeerAdded != nil {
+		go s.node.config.OnPeerAdded(s.feed, p)
+	}
+}
+
+func (s *Swarm) onPeerUpdated(p Peer) {
+	if s.node.config.OnPeerUpdated != nil {
+		go s.node.config.OnPeerUpdated(s.feed, p)
+	}
+}
+
+func (s *Swarm) onPeerRemoved(p Peer) {
+	if s.node.config.OnPeerRemoved != nil {
+		go s.node.config.OnPeerRemoved(s.feed, p)
 	}
 }
 

@@ -102,6 +102,15 @@ type OnSubscribeRemoteFunc func(c *Conn, feed cipher.PubKey) (reject error)
 // only
 type OnUnsubscribeRemoteFunc func(c *Conn, feed cipher.PubKey)
 
+// OnPeerAddedFunc
+type OnPeerAddedFunc func(f cipher.PubKey, p Peer)
+
+// OnPeerUpdatedFunc
+type OnPeerUpdatedFunc func(f cipher.PubKey, p Peer)
+
+// OnPeerRemovedFunc
+type OnPeerRemovedFunc func(f cipher.PubKey, p Peer)
+
 // NetConfig represents configurations of
 // a TCP or UDP network
 type NetConfig struct {
@@ -139,12 +148,6 @@ type NetConfig struct {
 	Pings time.Duration
 }
 
-type OnPeerAddedFunc func(p Peer)
-
-type OnPeerUpdatedFunc func(p Peer)
-
-type OnPeerRemovedFunc func(p Peer)
-
 // SwarmConfig defines on how node finds peers, belonging
 // to the same swarm, and how it interacts with them later.
 // Nodes can belong to one swarm if they share the same feed.
@@ -159,10 +162,6 @@ type SwarmConfig struct {
 	OutgoingConnRate time.Duration
 
 	PeersPerResponse uint64
-
-	OnPeerAdded   OnPeerAddedFunc
-	OnPeerUpdate  OnPeerUpdatedFunc
-	OnPeerRemoved OnPeerRemovedFunc
 }
 
 func DefaultSwarmConfig() SwarmConfig {
@@ -314,6 +313,15 @@ type Config struct {
 	// when new Root object filled and can be
 	// used. See OnRootFilledFunc for details.
 	OnFillingBreaks OnFillingBreaksFunc
+
+	// OnPeerAdded
+	OnPeerAdded OnPeerAddedFunc
+
+	// OnPeerUpdated
+	OnPeerUpdated OnPeerUpdatedFunc
+
+	// OnPeerRemoved
+	OnPeerRemoved OnPeerRemovedFunc
 }
 
 // NewConfig returns new Config with
