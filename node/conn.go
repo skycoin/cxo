@@ -845,10 +845,10 @@ func (c *Conn) handleRqPeers(seq uint32, rqp *msg.RqPeers) error {
 	c.n.Debugf(MsgReceivePin, "[%s] handleRqPeers %s", c.String(),
 		rqp.Feed.Hex()[:7])
 
-	s, err := c.n.Swarm(rqp.Feed)
-	if err != nil {
-		c.sendMsg(c.nextSeq(), seq, &msg.Err{Err: err.Error()})
-		return err
+	s, ok := c.n.InSwarm(rqp.Feed)
+	if !ok {
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{Err: "not in swarm"})
+		return errors.New("node in not in swarm")
 	}
 
 	c.sendMsg(c.nextSeq(), seq, &msg.Peers{

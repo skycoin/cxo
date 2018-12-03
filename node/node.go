@@ -687,13 +687,13 @@ func (n *Node) Close() (err error) {
 }
 
 func (n *Node) JoinSwarm(
-	feed cipher.PubKey, cfg SwarmConfig) error {
+	feed cipher.PubKey, cfg SwarmConfig) (*Swarm, error) {
 
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if _, ok := n.ss[feed]; ok {
-		return errors.New("node is aldreay in swarm")
+	if s, ok := n.ss[feed]; ok {
+		return s, nil
 	}
 
 	s := newSwarm(cfg)
@@ -701,7 +701,7 @@ func (n *Node) JoinSwarm(
 
 	n.ss[feed] = s
 
-	return nil
+	return s, nil
 }
 
 func (n *Node) LeaveSwarm(feed cipher.PubKey) error {
@@ -720,14 +720,11 @@ func (n *Node) LeaveSwarm(feed cipher.PubKey) error {
 	return nil
 }
 
-func (n *Node) Swarm(feed cipher.PubKey) (*Swarm, error) {
+func (n *Node) InSwarm(feed cipher.PubKey) (*Swarm, bool) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
 	s, ok := n.ss[feed]
-	if !ok {
-		return nil, errors.New("swarm tracker is not running")
-	}
 
-	return s, nil
+	return s, ok
 }
