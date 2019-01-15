@@ -14,16 +14,17 @@ import (
 
 // default configurations
 const (
-	Prefix          string        = "[node] "
-	MaxConnections  int           = 1000 * 1000
-	MaxFillingTime  time.Duration = 10 * time.Minute
-	MaxHeads        int           = 10
-	ListenTCP       string        = ":8870"
-	ListenUDP       string        = "" // don't listen
-	RPCAddress      string        = ":8871"
-	ResponseTimeout time.Duration = 59 * time.Second
-	Pings           time.Duration = 118 * time.Second
-	Public          bool          = false
+	Prefix                string        = "[node] "
+	MaxConnections        int           = 1000 * 1000
+	MaxPendingConnections int           = 1000
+	MaxFillingTime        time.Duration = 10 * time.Minute
+	MaxHeads              int           = 10
+	ListenTCP             string        = ":8870"
+	ListenUDP             string        = "" // don't listen
+	RPCAddress            string        = ":8871"
+	ResponseTimeout       time.Duration = 59 * time.Second
+	Pings                 time.Duration = 118 * time.Second
+	Public                bool          = false
 )
 
 // Addresses are discovery addresses
@@ -338,6 +339,7 @@ func NewConfig() (c *Config) {
 
 	// node
 	c.MaxConnections = MaxConnections
+	c.MaxPendingConnections = MaxPendingConnections
 	c.MaxFillingTime = MaxFillingTime
 	c.MaxHeads = MaxHeads
 
