@@ -300,7 +300,9 @@ func (s *Swarm) addPeers(peers []msg.PeerInfo) {
 	})
 	if s.cfg.MaxPeers > 0 {
 		rcap := s.cfg.MaxPeers - uint64(len(s.peers))
-		peers = peers[:rcap]
+		if uint64(len(peers)) > rcap {
+			peers = peers[:rcap]
+		}
 	}
 
 	// Update existing peers and add new one
