@@ -697,7 +697,8 @@ func (n *Node) JoinSwarm(
 		return s, nil
 	}
 
-	s := newSwarm(cfg)
+	s := newSwarm(n, feed, cfg)
+
 	go s.run()
 
 	n.ss[feed] = s

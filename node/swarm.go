@@ -85,7 +85,9 @@ type Swarm struct {
 	peers map[cipher.PubKey]Peer
 }
 
-func newSwarm(cfg SwarmConfig) *Swarm {
+func newSwarm(
+	n *Node, f cipher.PubKey, cfg SwarmConfig) *Swarm {
+
 	// Set default configuration if necessary
 	dcfg := DefaultSwarmConfig()
 
@@ -112,9 +114,14 @@ func newSwarm(cfg SwarmConfig) *Swarm {
 	}
 
 	s := &Swarm{
-		cfg:   cfg,
-		quit:  make(chan struct{}),
-		done:  make(chan struct{}),
+		cfg:  cfg,
+		feed: f,
+
+		node: n,
+
+		quit: make(chan struct{}),
+		done: make(chan struct{}),
+
 		peers: make(map[cipher.PubKey]Peer),
 	}
 
