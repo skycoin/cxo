@@ -615,6 +615,11 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 	case *msg.RqPreview: // -> RqPreview (feed)
 		return c.handleRqPreview(seq, x)
 
+	// peer exchange
+
+	case *msg.RqPeers: // -> RqPeers (feed)
+		return c.handleRqPeers(seq, x)
+
 	//
 	// delayed messeges (ignore them)
 	//
@@ -626,6 +631,7 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 	case *msg.Err: // -> Err (delayed)
 	case *msg.Ok: // -> Ok (delayed)
 	case *msg.List: // -> List (delayed)
+	case *msg.Peers: // -> Peers (delayed)
 
 	default:
 
