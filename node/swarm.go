@@ -537,7 +537,7 @@ func validateAddress(addr string) error {
 	if len(split) != 2 {
 		return errors.New("invalid format")
 	}
-	if ip := net.ParseIP(split[0]); ip != nil {
+	if ip := net.ParseIP(split[0]); ip == nil {
 		return errors.New("invalid ip")
 	}
 	if _, err := strconv.ParseUint(split[1], 10, 16); err != nil {
