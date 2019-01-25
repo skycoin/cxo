@@ -135,6 +135,10 @@ type Logger interface {
 	Debug(pin Pin, args ...interface{})                 //
 	Debugln(pin Pin, args ...interface{})               //
 	Debugf(pin Pin, format string, args ...interface{}) //
+
+	Error(err error, args ...interface{})
+	Errorln(err error, args ...interface{})
+	Errorf(err error, format string, args ...interface{})
 }
 
 type logger struct {
@@ -176,6 +180,27 @@ func (l *logger) Debugf(pin Pin, format string, args ...interface{}) {
 		format = "[DBG] " + format
 		l.Output(2, fmt.Sprintf(format, args...))
 	}
+}
+
+func (l *logger) Error(err error, args ...interface{}) {
+	errArgs := []interface{}{
+		"[ERR] ",
+		fmt.Sprintf("err=%s ", err),
+	}
+	l.Output(2, fmt.Sprint(append(errArgs, args...)))
+}
+
+func (l *logger) Errorln(err error, args ...interface{}) {
+	errArgs := []interface{}{
+		"[ERR] ",
+		fmt.Sprintf("err=%s ", err),
+	}
+	l.Output(2, fmt.Sprint(append(errArgs, args...)))
+}
+
+func (l *logger) Errorf(err error, format string, args ...interface{}) {
+	format = "[ERR] " + fmt.Sprintf("err=%s ", err) + format
+	l.Output(2, fmt.Sprintf(format, args...))
 }
 
 func (l *logger) Pins() Pin {
