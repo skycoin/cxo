@@ -857,9 +857,14 @@ func (c *Conn) handleRqPeers(seq uint32, rqp *msg.RqPeers) error {
 		return errors.New("node in not in swarm")
 	}
 
+	peers := s.peersForExchange()
+
+	c.n.Debugf(PEXPin, "sending info about %d peers of feed %s to peer %s, addr %s",
+		len(peers), rqp.Feed.Hex()[:8], c.PeerID().Hex()[:8], c.Address())
+
 	c.sendMsg(c.nextSeq(), seq, &msg.Peers{
 		Feed: rqp.Feed,
-		List: s.peersForExchange(),
+		List: peers,
 	})
 
 	return nil

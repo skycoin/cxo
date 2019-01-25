@@ -33,6 +33,10 @@ const (
 
 	DiscoveryPin // show discovery debug logs
 
+	// peer exchange
+
+	PEXPin // show peer exchange debug logs
+
 	// joiners
 
 	MsgPin  = MsgSendPin | MsgReceivePin // send/receive
