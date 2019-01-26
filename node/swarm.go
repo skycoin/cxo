@@ -263,9 +263,10 @@ func (s *Swarm) requestPeers() {
 				// TODO: maybe call s.incPeerRetryTimes(c.PeerID())
 			}
 
-			s.node.Errorf(err, "failed to request peers for feed %s, peer %s, addr %s",
-				s.feed.Hex()[:8], c.PeerID().Hex()[:8], c.Address())
-
+			if err != nil {
+				s.node.Errorf(err, "failed to request peers for feed %s, peer %s, addr %s",
+					s.feed.Hex()[:8], c.PeerID().Hex()[:8], c.Address())
+			}
 		}(conns[i])
 	}
 }
