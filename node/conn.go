@@ -455,6 +455,7 @@ func (c *Conn) receiving() {
 		case raw, ok = <-receiveq:
 
 			if ok == false {
+				c.n.Debugf(CloseConnPin, "[%s] net.Connection closed", c.String())
 				return // closed
 			}
 
@@ -492,6 +493,7 @@ func (c *Conn) receiving() {
 			}
 
 		case <-closeq:
+			c.n.Debugf(CloseConnPin, "[%s] received signal via closeq channel", c.String())
 			return
 
 		}
