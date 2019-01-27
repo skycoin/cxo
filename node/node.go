@@ -419,6 +419,9 @@ func (n *Node) acceptConnection(fc *factory.Connection) {
 // delete from pending and close underlying
 // factory.Connection
 func (n *Node) delPendingConnClose(c *Conn) {
+	n.Debugf(CloseConnPin,
+		"[%s] deleting from pending list and closing underlying factory.Connection",
+		c.String())
 
 	n.mx.Lock()
 	defer n.mx.Unlock()

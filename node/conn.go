@@ -370,6 +370,9 @@ func (c *Conn) getter() (cg skyobject.Getter) {
 
 // close and release
 func (c *Conn) close(reason error) error {
+	c.n.Debugf(CloseConnPin,
+		"[%s] closing and realisng, reason=%s", c.String(), reason)
+
 	c.closeo.Do(func() {
 		c.n.delConnection(c)
 		close(c.closeq)      // close the channel
@@ -455,7 +458,8 @@ func (c *Conn) receiving() {
 		case raw, ok = <-receiveq:
 
 			if ok == false {
-				c.n.Debugf(CloseConnPin, "[%s] net.Connection closed", c.String())
+				c.n.Debugf(CloseConnPin,
+					"[%s] underlying factory.Connection closed", c.String())
 				return // closed
 			}
 
