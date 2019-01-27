@@ -406,14 +406,7 @@ func (n *Node) acceptConnection(fc *factory.Connection) {
 		return
 	}
 
-	if _, err := n.wrapConnection(fc, true); err != nil {
-
-		n.Printf("[ERR] [%s] handshake error: %v",
-			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()),
-			err)
-
-	}
-
+	n.wrapConnection(fc, true)
 }
 
 // delete from pending and close underlying
@@ -468,6 +461,9 @@ func (n *Node) wrapConnection(
 
 	// handshake
 	if err = c.handshake(n.closeq); err != nil {
+		n.Errorf(err, "[%s] handshake failed",
+			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
+
 		n.delPendingConnClose(c)
 		return
 	}
@@ -475,6 +471,9 @@ func (n *Node) wrapConnection(
 	// check out peer id
 
 	if err = n.addConnection(c); err != nil {
+		n.Errorf(err, "[%s] failed to add connection",
+			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
+
 		n.delPendingConnClose(c)
 		return
 	}
