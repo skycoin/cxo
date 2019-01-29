@@ -103,7 +103,7 @@ func (n *Node) connections() (cs []string) {
 
 	cs = make([]string, 0, len(n.pc)+len(n.ic))
 
-	for c := range n.pc {
+	for _, c := range n.pc {
 		cs = append(cs, c.String()+"(⌛)") // pending
 	}
 
