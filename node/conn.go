@@ -30,6 +30,10 @@ type Conn struct {
 	n      *Node         // back reference
 	peerID cipher.PubKey // peer id
 
+	// handshake
+	hsk    chan struct{} // closed upon handshake is finished
+	hskErr error         // nil in case of successful handshake
+
 	// request - response
 	seq  uint32                    // messege seq number (for request-response)
 	reqs map[uint32]chan<- msg.Msg // requests
@@ -48,31 +52,23 @@ type Conn struct {
 }
 
 func (n *Node) newConnection(
-	fc *factory.Connection,
-	isIncoming bool,
-) (
-	c *Conn,
-) {
+	fc *factory.Connection, isIncoming bool) *Conn {
 
-	c = new(Conn)
+	c := &Conn{
+		Connection: fc,
+		incoming:   isIncoming,
 
-	c.Connection = fc
-	c.incoming = isIncoming
+		n: n,
 
-	c.n = n
+		hsk: make(chan struct{}),
 
-	c.reqs = make(map[uint32]chan<- msg.Msg)
+		reqs: make(map[uint32]chan<- msg.Msg),
 
-	c.sendq = fc.GetChanOut()
-	c.closeq = make(chan struct{})
+		sendq:  fc.GetChanOut(),
+		closeq: make(chan struct{}),
+	}
 
-	n.addPendingConn(c)
-
-	//
-	// the next step is c.handshake() and c.run()
-	//
-
-	return
+	return c
 }
 
 // start handling
@@ -374,7 +370,7 @@ func (c *Conn) close(reason error) error {
 		"[%s] closing and realisng, reason=%s", c.String(), reason)
 
 	c.closeo.Do(func() {
-		c.n.delConnection(c)
+		c.n.delConn(c)
 		close(c.closeq)      // close the channel
 		c.Connection.Close() // close
 		c.await.Wait()       // wait for goroutines
@@ -408,20 +404,18 @@ func (c *Conn) encodeMsg(seq, rseq uint32, m msg.Msg) (raw []byte) {
 
 }
 
-func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) {
-
+func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) error {
 	c.n.Debugf(MsgSendPin, "[%s] send %d %T", c.String(), rseq, m)
 
-	c.sendRaw(c.encodeMsg(seq, rseq, m))
-}
-
-func (c *Conn) sendRaw(raw []byte) {
-
 	select {
-	case c.sendq <- raw:
 	case <-c.closeq:
+		return ErrClosed
+	default:
 	}
 
+	c.sendq <- c.encodeMsg(seq, rseq, m)
+
+	return nil
 }
 
 func (c *Conn) fatality(args ...interface{}) {
