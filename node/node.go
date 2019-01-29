@@ -38,9 +38,11 @@ type Node struct {
 	// feeds and connections
 	//
 
-	fs *nodeFeeds               // feeds
-	ic map[cipher.PubKey]*Conn  // node id (pk) -> connection
-	pc map[*Conn]struct{}       // pending connections
+	fs *nodeFeeds // feeds
+
+	ic map[cipher.PubKey]*Conn // node id (pk) -> connection
+	pc map[string]*Conn        // node addr -> pending connection
+
 	ss map[cipher.PubKey]*Swarm // swarms
 
 	//
@@ -77,7 +79,6 @@ type Node struct {
 
 	await  sync.WaitGroup // wait for goroutines
 	closeo sync.Once      // close once
-	closeq chan struct{}  // closed
 }
 
 // NewNode creates new Node instance using provided
@@ -142,14 +143,13 @@ func NewNodeContainer(
 	n.c = c
 	n.fs = newNodeFeeds(n)
 	n.ic = make(map[cipher.PubKey]*Conn)
-	n.pc = make(map[*Conn]struct{})
+	n.pc = make(map[string]*Conn)
 	n.ss = make(map[cipher.PubKey]*Swarm)
 
 	n.config = conf
 	n.config.Config = c.Config() // actual
 
 	n.fillavg = statutil.NewDuration(conf.Config.RollAvgSamples)
-	n.closeq = make(chan struct{})
 
 	//
 	// create
@@ -308,37 +308,60 @@ func (n *Node) UDP() (tcp *UDP) {
 	return n.udp
 }
 
-// add to pending
+// add list of pending connections, waiting for handshake
 func (n *Node) addPendingConn(c *Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	n.pc[c] = struct{}{}
+	n.pc[c.Address()] = c
 }
 
-// without lock
-func (n *Node) addConnection(c *Conn) (err error) {
-
+// remove from list of pending connections, waiting for handshake
+func (n *Node) delPendingConn(c *Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if _, ok := n.ic[c.peerID]; ok == true {
-		return ErrAlreadyHaveConnection
+	delete(n.pc, c.Address())
+}
+
+// get pending connection by address
+func (n *Node) getPendingConn(addr string) *Conn {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	return n.pc[addr]
+}
+
+// add to list of connections
+func (n *Node) addConn(c *Conn) bool {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if _, ok := n.ic[c.peerID]; ok {
+		return false
 	}
 
 	n.ic[c.peerID] = c                   // add
-	delete(n.pc, c)                      // remove from pending
 	n.fs.addConnFeed(c, cipher.PubKey{}) // add to blank feed
 
-	return
+	return true
 }
 
-func (n *Node) delConnection(c *Conn) {
+// remove from list of connections
+func (n *Node) delConn(c *Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
 	delete(n.ic, c.peerID)
 	n.fs.delConn(c)
+}
+
+// get connection by peer's pubkey
+func (n *Node) getConn(pk cipher.PubKey) *Conn {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	return n.ic[pk]
 }
 
 // call under lock of the mx
@@ -392,38 +415,6 @@ func (n *Node) onDisconenct(c *Conn, reason error) {
 
 }
 
-func (n *Node) acceptConnection(fc *factory.Connection) {
-
-	n.Debugf(NewInConnPin, "[%s] accept",
-		connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
-
-	if n.connCap() == 0 {
-		// TODO: log error
-		return
-	}
-	if n.pendingConnCap() == 0 {
-		// TODO: log error
-		return
-	}
-
-	n.wrapConnection(fc, true)
-}
-
-// delete from pending and close underlying
-// factory.Connection
-func (n *Node) delPendingConnClose(c *Conn) {
-	n.Debugf(CloseConnPin,
-		"[%s] deleting from pending list and closing underlying factory.Connection",
-		c.String())
-
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	delete(n.pc, c)
-	c.Connection.Close()
-
-}
-
 func (n *Node) connCap() int {
 	n.mx.Lock()
 	defer n.mx.Unlock()
@@ -446,51 +437,68 @@ func (n *Node) pendingConnCap() int {
 	return n.config.MaxPendingConnections - len(n.pc)
 }
 
-func (n *Node) wrapConnection(
-	fc *factory.Connection, // :
-	isIncoming bool, //        :
-) (
-	c *Conn, //                :
-	err error, //              :
-) {
+func (n *Node) initConn(
+	fc *factory.Connection, incoming bool) (*Conn, error) {
 
-	n.Debugf(ConnHskPin, "[%s] wrapConnection",
-		connString(isIncoming, fc.IsTCP(), fc.GetRemoteAddr().String()))
+	var (
+		addr    = fc.GetRemoteAddr().String()
+		connStr = connString(incoming, fc.IsTCP(), addr)
+	)
 
-	c = n.newConnection(fc, isIncoming) // adds to pending
+	n.Debugf(ConnHskPin, "[%s] init connection", connStr)
 
-	// handshake
-	if err = c.handshake(n.closeq); err != nil {
-		n.Errorf(err, "[%s] handshake failed",
-			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
-
-		n.delPendingConnClose(c)
-		return
+	if n.connCap() == 0 {
+		return nil, ErrConnLimit
+	}
+	if n.pendingConnCap() == 0 {
+		return nil, ErrPendConnLimit
 	}
 
-	// check out peer id
-
-	if err = n.addConnection(c); err != nil {
-		n.Errorf(err, "[%s] failed to add connection",
-			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
-
-		n.delPendingConnClose(c)
-		return
-	}
-
-	// add to transport if the connection is incoming
-	if isIncoming == true {
-		if c.IsTCP() == true {
-			n.TCP().addAcceptedConnection(c)
-		} else {
-			n.UDP().addAcceptedConnection(c)
+	// Check pending connection to/from the same address.
+	pc := n.getPendingConn(addr)
+	if pc != nil {
+		// Wait for ongoing handshake.
+		if err := pc.waitHandshake(); err != nil {
+			return nil,
+				fmt.Errorf("handshake for existing pending connection failed : %s", err)
 		}
+
+		// Get connection by peer's pubkey, received during handshake.
+		// Error will happen if goroutine, waiting for handshake, will attempt to
+		// get connection from cache, before it is put there by goroutine, performing handshake.
+		// TODO: probably, wait for connection in cache, not for handshake.
+		c := n.getConn(pc.peerID)
+		if c == nil {
+			return nil, fmt.Errorf("failed to get connection, for which hanshake has finished")
+		}
+
+		return c, nil
+	}
+
+	// Create new connection and add it to pending list.
+	c := n.newConnection(fc, incoming)
+
+	n.addPendingConn(c)
+	defer n.delPendingConn(c)
+
+	var initErr error
+
+	// Perform/accept handshake.
+	if err := c.handshake(); err != nil {
+		initErr = fmt.Errorf("handshake failed - %s", err)
+		return nil, initErr
+	}
+
+	// Check is pubkey (peer ID), received during handshake, is duplicate.
+	if ok := n.addConn(c); !ok {
+		initErr = fmt.Errorf("connection with peer %s already exists", c.peerID.Hex()[:8])
+		return nil, initErr
 	}
 
 	c.run()
 	n.onConnect(c)
 
-	return
+	return c, nil
 
 }
 
@@ -659,28 +667,35 @@ func (n *Node) Stat() (s *Stat) {
 // of (skyobject.Container).Close once.
 func (n *Node) Close() (err error) {
 	n.closeo.Do(func() {
-		close(n.closeq)
-
 		n.mx.Lock()
 		defer n.mx.Unlock()
 
+		// Shutdown peer exchange.
 		for _, s := range n.ss {
 			s.shutdown()
 		}
 
-		err = n.c.Close()
+		// Close all connections.
+		for _, c := range n.ic {
+			c.close(nil)
+		}
+		for _, c := range n.pc {
+			c.close(nil)
+		}
 
+		// Shutdown all transports.
 		if n.tcp != nil {
 			n.tcp.Close()
 		}
-
 		if n.udp != nil {
 			n.udp.Close()
 		}
-
 		if n.rpc != nil {
 			n.rpc.Close()
 		}
+
+		// Close database.
+		err = n.c.Close()
 
 		n.await.Wait()
 
