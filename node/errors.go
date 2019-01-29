@@ -16,4 +16,6 @@ var (
 	ErrMaxHeadsLimit           = errors.New("max heads limit")
 	ErrUnsubscribe             = errors.New("unsubscribe")
 	ErrBlankFeed               = errors.New("blank feed")
+	ErrConnLimit               = errors.New("max nubmber of connections exceeded")
+	ErrPendConnLimit           = errors.New("max number of pending connections exceeded")
 )
