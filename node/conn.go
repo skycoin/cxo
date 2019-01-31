@@ -71,10 +71,47 @@ func (n *Node) newConnection(
 	return c
 }
 
-// start handling
+// run defines connection lifecycle.
 func (c *Conn) run() {
+	// Receive messages, until close signal is received or error occures.
+	// In case of error stop all goroutines, started by connection.
+	var rcvErr error
 	c.await.Add(1)
-	go c.receiving()
+	go func() {
+		defer c.await.Done()
+		if rcvErr = c.receiveMsg(); rcvErr != nil {
+			close(c.closeq)
+		}
+	}()
+
+	// If OnConnect returns error, connection will be closed.
+	var occErr error
+	if occErr = c.n.onConnect(c); occErr != nil {
+		close(c.closeq)
+	}
+
+	// Wait for all groutines to exit.
+	c.await.Wait()
+
+	// Remove connection from node's cache.
+	c.n.delConn(c)
+
+	// Remove connection from trasnport's cache and close factory.Connection.
+	if c.IsTCP() {
+		c.n.tcp.closeConn(c.Address())
+	} else {
+		c.n.udp.closeConn(c.Address())
+	}
+
+	// In connection is closed in case of error, decide which one to pass to OnDisconnect.
+	var odcErr error
+	switch {
+	case rcvErr != nil:
+		odcErr = rcvErr
+	case occErr != nil:
+		odcErr = occErr
+	}
+	c.n.onDisconenct(c, odcErr)
 }
 
 func (c *Conn) decodeRaw(raw []byte) (seq, rseq uint32, m msg.Msg, err error) {
@@ -360,29 +397,15 @@ func (c *Conn) getter() (cg skyobject.Getter) {
 	return &cget{c}
 }
 
-//
-// terminate
-//
-
-// close and release
-func (c *Conn) close(reason error) error {
-	c.n.Debugf(CloseConnPin,
-		"[%s] closing and realisng, reason=%s", c.String(), reason)
-
-	c.closeo.Do(func() {
-		c.n.delConn(c)
-		close(c.closeq)      // close the channel
-		c.Connection.Close() // close
-		c.await.Wait()       // wait for goroutines
-
-		c.n.onDisconenct(c, reason) // callback
-	})
-	return reason
-}
-
 // Close the Conn
 func (c *Conn) Close() (err error) {
-	return c.close(nil)
+	close(c.closeq)
+	c.await.Wait()
+
+	// TODO: c.await.Wait() can exit beofre connection is removed from cache.
+	// TODO: get errors from background goroutines and retrun them.
+
+	return nil
 }
 
 func (c *Conn) nextSeq() uint32 {
@@ -418,86 +441,52 @@ func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) error {
 	return nil
 }
 
-func (c *Conn) fatality(args ...interface{}) {
-
-	var err = errors.New(fmt.Sprint(args...))
-
-	c.n.Print("[ERR] ", err)
-	c.close(err)
-}
-
-func (c *Conn) receiving() {
-
+func (c *Conn) receiveMsg() error {
 	c.n.Debugf(ConnPin, "[%s] receiving", c.String())
 
-	defer c.Close()      //
-	defer c.await.Done() //
+	receiveq := c.GetChanIn()
 
-	var (
-		receiveq = c.GetChanIn()
-		closeq   = c.closeq
-
-		seq, rseq uint32
-		m         msg.Msg
-		err       error
-
-		raw []byte
-		ok  bool
-	)
-
+	// Read raw messages from factory.Connection.
+	// Terminate if factory.Connectin is closed of if close singnal is sent.
 	for {
-
 		select {
-
-		case raw, ok = <-receiveq:
-
+		case raw, ok := <-receiveq:
 			if ok == false {
-				c.n.Debugf(CloseConnPin,
-					"[%s] underlying factory.Connection closed", c.String())
-				return // closed
+				return errors.New("underlying factory.Connection closed")
 			}
 
+			// Check message size.
 			// [ 4 seq ][ 4 rseq ][ 1 msg type ]
-
 			if len(raw) < 9 {
-				c.fatality("invalid messege received: samll size")
-				return
+				return errors.New("invalid message size")
 			}
 
-			// seq of the Msg
-			seq = binary.LittleEndian.Uint32(raw)
-			raw = raw[4:]
-
-			// response for a seq or zero
-			rseq = binary.LittleEndian.Uint32(raw)
-			raw = raw[4:]
-
-			if m, err = msg.Decode(raw); err != nil {
-				c.fatality("can't decode received messege: ", err)
-				return
+			// Decode message.
+			var (
+				seq    = binary.LittleEndian.Uint32(raw[:4])
+				rseq   = binary.LittleEndian.Uint32(raw[4:8])
+				msgRaw = raw[8:]
+			)
+			msg, err := msg.Decode(msgRaw)
+			if err != nil {
+				return fmt.Errorf("failed to decode message: %s", err)
 			}
 
-			c.n.Debugf(MsgReceivePin, "[%s] receive %T", c.String(), m)
+			c.n.Debugf(MsgReceivePin, "[%s] receive %T", c.String(), msg)
 
-			// the messege can be a response for a request
+			// Handle message.
 			if rq, ok := c.isResponse(rseq); ok == true {
-				rq <- m
+				rq <- msg
 				continue
 			}
-
-			if err = c.handle(seq, m); err != nil {
-				c.fatality("error handling messege: ", err)
-				return
+			if err := c.handle(seq, msg); err != nil {
+				return fmt.Errorf("failed to handle message %s", err)
 			}
 
-		case <-closeq:
-			c.n.Debugf(CloseConnPin, "[%s] received signal via closeq channel", c.String())
-			return
-
+		case <-c.closeq:
+			return nil
 		}
-
 	}
-
 }
 
 func (c *Conn) isResponse(rseq uint32) (rq chan<- msg.Msg, ok bool) {

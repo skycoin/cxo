@@ -386,33 +386,28 @@ func (n *Node) createUDP() {
 
 }
 
-func (n *Node) onConnect(c *Conn) {
-
+func (n *Node) onConnect(c *Conn) error {
 	if occ := n.config.OnConnect; occ != nil {
-
-		if terminate := occ(c); terminate != nil {
-			c.close(terminate)
-			return
+		if err := occ(c); err != nil {
+			return err
 		}
-
 	}
 
 	n.Debugf(ConnEstPin, "[%s] established", c.Address())
 
+	return nil
 }
 
 func (n *Node) onDisconenct(c *Conn, reason error) {
-
 	if odc := n.config.OnDisconnect; odc != nil {
 		odc(c, reason)
 	}
 
 	if reason != nil {
-		n.Debugf(CloseConnPin, "[%s] closed by %v", c.Address(), reason)
+		n.Debugf(CloseConnPin, "[%s] closed: %v", c.Address(), reason)
 	} else {
 		n.Debugf(CloseConnPin, "[%s] closed", c.Address())
 	}
-
 }
 
 func (n *Node) connCap() int {
@@ -495,8 +490,7 @@ func (n *Node) initConn(
 		return nil, initErr
 	}
 
-	c.run()
-	n.onConnect(c)
+	go c.run()
 
 	return c, nil
 
@@ -677,10 +671,10 @@ func (n *Node) Close() (err error) {
 
 		// Close all connections.
 		for _, c := range n.ic {
-			c.close(nil)
+			c.Close()
 		}
 		for _, c := range n.pc {
-			c.close(nil)
+			c.Close()
 		}
 
 		// Shutdown all transports.
