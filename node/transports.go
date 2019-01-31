@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -46,19 +47,11 @@ func newTCP(n *Node) (t *TCP) {
 
 	return
 }
-
 func (t *TCP) addConn(c *Conn) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	t.cs[c.Address()] = c
-}
-
-func (t *TCP) delConn(c *Conn) {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	delete(t.cs, c.Address())
 }
 
 func (t *TCP) getConn(address string) (c *Conn) {
@@ -153,6 +146,22 @@ func (t *TCP) acceptConn(fc *factory.Connection) {
 		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection")
 		fc.Close()
 	}
+}
+
+// closeConn closes factory.Connection, underlying Conn and removes it from cache
+func (t *TCP) closeConn(addr string) error {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	if c, ok := t.cs[addr]; ok {
+		c.Connection.Close()
+	} else {
+		return errors.New("not found")
+	}
+
+	delete(t.cs, addr)
+
+	return nil
 }
 
 // Discovery returns underlying MessengerFactory that
@@ -475,6 +484,22 @@ func (u *UDP) acceptConn(fc *factory.Connection) {
 		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection")
 		fc.Close()
 	}
+}
+
+// closeConn closes factory.Connection, underlying Conn, and removes it from cache
+func (u *UDP) closeConn(addr string) error {
+	u.mx.Lock()
+	defer u.mx.Unlock()
+
+	if c, ok := u.cs[addr]; ok {
+		c.Connection.Close()
+	} else {
+		return errors.New("not found")
+	}
+
+	delete(u.cs, addr)
+
+	return nil
 }
 
 // Discovery returns underlying MessengerFactory that
