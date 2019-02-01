@@ -131,7 +131,7 @@ func newSwarm(
 func (s *Swarm) AddPeer(
 	pk cipher.PubKey, meta []byte, tcp, udp string) error {
 
-	if err := validatePeer(pk, tcp, udp); err != nil {
+	if err := s.validatePeer(pk, tcp, udp); err != nil {
 		return fmt.Errorf("invalid peer: %s", err)
 	}
 
@@ -297,7 +297,7 @@ func (s *Swarm) addPeers(peers []msg.PeerInfo) {
 	// Validate peers
 	var validPeers []msg.PeerInfo
 	for _, pi := range peers {
-		if err := validatePeer(pi.PubKey, pi.TCPAddr, pi.UDPAddr); err != nil {
+		if err := s.validatePeer(pi.PubKey, pi.TCPAddr, pi.UDPAddr); err != nil {
 			s.node.Errorf(err, "failed to add peer %s for feed %s",
 				pi.PubKey.Hex()[:8], s.feed.Hex()[:8])
 			continue
@@ -541,14 +541,28 @@ PeerLoop:
 	return peers
 }
 
-func validatePeer(pk cipher.PubKey, tcp, udp string) error {
+func (s *Swarm) validatePeer(pk cipher.PubKey, tcp, udp string) error {
+	// Public key.
 	if (pk == cipher.PubKey{}) {
 		return errors.New("invalid public key")
+	}
+	if pk == s.node.ID() {
+		return errors.New("pubkey can not be same as of node")
+	}
+
+	// TCP address.
+	if tcp == s.node.TCP().Address() {
+		return errors.New("tcp address can not be same as of node")
 	}
 	if tcp != "" {
 		if err := validateAddress(tcp); err != nil {
 			return fmt.Errorf("invlaid tcp address: %s", err)
 		}
+	}
+
+	// UDP address
+	if udp == s.node.UDP().Address() {
+		return errors.New("udp address can not be same as of node")
 	}
 	if udp != "" {
 		if err := validateAddress(udp); err != nil {
