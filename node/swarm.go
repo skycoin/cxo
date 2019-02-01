@@ -434,7 +434,7 @@ func (s *Swarm) createOutgoingConns(count uint64) {
 			)
 
 			conn, err = s.node.TCP().Connect(p.TCPAddr)
-			if err != nil && err != ErrAlreadyHaveConnection {
+			if err != nil {
 				s.node.Errorf(err, "failed to connect to peer %s, sharing feed %s",
 					p.PubKey.Hex()[:8], s.feed.Hex()[:8])
 			} else {
