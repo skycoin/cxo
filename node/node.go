@@ -339,7 +339,7 @@ func (n *Node) onConnect(c *Conn) error {
 		}
 	}
 
-	n.Debugf(ConnEstPin, "[%s] established", c.Address())
+	n.Debugf(ConnEstPin, "[%s] established", c.String())
 
 	return nil
 }
@@ -350,9 +350,9 @@ func (n *Node) onDisconenct(c *Conn, reason error) {
 	}
 
 	if reason != nil {
-		n.Debugf(CloseConnPin, "[%s] closed: %v", c.Address(), reason)
+		n.Debugf(CloseConnPin, "[%s] closed: %v", c.String(), reason)
 	} else {
-		n.Debugf(CloseConnPin, "[%s] closed", c.Address())
+		n.Debugf(CloseConnPin, "[%s] closed", c.String())
 	}
 }
 

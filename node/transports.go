@@ -151,7 +151,7 @@ func (t *TCP) acceptConn(fc *factory.Connection) {
 	} else {
 		t.n.Errorf(err, "[%s] failed to accept", factoryConnStr(fc, true))
 		if !fc.IsClosed() {
-			t.n.Debugf(CloseConnPin, "[%] closing factory.Connection",
+			t.n.Debugf(CloseConnPin, "[%s] closing factory.Connection",
 				factoryConnStr(fc, true))
 			fc.Close()
 		}
@@ -165,7 +165,7 @@ func (t *TCP) closeConn(addr string) error {
 
 	if c, ok := t.cs[addr]; ok {
 		if !c.Connection.IsClosed() {
-			t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
+			t.n.Debugf(CloseConnPin, "[%s] closing factory.Connection", c.String())
 			c.Connection.Close()
 		}
 	} else {
@@ -494,7 +494,7 @@ func (u *UDP) acceptConn(fc *factory.Connection) {
 	} else {
 		u.n.Errorf(err, "[%s] failed to accept", factoryConnStr(fc, true))
 		if !fc.IsClosed() {
-			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection",
+			u.n.Debugf(CloseConnPin, "[%s] closing factory.Connection",
 				factoryConnStr(fc, true))
 			fc.Close()
 		}
@@ -508,7 +508,7 @@ func (u *UDP) closeConn(addr string) error {
 
 	if c, ok := u.cs[addr]; ok {
 		if !c.Connection.IsClosed() {
-			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
+			u.n.Debugf(CloseConnPin, "[%s] closing factory.Connection", c.String())
 			c.Connection.Close()
 		}
 	} else {
