@@ -143,8 +143,9 @@ func NewNodeContainer(
 
 	n.c = c
 	n.fs = newNodeFeeds(n)
-	n.ic = make(map[cipher.PubKey]*Conn)
 	n.pc = make(map[string]*Conn)
+	n.ac = make(map[string]*Conn)
+	n.ic = make(map[cipher.PubKey]*Conn)
 	n.ss = make(map[cipher.PubKey]*Swarm)
 
 	n.config = conf
