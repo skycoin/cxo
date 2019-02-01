@@ -11,15 +11,11 @@ import (
 func (c *Conn) handshake() error {
 	c.n.Debugf(ConnHskPin, "[%s] handshake", c.String())
 
-	defer close(c.hsk)
-
 	if c.incoming == true {
-		c.hskErr = c.acceptHandshake()
+		return c.acceptHandshake()
 	} else {
-		c.hskErr = c.performHandshake()
+		return c.performHandshake()
 	}
-
-	return c.hskErr
 }
 
 func (c *Conn) performHandshake() error {
@@ -163,9 +159,4 @@ func (c *Conn) acceptHandshake() (err error) {
 	}
 
 	return nil
-}
-
-func (c *Conn) waitHandshake() error {
-	<-c.hsk
-	return c.hskErr
 }

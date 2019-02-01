@@ -40,8 +40,9 @@ type Node struct {
 
 	fs *nodeFeeds // feeds
 
-	ic map[cipher.PubKey]*Conn // node id (pk) -> connection
-	pc map[string]*Conn        // node addr -> pending connection
+	pc map[string]*Conn        // peer addr -> pending connection
+	ac map[string]*Conn        // peer addr -> connection
+	ic map[cipher.PubKey]*Conn // neer ID (pubkey) -> connection
 
 	ss map[cipher.PubKey]*Swarm // swarms
 
@@ -308,62 +309,6 @@ func (n *Node) UDP() (tcp *UDP) {
 	return n.udp
 }
 
-// add list of pending connections, waiting for handshake
-func (n *Node) addPendingConn(c *Conn) {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	n.pc[c.Address()] = c
-}
-
-// remove from list of pending connections, waiting for handshake
-func (n *Node) delPendingConn(c *Conn) {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	delete(n.pc, c.Address())
-}
-
-// get pending connection by address
-func (n *Node) getPendingConn(addr string) *Conn {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	return n.pc[addr]
-}
-
-// add to list of connections
-func (n *Node) addConn(c *Conn) bool {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	if _, ok := n.ic[c.peerID]; ok {
-		return false
-	}
-
-	n.ic[c.peerID] = c                   // add
-	n.fs.addConnFeed(c, cipher.PubKey{}) // add to blank feed
-
-	return true
-}
-
-// remove from list of connections
-func (n *Node) delConn(c *Conn) {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	delete(n.ic, c.peerID)
-	n.fs.delConn(c)
-}
-
-// get connection by peer's pubkey
-func (n *Node) getConn(pk cipher.PubKey) *Conn {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	return n.ic[pk]
-}
-
 // call under lock of the mx
 func (n *Node) createTCP() {
 
@@ -432,68 +377,126 @@ func (n *Node) pendingConnCap() int {
 	return n.config.MaxPendingConnections - len(n.pc)
 }
 
+// initConn initializes new connection.
 func (n *Node) initConn(
-	fc *factory.Connection, incoming bool) (*Conn, error) {
+	fc *factory.Connection, isIncoming bool) (*Conn, error) {
 
 	var (
 		addr    = fc.GetRemoteAddr().String()
-		connStr = connString(incoming, fc.IsTCP(), addr)
+		connStr = connString(isIncoming, fc.IsTCP(), addr)
 	)
 
 	n.Debugf(ConnHskPin, "[%s] init connection", connStr)
 
-	if n.connCap() == 0 {
-		return nil, ErrConnLimit
-	}
-	if n.pendingConnCap() == 0 {
-		return nil, ErrPendConnLimit
+	// Get existing connection or create new one.
+	c, isNew, isPending, err := n.onNewConn(fc, isIncoming)
+	if err != nil {
+		return nil, err
 	}
 
-	// Check pending connection to/from the same address.
-	pc := n.getPendingConn(addr)
-	if pc != nil {
-		// Wait for ongoing handshake.
-		if err := pc.waitHandshake(); err != nil {
-			return nil,
-				fmt.Errorf("handshake for existing pending connection failed : %s", err)
+	switch {
+	// In case of exisitng connection return it.
+	case !isNew && !isPending:
+		return c, nil
+
+	// In case of existing pending connnection wait for another initConn to finish.
+	case !isNew && isPending:
+		if err = c.waitForInit(); err != nil {
+			n.onConnInitErr(c, err)
+			return nil, fmt.Errorf("init of existing pending connection failed : %s", err)
 		}
 
-		// Get connection by peer's pubkey, received during handshake.
-		// Error will happen if goroutine, waiting for handshake, will attempt to
-		// get connection from cache, before it is put there by goroutine, performing handshake.
-		// TODO: probably, wait for connection in cache, not for handshake.
-		c := n.getConn(pc.peerID)
-		if c == nil {
-			return nil, fmt.Errorf("failed to get connection, for which hanshake has finished")
+	// In case of new connection perform/accept handshake.
+	case isNew:
+		if err = c.handshake(); err != nil {
+			n.onConnInitErr(c, err)
+			return nil, err
 		}
+		if err = n.onConnInit(c); err != nil {
+			return nil, err
+		}
+
+		go c.run()
 
 		return c, nil
 	}
 
-	// Create new connection and add it to pending list.
-	c := n.newConnection(fc, incoming)
+	panic("onNewConn return invalid values")
+}
 
-	n.addPendingConn(c)
-	defer n.delPendingConn(c)
+// onNewConn atomically checks for existing connection
+// to/form address and creates new one if neccessary.
+func (n *Node) onNewConn(
+	fc *factory.Connection, isIncoming bool) (c *Conn, isNew, isPending bool, err error) {
 
-	var initErr error
+	n.mx.Lock()
+	defer n.mx.Unlock()
 
-	// Perform/accept handshake.
-	if err := c.handshake(); err != nil {
-		initErr = fmt.Errorf("handshake failed - %s", err)
-		return nil, initErr
+	// Check limits for number of open connections.
+	if len(n.ic) >= n.config.MaxConnections {
+		return nil, false, false, ErrConnLimit
+	}
+	if len(n.pc) >= n.config.MaxPendingConnections {
+		return nil, false, false, ErrPendConnLimit
 	}
 
-	// Check is pubkey (peer ID), received during handshake, is duplicate.
-	if ok := n.addConn(c); !ok {
-		initErr = fmt.Errorf("connection with peer %s already exists", c.peerID.Hex()[:8])
-		return nil, initErr
+	addr := fc.GetRemoteAddr().String()
+
+	// Check if connection to/from address already exists.
+	if c, ok := n.ac[addr]; ok {
+		return c, false, false, nil
+	}
+	if c, ok := n.pc[addr]; ok {
+		return c, false, true, nil
 	}
 
-	go c.run()
+	// Create new pending connection.
+	c = n.newConnection(fc, isIncoming)
+	n.pc[addr] = c
 
-	return c, nil
+	return c, true, false, nil
+}
 
+// onConnInitErr atomically removes pending
+// connection and signals about initConn failure.
+func (n *Node) onConnInitErr(c *Conn, initErr error) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	delete(n.pc, c.Address())
+
+	c.initErr = initErr
+	close(c.init)
+}
+
+// onConnInit atomically moves pending connection to cache
+// and singals about initConn success. It also chekcs if
+// peer's pubkey, receieved during hanshake is duplicate.
+func (n *Node) onConnInit(c *Conn) error {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	delete(n.pc, c.Address())
+
+	if _, ok := n.ic[c.peerID]; ok {
+		return ErrAlreadyHaveConnection
+	}
+
+	n.ac[c.Address()] = c
+	n.ic[c.peerID] = c
+
+	close(c.init)
+
+	return nil
+}
+
+// removeConn reomoves connection from cache.
+func (n *Node) removeConn(c *Conn) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	delete(c.n.ic, c.peerID)
+	delete(c.n.ac, c.Address())
 }
 
 func (n *Node) updateServiceDiscovery() {

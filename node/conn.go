@@ -30,9 +30,9 @@ type Conn struct {
 	n      *Node         // back reference
 	peerID cipher.PubKey // peer id
 
-	// handshake
-	hsk    chan struct{} // closed upon handshake is finished
-	hskErr error         // nil in case of successful handshake
+	// init
+	init    chan struct{} // close right after init is finihsed
+	initErr error         // nil in case of successful init
 
 	// request - response
 	seq  uint32                    // messege seq number (for request-response)
@@ -60,7 +60,7 @@ func (n *Node) newConnection(
 
 		n: n,
 
-		hsk: make(chan struct{}),
+		init: make(chan struct{}),
 
 		reqs: make(map[uint32]chan<- msg.Msg),
 
@@ -69,6 +69,11 @@ func (n *Node) newConnection(
 	}
 
 	return c
+}
+
+func (c *Conn) waitForInit() error {
+	<-c.init
+	return c.initErr
 }
 
 // run defines connection lifecycle.
@@ -93,8 +98,7 @@ func (c *Conn) run() {
 	// Wait for all groutines to exit.
 	c.await.Wait()
 
-	// Remove connection from node's cache.
-	c.n.delConn(c)
+	c.n.removeConn(c)
 
 	// Remove connection from trasnport's cache and close factory.Connection.
 	if c.IsTCP() {
