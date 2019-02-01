@@ -297,6 +297,9 @@ func (s *Swarm) addPeers(peers []msg.PeerInfo) {
 	// Validate peers
 	var validPeers []msg.PeerInfo
 	for _, pi := range peers {
+		if ok, _ := s.isSelf(pi); ok {
+			continue
+		}
 		if err := s.validatePeer(pi.PubKey, pi.TCPAddr, pi.UDPAddr); err != nil {
 			s.node.Errorf(err, "failed to add peer %s for feed %s",
 				pi.PubKey.Hex()[:8], s.feed.Hex()[:8])
@@ -343,6 +346,20 @@ func (s *Swarm) addPeers(peers []msg.PeerInfo) {
 
 		s.peers[p.PubKey] = p
 	}
+}
+
+func (s *Swarm) isSelf(p msg.PeerInfo) (bool, string) {
+	if p.PubKey == s.node.ID() {
+		return true, "pubkey is same"
+	}
+	if p.TCPAddr == s.node.TCP().Address() {
+		return true, "tcp address is same"
+	}
+	if p.UDPAddr == s.node.UDP().Address() {
+		return true, "udp address is saem"
+	}
+
+	return false, ""
 }
 
 func (s *Swarm) clearOldPeers() {
