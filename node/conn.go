@@ -171,11 +171,9 @@ func (c *Conn) Address() (address string) {
 // share with peer
 func (c *Conn) Feeds() (feeds []cipher.PubKey) {
 	return c.n.fs.feedsOfConnection(c)
-
 }
 
 func connString(isIncoming, isTCP bool, addr string) (s string) {
-
 	if isIncoming == true {
 		s = "↓ "
 	} else {
@@ -456,7 +454,7 @@ func (c *Conn) receiveMsg() error {
 		select {
 		case raw, ok := <-receiveq:
 			if ok == false {
-				return errors.New("underlying factory.Connection closed")
+				return errors.New("factory.Connection closed")
 			}
 
 			// Check message size.

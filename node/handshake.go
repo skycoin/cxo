@@ -54,7 +54,7 @@ func (c *Conn) performHandshake() error {
 	select {
 	case raw, ok := <-c.GetChanIn():
 		if !ok {
-			return errors.New("underlying factory.Connection closed")
+			return errors.New("factory.Connection closed")
 		}
 
 		// Decode message and check rseq.
@@ -110,7 +110,7 @@ func (c *Conn) acceptHandshake() (err error) {
 	select {
 	case raw, ok := <-c.GetChanIn():
 		if !ok {
-			return errors.New("underlying factory.Connection closed")
+			return errors.New("factory.Connection closed")
 		}
 
 		// Decode message and check its type.

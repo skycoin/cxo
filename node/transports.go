@@ -95,6 +95,9 @@ func (t *TCP) Address() string {
 // with given address already exists, then the Connect returns this
 // existing connection.
 func (t *TCP) Connect(address string) (*Conn, error) {
+	t.n.Debugf(NewOutConnPin, "[%s] connecting",
+		connString(false, true, address))
+
 	// Check if connections to/from address already exists.
 	c := t.getConn(address)
 	if c != nil {
@@ -113,22 +116,26 @@ func (t *TCP) Connect(address string) (*Conn, error) {
 	if c, err = t.n.initConn(fc, false); err == nil {
 		t.addConn(c)
 	} else {
-		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
-		fc.Close()
+		t.n.Errorf(err, "[%s] failed to connect", factoryConnStr(fc, false))
+		if !fc.IsClosed() {
+			t.n.Debugf(CloseConnPin, "[%s] closing factory.Connection",
+				factoryConnStr(fc, false))
+			fc.Close()
+		}
 	}
 
 	return c, err
 }
 
 func (t *TCP) acceptConn(fc *factory.Connection) {
+	t.n.Debugf(NewInConnPin, "[%s] accepting",
+		factoryConnStr(fc, true))
+
+	// Check if connections to/from address already exists.
 	var (
 		addr = fc.GetRemoteAddr().String()
 		err  error
 	)
-
-	t.n.Debugf(NewInConnPin, "[%s] accepting", connString(true, fc.IsTCP(), addr))
-
-	// Check if connections to/from address already exists.
 	c := t.getConn(addr)
 	if c != nil {
 		err = ErrAlreadyHaveConnection
@@ -142,9 +149,12 @@ func (t *TCP) acceptConn(fc *factory.Connection) {
 	if err == nil {
 		t.addConn(c)
 	} else {
-		t.n.Errorf(err, "[%s] failed to accept")
-		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
-		fc.Close()
+		t.n.Errorf(err, "[%s] failed to accept", factoryConnStr(fc, true))
+		if !fc.IsClosed() {
+			t.n.Debugf(CloseConnPin, "[%] closing factory.Connection",
+				factoryConnStr(fc, true))
+			fc.Close()
+		}
 	}
 }
 
@@ -154,8 +164,10 @@ func (t *TCP) closeConn(addr string) error {
 	defer t.mx.Unlock()
 
 	if c, ok := t.cs[addr]; ok {
-		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
-		c.Connection.Close()
+		if !c.IsClosed() {
+			t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
+			c.Connection.Close()
+		}
 	} else {
 		return errors.New("not found")
 	}
@@ -396,7 +408,6 @@ func (u *UDP) getConn(address string) (c *Conn) {
 // Listen on given address. It's possible to listen
 // only once
 func (u *UDP) Listen(address string) (err error) {
-
 	u.mx.Lock()
 	defer u.mx.Unlock()
 
@@ -423,17 +434,13 @@ func (u *UDP) Address() string {
 	return u.address
 }
 
-func (u *UDP) addAcceptedConnection(c *Conn) {
-	u.mx.Lock()
-	defer u.mx.Unlock()
-
-	u.cs[c.Address()] = c
-}
-
 // Connect to given UDP address. If connection with given
 // address already exists, then the Connect returns this
 // existing connection.
 func (u *UDP) Connect(address string) (*Conn, error) {
+	u.n.Debugf(NewOutConnPin, "[%s] connecting",
+		connString(false, false, address))
+
 	// Check if connections to/from address already exists.
 	c := u.getConn(address)
 	if c != nil {
@@ -452,22 +459,26 @@ func (u *UDP) Connect(address string) (*Conn, error) {
 	if c, err = u.n.initConn(fc, false); err == nil {
 		u.addConn(c)
 	} else {
-		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
-		fc.Close()
+		u.n.Errorf(err, "[%s] failed to connect", factoryConnStr(fc, false))
+		if !fc.IsClosed() {
+			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection",
+				factoryConnStr(fc, false))
+			fc.Close()
+		}
 	}
 
 	return c, err
 }
 
 func (u *UDP) acceptConn(fc *factory.Connection) {
+	u.n.Debugf(NewInConnPin, "[%s] accepting",
+		factoryConnStr(fc, true))
+
+	// Check if connections to/from address already exists.
 	var (
 		addr = fc.GetRemoteAddr().String()
 		err  error
 	)
-
-	u.n.Debugf(NewInConnPin, "[%s] accepting", connString(true, fc.IsTCP(), addr))
-
-	// Check if connections to/from address already exists.
 	c := u.getConn(addr)
 	if c != nil {
 		err = ErrAlreadyHaveConnection
@@ -481,9 +492,12 @@ func (u *UDP) acceptConn(fc *factory.Connection) {
 	if err == nil {
 		u.addConn(c)
 	} else {
-		u.n.Errorf(err, "[%s] failed to accept")
-		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
-		fc.Close()
+		u.n.Errorf(err, "[%s] failed to accept", factoryConnStr(fc, true))
+		if !fc.IsClosed() {
+			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection",
+				factoryConnStr(fc, true))
+			fc.Close()
+		}
 	}
 }
 
@@ -493,8 +507,10 @@ func (u *UDP) closeConn(addr string) error {
 	defer u.mx.Unlock()
 
 	if c, ok := u.cs[addr]; ok {
-		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
-		c.Connection.Close()
+		if !c.IsClosed() {
+			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
+			c.Connection.Close()
+		}
 	} else {
 		return errors.New("not found")
 	}
@@ -677,4 +693,8 @@ func (u *UDP) connections() (cs []string) {
 	}
 
 	return
+}
+
+func factoryConnStr(fc *factory.Connection, isIncoming bool) string {
+	return connString(isIncoming, fc.IsTCP(), fc.GetRemoteAddr().String())
 }
