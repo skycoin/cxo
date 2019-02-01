@@ -164,7 +164,7 @@ func (t *TCP) closeConn(addr string) error {
 	defer t.mx.Unlock()
 
 	if c, ok := t.cs[addr]; ok {
-		if !c.IsClosed() {
+		if !c.Connection.IsClosed() {
 			t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 			c.Connection.Close()
 		}
@@ -507,7 +507,7 @@ func (u *UDP) closeConn(addr string) error {
 	defer u.mx.Unlock()
 
 	if c, ok := u.cs[addr]; ok {
-		if !c.IsClosed() {
+		if !c.Connection.IsClosed() {
 			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 			c.Connection.Close()
 		}
