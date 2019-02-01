@@ -113,7 +113,7 @@ func (t *TCP) Connect(address string) (*Conn, error) {
 	if c, err = t.n.initConn(fc, false); err == nil {
 		t.addConn(c)
 	} else {
-		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection")
+		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 		fc.Close()
 	}
 
@@ -143,7 +143,7 @@ func (t *TCP) acceptConn(fc *factory.Connection) {
 		t.addConn(c)
 	} else {
 		t.n.Errorf(err, "[%s] failed to accept")
-		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection")
+		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 		fc.Close()
 	}
 }
@@ -154,6 +154,7 @@ func (t *TCP) closeConn(addr string) error {
 	defer t.mx.Unlock()
 
 	if c, ok := t.cs[addr]; ok {
+		t.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 		c.Connection.Close()
 	} else {
 		return errors.New("not found")
@@ -451,7 +452,7 @@ func (u *UDP) Connect(address string) (*Conn, error) {
 	if c, err = u.n.initConn(fc, false); err == nil {
 		u.addConn(c)
 	} else {
-		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection")
+		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 		fc.Close()
 	}
 
@@ -481,7 +482,7 @@ func (u *UDP) acceptConn(fc *factory.Connection) {
 		u.addConn(c)
 	} else {
 		u.n.Errorf(err, "[%s] failed to accept")
-		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection")
+		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 		fc.Close()
 	}
 }
@@ -492,6 +493,7 @@ func (u *UDP) closeConn(addr string) error {
 	defer u.mx.Unlock()
 
 	if c, ok := u.cs[addr]; ok {
+		u.n.Debugf(CloseConnPin, "[%] closing factory.Connection", c.String())
 		c.Connection.Close()
 	} else {
 		return errors.New("not found")
