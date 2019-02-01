@@ -445,9 +445,9 @@ func (s *Swarm) createOutgoingConns(count uint64) {
 			}
 
 			if err != nil {
-				s.incPeerRetryTimes(conn.PeerID())
+				s.incPeerRetryTimes(p.PubKey)
 			} else {
-				s.resetPeerRetryTimes(conn.PeerID())
+				s.resetPeerRetryTimes(p.PubKey)
 			}
 		}(peers[i])
 	}
