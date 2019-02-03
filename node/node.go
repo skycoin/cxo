@@ -40,9 +40,9 @@ type Node struct {
 
 	fs *nodeFeeds // feeds
 
-	pc map[string]*Conn        // peer addr -> pending connection
-	ac map[string]*Conn        // peer addr -> connection
-	ic map[cipher.PubKey]*Conn // neer ID (pubkey) -> connection
+	pendConns  map[string]*Conn        // peer addr -> pending connection
+	addrToConn map[string]*Conn        // peer addr -> connection
+	pkToConn   map[cipher.PubKey]*Conn // peer pubkey (ID) -> connection
 
 	ss map[cipher.PubKey]*Swarm // swarms
 
@@ -143,9 +143,11 @@ func NewNodeContainer(
 
 	n.c = c
 	n.fs = newNodeFeeds(n)
-	n.pc = make(map[string]*Conn)
-	n.ac = make(map[string]*Conn)
-	n.ic = make(map[cipher.PubKey]*Conn)
+
+	n.pendConns = make(map[string]*Conn)
+	n.addrToConn = make(map[string]*Conn)
+	n.pkToConn = make(map[cipher.PubKey]*Conn)
+
 	n.ss = make(map[cipher.PubKey]*Swarm)
 
 	n.config = conf
@@ -259,9 +261,9 @@ func (n *Node) Connections() (cs []*Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	cs = make([]*Conn, 0, len(n.ic))
+	cs = make([]*Conn, 0, len(n.addrToConn))
 
-	for _, c := range n.ic {
+	for _, c := range n.addrToConn {
 		cs = append(cs, c)
 	}
 
@@ -360,22 +362,24 @@ func (n *Node) connCap() int {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if len(n.ic) >= n.config.MaxConnections {
+	count := len(n.pendConns) + len(n.addrToConn)
+	if count >= n.config.MaxConnections {
 		return 0
 	}
 
-	return n.config.MaxConnections - len(n.ic)
+	return n.config.MaxConnections - count
 }
 
 func (n *Node) pendingConnCap() int {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	if len(n.pc) >= n.config.MaxPendingConnections {
+	count := len(n.pendConns)
+	if count >= n.config.MaxPendingConnections {
 		return 0
 	}
 
-	return n.config.MaxPendingConnections - len(n.pc)
+	return n.config.MaxPendingConnections - count
 }
 
 // initConn initializes new connection.
@@ -434,26 +438,26 @@ func (n *Node) onNewConn(
 	defer n.mx.Unlock()
 
 	// Check limits for number of open connections.
-	if len(n.ic) >= n.config.MaxConnections {
+	if len(n.pendConns)+len(n.addrToConn) >= n.config.MaxConnections {
 		return nil, false, false, ErrConnLimit
 	}
-	if len(n.pc) >= n.config.MaxPendingConnections {
+	if len(n.pendConns) >= n.config.MaxPendingConnections {
 		return nil, false, false, ErrPendConnLimit
 	}
 
 	addr := fc.GetRemoteAddr().String()
 
 	// Check if connection to/from address already exists.
-	if c, ok := n.ac[addr]; ok {
+	if c, ok := n.addrToConn[addr]; ok {
 		return c, false, false, nil
 	}
-	if c, ok := n.pc[addr]; ok {
+	if c, ok := n.pendConns[addr]; ok {
 		return c, false, true, nil
 	}
 
 	// Create new pending connection.
 	c = n.newConnection(fc, isIncoming)
-	n.pc[addr] = c
+	n.pendConns[addr] = c
 
 	return c, true, false, nil
 }
@@ -464,7 +468,7 @@ func (n *Node) onConnInitErr(c *Conn, initErr error) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	delete(n.pc, c.Address())
+	delete(n.pendConns, c.Address())
 
 	c.initErr = initErr
 	close(c.initq)
@@ -477,14 +481,14 @@ func (n *Node) onConnInit(c *Conn) error {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	delete(n.pc, c.Address())
+	delete(n.pendConns, c.Address())
 
-	if _, ok := n.ic[c.peerID]; ok {
+	if _, ok := n.pkToConn[c.peerID]; ok {
 		return ErrAlreadyHaveConnection
 	}
 
-	n.ac[c.Address()] = c
-	n.ic[c.peerID] = c
+	n.addrToConn[c.Address()] = c
+	n.pkToConn[c.peerID] = c
 
 	close(c.initq)
 
@@ -496,8 +500,8 @@ func (n *Node) removeConn(c *Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	delete(c.n.ic, c.peerID)
-	delete(c.n.ac, c.Address())
+	delete(n.addrToConn, c.Address())
+	delete(n.pkToConn, c.peerID)
 }
 
 func (n *Node) updateServiceDiscovery() {
@@ -639,7 +643,7 @@ func (n *Node) hasPeer(id cipher.PubKey) (c *Conn, yep bool) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	c, yep = n.ic[id]
+	c, yep = n.pkToConn[id]
 	return
 }
 
@@ -674,10 +678,10 @@ func (n *Node) Close() (err error) {
 		}
 
 		// Close all connections.
-		for _, c := range n.ic {
+		for _, c := range n.pendConns {
 			c.Close()
 		}
-		for _, c := range n.pc {
+		for _, c := range n.pkToConn {
 			c.Close()
 		}
 
