@@ -404,8 +404,14 @@ func (n *Node) initConn(
 	case !isNew && !isPending:
 		return c, nil
 
-	// In case of existing pending connnection wait for another initConn to finish.
+	// In case of existing pending connnection:
+	// 1. Request for new incoming connection from the same address will fail.
+	// 2. Request for new outgoing connection to the same address will return existing
+	//    connection (or error) after it finishes handshake.
 	case !isNew && isPending:
+		if isIncoming {
+			return nil, errors.New("already have incoming pending connection")
+		}
 		if err = c.waitForInit(); err != nil {
 			n.onConnInitErr(c, err)
 			return nil, fmt.Errorf("init of existing pending connection failed : %s", err)

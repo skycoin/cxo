@@ -138,7 +138,7 @@ func (t *TCP) acceptConn(fc *factory.Connection) {
 	)
 	c := t.getConn(addr)
 	if c != nil {
-		err = ErrAlreadyHaveConnection
+		err = errors.New("already have incoming connection from the address")
 	} else {
 		// Init incoming connection (handhshake, check duplicate pubkey, etc.)
 		c, err = t.n.initConn(fc, true)
@@ -481,7 +481,7 @@ func (u *UDP) acceptConn(fc *factory.Connection) {
 	)
 	c := u.getConn(addr)
 	if c != nil {
-		err = ErrAlreadyHaveConnection
+		err = errors.New("already have incoming connection from the address")
 	} else {
 		// Init incoming connection (handhshake, check duplicate pubkey, etc.)
 		c, err = u.n.initConn(fc, true)
