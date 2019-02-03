@@ -467,7 +467,7 @@ func (n *Node) onConnInitErr(c *Conn, initErr error) {
 	delete(n.pc, c.Address())
 
 	c.initErr = initErr
-	close(c.init)
+	close(c.initq)
 }
 
 // onConnInit atomically moves pending connection to cache
@@ -486,7 +486,7 @@ func (n *Node) onConnInit(c *Conn) error {
 	n.ac[c.Address()] = c
 	n.ic[c.peerID] = c
 
-	close(c.init)
+	close(c.initq)
 
 	return nil
 }

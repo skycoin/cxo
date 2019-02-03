@@ -22,21 +22,18 @@ import (
 type Conn struct {
 	*factory.Connection
 
-	// lock
-	mx sync.Mutex
+	n *Node // back reference
 
-	incoming bool // is incoming or not
+	peerID   cipher.PubKey // peer's pubkey
+	incoming bool          // is incoming or not
 
-	n      *Node         // back reference
-	peerID cipher.PubKey // peer id
+	initErr error
+	initq   chan struct{}
 
-	// init
-	init    chan struct{} // close right after init is finihsed
-	initErr error         // nil in case of successful init
+	closeq chan struct{}  // signal for all goroutines to exit
+	await  sync.WaitGroup // wait for all goroutines to exit
 
-	// request - response
-	seq  uint32                    // messege seq number (for request-response)
-	reqs map[uint32]chan<- msg.Msg // requests
+	sendq chan<- []byte // channel from factory.Connection
 
 	// # stat
 	//
@@ -44,11 +41,11 @@ type Conn struct {
 	//
 	// ------
 
-	sendq chan<- []byte // channel from factory.Connection
+	mx sync.Mutex // locks all fields below, TODO: change to RWMutex
 
-	await  sync.WaitGroup // wait for receiving loop
-	closeq chan struct{}  //
-	closeo sync.Once      // close once
+	// request - response
+	seq  uint32                    // messege seq number (for request-response)
+	reqs map[uint32]chan<- msg.Msg // requests
 }
 
 func (n *Node) newConnection(
@@ -56,23 +53,25 @@ func (n *Node) newConnection(
 
 	c := &Conn{
 		Connection: fc,
-		incoming:   isIncoming,
 
 		n: n,
 
-		init: make(chan struct{}),
+		incoming: isIncoming,
+
+		initq: make(chan struct{}),
+
+		closeq: make(chan struct{}),
+
+		sendq: fc.GetChanOut(),
 
 		reqs: make(map[uint32]chan<- msg.Msg),
-
-		sendq:  fc.GetChanOut(),
-		closeq: make(chan struct{}),
 	}
 
 	return c
 }
 
 func (c *Conn) waitForInit() error {
-	<-c.init
+	<-c.initq
 	return c.initErr
 }
 
