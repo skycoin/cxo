@@ -568,20 +568,20 @@ func (s *Swarm) validatePeer(pk cipher.PubKey, tcp, udp string) error {
 	}
 
 	// TCP address.
-	if tcp == s.node.TCP().Address() {
-		return errors.New("tcp address can not be same as of node")
-	}
 	if tcp != "" {
+		if tcp == s.node.TCP().Address() {
+			return errors.New("tcp address can not be same as of node")
+		}
 		if err := validateAddress(tcp); err != nil {
 			return fmt.Errorf("invlaid tcp address: %s", err)
 		}
 	}
 
 	// UDP address
-	if udp == s.node.UDP().Address() {
-		return errors.New("udp address can not be same as of node")
-	}
 	if udp != "" {
+		if udp == s.node.UDP().Address() {
+			return errors.New("udp address can not be same as of node")
+		}
 		if err := validateAddress(udp); err != nil {
 			return fmt.Errorf("invalid udp address: %s", err)
 		}
