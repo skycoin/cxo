@@ -66,13 +66,17 @@ func (c *Conn) performHandshake() error {
 			return errors.New("invlaid resposne: wrong seq")
 		}
 
-		// Check response type.
 		switch x := m.(type) {
 		case *msg.Ack:
-			// Handshake is complete.
+			// Check if node already has connection with peer.
+			if _, ok := c.n.hasPeer(x.NodeID); ok {
+				return ErrAlreadyHaveConnection
+			}
 			c.peerID = x.NodeID
+
 		case *msg.Err:
 			return errors.New(x.Err)
+
 		default:
 			return fmt.Errorf("invalid response type: %T", m)
 		}
@@ -134,7 +138,23 @@ func (c *Conn) acceptHandshake() (err error) {
 				}
 			)
 			if sendErr := c.sendMsg(c.nextSeq(), seq, errMsg); sendErr != nil {
-				c.n.Error(sendErr, "failed to send err message for hanshake")
+				c.n.Error(sendErr, "failed to send err message")
+			}
+
+			return err
+		}
+
+		// Check if node already has connection with peer.
+		if _, ok := c.n.hasPeer(syn.NodeID); ok {
+			var (
+				err = ErrAlreadyHaveConnection
+
+				errMsg = &msg.Err{
+					Err: err.Error(),
+				}
+			)
+			if sendErr := c.sendMsg(c.nextSeq(), seq, errMsg); sendErr != nil {
+				c.n.Error(sendErr, "faield to send err message")
 			}
 
 			return err

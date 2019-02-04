@@ -414,19 +414,18 @@ func (n *Node) initConn(
 		}
 		if err = c.waitForInit(); err != nil {
 			n.onConnInitErr(c, err)
-			return nil, fmt.Errorf("init of existing pending connection failed : %s", err)
+			return nil, err
 		}
 
 	// In case of new connection perform/accept handshake.
 	case isNew:
 		if err = c.handshake(); err != nil {
+			err = fmt.Errorf("handshake failed: %s", err)
 			n.onConnInitErr(c, err)
 			return nil, err
 		}
-		if err = n.onConnInit(c); err != nil {
-			return nil, err
-		}
 
+		n.onConnInit(c)
 		go c.run()
 
 		return c, nil
@@ -483,22 +482,16 @@ func (n *Node) onConnInitErr(c *Conn, initErr error) {
 // onConnInit atomically moves pending connection to cache
 // and singals about initConn success. It also chekcs if
 // peer's pubkey, receieved during hanshake is duplicate.
-func (n *Node) onConnInit(c *Conn) error {
+func (n *Node) onConnInit(c *Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
 	delete(n.pendConns, c.Address())
 
-	if _, ok := n.pkToConn[c.peerID]; ok {
-		return ErrAlreadyHaveConnection
-	}
-
 	n.addrToConn[c.Address()] = c
 	n.pkToConn[c.peerID] = c
 
 	close(c.initq)
-
-	return nil
 }
 
 // removeConn reomoves connection from cache.
