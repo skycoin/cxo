@@ -416,6 +416,7 @@ func (n *Node) initConn(
 			n.onConnInitErr(c, err)
 			return nil, err
 		}
+		return c, nil
 
 	// In case of new connection perform/accept handshake.
 	case isNew:
@@ -429,9 +430,10 @@ func (n *Node) initConn(
 		go c.run()
 
 		return c, nil
-	}
 
-	panic("onNewConn return invalid values")
+	default:
+		panic("onNewConn return invalid values")
+	}
 }
 
 // onNewConn atomically checks for existing connection
