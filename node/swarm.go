@@ -502,13 +502,16 @@ func (s *Swarm) resetPeerRetryTimes(pk cipher.PubKey) error {
 	return nil
 }
 
-func (s *Swarm) peersForExchange() []msg.PeerInfo {
+func (s *Swarm) peersForExchange(peerPK cipher.PubKey) []msg.PeerInfo {
 	var (
 		zeroRetries = func(p Peer) bool {
 			return p.RetryTimes == 0
 		}
+		notItself = func(p Peer) bool {
+			return p.PubKey != peerPK
+		}
 
-		peers = s.randomPeers(int(s.cfg.PeersPerResponse), zeroRetries)
+		peers = s.randomPeers(int(s.cfg.PeersPerResponse), zeroRetries, notItself)
 
 		peerMsg = make([]msg.PeerInfo, len(peers))
 	)
