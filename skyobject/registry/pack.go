@@ -129,6 +129,7 @@ func get(
 		return
 	}
 
-	err = encoder.DeserializeRaw(val, obj)
+	_, err = encoder.DeserializeRaw(val, obj)
+
 	return
 }

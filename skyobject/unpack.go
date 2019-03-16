@@ -298,7 +298,9 @@ func (i *Index) saveRoot(
 
 		// sign
 
-		r.Sig = cipher.SignHash(r.Hash, up.sk)
+		if r.Sig, err = cipher.SignHash(r.Hash, up.sk); err != nil {
+			return err
+		}
 
 		dr.Seq = r.Seq
 		dr.Prev = r.Prev

@@ -21,8 +21,8 @@ const (
 
 // feeds of the seed
 var (
-	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
-	bpk, _ = cipher.GenerateDeterministicKeyPair([]byte("B"))
+	apk, _, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	bpk, _, _ = cipher.GenerateDeterministicKeyPair([]byte("B"))
 )
 
 func main() {

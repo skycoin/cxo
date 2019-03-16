@@ -485,14 +485,14 @@ func Decode(p []byte) (msg Msg, err error) {
 		typ = forwardRegistry[mt]
 		val = reflect.New(typ)
 
-		n int
+		n uint64
 	)
 
 	if n, err = encoder.DeserializeRawToValue(p[1:], val); err != nil {
 		return
 	}
 
-	if n+1 != len(p) {
+	if n+1 != uint64(len(p)) {
 		err = ErrIncomplieDecoding
 		return
 	}

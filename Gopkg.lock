@@ -8,9 +8,9 @@
 
 [[projects]]
   name = "github.com/aws/aws-sdk-go"
-  packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/sdkio","internal/sdkrand","internal/shareddefaults","private/protocol","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/xml/xmlutil","service/sqs","service/sts"]
-  revision = "31bd69f7db00cbf3d85d129e16d42304cb6e455f"
-  version = "v1.13.44"
+  packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/processcreds","aws/credentials/stscreds","aws/csm","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/ini","internal/sdkio","internal/sdkrand","internal/sdkuri","internal/shareddefaults","private/protocol","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/xml/xmlutil","service/sqs","service/sts"]
+  revision = "2410a5b1bbbb4e64c57dd1030f204c8fbfb1c58a"
+  version = "v1.18.3"
 
 [[projects]]
   name = "github.com/boltdb/bolt"
@@ -19,51 +19,51 @@
   version = "v1.3.1"
 
 [[projects]]
-  name = "github.com/go-ini/ini"
-  packages = ["."]
-  revision = "6529cf7c58879c08d927016dde4477f18a0634cb"
-  version = "v1.36.0"
-
-[[projects]]
   name = "github.com/go-xorm/builder"
   packages = ["."]
-  revision = "bad0a612f0d6277b953910822ab5dfb30dd18237"
-  version = "v0.2.0"
+  revision = "1d658d7596c25394aab557ef5b50ef35bf706384"
+  version = "v0.3.4"
 
 [[projects]]
   name = "github.com/go-xorm/core"
   packages = ["."]
-  revision = "c10e21e7e1cec20e09398f2dfae385e58c8df555"
-  version = "v0.6.0"
+  revision = "ccc80c1adf1f6172bbc548877f50a1163041a40a"
+  version = "v0.6.2"
 
 [[projects]]
   name = "github.com/go-xorm/xorm"
   packages = ["."]
-  revision = "d85bb4911c725a53b135fc12862748a41b6c07da"
-  version = "v0.7.0"
+  revision = "1f39c590c64924f358c0d89016ac9b2bb84e9125"
+  version = "v0.7.1"
 
 [[projects]]
   branch = "master"
   name = "github.com/google/btree"
   packages = ["."]
-  revision = "e89373fe6b4a7413d7acd6da1725b83ef713e6e4"
+  revision = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306"
 
 [[projects]]
   name = "github.com/jmespath/go-jmespath"
   packages = ["."]
-  revision = "0b12d6b5"
+  revision = "c2b33e84"
 
 [[projects]]
   name = "github.com/klauspost/cpuid"
   packages = ["."]
-  revision = "ae7887de9fa5d2db4eaa8174a7eff2c1ac00f2da"
-  version = "v1.1"
+  revision = "e7e905edc00ea8827e58662220139109efea09db"
+  version = "v1.2.0"
 
 [[projects]]
   name = "github.com/klauspost/reedsolomon"
   packages = ["."]
-  revision = "6bb6130ff6a76a904c1841707d65603aec9cc288"
-  version = "v1.6"
+  revision = "a9588190c00b0ccd742218388f6ff68bbad83e5c"
+  version = "v1.9.1"
+
+[[projects]]
+  name = "github.com/konsorten/go-windows-terminal-sequences"
+  packages = ["."]
+  revision = "f55edac94c9bbba5d6182a4be46d86a2c9b5b50e"
+  version = "v1.0.2"
 
 [[projects]]
   name = "github.com/kr/pretty"
@@ -78,34 +78,16 @@
   version = "v0.1.0"
 
 [[projects]]
-  name = "github.com/mattn/go-colorable"
-  packages = ["."]
-  revision = "167de6bfdfba052fa6b2d3664c8f5272e23c9072"
-  version = "v0.0.9"
-
-[[projects]]
-  name = "github.com/mattn/go-isatty"
-  packages = ["."]
-  revision = "0360b2af4f38e8d38c7fce2a9f4e702702d73a39"
-  version = "v0.0.3"
-
-[[projects]]
   name = "github.com/mattn/go-runewidth"
   packages = ["."]
-  revision = "9e777a8366cce605130a531d2cd6363d07ad7317"
-  version = "v0.0.2"
+  revision = "3ee7d812e62a0804a7d0a324e0249ca2db3476d3"
+  version = "v0.0.4"
 
 [[projects]]
   name = "github.com/mattn/go-sqlite3"
   packages = ["."]
-  revision = "6c771bb9887719704b210e87e934f08be014bdb1"
-  version = "v1.6.0"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/mgutz/ansi"
-  packages = ["."]
-  revision = "9520e82c474b0a04dd04f8a40959027271bab992"
+  revision = "c7c4067b79cc51e6dfdcef5c702e74b1e0fa7c75"
+  version = "v1.10.0"
 
 [[projects]]
   name = "github.com/oschwald/maxminddb-golang"
@@ -123,54 +105,49 @@
   branch = "master"
   name = "github.com/peterh/liner"
   packages = ["."]
-  revision = "80ce870644db1b043e8dc2cf836bde5c347e2701"
+  revision = "6f820f8f90ce9482ffbd40bb15f9ea9932f4942d"
 
 [[projects]]
   name = "github.com/pkg/errors"
   packages = ["."]
-  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
-  version = "v0.8.0"
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
   packages = ["."]
-  revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
-  version = "v1.0.5"
-
-[[projects]]
-  name = "github.com/skycoin/cxo"
-  packages = ["cxoutils","data","data/cxds","data/idxdb","data/tests","intro","intro/discovery/discovery/db","node","node/log","node/msg","skyobject","skyobject/registry","skyobject/statutil"]
-  revision = "e9ba25286b101ebe1687592649d0ffaed0d32966"
-  version = "v3.0"
+  revision = "dae0fa8d5b0c810a8ab733fbd5510c7cae84eca4"
+  version = "v1.4.0"
 
 [[projects]]
   branch = "seed-config-from-seckey"
   name = "github.com/skycoin/net"
   packages = ["client","conn","factory","msg","server","skycoin-messenger/factory","util","util/producer"]
-  revision = "230d48640e8c8b48deafe6e2cbca07af69802b18"
+  revision = "cef5233a0902b9874c1c002d6e0ab85058a70ea6"
   source = "github.com/mihis/net"
 
 [[projects]]
+  branch = "develop"
   name = "github.com/skycoin/skycoin"
-  packages = ["src/cipher","src/cipher/base58","src/cipher/encoder","src/cipher/go-bip39","src/cipher/ripemd160","src/cipher/secp256k1-go","src/cipher/secp256k1-go/secp256k1-go2","src/util/logging"]
-  revision = "452491da01d7ce66c4ed6c01e19f986e1dda34ea"
-  version = "v0.23.0"
+  packages = ["src/cipher","src/cipher/base58","src/cipher/bip39","src/cipher/bip39/wordlists","src/cipher/encoder","src/cipher/pbkdf2","src/cipher/ripemd160","src/cipher/secp256k1-go","src/cipher/secp256k1-go/secp256k1-go2"]
+  revision = "5c5ea95450dcac7151c7d8283e090a77af6d2c7e"
+  source = "github.com/mihis/skycoin"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
-  revision = "2d027ae1dddd4694d54f7a8b6cbe78dca8720226"
+  revision = "a1f597ede03a7bef967a422b5b3a5bd08805a01e"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix","windows"]
-  revision = "64746a42f36bf0832f86b76004f1699dbeb33e4f"
+  revision = "a2f829d7f35f2ed1c3520c553a6226495455cae0"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "eb35880b2a9cf802c748db0d1995cab9f3ecb01421ba498b4bf06750d1f102dd"
+  inputs-digest = "ec07ebc0c3978c4b87f0289e703d43fcd1d1e2854d0b14bb30d1ce1fa2c7caf4"
   solver-name = "gps-cdcl"
   solver-version = 1

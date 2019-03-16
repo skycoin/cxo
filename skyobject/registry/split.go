@@ -153,7 +153,7 @@ func splitSchemaReference(
 		}
 
 		var ref Ref
-		if err = encoder.DeserializeRaw(val, &ref); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &ref); err != nil {
 			s.Fail(err)
 			return
 		}
@@ -169,7 +169,7 @@ func splitSchemaReference(
 		}
 
 		var refs Refs
-		if err = encoder.DeserializeRaw(val, &refs); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &refs); err != nil {
 			s.Fail(err)
 			return
 		}
@@ -179,7 +179,7 @@ func splitSchemaReference(
 	case ReferenceTypeDynamic: // Dynamic
 
 		var dr Dynamic
-		if err = encoder.DeserializeRaw(val, &dr); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &dr); err != nil {
 			s.Fail(err)
 			return
 		}

@@ -90,7 +90,7 @@ func walkSchemaReference(
 		}
 
 		var ref Ref
-		if err = encoder.DeserializeRaw(val, &ref); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &ref); err != nil {
 			return
 		}
 
@@ -104,7 +104,7 @@ func walkSchemaReference(
 		}
 
 		var refs Refs
-		if err = encoder.DeserializeRaw(val, &refs); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &refs); err != nil {
 			return
 		}
 
@@ -113,7 +113,7 @@ func walkSchemaReference(
 	case ReferenceTypeDynamic: // Dynamic
 
 		var dr Dynamic
-		if err = encoder.DeserializeRaw(val, &dr); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &dr); err != nil {
 			return
 		}
 		return dr.Walk(pack, walkFunc)

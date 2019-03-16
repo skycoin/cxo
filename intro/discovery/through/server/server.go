@@ -25,8 +25,8 @@ const (
 
 // feeds we are going to share
 var (
-	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A")) // A-feed (ca)
-	bpk, _ = cipher.GenerateDeterministicKeyPair([]byte("B")) // B-feed (cb)
+	apk, _, _ = cipher.GenerateDeterministicKeyPair([]byte("A")) // A-feed (ca)
+	bpk, _, _ = cipher.GenerateDeterministicKeyPair([]byte("B")) // B-feed (cb)
 )
 
 // wait for SIGINT and return

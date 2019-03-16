@@ -131,12 +131,16 @@ func NewNodeContainer(
 	// Generate random secret key or use one from config
 	var defSK cipher.SecKey
 	if conf.SecKey == defSK {
-		n.id = discovery.NewSeedConfig()
+		if n.id, err = discovery.NewSeedConfig(); err != nil {
+			return nil, err
+		}
 	} else {
 		if err := conf.SecKey.Verify(); err != nil {
 			return nil, fmt.Errorf("invalid secret key - %s", err)
 		}
-		n.id = discovery.SecKeyToSeedConfig(conf.SecKey)
+		if n.id, err = discovery.SecKeyToSeedConfig(conf.SecKey); err != nil {
+			return nil, err
+		}
 	}
 
 	n.idpk, _ = cipher.PubKeyFromHex(n.id.PublicKey)

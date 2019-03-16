@@ -24,7 +24,10 @@ func main() {
 		"listening address")
 	flag.Parse()
 
-	var m = newDiscovery()
+	m, err := newDiscovery()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// initialize SQLite3 DB
 	if err := db.Init(); err != nil {
@@ -47,12 +50,17 @@ func waitInterrupt() {
 	<-sig
 }
 
-func newDiscovery() (m *factory.MessengerFactory) {
-	m = factory.NewMessengerFactory()
+func newDiscovery() (*factory.MessengerFactory, error) {
+	m := factory.NewMessengerFactory()
 
 	// use random seed every start
-	if err := m.SetDefaultSeedConfig(factory.NewSeedConfig()); err != nil {
-		panic(err)
+	sc, err := factory.NewSeedConfig()
+	if sc != nil {
+		return nil, err
+	}
+
+	if err = m.SetDefaultSeedConfig(sc); err != nil {
+		return nil, err
 	}
 
 	// use SQLite3 DB to keep information in
@@ -62,5 +70,5 @@ func newDiscovery() (m *factory.MessengerFactory) {
 	m.FindByAttributesAndPaging = db.FindResultByAttrsAndPaging
 	m.FindServiceAddresses = db.FindServiceAddresses
 
-	return m
+	return m, nil
 }

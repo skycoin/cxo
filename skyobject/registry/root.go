@@ -81,7 +81,7 @@ func (r *Root) String() string {
 // DecodeRoot decodes and encoded Root object
 func DecodeRoot(val []byte) (r *Root, err error) {
 	r = new(Root)
-	if err = encoder.DeserializeRaw(val, r); err != nil {
+	if _, err = encoder.DeserializeRaw(val, r); err != nil {
 		r = nil
 	}
 	return
