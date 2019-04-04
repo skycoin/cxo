@@ -8,201 +8,175 @@ import (
 	"github.com/skycoin/cxo/node/msg"
 )
 
-func (c *Conn) handshake(nodeCloseq <-chan struct{}) (err error) {
-
+func (c *Conn) handshake() error {
 	c.n.Debugf(ConnHskPin, "[%s] handshake", c.String())
 
 	if c.incoming == true {
-		return c.acceptHandshake(nodeCloseq)
+		return c.acceptHandshake()
+	} else {
+		return c.performHandshake()
 	}
-
-	return c.performHandshake(nodeCloseq)
 }
 
-func (c *Conn) sendNodeCloseq(
-	raw []byte,
-	nodeCloseq <-chan struct{},
-) (
-	err error,
-) {
+func (c *Conn) performHandshake() error {
+	c.n.Debugf(ConnHskPin, "[%s] perform  handshake", c.String())
 
-	select {
-	case c.sendq <- raw:
-	case <-nodeCloseq:
-		err = ErrClosed
-	}
+	// Send Syn message.
+	var (
+		seq = c.nextSeq()
 
-	return
-
-}
-
-func (c *Conn) performHandshake(nodeCloseq <-chan struct{}) (err error) {
-
-	c.n.Debugf(ConnHskPin, "[%s] performHandshake", c.String())
-
-	// (1) send Syn
-	// (2) receive Ack or Err
-
-	var seq = c.nextSeq()
-
-	err = c.sendNodeCloseq(
-		c.encodeMsg(seq, 0, &msg.Syn{
+		syn = &msg.Syn{
 			Protocol: msg.Version,
 			NodeID:   c.n.idpk,
-		}),
-		nodeCloseq,
+		}
 	)
-
-	if err != nil {
-		return
+	if err := c.sendMsg(seq, 0, syn); err != nil {
+		return err
 	}
 
+	// Check specified response timeout.
+	// TODO: add special parameter for handshake timeout.
 	var (
 		rt time.Duration
-
 		tm *time.Timer
-		tc <-chan time.Time
 	)
-
 	if c.IsTCP() == true {
 		rt = c.n.config.TCP.ResponseTimeout
 	} else {
 		rt = c.n.config.UDP.ResponseTimeout
 	}
-
 	if rt > 0 {
 		tm = time.NewTimer(rt)
-		tc = tm.C
-
 		defer tm.Stop()
 	}
 
+	// Wait for response message with timeout.
 	select {
-
 	case raw, ok := <-c.GetChanIn():
-
-		if ok == false {
-			return ErrClosed
+		if !ok {
+			return errors.New("factory.Connection closed")
 		}
 
-		var (
-			rseq uint32
-			m    msg.Msg
-		)
-
-		if _, rseq, m, err = c.decodeRaw(raw); err != nil {
-			return
+		// Decode message and check rseq.
+		_, rseq, m, err := c.decodeRaw(raw)
+		if err != nil {
+			return err
 		}
-
 		if rseq != seq {
-			return errors.New("invlaid resposne for handshake: wrong seq")
+			return errors.New("invlaid resposne: wrong seq")
 		}
 
 		switch x := m.(type) {
-
 		case *msg.Ack:
-
+			// Check if node already has connection with peer.
+			if _, ok := c.n.hasPeer(x.NodeID); ok {
+				return ErrAlreadyHaveConnection
+			}
 			c.peerID = x.NodeID
 
-			return // ok
-
 		case *msg.Err:
-
 			return errors.New(x.Err)
 
 		default:
-
-			return fmt.Errorf("invalid response type for handshake: %T", m)
-
+			return fmt.Errorf("invalid response type: %T", m)
 		}
 
-	case <-tc:
-
+	case <-tm.C:
 		return ErrTimeout
 
-	case <-nodeCloseq:
-
+	case <-c.closeq:
 		return ErrClosed
-
 	}
 
+	return nil
 }
 
-func (c *Conn) acceptHandshake(nodeCloseq <-chan struct{}) (err error) {
+func (c *Conn) acceptHandshake() (err error) {
+	c.n.Debugf(ConnHskPin, "[%s] accept handshake", c.String())
 
-	c.n.Debugf(ConnHskPin, "[%s] acceptHandshake", c.String())
-
-	// (1) receive the Syn
-	// (2) send the Ack or Err
-
-	// (1)
-
+	// Check specified response timeout.
+	// TODO: add special parameter for handshake timeout.
 	var (
-		raw []byte
-		ok  bool
+		rt time.Duration
+		tm *time.Timer
 	)
+	if c.IsTCP() == true {
+		rt = c.n.config.TCP.ResponseTimeout
+	} else {
+		rt = c.n.config.UDP.ResponseTimeout
+	}
+	if rt > 0 {
+		tm = time.NewTimer(rt)
+		defer tm.Stop()
+	}
 
+	// Wait for incoming message with timeout.
 	select {
-	case raw, ok = <-c.GetChanIn():
-
-		if ok == false {
-			return ErrClosed
+	case raw, ok := <-c.GetChanIn():
+		if !ok {
+			return errors.New("factory.Connection closed")
 		}
 
-	case <-nodeCloseq:
+		// Decode message and check its type.
+		seq, _, m, err := c.decodeRaw(raw)
+		if err != nil {
+			return err
+		}
+		syn, ok := m.(*msg.Syn)
+		if !ok {
+			return fmt.Errorf("invalid message type")
+		}
+
+		// Check protocol version.
+		if syn.Protocol != msg.Version {
+			var (
+				err = fmt.Errorf("incompatible protocol version: %d, want %d",
+					syn.Protocol, msg.Version)
+
+				errMsg = &msg.Err{
+					Err: err.Error(),
+				}
+			)
+			if sendErr := c.sendMsg(c.nextSeq(), seq, errMsg); sendErr != nil {
+				c.n.Error(sendErr, "failed to send err message")
+			}
+
+			return err
+		}
+
+		// Check if node already has connection with peer.
+		if _, ok := c.n.hasPeer(syn.NodeID); ok {
+			var (
+				err = ErrAlreadyHaveConnection
+
+				errMsg = &msg.Err{
+					Err: err.Error(),
+				}
+			)
+			if sendErr := c.sendMsg(c.nextSeq(), seq, errMsg); sendErr != nil {
+				c.n.Error(sendErr, "faield to send err message")
+			}
+
+			return err
+		}
+
+		// Send Ack message.
+		ack := &msg.Ack{
+			NodeID: c.n.idpk,
+		}
+		if err := c.sendMsg(c.nextSeq(), seq, ack); err != nil {
+			return fmt.Errorf("failed to send ack message: %s", err)
+		}
+
+		// Handshake is complete.
+		c.peerID = syn.NodeID
+
+	case <-tm.C:
+		return ErrTimeout
+
+	case <-c.closeq:
 		return ErrClosed
 	}
 
-	var (
-		seq uint32
-		m   msg.Msg
-	)
-
-	if seq, _, m, err = c.decodeRaw(raw); err != nil {
-		return
-	}
-
-	switch x := m.(type) {
-
-	case *msg.Syn:
-
-		if x.Protocol != msg.Version {
-
-			err = fmt.Errorf("incompatible protocol version: %d, want %d",
-				x.Protocol,
-				msg.Version)
-
-			// send Err back
-
-			c.sendNodeCloseq(
-				c.encodeMsg(c.nextSeq(), seq, &msg.Err{Err: err.Error()}),
-				nodeCloseq,
-			)
-
-			return
-
-		}
-
-		c.peerID = x.NodeID
-
-		// (2) send Ack back
-
-		err = c.sendNodeCloseq(
-			c.encodeMsg(c.nextSeq(), seq, &msg.Ack{
-				NodeID: c.n.idpk,
-			}),
-			nodeCloseq,
-		)
-
-		return
-
-	default:
-
-		return fmt.Errorf(
-			"invalid messege type received (expected handshake): %T",
-			m,
-		)
-
-	}
-
+	return nil
 }

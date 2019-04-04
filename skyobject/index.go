@@ -252,7 +252,7 @@ func (i *Index) receivedRoot(
 ) {
 
 	var hash = cipher.SumSHA256(val)
-	if err = cipher.VerifySignature(pk, sig, hash); err != nil {
+	if err = cipher.VerifyPubKeySignedHash(pk, sig, hash); err != nil {
 		return
 	}
 

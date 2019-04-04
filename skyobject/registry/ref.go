@@ -45,7 +45,9 @@ func (r *Ref) Value(pack Pack, obj interface{}) (err error) {
 		return
 	}
 
-	return encoder.DeserializeRaw(val, obj)
+	_, err = encoder.DeserializeRaw(val, obj)
+
+	return
 }
 
 // SetValue replacing the Ref with new. Use nil-interface{} to clear

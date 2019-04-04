@@ -51,7 +51,7 @@ func schemaArraySliceSize(el Schema, l, shift int, p []byte) (n int,
 // (like slice of string)
 func getLength(p []byte) (l int, err error) {
 	var u uint32
-	err = encoder.DeserializeRaw(p, &u)
+	_, err = encoder.DeserializeRaw(p, &u)
 	l = int(u)
 	return
 }

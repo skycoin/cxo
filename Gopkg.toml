@@ -36,3 +36,13 @@
 [[constraint]]
   branch = "master"
   name = "github.com/peterh/liner"
+
+[[constraint]]
+  name = "github.com/skycoin/net"
+  source = "github.com/mihis/net"
+  branch = "seed-config-from-seckey"
+
+[[constraint]]
+  name = "github.com/skycoin/skycoin"
+  source = "github.com/mihis/skycoin"
+  branch = "develop"

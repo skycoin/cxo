@@ -31,12 +31,12 @@ const (
 // interest feeds
 var (
 	// apk is feed the ca interest
-	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	apk, _, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
 	// the bpk is feed the ca generates, the bsk is secret key
 	// that used to sign Root objects of the feed, to proof
 	// that the Root objects really belongs to the bpk;
 	// short words, bpk is feed, bsk is owner of the feed
-	bpk, bsk = cipher.GenerateDeterministicKeyPair([]byte("B"))
+	bpk, bsk, _ = cipher.GenerateDeterministicKeyPair([]byte("B"))
 )
 
 // wait for SIGINT and return

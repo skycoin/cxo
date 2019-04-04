@@ -98,6 +98,8 @@ func (r *Root) Encode() (p []byte) {
 }
 
 // Decode given encoded Root to this one
-func (r *Root) Decode(p []byte) (err error) {
-	return encoder.DeserializeRaw(p, r)
+func (r *Root) Decode(p []byte) error {
+	_, err := encoder.DeserializeRaw(p, r)
+
+	return err
 }

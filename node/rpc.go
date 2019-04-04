@@ -101,13 +101,13 @@ func (n *Node) connections() (cs []string) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	cs = make([]string, 0, len(n.pc)+len(n.ic))
+	cs = make([]string, 0, len(n.pendConns)+len(n.addrToConn))
 
-	for c := range n.pc {
+	for _, c := range n.pendConns {
 		cs = append(cs, c.String()+"(⌛)") // pending
 	}
 
-	for _, c := range n.ic {
+	for _, c := range n.addrToConn {
 		cs = append(cs, c.String()+"(✓)") // established
 	}
 

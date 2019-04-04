@@ -22,17 +22,18 @@ import (
 type Conn struct {
 	*factory.Connection
 
-	// lock
-	mx sync.Mutex
+	n *Node // back reference
 
-	incoming bool // is incoming or not
+	peerID   cipher.PubKey // peer's pubkey
+	incoming bool          // is incoming or not
 
-	n      *Node         // back reference
-	peerID cipher.PubKey // peer id
+	initErr error
+	initq   chan struct{}
 
-	// request - response
-	seq  uint32                    // messege seq number (for request-response)
-	reqs map[uint32]chan<- msg.Msg // requests
+	closeq chan struct{}  // signal for all goroutines to exit
+	await  sync.WaitGroup // wait for all goroutines to exit
+
+	sendq chan<- []byte // channel from factory.Connection
 
 	// # stat
 	//
@@ -40,45 +41,80 @@ type Conn struct {
 	//
 	// ------
 
-	sendq chan<- []byte // channel from factory.Connection
+	mx sync.Mutex // locks all fields below, TODO: change to RWMutex
 
-	await  sync.WaitGroup // wait for receiving loop
-	closeq chan struct{}  //
-	closeo sync.Once      // close once
+	// request - response
+	seq  uint32                    // messege seq number (for request-response)
+	reqs map[uint32]chan<- msg.Msg // requests
 }
 
 func (n *Node) newConnection(
-	fc *factory.Connection,
-	isIncoming bool,
-) (
-	c *Conn,
-) {
+	fc *factory.Connection, isIncoming bool) *Conn {
 
-	c = new(Conn)
+	c := &Conn{
+		Connection: fc,
 
-	c.Connection = fc
-	c.incoming = isIncoming
+		n: n,
 
-	c.n = n
+		incoming: isIncoming,
 
-	c.reqs = make(map[uint32]chan<- msg.Msg)
+		initq: make(chan struct{}),
 
-	c.sendq = fc.GetChanOut()
-	c.closeq = make(chan struct{})
+		closeq: make(chan struct{}),
 
-	n.addPendingConn(c)
+		sendq: fc.GetChanOut(),
 
-	//
-	// the next step is c.handshake() and c.run()
-	//
+		reqs: make(map[uint32]chan<- msg.Msg),
+	}
 
-	return
+	return c
 }
 
-// start handling
+func (c *Conn) waitForInit() error {
+	<-c.initq
+	return c.initErr
+}
+
+// run defines connection lifecycle.
 func (c *Conn) run() {
+	// Receive messages, until close signal is received or error occures.
+	// In case of error stop all goroutines, started by connection.
+	var rcvErr error
 	c.await.Add(1)
-	go c.receiving()
+	go func() {
+		defer c.await.Done()
+		if rcvErr = c.receiveMsg(); rcvErr != nil {
+			close(c.closeq)
+		}
+	}()
+
+	// If OnConnect returns error, connection will be closed.
+	var occErr error
+	if occErr = c.n.onConnect(c); occErr != nil {
+		close(c.closeq)
+	}
+
+	// Wait for all groutines to exit.
+	c.await.Wait()
+
+	c.n.removeConn(c)
+
+	// Remove connection from trasnport's cache and close factory.Connection.
+	if c.IsTCP() {
+		c.n.tcp.closeConn(c.Address())
+	} else {
+		c.n.udp.closeConn(c.Address())
+	}
+
+	// In connection is closed in case of error, decide which one to pass to OnDisconnect.
+	var odcErr error
+	switch {
+	case rcvErr != nil:
+		odcErr = rcvErr
+	case occErr != nil:
+		odcErr = occErr
+	}
+	c.n.onDisconenct(c, odcErr)
 }
 
 func (c *Conn) decodeRaw(raw []byte) (seq, rseq uint32, m msg.Msg, err error) {
@@ -134,11 +170,9 @@ func (c *Conn) Address() (address string) {
 // share with peer
 func (c *Conn) Feeds() (feeds []cipher.PubKey) {
 	return c.n.fs.feedsOfConnection(c)
-
 }
 
 func connString(isIncoming, isTCP bool, addr string) (s string) {
-
 	if isIncoming == true {
 		s = "↓ "
 	} else {
@@ -364,26 +398,15 @@ func (c *Conn) getter() (cg skyobject.Getter) {
 	return &cget{c}
 }
 
-//
-// terminate
-//
-
-// close and release
-func (c *Conn) close(reason error) error {
-	c.closeo.Do(func() {
-		c.n.delConnection(c)
-		close(c.closeq)      // close the channel
-		c.Connection.Close() // close
-		c.await.Wait()       // wait for goroutines
-
-		c.n.onDisconenct(c, reason) // callback
-	})
-	return reason
-}
-
 // Close the Conn
 func (c *Conn) Close() (err error) {
-	return c.close(nil)
+	close(c.closeq)
+	c.await.Wait()
+
+	// TODO: c.await.Wait() can exit beofre connection is removed from cache.
+	// TODO: get errors from background goroutines and retrun them.
+
+	return nil
 }
 
 func (c *Conn) nextSeq() uint32 {
@@ -405,99 +428,66 @@ func (c *Conn) encodeMsg(seq, rseq uint32, m msg.Msg) (raw []byte) {
 
 }
 
-func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) {
-
+func (c *Conn) sendMsg(seq, rseq uint32, m msg.Msg) error {
 	c.n.Debugf(MsgSendPin, "[%s] send %d %T", c.String(), rseq, m)
 
-	c.sendRaw(c.encodeMsg(seq, rseq, m))
-}
-
-func (c *Conn) sendRaw(raw []byte) {
-
 	select {
-	case c.sendq <- raw:
 	case <-c.closeq:
+		return ErrClosed
+	default:
 	}
 
+	c.sendq <- c.encodeMsg(seq, rseq, m)
+
+	return nil
 }
 
-func (c *Conn) fatality(args ...interface{}) {
-
-	var err = errors.New(fmt.Sprint(args...))
-
-	c.n.Print("[ERR] ", err)
-	c.close(err)
-}
-
-func (c *Conn) receiving() {
-
+func (c *Conn) receiveMsg() error {
 	c.n.Debugf(ConnPin, "[%s] receiving", c.String())
 
-	defer c.Close()      //
-	defer c.await.Done() //
+	receiveq := c.GetChanIn()
 
-	var (
-		receiveq = c.GetChanIn()
-		closeq   = c.closeq
-
-		seq, rseq uint32
-		m         msg.Msg
-		err       error
-
-		raw []byte
-		ok  bool
-	)
-
+	// Read raw messages from factory.Connection.
+	// Terminate if factory.Connectin is closed of if close singnal is sent.
 	for {
-
 		select {
-
-		case raw, ok = <-receiveq:
-
+		case raw, ok := <-receiveq:
 			if ok == false {
-				return // closed
+				return errors.New("factory.Connection closed")
 			}
 
+			// Check message size.
 			// [ 4 seq ][ 4 rseq ][ 1 msg type ]
-
 			if len(raw) < 9 {
-				c.fatality("invalid messege received: samll size")
-				return
+				return errors.New("invalid message size")
 			}
 
-			// seq of the Msg
-			seq = binary.LittleEndian.Uint32(raw)
-			raw = raw[4:]
-
-			// response for a seq or zero
-			rseq = binary.LittleEndian.Uint32(raw)
-			raw = raw[4:]
-
-			if m, err = msg.Decode(raw); err != nil {
-				c.fatality("can't decode received messege: ", err)
-				return
+			// Decode message.
+			var (
+				seq    = binary.LittleEndian.Uint32(raw[:4])
+				rseq   = binary.LittleEndian.Uint32(raw[4:8])
+				msgRaw = raw[8:]
+			)
+			msg, err := msg.Decode(msgRaw)
+			if err != nil {
+				return fmt.Errorf("failed to decode message: %s", err)
 			}
 
-			c.n.Debugf(MsgReceivePin, "[%s] receive %T", c.String(), m)
+			c.n.Debugf(MsgReceivePin, "[%s] receive %T", c.String(), msg)
 
-			// the messege can be a response for a request
+			// Handle message.
 			if rq, ok := c.isResponse(rseq); ok == true {
-				rq <- m
+				rq <- msg
 				continue
 			}
-
-			if err = c.handle(seq, m); err != nil {
-				c.fatality("error handling messege: ", err)
-				return
+			if err := c.handle(seq, msg); err != nil {
+				return fmt.Errorf("failed to handle message %s", err)
 			}
 
-		case <-closeq:
-			return
-
+		case <-c.closeq:
+			return nil
 		}
-
 	}
-
 }
 
 func (c *Conn) isResponse(rseq uint32) (rq chan<- msg.Msg, ok bool) {
@@ -615,6 +605,11 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 	case *msg.RqPreview: // -> RqPreview (feed)
 		return c.handleRqPreview(seq, x)
 
+	// peer exchange
+
+	case *msg.RqPeers: // -> RqPeers (feed)
+		return c.handleRqPeers(seq, x)
+
 	//
 	// delayed messeges (ignore them)
 	//
@@ -626,6 +621,7 @@ func (c *Conn) handle(seq uint32, m msg.Msg) (err error) {
 	case *msg.Err: // -> Err (delayed)
 	case *msg.Ok: // -> Ok (delayed)
 	case *msg.List: // -> List (delayed)
+	case *msg.Peers: // -> Peers (delayed)
 
 	default:
 
@@ -838,4 +834,28 @@ func (c *Conn) handleRqPreview(seq uint32, rqp *msg.RqPreview) (_ error) {
 	})
 
 	return
+}
+
+func (c *Conn) handleRqPeers(seq uint32, rqp *msg.RqPeers) error {
+
+	c.n.Debugf(MsgReceivePin, "[%s] handleRqPeers %s", c.String(),
+		rqp.Feed.Hex()[:7])
+
+	s, ok := c.n.InSwarm(rqp.Feed)
+	if !ok {
+		c.sendMsg(c.nextSeq(), seq, &msg.Err{Err: "not in swarm"})
+		return errors.New("node in not in swarm")
+	}
+
+	peers := s.peersForExchange(c.PeerID())
+
+	c.n.Debugf(PEXPin, "sending info about %d peers of feed %s to peer %s, addr %s",
+		len(peers), rqp.Feed.Hex()[:8], c.PeerID().Hex()[:8], c.Address())
+
+	c.sendMsg(c.nextSeq(), seq, &msg.Peers{
+		Feed: rqp.Feed,
+		List: peers,
+	})
+
+	return nil
 }

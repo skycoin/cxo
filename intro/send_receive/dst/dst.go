@@ -24,7 +24,7 @@ const (
 // interest feeds
 var (
 	// apk is feed the src generates, and the dst receive
-	apk, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	apk, _, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
 )
 
 // wait for SIGINT and return

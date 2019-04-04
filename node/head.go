@@ -239,7 +239,8 @@ func (f *fillHead) handleRequestFailure(fr failedRequest) {
 	case ErrInvalidResponse:
 
 		// close connections that sends invalid responses
-		go fr.c.fatality(fr.err)
+		f.n.node().Errorf(fr.err, "[%s]", fr.c.Address())
+		go fr.c.Close()
 		delete(f.cs, fr.c) // remove connection
 
 	case ErrClosed:

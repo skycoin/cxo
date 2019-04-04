@@ -44,7 +44,7 @@ func DecodeRegistry(b []byte) (r *Registry, err error) {
 		s   Schema
 	)
 
-	if err = encoder.DeserializeRaw(b, &res); err != nil {
+	if _, err = encoder.DeserializeRaw(b, &res); err != nil {
 		return
 	}
 
@@ -289,7 +289,7 @@ func decodeSchema(b []byte) (s Schema, err error) {
 	// }
 
 	var x encodedSchema
-	if err = encoder.DeserializeRaw(b, &x); err != nil {
+	if _, err = encoder.DeserializeRaw(b, &x); err != nil {
 		return
 	}
 	// is reference
@@ -353,7 +353,7 @@ func decodeSchema(b []byte) (s Schema, err error) {
 
 func decodeField(b []byte) (f Field, err error) {
 	var ef encodedField
-	if err = encoder.DeserializeRaw(b, &ef); err != nil {
+	if _, err = encoder.DeserializeRaw(b, &ef); err != nil {
 		return
 	}
 	ff := field{}

@@ -14,16 +14,17 @@ import (
 
 // default configurations
 const (
-	Prefix          string        = "[node] "
-	MaxConnections  int           = 1000 * 1000
-	MaxFillingTime  time.Duration = 10 * time.Minute
-	MaxHeads        int           = 10
-	ListenTCP       string        = ":8870"
-	ListenUDP       string        = "" // don't listen
-	RPCAddress      string        = ":8871"
-	ResponseTimeout time.Duration = 59 * time.Second
-	Pings           time.Duration = 118 * time.Second
-	Public          bool          = false
+	Prefix                string        = "[node] "
+	MaxConnections        int           = 1000 * 1000
+	MaxPendingConnections int           = 1000
+	MaxFillingTime        time.Duration = 10 * time.Minute
+	MaxHeads              int           = 10
+	ListenTCP             string        = ":8870"
+	ListenUDP             string        = "" // don't listen
+	RPCAddress            string        = ":8871"
+	ResponseTimeout       time.Duration = 59 * time.Second
+	Pings                 time.Duration = 118 * time.Second
+	Public                bool          = false
 )
 
 // Addresses are discovery addresses
@@ -102,6 +103,15 @@ type OnSubscribeRemoteFunc func(c *Conn, feed cipher.PubKey) (reject error)
 // only
 type OnUnsubscribeRemoteFunc func(c *Conn, feed cipher.PubKey)
 
+// OnPeerAddedFunc
+type OnPeerAddedFunc func(f cipher.PubKey, p Peer)
+
+// OnPeerUpdatedFunc
+type OnPeerUpdatedFunc func(f cipher.PubKey, p Peer)
+
+// OnPeerRemovedFunc
+type OnPeerRemovedFunc func(f cipher.PubKey, p Peer)
+
 // NetConfig represents configurations of
 // a TCP or UDP network
 type NetConfig struct {
@@ -139,6 +149,39 @@ type NetConfig struct {
 	Pings time.Duration
 }
 
+// SwarmConfig defines on how node finds peers, belonging
+// to the same swarm, and how it interacts with them later.
+// Nodes can belong to one swarm if they share the same feed.
+type SwarmConfig struct {
+	MaxPeers        uint64
+	RequestPeerRate time.Duration
+
+	PeerExpirePeriod  time.Duration
+	ClearOldPeersRate time.Duration
+
+	MaxConns         uint64
+	OutgoingConnRate time.Duration
+
+	PeersPerResponse uint64
+}
+
+func DefaultSwarmConfig() SwarmConfig {
+	cfg := SwarmConfig{
+		MaxPeers:        1000,
+		RequestPeerRate: time.Minute,
+
+		PeerExpirePeriod:  time.Hour * 24 * 7,
+		ClearOldPeersRate: time.Minute * 10,
+
+		MaxConns:         1000,
+		OutgoingConnRate: time.Second * 5,
+
+		PeersPerResponse: 30,
+	}
+
+	return cfg
+}
+
 // A Config represents configurations
 // of the Node. To create Config filled
 // with default values use NewConfig
@@ -146,6 +189,10 @@ type NetConfig struct {
 // Config is the NewConfig. This Config
 // contains skyobject.Config.
 type Config struct {
+	// SecKey allows to provide secret key.
+	// Public key, derived from provided secret
+	// key will be use as node's ID.
+	SecKey cipher.SecKey
 
 	// Logger contains configurations of logger
 	Logger log.Config
@@ -157,6 +204,10 @@ type Config struct {
 	// MaxConnections is limit of connections.
 	// Set it to zero to disable the limit.
 	MaxConnections int
+
+	// MaxPendingConnections is limit of pending connections.
+	// Set it to zero to disable the limit.
+	MaxPendingConnections int
 
 	// MaxHeads is limit of heads per feed. A head
 	// allocates some resources in the Node. And
@@ -263,6 +314,15 @@ type Config struct {
 	// when new Root object filled and can be
 	// used. See OnRootFilledFunc for details.
 	OnFillingBreaks OnFillingBreaksFunc
+
+	// OnPeerAdded
+	OnPeerAdded OnPeerAddedFunc
+
+	// OnPeerUpdated
+	OnPeerUpdated OnPeerUpdatedFunc
+
+	// OnPeerRemoved
+	OnPeerRemoved OnPeerRemovedFunc
 }
 
 // NewConfig returns new Config with
@@ -279,6 +339,7 @@ func NewConfig() (c *Config) {
 
 	// node
 	c.MaxConnections = MaxConnections
+	c.MaxPendingConnections = MaxPendingConnections
 	c.MaxFillingTime = MaxFillingTime
 	c.MaxHeads = MaxHeads
 

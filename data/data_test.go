@@ -10,7 +10,7 @@ import (
 
 func testRoot(s string) (r *Root) {
 
-	_, sk := cipher.GenerateDeterministicKeyPair([]byte("test"))
+	_, sk, _ := cipher.GenerateDeterministicKeyPair([]byte("test"))
 
 	r = new(Root)
 	r.Access = 996

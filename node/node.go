@@ -1,6 +1,8 @@
 package node
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -36,9 +38,13 @@ type Node struct {
 	// feeds and connections
 	//
 
-	fs *nodeFeeds              // feeds
-	ic map[cipher.PubKey]*Conn // node id (pk) -> connection
-	pc map[*Conn]struct{}      // pending connections
+	fs *nodeFeeds // feeds
+
+	pendConns  map[string]*Conn        // peer addr -> pending connection
+	addrToConn map[string]*Conn        // peer addr -> connection
+	pkToConn   map[cipher.PubKey]*Conn // peer pubkey (ID) -> connection
+
+	ss map[cipher.PubKey]*Swarm // swarms
 
 	//
 	// transports
@@ -74,7 +80,6 @@ type Node struct {
 
 	await  sync.WaitGroup // wait for goroutines
 	closeo sync.Once      // close once
-	closeq chan struct{}  // closed
 }
 
 // NewNode creates new Node instance using provided
@@ -123,18 +128,36 @@ func NewNodeContainer(
 
 	n = new(Node)
 
-	n.id = discovery.NewSeedConfig()
+	// Generate random secret key or use one from config
+	var defSK cipher.SecKey
+	if conf.SecKey == defSK {
+		if n.id, err = discovery.NewSeedConfig(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := conf.SecKey.Verify(); err != nil {
+			return nil, fmt.Errorf("invalid secret key - %s", err)
+		}
+		if n.id, err = discovery.SecKeyToSeedConfig(conf.SecKey); err != nil {
+			return nil, err
+		}
+	}
+
 	n.idpk, _ = cipher.PubKeyFromHex(n.id.PublicKey)
+
 	n.c = c
 	n.fs = newNodeFeeds(n)
-	n.ic = make(map[cipher.PubKey]*Conn)
-	n.pc = make(map[*Conn]struct{})
+
+	n.pendConns = make(map[string]*Conn)
+	n.addrToConn = make(map[string]*Conn)
+	n.pkToConn = make(map[cipher.PubKey]*Conn)
+
+	n.ss = make(map[cipher.PubKey]*Swarm)
 
 	n.config = conf
 	n.config.Config = c.Config() // actual
 
 	n.fillavg = statutil.NewDuration(conf.Config.RollAvgSamples)
-	n.closeq = make(chan struct{})
 
 	//
 	// create
@@ -242,9 +265,9 @@ func (n *Node) Connections() (cs []*Conn) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	cs = make([]*Conn, 0, len(n.ic))
+	cs = make([]*Conn, 0, len(n.addrToConn))
 
-	for _, c := range n.ic {
+	for _, c := range n.addrToConn {
 		cs = append(cs, c)
 	}
 
@@ -293,39 +316,6 @@ func (n *Node) UDP() (tcp *UDP) {
 	return n.udp
 }
 
-// add to pending
-func (n *Node) addPendingConn(c *Conn) {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	n.pc[c] = struct{}{}
-}
-
-// without lock
-func (n *Node) addConnection(c *Conn) (err error) {
-
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	if _, ok := n.ic[c.peerID]; ok == true {
-		return ErrAlreadyHaveConnection
-	}
-
-	n.ic[c.peerID] = c                   // add
-	delete(n.pc, c)                      // remove from pending
-	n.fs.addConnFeed(c, cipher.PubKey{}) // add to blank feed
-
-	return
-}
-
-func (n *Node) delConnection(c *Conn) {
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	delete(n.ic, c.peerID)
-	n.fs.delConn(c)
-}
-
 // call under lock of the mx
 func (n *Node) createTCP() {
 
@@ -348,102 +338,175 @@ func (n *Node) createUDP() {
 
 }
 
-func (n *Node) onConnect(c *Conn) {
-
+func (n *Node) onConnect(c *Conn) error {
 	if occ := n.config.OnConnect; occ != nil {
-
-		if terminate := occ(c); terminate != nil {
-			c.close(terminate)
-			return
+		if err := occ(c); err != nil {
+			return err
 		}
-
 	}
 
-	n.Debugf(ConnEstPin, "[%s] established", c.Address())
+	n.Debugf(ConnEstPin, "[%s] established", c.String())
 
+	return nil
 }
 
 func (n *Node) onDisconenct(c *Conn, reason error) {
-
 	if odc := n.config.OnDisconnect; odc != nil {
 		odc(c, reason)
 	}
 
 	if reason != nil {
-		n.Debugf(CloseConnPin, "[%s] closed by %v", c.Address(), reason)
+		n.Debugf(CloseConnPin, "[%s] closed: %v", c.String(), reason)
 	} else {
-		n.Debugf(CloseConnPin, "[%s] closed", c.Address())
+		n.Debugf(CloseConnPin, "[%s] closed", c.String())
 	}
-
 }
 
-func (n *Node) acceptConnection(fc *factory.Connection) {
+func (n *Node) connCap() int {
+	n.mx.Lock()
+	defer n.mx.Unlock()
 
-	n.Debugf(NewInConnPin, "[%s] accept",
-		connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()))
-
-	if _, err := n.wrapConnection(fc, true); err != nil {
-
-		n.Printf("[ERR] [%s] handshake error: %v",
-			connString(true, fc.IsTCP(), fc.GetRemoteAddr().String()),
-			err)
-
+	count := len(n.pendConns) + len(n.addrToConn)
+	if count >= n.config.MaxConnections {
+		return 0
 	}
 
+	return n.config.MaxConnections - count
 }
 
-// delete from pending and close underlying
-// factory.Connection
-func (n *Node) delPendingConnClose(c *Conn) {
+func (n *Node) pendingConnCap() int {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	count := len(n.pendConns)
+	if count >= n.config.MaxPendingConnections {
+		return 0
+	}
+
+	return n.config.MaxPendingConnections - count
+}
+
+// initConn initializes new connection.
+func (n *Node) initConn(
+	fc *factory.Connection, isIncoming bool) (*Conn, error) {
+
+	var (
+		addr    = fc.GetRemoteAddr().String()
+		connStr = connString(isIncoming, fc.IsTCP(), addr)
+	)
+
+	n.Debugf(ConnHskPin, "[%s] init connection", connStr)
+
+	// Get existing connection or create new one.
+	c, isNew, isPending, err := n.onNewConn(fc, isIncoming)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	// In case of exisitng connection return it.
+	case !isNew && !isPending:
+		return c, nil
+
+	// In case of existing pending connnection:
+	// 1. Request for new incoming connection from the same address will fail.
+	// 2. Request for new outgoing connection to the same address will return existing
+	//    connection (or error) after it finishes handshake.
+	case !isNew && isPending:
+		if isIncoming {
+			return nil, errors.New("already have incoming pending connection")
+		}
+		if err = c.waitForInit(); err != nil {
+			n.onConnInitErr(c, err)
+			return nil, err
+		}
+		return c, nil
+
+	// In case of new connection perform/accept handshake.
+	case isNew:
+		if err = c.handshake(); err != nil {
+			err = fmt.Errorf("handshake failed: %s", err)
+			n.onConnInitErr(c, err)
+			return nil, err
+		}
+
+		n.onConnInit(c)
+		go c.run()
+
+		return c, nil
+
+	default:
+		panic("onNewConn return invalid values")
+	}
+}
+
+// onNewConn atomically checks for existing connection
+// to/form address and creates new one if neccessary.
+func (n *Node) onNewConn(
+	fc *factory.Connection, isIncoming bool) (c *Conn, isNew, isPending bool, err error) {
 
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	delete(n.pc, c)
-	c.Connection.Close()
+	// Check limits for number of open connections.
+	if len(n.pendConns)+len(n.addrToConn) >= n.config.MaxConnections {
+		return nil, false, false, ErrConnLimit
+	}
+	if len(n.pendConns) >= n.config.MaxPendingConnections {
+		return nil, false, false, ErrPendConnLimit
+	}
 
+	addr := fc.GetRemoteAddr().String()
+
+	// Check if connection to/from address already exists.
+	if c, ok := n.addrToConn[addr]; ok {
+		return c, false, false, nil
+	}
+	if c, ok := n.pendConns[addr]; ok {
+		return c, false, true, nil
+	}
+
+	// Create new pending connection.
+	c = n.newConnection(fc, isIncoming)
+	n.pendConns[addr] = c
+
+	return c, true, false, nil
 }
 
-func (n *Node) wrapConnection(
-	fc *factory.Connection, // :
-	isIncoming bool, //        :
-) (
-	c *Conn, //                :
-	err error, //              :
-) {
+// onConnInitErr atomically removes pending
+// connection and signals about initConn failure.
+func (n *Node) onConnInitErr(c *Conn, initErr error) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
 
-	n.Debugf(ConnHskPin, "[%s] wrapConnection",
-		connString(isIncoming, fc.IsTCP(), fc.GetRemoteAddr().String()))
+	delete(n.pendConns, c.Address())
 
-	c = n.newConnection(fc, isIncoming) // adds to pending
+	c.initErr = initErr
+	close(c.initq)
+}
 
-	// handshake
-	if err = c.handshake(n.closeq); err != nil {
-		n.delPendingConnClose(c)
-		return
-	}
+// onConnInit atomically moves pending connection to cache
+// and singals about initConn success. It also chekcs if
+// peer's pubkey, receieved during hanshake is duplicate.
+func (n *Node) onConnInit(c *Conn) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
 
-	// check out peer id
+	delete(n.pendConns, c.Address())
 
-	if err = n.addConnection(c); err != nil {
-		n.delPendingConnClose(c)
-		return
-	}
+	n.addrToConn[c.Address()] = c
+	n.pkToConn[c.peerID] = c
 
-	// add to transport if the connection is incoming
-	if isIncoming == true {
-		if c.IsTCP() == true {
-			n.TCP().addAcceptedConnection(c)
-		} else {
-			n.UDP().addAcceptedConnection(c)
-		}
-	}
+	close(c.initq)
+}
 
-	c.run()
-	n.onConnect(c)
+// removeConn reomoves connection from cache.
+func (n *Node) removeConn(c *Conn) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
 
-	return
-
+	delete(n.addrToConn, c.Address())
+	delete(n.pkToConn, c.peerID)
 }
 
 func (n *Node) updateServiceDiscovery() {
@@ -585,7 +648,7 @@ func (n *Node) hasPeer(id cipher.PubKey) (c *Conn, yep bool) {
 	n.mx.Lock()
 	defer n.mx.Unlock()
 
-	c, yep = n.ic[id]
+	c, yep = n.pkToConn[id]
 	return
 }
 
@@ -611,29 +674,83 @@ func (n *Node) Stat() (s *Stat) {
 // of (skyobject.Container).Close once.
 func (n *Node) Close() (err error) {
 	n.closeo.Do(func() {
-
-		close(n.closeq)
-
 		n.mx.Lock()
 		defer n.mx.Unlock()
 
-		err = n.c.Close()
+		// Shutdown peer exchange.
+		for _, s := range n.ss {
+			s.shutdown()
+		}
 
+		// Close all connections.
+		for _, c := range n.pendConns {
+			c.Close()
+		}
+		for _, c := range n.pkToConn {
+			c.Close()
+		}
+
+		// Shutdown all transports.
 		if n.tcp != nil {
 			n.tcp.Close()
 		}
-
 		if n.udp != nil {
 			n.udp.Close()
 		}
-
 		if n.rpc != nil {
 			n.rpc.Close()
 		}
+
+		// Close database.
+		err = n.c.Close()
 
 		n.await.Wait()
 
 	})
 
 	return
+}
+
+func (n *Node) JoinSwarm(
+	feed cipher.PubKey, cfg SwarmConfig) (*Swarm, error) {
+
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	if s, ok := n.ss[feed]; ok {
+		return s, nil
+	}
+
+	s := newSwarm(n, feed, cfg)
+
+	go s.run()
+
+	n.ss[feed] = s
+
+	return s, nil
+}
+
+func (n *Node) LeaveSwarm(feed cipher.PubKey) error {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	s, ok := n.ss[feed]
+	if !ok {
+		return errors.New("node is not in swarm")
+	}
+
+	s.shutdown()
+
+	delete(n.ss, feed)
+
+	return nil
+}
+
+func (n *Node) InSwarm(feed cipher.PubKey) (*Swarm, bool) {
+	n.mx.Lock()
+	defer n.mx.Unlock()
+
+	s, ok := n.ss[feed]
+
+	return s, ok
 }

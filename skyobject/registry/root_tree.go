@@ -191,7 +191,7 @@ func rootTreeReferences(
 
 		it = new(gotree.GTStructure)
 
-		if err = encoder.DeserializeRaw(val, &dr); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &dr); err != nil {
 			it.Name = "*(dynamic) err: " + err.Error()
 			return
 		}
@@ -235,7 +235,7 @@ func rootTreeBool(sch Schema, val []byte) (it *gotree.GTStructure) {
 		err error
 	)
 
-	if err = encoder.DeserializeRaw(val, &x); err != nil {
+	if _, err = encoder.DeserializeRaw(val, &x); err != nil {
 		it = new(gotree.GTStructure)
 		it.Name = "(err) " + err.Error()
 		return
@@ -255,24 +255,24 @@ func rootTreeInt(sch Schema, val []byte) (it *gotree.GTStructure) {
 	case reflect.Int8:
 
 		var y int8
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = int64(y)
 
 	case reflect.Int16:
 
 		var y int16
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = int64(y)
 
 	case reflect.Int32:
 
 		var y int32
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = int64(y)
 
 	case reflect.Int64:
 
-		err = encoder.DeserializeRaw(val, &x)
+		_, err = encoder.DeserializeRaw(val, &x)
 
 	}
 
@@ -296,24 +296,24 @@ func rootTreeUint(sch Schema, val []byte) (it *gotree.GTStructure) {
 	case reflect.Uint8:
 
 		var y uint8
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = uint64(y)
 
 	case reflect.Uint16:
 
 		var y uint16
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = uint64(y)
 
 	case reflect.Uint32:
 
 		var y uint32
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = uint64(y)
 
 	case reflect.Uint64:
 
-		err = encoder.DeserializeRaw(val, &x)
+		_, err = encoder.DeserializeRaw(val, &x)
 
 	}
 	if err != nil {
@@ -336,12 +336,12 @@ func rootTreeFloat(sch Schema, val []byte) (it *gotree.GTStructure) {
 	case reflect.Float32:
 
 		var y float32
-		err = encoder.DeserializeRaw(val, &y)
+		_, err = encoder.DeserializeRaw(val, &y)
 		x = float64(y)
 
 	case reflect.Float64:
 
-		err = encoder.DeserializeRaw(val, &x)
+		_, err = encoder.DeserializeRaw(val, &x)
 
 	}
 
@@ -366,7 +366,7 @@ func rootTreeString(
 		err error
 	)
 
-	if err = encoder.DeserializeRaw(val, &x); err != nil {
+	if _, err = encoder.DeserializeRaw(val, &x); err != nil {
 		it = new(gotree.GTStructure)
 		it.Name = "(err) " + err.Error()
 		return
@@ -395,7 +395,7 @@ func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 	if sch.Kind() == reflect.Slice && el.Kind() == reflect.Uint8 {
 
 		var x []byte
-		if err = encoder.DeserializeRaw(val, &x); err != nil {
+		if _, err = encoder.DeserializeRaw(val, &x); err != nil {
 			it.Name = "(err) " + err.Error()
 			return
 		}
@@ -558,7 +558,7 @@ func rootTreeRef(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		return
 	}
 
-	if err = encoder.DeserializeRaw(val, &ref); err != nil {
+	if _, err = encoder.DeserializeRaw(val, &ref); err != nil {
 		it.Name = fmt.Sprintf("*(%s) err: %s", el.String(), err.Error())
 		return
 	}
@@ -591,7 +591,7 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		return
 	}
 
-	if err = encoder.DeserializeRaw(val, &refs); err != nil {
+	if _, err = encoder.DeserializeRaw(val, &refs); err != nil {
 		it.Name = fmt.Sprintf("[]*(-----) %s err: %s", el.String(), err.Error())
 		return
 	}

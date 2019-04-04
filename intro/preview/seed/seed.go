@@ -33,9 +33,9 @@ var (
 	// that used to sign Root objects of the feed, to proof
 	// that the Root objects really belongs to the apk;
 	// short words, apk is feed, ask is owner of the feed
-	apk, ask = cipher.GenerateDeterministicKeyPair([]byte("A"))
+	apk, ask, _ = cipher.GenerateDeterministicKeyPair([]byte("A"))
 	// and the same for the bpk and bsk
-	bpk, bsk = cipher.GenerateDeterministicKeyPair([]byte("B"))
+	bpk, bsk, _ = cipher.GenerateDeterministicKeyPair([]byte("B"))
 )
 
 // wait for SIGINT and return
