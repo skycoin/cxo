@@ -8,7 +8,7 @@
 CX Object System
 ================
 
-[![Build Status](https://travis-ci.com/skycoin/cxo.svg)](https://travis-ci.com/skycoin/cxo)
+[![Build Status](https://travis-ci.com/skycoin/cxo.svg?branch=develop)](https://travis-ci.com/skycoin/cxo)
 [![GoReportCard](https://goreportcard.com/badge/skycoin/cxo)](https://goreportcard.com/report/skycoin/cxo)
 [![Telegram group](telegram-group.svg)](https://t.me/joinchat/B_ax-A6oCR9eQuAPiJtvaw)
 [![Google Groups](https://img.shields.io/badge/google%20groups-skycoincxo-blue.svg)](https://groups.google.com/forum/#!forum/skycoincxo)
