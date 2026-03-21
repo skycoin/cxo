@@ -3,31 +3,21 @@ package node
 import (
 	"errors"
 	"sync"
-	"time"
 
-	"github.com/skycoin/skycoin/src/cipher"
-
-	"github.com/skycoin/net/factory"
-	discovery "github.com/skycoin/net/skycoin-messenger/factory"
+	"github.com/skycoin/cxo/node/transport"
 )
-
-//
-// TODO (kostyarin): DRY
-//
 
 // A TCP represents TCP transport
 // of the Node. The TCP used to
 // listen and connect
 type TCP struct {
-	*factory.TCPFactory // underlying transport
+	*transport.TCPFactory // underlying transport
 
 	// back reference
 	n *Node
 
 	//
 	mx sync.Mutex
-
-	d *discovery.MessengerFactory // underlying discovery server or nil
 
 	address     string // listening address
 	isListening bool
@@ -39,7 +29,7 @@ func newTCP(n *Node) (t *TCP) {
 
 	t = new(TCP)
 
-	t.TCPFactory = factory.NewTCPFactory()
+	t.TCPFactory = transport.NewTCPFactory()
 
 	t.n = n
 	t.AcceptedCallback = t.acceptConn
@@ -77,11 +67,12 @@ func (t *TCP) Listen(address string) (err error) {
 	}
 
 	t.isListening = true
-	t.address = address
+	// Use actual listener address (important when port is 0)
+	t.address = t.TCPFactory.ListenerAddress()
 	return
 }
 
-// Address returns istening address as it
+// Address returns listening address as it
 // passed to the Listen method. The address
 // is blank string if the TCP is not listening
 func (t *TCP) Address() string {
@@ -104,21 +95,19 @@ func (t *TCP) Connect(address string) (*Conn, error) {
 		return c, nil
 	}
 
-	// Open new factory.Connection.
+	// Open new transport.Connection.
 	fc, err := t.TCPFactory.Connect(address)
 	if err != nil {
 		return nil, err
 	}
 
-	// Init outgoing connection (handhshake, check duplicate pubkey, etc.)
-	// In case of success connections to/from the the same address has to be blocked.
-	// In case of failure incoming connection has to be closed.
+	// Init outgoing connection (handshake, check duplicate pubkey, etc.)
 	if c, err = t.n.initConn(fc, false); err == nil {
 		t.addConn(c)
 	} else {
 		t.n.Errorf(err, "[%s] failed to connect", factoryConnStr(fc, false))
 		if !fc.IsClosed() {
-			t.n.Debugf(CloseConnPin, "[%s] closing factory.Connection",
+			t.n.Debugf(CloseConnPin, "[%s] closing connection",
 				factoryConnStr(fc, false))
 			fc.Close()
 		}
@@ -127,7 +116,7 @@ func (t *TCP) Connect(address string) (*Conn, error) {
 	return c, err
 }
 
-func (t *TCP) acceptConn(fc *factory.Connection) {
+func (t *TCP) acceptConn(fc *transport.Connection) {
 	t.n.Debugf(NewInConnPin, "[%s] accepting",
 		factoryConnStr(fc, true))
 
@@ -140,32 +129,30 @@ func (t *TCP) acceptConn(fc *factory.Connection) {
 	if c != nil {
 		err = errors.New("already have incoming connection from the address")
 	} else {
-		// Init incoming connection (handhshake, check duplicate pubkey, etc.)
+		// Init incoming connection (handshake, check duplicate pubkey, etc.)
 		c, err = t.n.initConn(fc, true)
 	}
 
-	// In case of success connections to/from the the same address has to be blocked.
-	// In case of failure incoming connection has to be closed.
 	if err == nil {
 		t.addConn(c)
 	} else {
 		t.n.Errorf(err, "[%s] failed to accept", factoryConnStr(fc, true))
 		if !fc.IsClosed() {
-			t.n.Debugf(CloseConnPin, "[%s] closing factory.Connection",
+			t.n.Debugf(CloseConnPin, "[%s] closing connection",
 				factoryConnStr(fc, true))
 			fc.Close()
 		}
 	}
 }
 
-// closeConn closes factory.Connection, underlying Conn and removes it from cache
+// closeConn closes the connection and removes it from cache
 func (t *TCP) closeConn(addr string) error {
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
 	if c, ok := t.cs[addr]; ok {
 		if !c.Connection.IsClosed() {
-			t.n.Debugf(CloseConnPin, "[%s] closing factory.Connection", c.String())
+			t.n.Debugf(CloseConnPin, "[%s] closing connection", c.String())
 			c.Connection.Close()
 		}
 	} else {
@@ -175,167 +162,6 @@ func (t *TCP) closeConn(addr string) error {
 	delete(t.cs, addr)
 
 	return nil
-}
-
-// Discovery returns underlying MessengerFactory that
-// can be nil, if feature disabled
-func (t *TCP) Discovery() (d *discovery.MessengerFactory) {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	return t.d
-}
-
-// create or get related *discovery.MessengerFactory instance
-func (t *TCP) discovery() (d *discovery.MessengerFactory) {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
-	if t.d == nil {
-
-		var d *discovery.MessengerFactory
-
-		d = discovery.NewMessengerFactory()
-
-		if t.n.config.Logger.Debug == true {
-			if t.n.config.Logger.Pins&DiscoveryPin != 0 {
-				d.SetLoggerLevel(discovery.DebugLevel)
-			} else {
-				d.SetLoggerLevel(discovery.ErrorLevel) // change to panic?
-			}
-		}
-
-		t.d = d
-
-	}
-
-	return t.d
-}
-
-// ConnectToDiscoveryServer connects to given discovery server.
-// If Discovery is nil, then it will be created
-func (t *TCP) ConnectToDiscoveryServer(address string) (err error) {
-
-	err = t.discovery().ConnectWithConfig(address, &discovery.ConnConfig{
-		SeedConfig: t.n.id,
-
-		Reconnect:     true,
-		ReconnectWait: time.Second * 30,
-
-		FindServiceNodesByKeysCallback: t.findServiceNodes,
-		OnConnected:                    t.onDiscoveryConnected,
-	})
-
-	return
-}
-
-//
-// discovery callbacks
-//
-
-func (t *TCP) findServiceNodes(resp *discovery.QueryResp) {
-
-	t.n.Debug(DiscoveryPin, "(TCP) findServiceNodes:", len(resp.Result))
-
-	for _, si := range resp.Result {
-
-		if si == nil {
-			continue // sometimes it happens, TODO (kostyarin): ask about it
-		}
-
-		for _, ni := range si.Nodes {
-
-			if ni == nil {
-				continue // never happens
-			}
-
-			var (
-				c, yep = t.n.hasPeer(ni.PubKey)
-				err    error
-			)
-
-			if yep == false {
-				if c, err = t.Connect(ni.Address); err != nil { // block
-					t.n.Debugf(DiscoveryPin, "can't Connect to tcp://%q: %v",
-						ni.Address,
-						err)
-					continue
-				}
-			}
-
-			// block
-			if err = c.Subscribe(si.PubKey); err != nil {
-				t.n.Debugf(DiscoveryPin, "[%s] can't Subscribe to %s: %v",
-					c.Address(),
-					si.PubKey.Hex()[:7],
-					err)
-			}
-
-			// continue
-
-		}
-
-	}
-
-}
-
-// called after Share/DontShare
-func (t *TCP) updateServiceDiscovery(feeds []cipher.PubKey) {
-
-	if t.Discovery() == nil {
-		return
-	}
-
-	t.n.Debug(DiscoveryPin, "updateServiceDiscovery")
-
-	var services = make([]*discovery.Service, 0, len(feeds))
-
-	for _, pk := range feeds {
-		services = append(services, &discovery.Service{Key: pk})
-	}
-
-	var (
-		share   = t.n.config.Public
-		address string
-	)
-
-	if share == true {
-		address = t.Address()
-		share = share && (address != "")
-	}
-
-	t.d.ForEachConn(func(c *discovery.Connection) {
-
-		if err := c.FindServiceNodesByKeys(feeds); err != nil {
-			t.n.Debug(DiscoveryPin,
-				"(TCP) (discovery.Connection).FindServiceNodesByKeys error:",
-				err)
-			return
-		}
-
-		if share == false {
-			return
-		}
-
-		err := c.UpdateServices(&discovery.NodeServices{
-			ServiceAddress: address,
-			Services:       services,
-		})
-
-		if err != nil {
-			t.n.Debug(DiscoveryPin,
-				"(TCP) (discovery.Connection).UpdateServices error:",
-				err)
-		}
-	})
-
-}
-
-func (t *TCP) onDiscoveryConnected(c *discovery.Connection) {
-
-	t.n.Debugln(DiscoveryPin, "(UDP) OnDiscoveryConencted")
-	t.updateServiceDiscovery(t.n.Feeds())
-
 }
 
 // connections strings
@@ -356,14 +182,12 @@ func (t *TCP) connections() (cs []string) {
 // of the Node. The UDP used to
 // listen and connect
 type UDP struct {
-	*factory.UDPFactory // underlying transport
+	*transport.UDPFactory // underlying transport
 
 	// back reference
 	n *Node
 
 	mx sync.Mutex
-
-	d *discovery.MessengerFactory
 
 	address     string
 	isListening bool
@@ -375,7 +199,7 @@ func newUDP(n *Node) (u *UDP) {
 
 	u = new(UDP)
 
-	u.UDPFactory = factory.NewUDPFactory()
+	u.UDPFactory = transport.NewUDPFactory()
 
 	u.n = n
 	u.AcceptedCallback = u.acceptConn
@@ -424,7 +248,7 @@ func (u *UDP) Listen(address string) (err error) {
 	return
 }
 
-// Address returns istening address as it
+// Address returns listening address as it
 // passed to the Listen method. The address
 // is blank string if the UDP is not listening
 func (u *UDP) Address() string {
@@ -447,21 +271,19 @@ func (u *UDP) Connect(address string) (*Conn, error) {
 		return c, nil
 	}
 
-	// Open new factory.Connection.
+	// Open new transport.Connection.
 	fc, err := u.UDPFactory.Connect(address)
 	if err != nil {
 		return nil, err
 	}
 
-	// Init outgoing connection (handhshake, check duplicate pubkey, etc.)
-	// In case of success connections to/from the the same address has to be blocked.
-	// In case of failure incoming connection has to be closed.
+	// Init outgoing connection (handshake, check duplicate pubkey, etc.)
 	if c, err = u.n.initConn(fc, false); err == nil {
 		u.addConn(c)
 	} else {
 		u.n.Errorf(err, "[%s] failed to connect", factoryConnStr(fc, false))
 		if !fc.IsClosed() {
-			u.n.Debugf(CloseConnPin, "[%] closing factory.Connection",
+			u.n.Debugf(CloseConnPin, "[%s] closing connection",
 				factoryConnStr(fc, false))
 			fc.Close()
 		}
@@ -470,7 +292,7 @@ func (u *UDP) Connect(address string) (*Conn, error) {
 	return c, err
 }
 
-func (u *UDP) acceptConn(fc *factory.Connection) {
+func (u *UDP) acceptConn(fc *transport.Connection) {
 	u.n.Debugf(NewInConnPin, "[%s] accepting",
 		factoryConnStr(fc, true))
 
@@ -483,32 +305,30 @@ func (u *UDP) acceptConn(fc *factory.Connection) {
 	if c != nil {
 		err = errors.New("already have incoming connection from the address")
 	} else {
-		// Init incoming connection (handhshake, check duplicate pubkey, etc.)
+		// Init incoming connection (handshake, check duplicate pubkey, etc.)
 		c, err = u.n.initConn(fc, true)
 	}
 
-	// In case of success connections to/from the the same address has to be blocked.
-	// In case of failure incoming connection has to be closed.
 	if err == nil {
 		u.addConn(c)
 	} else {
 		u.n.Errorf(err, "[%s] failed to accept", factoryConnStr(fc, true))
 		if !fc.IsClosed() {
-			u.n.Debugf(CloseConnPin, "[%s] closing factory.Connection",
+			u.n.Debugf(CloseConnPin, "[%s] closing connection",
 				factoryConnStr(fc, true))
 			fc.Close()
 		}
 	}
 }
 
-// closeConn closes factory.Connection, underlying Conn, and removes it from cache
+// closeConn closes the connection and removes it from cache
 func (u *UDP) closeConn(addr string) error {
 	u.mx.Lock()
 	defer u.mx.Unlock()
 
 	if c, ok := u.cs[addr]; ok {
 		if !c.Connection.IsClosed() {
-			u.n.Debugf(CloseConnPin, "[%s] closing factory.Connection", c.String())
+			u.n.Debugf(CloseConnPin, "[%s] closing connection", c.String())
 			c.Connection.Close()
 		}
 	} else {
@@ -518,167 +338,6 @@ func (u *UDP) closeConn(addr string) error {
 	delete(u.cs, addr)
 
 	return nil
-}
-
-// Discovery returns underlying MessengerFactory that
-// can be nil, if feature disabled
-func (u *UDP) Discovery() (d *discovery.MessengerFactory) {
-	u.mx.Lock()
-	defer u.mx.Unlock()
-
-	return u.d
-}
-
-// create or get related *discovery.MessengerFactory instance
-func (u *UDP) discovery() (d *discovery.MessengerFactory) {
-	u.mx.Lock()
-	defer u.mx.Unlock()
-
-	if u.d == nil {
-
-		var d *discovery.MessengerFactory
-
-		d = discovery.NewMessengerFactory()
-
-		if u.n.config.Logger.Debug == true {
-			if u.n.config.Logger.Pins&DiscoveryPin != 0 {
-				d.SetLoggerLevel(discovery.DebugLevel)
-			} else {
-				d.SetLoggerLevel(discovery.ErrorLevel) // change to panic?
-			}
-		}
-
-		u.d = d
-
-	}
-
-	return u.d
-}
-
-// ConnectToDiscoveryServer connects to given discovery server.
-// If Discovery is nil, then it will be created
-func (u *UDP) ConnectToDiscoveryServer(address string) (err error) {
-
-	err = u.discovery().ConnectWithConfig(address, &discovery.ConnConfig{
-		SeedConfig: u.n.id,
-
-		Reconnect:     true,
-		ReconnectWait: time.Second * 30,
-
-		FindServiceNodesByKeysCallback: u.findServiceNodes,
-		OnConnected:                    u.onDiscoveryConnected,
-	})
-
-	return
-}
-
-//
-// discovery callbacks
-//
-
-func (u *UDP) findServiceNodes(resp *discovery.QueryResp) {
-
-	u.n.Debug(DiscoveryPin, "(UDP) findServiceNodes:", len(resp.Result))
-
-	for _, si := range resp.Result {
-
-		if si == nil {
-			continue // sometimes it happens, TODO (kostyarin): ask about it
-		}
-
-		for _, ni := range si.Nodes {
-
-			if ni == nil {
-				continue // never happens
-			}
-
-			var (
-				c, yep = u.n.hasPeer(ni.PubKey)
-				err    error
-			)
-
-			if yep == false {
-				if c, err = u.Connect(ni.Address); err != nil { // block
-					u.n.Debugf(DiscoveryPin, "can't Connect to udp://%q: %v",
-						ni.Address,
-						err)
-					continue
-				}
-			}
-
-			// block
-			if err = c.Subscribe(si.PubKey); err != nil {
-				u.n.Debugln(DiscoveryPin, "[%s] can't Subscribe to %s: %v",
-					c.Address(),
-					si.PubKey.Hex()[:7],
-					err)
-			}
-
-			// continue
-
-		}
-
-	}
-
-}
-
-// called after Share/DontShare
-func (u *UDP) updateServiceDiscovery(feeds []cipher.PubKey) {
-
-	if u.Discovery() == nil {
-		return
-	}
-
-	u.n.Debug(DiscoveryPin, "updateServiceDiscovery")
-
-	var services = make([]*discovery.Service, 0, len(feeds))
-
-	for _, pk := range feeds {
-		services = append(services, &discovery.Service{Key: pk})
-	}
-
-	var (
-		share   = u.n.config.Public
-		address string
-	)
-
-	if share == true {
-		address = u.Address()
-		share = share && (address != "") // skip, if it is not listening
-	}
-
-	u.d.ForEachConn(func(c *discovery.Connection) {
-
-		if err := c.FindServiceNodesByKeys(feeds); err != nil {
-			u.n.Debug(DiscoveryPin,
-				"(TCP) (discovery.Connection).FindServiceNodesByKeys error:",
-				err)
-			return
-		}
-
-		if share == false {
-			return
-		}
-
-		err := c.UpdateServices(&discovery.NodeServices{
-			ServiceAddress: address,
-			Services:       services,
-		})
-
-		if err != nil {
-			u.n.Debug(DiscoveryPin,
-				"(TCP) (discovery.Connection).UpdateServices error:",
-				err)
-		}
-	})
-
-}
-
-func (u *UDP) onDiscoveryConnected(c *discovery.Connection) {
-
-	u.n.Debugln(DiscoveryPin, "(UDP) OnDiscoveryConencted")
-	u.updateServiceDiscovery(u.n.Feeds())
-
 }
 
 // connections strings
@@ -695,6 +354,6 @@ func (u *UDP) connections() (cs []string) {
 	return
 }
 
-func factoryConnStr(fc *factory.Connection, isIncoming bool) string {
+func factoryConnStr(fc *transport.Connection, isIncoming bool) string {
 	return connString(isIncoming, fc.IsTCP(), fc.GetRemoteAddr().String())
 }

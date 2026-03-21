@@ -21,7 +21,7 @@ func testRoot(s string) (r *Root) {
 	r.Prev = cipher.SHA256{}
 
 	r.Hash = cipher.SumSHA256([]byte(s))
-	r.Sig = cipher.SignHash(r.Hash, sk)
+	r.Sig, _ = cipher.SignHash(r.Hash, sk)
 	return
 }
 

@@ -18,10 +18,8 @@ import (
 // Registry
 func (r *Root) Tree(pack Pack) (tree string, err error) {
 
-	var gt gotree.GTStructure
-
-	gt.Name = fmt.Sprintf("(root) %s %s (reg: %s)",
-		r.Hash.Hex()[:7], r.Short(), r.Reg.Short())
+	gt := gotree.New(fmt.Sprintf("(root) %s %s (reg: %s)",
+		r.Hash.Hex()[:7], r.Short(), r.Reg.Short()))
 
 	var reg = pack.Registry()
 
@@ -32,36 +30,30 @@ func (r *Root) Tree(pack Pack) (tree string, err error) {
 
 	if len(r.Refs) == 0 {
 
-		gt.Items = []*gotree.GTStructure{
-			&gotree.GTStructure{Name: "(empty)"},
-		}
+		gt.Add("(empty)")
 
 	} else {
 
-		gt.Items = make([]*gotree.GTStructure, 0, len(r.Refs))
-
 		for _, dr := range r.Refs {
-			gt.Items = append(gt.Items, rootTreeDynamic(&dr, pack))
+			gt.AddTree(rootTreeDynamic(&dr, pack))
 		}
 
 	}
 
-	tree = gotree.StringTree(&gt)
+	tree = gt.Print()
 	return
 
 }
 
-func rootTreeDynamic(d *Dynamic, pack Pack) (it *gotree.GTStructure) {
-
-	it = new(gotree.GTStructure)
+func rootTreeDynamic(d *Dynamic, pack Pack) (it gotree.Tree) {
 
 	if d.IsValid() == false {
-		it.Name = "*(dynamic) err: " + ErrInvalidDynamicReference.Error()
+		it = gotree.New("*(dynamic) err: " + ErrInvalidDynamicReference.Error())
 		return
 	}
 
 	if d.IsBlank() == true {
-		it.Name = "*(dynamic) nil"
+		it = gotree.New("*(dynamic) nil")
 		return
 	}
 
@@ -71,19 +63,17 @@ func rootTreeDynamic(d *Dynamic, pack Pack) (it *gotree.GTStructure) {
 	)
 
 	if sch, err = pack.Registry().SchemaByReference(d.Schema); err != nil {
-		it.Name = "*(dynamic) err: " + err.Error()
+		it = gotree.New("*(dynamic) err: " + err.Error())
 		return
 	}
 
 	if d.Hash == (cipher.SHA256{}) {
-		it.Name = fmt.Sprintf("*(dynamic) nil (type %s)", sch.String())
+		it = gotree.New(fmt.Sprintf("*(dynamic) nil (type %s)", sch.String()))
 		return
 	}
 
-	it.Name = "*(dynamic) " + d.Short()
-	it.Items = []*gotree.GTStructure{
-		rootTreeHash(pack, sch, d.Hash),
-	}
+	it = gotree.New("*(dynamic) " + d.Short())
+	it.AddTree(rootTreeHash(pack, sch, d.Hash))
 
 	return
 }
@@ -93,7 +83,7 @@ func rootTreeHash(
 	sch Schema,
 	hash cipher.SHA256,
 ) (
-	it *gotree.GTStructure,
+	it gotree.Tree,
 ) {
 
 	var (
@@ -101,10 +91,8 @@ func rootTreeHash(
 		err error
 	)
 
-	it = new(gotree.GTStructure)
-
 	if val, err = pack.Get(hash); err != nil {
-		it.Name = "(err) " + err.Error()
+		it = gotree.New("(err) " + err.Error())
 		return
 	}
 
@@ -116,7 +104,7 @@ func rootTreeData(
 	sch Schema,
 	val []byte,
 ) (
-	it *gotree.GTStructure,
+	it gotree.Tree,
 ) {
 
 	if sch.IsReference() == true {
@@ -154,10 +142,9 @@ func rootTreeData(
 
 	default:
 
-		it = new(gotree.GTStructure)
-		it.Name = fmt.Sprintf("(err) invalid Kind <%s> of Schema %q",
+		it = gotree.New(fmt.Sprintf("(err) invalid Kind <%s> of Schema %q",
 			sch.Kind().String(),
-			sch.String())
+			sch.String()))
 
 	}
 
@@ -169,7 +156,7 @@ func rootTreeReferences(
 	sch Schema, //            :
 	val []byte, //            :
 ) (
-	it *gotree.GTStructure, // :
+	it gotree.Tree, // :
 ) {
 
 	switch rt := sch.ReferenceType(); rt {
@@ -189,10 +176,8 @@ func rootTreeReferences(
 			err error
 		)
 
-		it = new(gotree.GTStructure)
-
 		if _, err = encoder.DeserializeRaw(val, &dr); err != nil {
-			it.Name = "*(dynamic) err: " + err.Error()
+			it = gotree.New("*(dynamic) err: " + err.Error())
 			return
 		}
 
@@ -200,35 +185,31 @@ func rootTreeReferences(
 
 	default:
 
-		it = new(gotree.GTStructure)
-
-		it.Name = fmt.Sprintf(
+		it = gotree.New(fmt.Sprintf(
 			"invalid schema (%s): reference with invalid type %d",
 			sch.String(),
 			rt,
-		)
+		))
 	}
 
 	return
 }
 
-func rootTreeValue(sch Schema, val interface{}) (it *gotree.GTStructure) {
+func rootTreeValue(sch Schema, val interface{}) (it gotree.Tree) {
 
 	var name string
 
-	it = new(gotree.GTStructure)
-
 	if name = sch.Name(); name != "" {
-		it.Name = fmt.Sprintf("%v (type %s)", val, name)
+		it = gotree.New(fmt.Sprintf("%v (type %s)", val, name))
 		return
 	}
 
-	it.Name = fmt.Sprint(val)
+	it = gotree.New(fmt.Sprint(val))
 	return
 
 }
 
-func rootTreeBool(sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeBool(sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		x   bool
@@ -236,15 +217,14 @@ func rootTreeBool(sch Schema, val []byte) (it *gotree.GTStructure) {
 	)
 
 	if _, err = encoder.DeserializeRaw(val, &x); err != nil {
-		it = new(gotree.GTStructure)
-		it.Name = "(err) " + err.Error()
+		it = gotree.New("(err) " + err.Error())
 		return
 	}
 
 	return rootTreeValue(sch, x)
 }
 
-func rootTreeInt(sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeInt(sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		x   int64
@@ -277,15 +257,14 @@ func rootTreeInt(sch Schema, val []byte) (it *gotree.GTStructure) {
 	}
 
 	if err != nil {
-		it = new(gotree.GTStructure)
-		it.Name = "(err) " + err.Error()
+		it = gotree.New("(err) " + err.Error())
 		return
 	}
 
 	return rootTreeValue(sch, x)
 }
 
-func rootTreeUint(sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeUint(sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		x   uint64
@@ -317,15 +296,14 @@ func rootTreeUint(sch Schema, val []byte) (it *gotree.GTStructure) {
 
 	}
 	if err != nil {
-		it = new(gotree.GTStructure)
-		it.Name = "(err) " + err.Error()
+		it = gotree.New("(err) " + err.Error())
 		return
 	}
 
 	return rootTreeValue(sch, x)
 }
 
-func rootTreeFloat(sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeFloat(sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		x   float64
@@ -346,8 +324,7 @@ func rootTreeFloat(sch Schema, val []byte) (it *gotree.GTStructure) {
 	}
 
 	if err != nil {
-		it = new(gotree.GTStructure)
-		it.Name = "(err) " + err.Error()
+		it = gotree.New("(err) " + err.Error())
 		return
 	}
 
@@ -358,7 +335,7 @@ func rootTreeString(
 	sch Schema,
 	val []byte,
 ) (
-	it *gotree.GTStructure,
+	it gotree.Tree,
 ) {
 
 	var (
@@ -367,8 +344,7 @@ func rootTreeString(
 	)
 
 	if _, err = encoder.DeserializeRaw(val, &x); err != nil {
-		it = new(gotree.GTStructure)
-		it.Name = "(err) " + err.Error()
+		it = gotree.New("(err) " + err.Error())
 		return
 	}
 
@@ -376,18 +352,16 @@ func rootTreeString(
 }
 
 // slice or array
-func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeSlice(pack Pack, sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		el  Schema
 		err error
 	)
 
-	it = new(gotree.GTStructure)
-
 	if el = sch.Elem(); el == nil {
-		it.Name = fmt.Sprintf("(err) invalid schema %q: nil-element",
-			sch.String())
+		it = gotree.New(fmt.Sprintf("(err) invalid schema %q: nil-element",
+			sch.String()))
 		return
 	}
 
@@ -396,11 +370,11 @@ func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 
 		var x []byte
 		if _, err = encoder.DeserializeRaw(val, &x); err != nil {
-			it.Name = "(err) " + err.Error()
+			it = gotree.New("(err) " + err.Error())
 			return
 		}
 
-		it.Name = "([]byte) " + hex.EncodeToString(x)
+		it = gotree.New("([]byte) " + hex.EncodeToString(x))
 		return
 	}
 
@@ -409,34 +383,38 @@ func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		shift int // shift
 	)
 
+	var itName string
+
 	if sch.Kind() == reflect.Array {
 
 		ln = sch.Len()
 
 		if name := sch.Name(); name != "" {
-			it.Name = fmt.Sprintf("[%d]%s (%s)", ln, el.String(), name)
+			itName = fmt.Sprintf("[%d]%s (%s)", ln, el.String(), name)
 		} else {
-			it.Name = fmt.Sprintf("[%d]%s", ln, el.String())
+			itName = fmt.Sprintf("[%d]%s", ln, el.String())
 		}
 
 	} else {
 
 		// reflect.Slice
 		if name := sch.Name(); name != "" {
-			it.Name = fmt.Sprintf("[]%s (%s)", el.String(), name)
+			itName = fmt.Sprintf("[]%s (%s)", el.String(), name)
 		} else {
-			it.Name = fmt.Sprintf("[]%s", el.String())
+			itName = fmt.Sprintf("[]%s", el.String())
 		}
 
 		if ln, err = getLength(val); err != nil {
-			it.Name += " (err) " + err.Error()
+			it = gotree.New(itName + " (err) " + err.Error())
 			return
 		}
 
-		it.Name += fmt.Sprintf(" (length %d)", ln)
+		itName += fmt.Sprintf(" (length %d)", ln)
 		shift = 4
 
 	}
+
+	it = gotree.New(itName)
 
 	var m, s, k int
 
@@ -445,18 +423,13 @@ func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		for k = 0; k < ln; k++ {
 
 			if shift+s > len(val) {
-				it.Items = append(it.Items, &gotree.GTStructure{
-					Name: fmt.Sprintf(
-						"(err) unexpected end of %s at %d element",
-						sch.Kind().String(), k),
-				})
+				it.Add(fmt.Sprintf(
+					"(err) unexpected end of %s at %d element",
+					sch.Kind().String(), k))
 				return
 			}
 
-			it.Items = append(
-				it.Items,
-				rootTreeData(pack, el, val[shift:shift+s]),
-			)
+			it.AddTree(rootTreeData(pack, el, val[shift:shift+s]))
 			shift += s
 
 		}
@@ -466,11 +439,9 @@ func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		for k = 0; k < ln; k++ {
 
 			if shift > len(val) {
-				it.Items = append(it.Items, &gotree.GTStructure{
-					Name: fmt.Sprintf(
-						"(err) unexpected end of %s at %d element",
-						sch.Kind().String(), k),
-				})
+				it.Add(fmt.Sprintf(
+					"(err) unexpected end of %s at %d element",
+					sch.Kind().String(), k))
 				return
 			}
 
@@ -478,10 +449,7 @@ func rootTreeSlice(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 				return
 			}
 
-			it.Items = append(
-				it.Items,
-				rootTreeData(pack, el, val[shift:shift+m]),
-			)
+			it.AddTree(rootTreeData(pack, el, val[shift:shift+m]))
 			shift += m
 
 		}
@@ -496,7 +464,7 @@ func rootTreeStruct(
 	sch Schema,
 	val []byte,
 ) (
-	it *gotree.GTStructure,
+	it gotree.Tree,
 ) {
 
 	var (
@@ -505,32 +473,35 @@ func rootTreeStruct(
 		err   error
 	)
 
-	it = new(gotree.GTStructure)
-	it.Name = sch.String()
+	it = gotree.New(sch.String())
 
 	for _, f := range sch.Fields() {
 
 		if shift > len(val) {
 
-			// detailed error
-			it.Name = fmt.Sprintf(
+			// detailed error: we can't change text after creation with this API,
+			// so add an error child node instead
+			it.Add(fmt.Sprintf(
 				"(err) unexpected end of encoded struct '%s' "+
 					"at field '%s', schema of field: '%s'",
 				sch.String(),
 				f.Name(),
-				f.Schema().String())
+				f.Schema().String()))
 			return
 
 		}
 
 		if s, err = f.Schema().Size(val[shift:]); err != nil {
-			it.Name = "(err) " + err.Error()
+			it.Add("(err) " + err.Error())
 			return
 		}
 
 		fit := rootTreeData(pack, f.Schema(), val[shift:shift+s])
-		fit.Name = f.Name() + ": " + fit.Name // field name
-		it.Items = append(it.Items, fit)
+		fieldTree := gotree.New(f.Name() + ": " + fit.Text())
+		for _, child := range fit.Items() {
+			fieldTree.AddTree(child)
+		}
+		it.AddTree(fieldTree)
 		shift += s
 
 	}
@@ -538,7 +509,7 @@ func rootTreeStruct(
 	return
 }
 
-func rootTreeRef(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeRef(pack Pack, sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		ref Ref
@@ -546,37 +517,33 @@ func rootTreeRef(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		err error
 	)
 
-	it = new(gotree.GTStructure)
-
 	if el = sch.Elem(); el == nil {
 
-		it.Name = fmt.Sprintf(
+		it = gotree.New(fmt.Sprintf(
 			"*(<ref>) err: missing schema of element: %s ",
 			sch,
-		)
+		))
 
 		return
 	}
 
 	if _, err = encoder.DeserializeRaw(val, &ref); err != nil {
-		it.Name = fmt.Sprintf("*(%s) err: %s", el.String(), err.Error())
+		it = gotree.New(fmt.Sprintf("*(%s) err: %s", el.String(), err.Error()))
 		return
 	}
 
 	if ref.Hash == (cipher.SHA256{}) {
-		it.Name = fmt.Sprintf("*(%s) nil", el.String())
+		it = gotree.New(fmt.Sprintf("*(%s) nil", el.String()))
 		return
 	}
 
-	it.Name = fmt.Sprintf("*(%s) %s", el.String(), ref.Short())
-	it.Items = []*gotree.GTStructure{
-		rootTreeHash(pack, el, ref.Hash),
-	}
+	it = gotree.New(fmt.Sprintf("*(%s) %s", el.String(), ref.Short()))
+	it.AddTree(rootTreeHash(pack, el, ref.Hash))
 
 	return
 }
 
-func rootTreeRefs(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
+func rootTreeRefs(pack Pack, sch Schema, val []byte) (it gotree.Tree) {
 
 	var (
 		refs Refs
@@ -584,15 +551,13 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 		err  error
 	)
 
-	it = new(gotree.GTStructure)
-
 	if el = sch.Elem(); el == nil {
-		it.Name = "[]*(<refs>) err: missing schema of element"
+		it = gotree.New("[]*(<refs>) err: missing schema of element")
 		return
 	}
 
 	if _, err = encoder.DeserializeRaw(val, &refs); err != nil {
-		it.Name = fmt.Sprintf("[]*(-----) %s err: %s", el.String(), err.Error())
+		it = gotree.New(fmt.Sprintf("[]*(-----) %s err: %s", el.String(), err.Error()))
 		return
 	}
 
@@ -600,22 +565,20 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 
 	var ln int
 	if ln, err = refs.Len(pack); err != nil {
-		it.Name = fmt.Sprintf("[]*(%s) %s err: %s", el.String(), refs.Short(),
-			err.Error())
+		it = gotree.New(fmt.Sprintf("[]*(%s) %s err: %s", el.String(), refs.Short(),
+			err.Error()))
 		return
 	}
 
 	// can be blank
 
 	if ln == 0 {
-		it.Name = fmt.Sprintf("[]*(%s) %s nil", el.String(), refs.Short())
+		it = gotree.New(fmt.Sprintf("[]*(%s) %s nil", el.String(), refs.Short()))
 		return
 	}
 
-	it.Name = fmt.Sprintf("[]*(%s) %s length: %d", el.String(), refs.Short(),
-		ln)
-
-	it.Items = make([]*gotree.GTStructure, 0, ln)
+	it = gotree.New(fmt.Sprintf("[]*(%s) %s length: %d", el.String(), refs.Short(),
+		ln))
 
 	err = refs.Walk(pack, el, func(
 		hash cipher.SHA256,
@@ -629,14 +592,12 @@ func rootTreeRefs(pack Pack, sch Schema, val []byte) (it *gotree.GTStructure) {
 			return true, nil
 		}
 
-		it.Items = append(it.Items, rootTreeHash(pack, el, hash))
+		it.AddTree(rootTreeHash(pack, el, hash))
 		return true, nil
 	})
 
 	if err != nil {
-		it.Items = append(it.Items, &gotree.GTStructure{
-			Name: "err: " + err.Error(),
-		})
+		it.Add("err: " + err.Error())
 	}
 
 	return

@@ -6,7 +6,6 @@
 # Folders
 _obj
 _test
-vendor/
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -44,15 +43,6 @@ cmd/cxocli/cxocli
 cmd/cxod/cxod
 
 intro/skybrief/skybrief
-
-intro/discovery/discovery
-
-intro/discovery/through/server/server
-intro/discovery/through/ca/ca
-intro/discovery/through/cb/cb
-
-intro/discovery/exchange/ca/ca
-intro/discovery/exchange/cb/cb
 
 intro/send_receive/src/src
 intro/send_receive/dst/dst

@@ -10,17 +10,16 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/net/factory"
-
 	"github.com/skycoin/cxo/data"
 	"github.com/skycoin/cxo/node/msg"
+	"github.com/skycoin/cxo/node/transport"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 )
 
 // A Conn represent connection of the Node
 type Conn struct {
-	*factory.Connection
+	*transport.Connection
 
 	n *Node // back reference
 
@@ -33,7 +32,7 @@ type Conn struct {
 	closeq chan struct{}  // signal for all goroutines to exit
 	await  sync.WaitGroup // wait for all goroutines to exit
 
-	sendq chan<- []byte // channel from factory.Connection
+	sendq chan<- []byte // channel from transport.Connection
 
 	// # stat
 	//
@@ -49,7 +48,7 @@ type Conn struct {
 }
 
 func (n *Node) newConnection(
-	fc *factory.Connection, isIncoming bool) *Conn {
+	fc *transport.Connection, isIncoming bool) *Conn {
 
 	c := &Conn{
 		Connection: fc,
@@ -99,7 +98,7 @@ func (c *Conn) run() {
 
 	c.n.removeConn(c)
 
-	// Remove connection from trasnport's cache and close factory.Connection.
+	// Remove connection from transport's cache and close connection.
 	if c.IsTCP() {
 		c.n.tcp.closeConn(c.Address())
 	} else {
@@ -447,13 +446,13 @@ func (c *Conn) receiveMsg() error {
 
 	receiveq := c.GetChanIn()
 
-	// Read raw messages from factory.Connection.
-	// Terminate if factory.Connectin is closed of if close singnal is sent.
+	// Read raw messages from transport.Connection.
+	// Terminate if connection is closed or if close signal is sent.
 	for {
 		select {
 		case raw, ok := <-receiveq:
 			if ok == false {
-				return errors.New("factory.Connection closed")
+				return errors.New("connection closed")
 			}
 
 			// Check message size.
@@ -770,13 +769,6 @@ func (c *Conn) handleRqObject(seq uint32, rq *msg.RqObject) {
 		tm *time.Timer
 		tc <-chan time.Time
 	)
-
-	// TODO (kostyarin): the request holds resources and in good case
-	//                   it's ok, but it's possible to DDoS the Node
-	//                   perfoкming many trash request
-
-	// TODO (kostyarin): get the object or subscribe for the object
-	//                   only if it is wanted (to think)
 
 	if err := c.n.c.Want(rq.Key, gc, 0); err != nil {
 		c.n.Fatal("DB failure: ", err)

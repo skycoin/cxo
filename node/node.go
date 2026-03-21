@@ -8,10 +8,8 @@ import (
 
 	"github.com/skycoin/skycoin/src/cipher"
 
-	"github.com/skycoin/net/factory"
-	discovery "github.com/skycoin/net/skycoin-messenger/factory"
-
 	"github.com/skycoin/cxo/node/log"
+	"github.com/skycoin/cxo/node/transport"
 	"github.com/skycoin/cxo/skyobject"
 	"github.com/skycoin/cxo/skyobject/registry"
 	"github.com/skycoin/cxo/skyobject/statutil"
@@ -28,11 +26,11 @@ import (
 type Node struct {
 	mx sync.Mutex // lock
 
-	log.Logger                       // logger
-	id         *discovery.SeedConfig // unique random identifier
-	c          *skyobject.Container  // related Container
+	log.Logger                  // logger
+	c          *skyobject.Container // related Container
 
-	idpk cipher.PubKey // id.PublicKey (string -> pk)
+	idpk cipher.PubKey // node identity public key
+	idsk cipher.SecKey // node identity secret key
 
 	//
 	// feeds and connections
@@ -128,22 +126,20 @@ func NewNodeContainer(
 
 	n = new(Node)
 
-	// Generate random secret key or use one from config
+	// Generate random keypair or derive from provided secret key
 	var defSK cipher.SecKey
 	if conf.SecKey == defSK {
-		if n.id, err = discovery.NewSeedConfig(); err != nil {
-			return nil, err
-		}
+		n.idpk, n.idsk = cipher.GenerateKeyPair()
 	} else {
 		if err := conf.SecKey.Verify(); err != nil {
 			return nil, fmt.Errorf("invalid secret key - %s", err)
 		}
-		if n.id, err = discovery.SecKeyToSeedConfig(conf.SecKey); err != nil {
-			return nil, err
+		n.idsk = conf.SecKey
+		n.idpk, err = cipher.PubKeyFromSecKey(conf.SecKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to derive public key - %s", err)
 		}
 	}
-
-	n.idpk, _ = cipher.PubKeyFromHex(n.id.PublicKey)
 
 	n.c = c
 	n.fs = newNodeFeeds(n)
@@ -194,24 +190,6 @@ func NewNodeContainer(
 			return
 		}
 
-	}
-
-	// discoveries
-
-	for _, address := range conf.TCP.Discovery {
-		if err := n.TCP().ConnectToDiscoveryServer(address); err != nil {
-			n.Debugln(DiscoveryPin,
-				"error connecting to TCP discovery server:",
-				err)
-		}
-	}
-
-	for _, address := range conf.UDP.Discovery {
-		if err := n.UDP().ConnectToDiscoveryServer(address); err != nil {
-			n.Debugln(DiscoveryPin,
-				"error connecting to UDP discovery server:",
-				err)
-		}
 	}
 
 	// TODO (kostyarin): pings (move to connection)
@@ -388,7 +366,7 @@ func (n *Node) pendingConnCap() int {
 
 // initConn initializes new connection.
 func (n *Node) initConn(
-	fc *factory.Connection, isIncoming bool) (*Conn, error) {
+	fc *transport.Connection, isIncoming bool) (*Conn, error) {
 
 	var (
 		addr    = fc.GetRemoteAddr().String()
@@ -443,7 +421,7 @@ func (n *Node) initConn(
 // onNewConn atomically checks for existing connection
 // to/form address and creates new one if neccessary.
 func (n *Node) onNewConn(
-	fc *factory.Connection, isIncoming bool) (c *Conn, isNew, isPending bool, err error) {
+	fc *transport.Connection, isIncoming bool) (c *Conn, isNew, isPending bool, err error) {
 
 	n.mx.Lock()
 	defer n.mx.Unlock()
@@ -507,32 +485,9 @@ func (n *Node) removeConn(c *Conn) {
 
 	delete(n.addrToConn, c.Address())
 	delete(n.pkToConn, c.peerID)
-}
 
-func (n *Node) updateServiceDiscovery() {
-
-	n.mx.Lock()
-	defer n.mx.Unlock()
-
-	var notUsed = (n.tcp == nil || n.tcp.Discovery() == nil) &&
-		(n.udp == nil || n.udp.Discovery() == nil)
-
-	if notUsed == true {
-		return
-	}
-
-	var feeds = n.fs.list()
-
-	n.Debug(DiscoveryPin, "(Node) updateServiceDiscovery ", len(feeds))
-
-	if n.tcp != nil && n.tcp.Discovery() != nil {
-		n.tcp.updateServiceDiscovery(feeds)
-	}
-
-	if n.udp != nil && n.udp.Discovery() != nil {
-		n.udp.updateServiceDiscovery(feeds)
-	}
-
+	// Remove from feed tracking
+	n.fs.delConn(c)
 }
 
 // Share given feed. By default the Node dousn't share
@@ -541,9 +496,9 @@ func (n *Node) updateServiceDiscovery() {
 // keep some feeds locally. To share all feeds of the
 // Container use following code
 //
-//     for _, pk := range n.Container().Feeds() {
-//         n.Share(pk)
-//      }
+//	for _, pk := range n.Container().Feeds() {
+//	    n.Share(pk)
+//	 }
 //
 // The Share method adds given feed to underlying
 // Container calling (*skyobjec.Container).AddFeed()
@@ -562,16 +517,7 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 		return
 	}
 
-	// TODO (kostyarin): Subscribe that calls the Share that
-	//                   add a new feed then calls
-	//                   updateServiceDiscovery that invoke
-	//                   send new list to discovery and so on
-	//
-	// :: suppress the recursion ::
-
-	if n.fs.addFeed(feed) == true {
-		n.updateServiceDiscovery()
-	}
+	n.fs.addFeed(feed)
 
 	return
 }
@@ -586,7 +532,6 @@ func (n *Node) Share(feed cipher.PubKey) (err error) {
 func (n *Node) DontShare(feed cipher.PubKey) (err error) {
 
 	n.fs.delFeed(feed)
-	n.updateServiceDiscovery()
 
 	return
 }

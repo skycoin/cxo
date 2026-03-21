@@ -110,7 +110,7 @@ func TestSchema_IsReference(t *testing.T) {
 					}
 					continue
 				default:
-					t.Error("IsReference() returns true but ReferenceType is "+
+					t.Errorf("IsReference() returns true but ReferenceType is "+
 						"undefined %d", typ)
 					continue
 				}

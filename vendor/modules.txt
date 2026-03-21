@@ -1,0 +1,41 @@
+# github.com/DiSiqueira/GoTree v1.0.0
+## explicit
+github.com/DiSiqueira/GoTree
+# github.com/boltdb/bolt v1.3.1
+## explicit
+github.com/boltdb/bolt
+# github.com/inconshreveable/mousetrap v1.1.0
+## explicit; go 1.18
+github.com/inconshreveable/mousetrap
+# github.com/kr/pretty v0.3.1
+## explicit; go 1.12
+github.com/kr/pretty
+# github.com/kr/text v0.2.0
+## explicit
+github.com/kr/text
+# github.com/mattn/go-runewidth v0.0.3
+## explicit
+github.com/mattn/go-runewidth
+# github.com/peterh/liner v1.2.2
+## explicit
+github.com/peterh/liner
+# github.com/rogpeppe/go-internal v1.9.0
+## explicit; go 1.17
+github.com/rogpeppe/go-internal/fmtsort
+# github.com/skycoin/skycoin v0.28.3
+## explicit; go 1.25.4
+github.com/skycoin/skycoin/src/cipher
+github.com/skycoin/skycoin/src/cipher/base58
+github.com/skycoin/skycoin/src/cipher/encoder
+github.com/skycoin/skycoin/src/cipher/ripemd160
+github.com/skycoin/skycoin/src/cipher/secp256k1-go
+github.com/skycoin/skycoin/src/cipher/secp256k1-go/secp256k1-go2
+# github.com/spf13/cobra v1.10.2
+## explicit; go 1.15
+github.com/spf13/cobra
+# github.com/spf13/pflag v1.0.10
+## explicit; go 1.12
+github.com/spf13/pflag
+# golang.org/x/sys v0.40.0
+## explicit; go 1.24.0
+golang.org/x/sys/unix
